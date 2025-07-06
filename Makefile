@@ -3,10 +3,10 @@ CC = ccache clang
 LD = ld
 
 ASMFLAGS = -f elf64
-CFLAGS = -m64 -Wall -O -fno-omit-frame-pointer -finline-functions -nostdinc -fno-builtin -I./Kernel -ffreestanding
+CFLAGS = -m64 -Wall -O -fno-omit-frame-pointer -finline-functions -nostdinc -fno-builtin -I./Kernel -ffreestanding -fno-stack-protector
 LDFLAGS = -T linker.ld -melf_x86_64 --no-warn-rwx-segments
 
-all: voidframe.krnl
+all: clean voidframe.krnl run
 
 boot.o: Boot/boot.asm
 	$(ASM) $(ASMFLAGS) -o $@ $<
@@ -26,7 +26,10 @@ interrupts.o: Kernel/Interrupts.c
 interrupts_s.o: Kernel/Interrupts.s
 	$(ASM) $(ASMFLAGS) -o $@ $<
 
-voidframe.krnl: boot.o kernel.o idt.o idt_load.o interrupts.o interrupts_s.o
+pic.o: Kernel/Pic.c
+	$(CC) $(CFLAGS) -c -o $@ $<
+
+voidframe.krnl: boot.o kernel.o idt.o idt_load.o interrupts.o interrupts_s.o pic.o
 	$(LD) $(LDFLAGS) -o $@ $^
 
 run: iso
@@ -34,7 +37,7 @@ run: iso
 
 iso: voidframe.krnl
 	mkdir -p isodir/boot/grub
-	cp voidframe.krnl isodir/boot/voidframe.krnl
+		cp voidframe.krnl isodir/boot/voidframe.krnl
 	cp grub.cfg isodir/boot/grub/grub.cfg
 	grub-mkrescue -o VoidFrame.iso isodir
 

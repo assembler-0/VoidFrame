@@ -1,4 +1,4 @@
-section .multiboot_header
+section .multiboot
 header_start:
     dd 0xE85250D6                ; Multiboot2 magic number
     dd 0                         ; Architecture 0 (protected mode i386)

@@ -1,33 +1,35 @@
 /*
- * kernel.c
+ * Kernel.c
  */
 #include "Idt.h"
+#include "Pic.h"
 #include "Kernel.h"
-void ClearScreen(char * vidptr, unsigned int j){
-    while(j < 80 * 25 * 2) {
+
+void ClearScreen(){
+    char *vidptr = (char*)0xb8000;
+    for (int j = 0; j < 80 * 25 * 2; j += 2) {
         vidptr[j] = ' ';
         vidptr[j+1] = 0x03;
-        j = j + 2;
     }
-    return;
 }
-void PrintKernel(const char * str, char * vidptr, unsigned int j, unsigned int i){
-    while(str[j] != '\0') {
-        vidptr[i] = str[j];
-        vidptr[i+1] = 0x03;
-        ++j;
-        i = i + 2;
+
+void PrintKernel(const char *str, int line, int col){
+    char *vidptr = (char*)0xb8000;
+    int offset = (line * 80 + col) * 2;
+    for (int k = 0; str[k] != '\0'; k++) {
+        vidptr[offset] = str[k];
+        vidptr[offset + 1] = 0x03;
+        offset += 2;
     }
-    return;
 }
+
 void KernelMain(void) {
     IdtInstall();
-    const char *str = "VoidFrame loaded";
-    char *vidptr = (char*)0xb8000;
-    unsigned int i = 0;
-    unsigned int j = 0;
-    ClearScreen(vidptr, j);
-    PrintKernel(str, vidptr, j, i);
-
-    return;
+    PicInstall();
+    ClearScreen();
+    PrintKernel("VoidFrame Kernel - Version 0.0.1-alpha", 0, 0);
+    asm volatile("sti"); // Enable interrupts
+    while (1){
+        asm volatile("hlt");
+    }
 }

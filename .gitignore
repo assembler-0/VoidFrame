@@ -1,3 +1,5 @@
 *.o
 *.krnl
 isodir
+*.iso
+.idea
