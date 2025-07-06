@@ -7,7 +7,7 @@ struct IdtPtr   g_IdtPtr;
 
 extern void IdtLoad(struct IdtPtr* idtPtr);
 
-// Declare all ISRs from Interrupts.s
+// Declare all ISRs from Interrupts.asm
 extern void isr0();
 extern void isr1();
 extern void isr2();

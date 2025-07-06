@@ -1,9 +1,10 @@
 #include "stdint.h"
 #include "Kernel.h"
 #include "Io.h"
+#include "Process.h"
 
 // Structure to save CPU registers
-// This order must match the push order in Interrupts.s
+// This order must match the push order in Interrupts.asm
 struct Registers {
     uint64_t rax, rbx, rcx, rdx, rdi, rsi, rbp, r8, r9, r10, r11, r12, r13, r14, r15;
     uint64_t interrupt_number;
@@ -44,6 +45,12 @@ void InterruptHandler(struct Registers* regs) {
     // Handle timer interrupt (IRQ0, remapped to 32)
     if (regs->interrupt_number == 32) {
         tick_count++;
+        
+        // Task switch every 100 ticks
+        if (tick_count % 100 == 0) {
+            Schedule();
+        }
+        
         char tick_str[20];
         itoa(tick_count, tick_str);
         PrintKernel("Ticks: ", 8, 0);
@@ -55,7 +62,4 @@ void InterruptHandler(struct Registers* regs) {
         outb(0xA0, 0x20); // Send EOI to slave PIC
     }
     outb(0x20, 0x20); // Send EOI to master PIC
-
-    // For other interrupts, you might want to print the number or handle them differently
-    // For now, we'll just acknowledge and return.
 }

@@ -17,23 +17,41 @@ kernel.o: Kernel/Kernel.c
 idt.o: Kernel/Idt.c
 	$(CC) $(CFLAGS) -c -o $@ $<
 
-idt_load.o: Kernel/IdtLoad.s
+idt_load.o: Kernel/IdtLoad.asm
 	$(ASM) $(ASMFLAGS) -o $@ $<
 
 interrupts.o: Kernel/Interrupts.c
 	$(CC) $(CFLAGS) -c -o $@ $<
 
-interrupts_s.o: Kernel/Interrupts.s
+interrupts_s.o: Kernel/Interrupts.asm
 	$(ASM) $(ASMFLAGS) -o $@ $<
 
 pic.o: Kernel/Pic.c
 	$(CC) $(CFLAGS) -c -o $@ $<
 
-voidframe.krnl: boot.o kernel.o idt.o idt_load.o interrupts.o interrupts_s.o pic.o
+memory.o: Kernel/Memory.c
+	$(CC) $(CFLAGS) -c -o $@ $<
+
+cpu.o: Kernel/Cpu.c
+	$(CC) $(CFLAGS) -c -o $@ $<
+
+memops.o: Kernel/MemOps.c
+	$(CC) $(CFLAGS) -c -o $@ $<
+
+vmem.o: Kernel/VMem.c
+	$(CC) $(CFLAGS) -c -o $@ $<
+
+process.o: Kernel/Process.c
+	$(CC) $(CFLAGS) -c -o $@ $<
+
+switch.o: Kernel/Switch.s
+	$(ASM) $(ASMFLAGS) -o $@ $<
+
+voidframe.krnl: boot.o kernel.o idt.o idt_load.o interrupts.o interrupts_s.o pic.o memory.o cpu.o memops.o vmem.o process.o switch.o
 	$(LD) $(LDFLAGS) -o $@ $^
 
 run: iso
-	qemu-system-x86_64 -cdrom VoidFrame.iso
+	qemu-system-x86_64 -cdrom VoidFrame.iso -m 1G
 
 iso: voidframe.krnl
 	mkdir -p isodir/boot/grub
@@ -42,5 +60,5 @@ iso: voidframe.krnl
 	grub-mkrescue -o VoidFrame.iso isodir
 
 clean:
-	rm -f *.o *.bin *.iso
+	rm -f *.o *.bin *.iso *.krnl
 	rm -rf isodir
