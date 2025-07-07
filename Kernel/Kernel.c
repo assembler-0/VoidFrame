@@ -115,7 +115,7 @@ void task2(void) {
     PrintKernelAt("T2 running", 11, 0);
     return;
 }
-void KernelMain(void) {
+void KernelMain(uint32_t magic, uint32_t info) {
     ClearScreen();
     PrintKernel("VoidFrame Kernel - Version 0.0.1-alpha\n");
     PrintKernel("Initializing IDT...\n");

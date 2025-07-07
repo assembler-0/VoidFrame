@@ -14,7 +14,7 @@ bits 32
 
 section .text
 
-; GDT for long mode
+; Enhanced GDT for long mode (keeping your original structure)
 gdt64:
     dq 0 ; NULL descriptor
 .code: ; offset 0x08
@@ -38,26 +38,37 @@ gdt64:
 global start
 start:
     cli
-    ; load the GDT
+    cld
+
+    ; Save multiboot info for kernel
+    mov [multiboot_magic], eax
+    mov [multiboot_info], ebx
+
+    ; Setup temporary stack
+    mov esp, stack_top
+
+    ; Check CPU capabilities (optional, won't halt if missing)
+    call check_and_enable_features
+
+    ; Load GDT (same as original)
     lgdt [gdt64.pointer]
 
-    ; enable PAE
+    ; Enable PAE (same as original)
     mov eax, cr4
     or eax, 1 << 5
     mov cr4, eax
 
-    ; setup paging
-    ; point CR3 to the PML4 table
+    ; Setup paging (keeping your original mapping approach)
     mov edi, pml4_table
     mov cr3, edi
 
-    ; initialize the tables by zeroing them out
+    ; Initialize the tables by zeroing them out (same as original)
     mov edi, pml4_table
     mov ecx, (4096 * 3) / 4 ; Zero out PML4, PDP, and PD tables.
     xor eax, eax
     rep stosd
 
-    ; map the first 2MB of memory
+    ; Map the first 16MB of memory (expanded from your 8MB)
     ; pml4_table[0] points to pdp_table
     mov edi, pml4_table
     lea eax, [pdp_table + 0x3] ; Present, R/W
@@ -68,43 +79,101 @@ start:
     lea eax, [pd_table + 0x3] ; Present, R/W
     mov [edi], eax
 
+    ; Map 16MB using 2MB pages (your original approach but more memory)
     mov edi, pd_table
-    mov dword [edi], 0x83 ; Present, R/W, 2MB page
-    mov dword [edi + 8], 0x200083  ; 2-4MB
-    mov dword [edi + 16], 0x400083 ; 4-6MB
-    mov dword [edi + 24], 0x600083 ; 6-8MB
-    mov dword [edi + 32], 0x600083
-    mov dword [edi + 40], 0x600083
-    mov dword [edi + 48], 0x600083
-    mov dword [edi + 56], 0x600083
-    ; enable long mode
+    mov eax, 0x83       ; Present, R/W, 2MB page
+    mov ecx, 8          ; 8 * 2MB = 16MB
+
+.map_loop:
+    mov [edi], eax
+    add edi, 8
+    add eax, 0x200000   ; Next 2MB
+    loop .map_loop
+
+    ; Enable long mode (same as original)
     mov ecx, 0xC0000080 ; EFER MSR
     rdmsr
-    or eax, 1 << 8     ; LME (Long Mode Enable)
+    or eax, 1 << 8      ; LME (Long Mode Enable)
     wrmsr
 
-    ; enable paging
+    ; Enable paging (same as original)
     mov eax, cr0
-    or eax, 1 << 31    ; PG (Paging)
+    or eax, 1 << 31     ; PG (Paging)
     mov cr0, eax
 
+    ; Jump to long mode (same as original)
     jmp 0x08:long_mode
+
+; Check and enable CPU features (non-critical)
+check_and_enable_features:
+    ; Test for CPUID
+    pushfd
+    pop eax
+    mov ecx, eax
+    xor eax, 1 << 21
+    push eax
+    popfd
+    pushfd
+    pop eax
+    xor eax, ecx
+    jz .no_cpuid
+
+    ; Enable SSE if available
+    mov eax, 1
+    cpuid
+    test edx, 1 << 25   ; SSE
+    jz .no_sse
+
+    ; Enable SSE
+    mov eax, cr4
+    or eax, 1 << 9      ; OSFXSR
+    or eax, 1 << 10     ; OSXMMEXCPT
+    mov cr4, eax
+
+    mov eax, cr0
+    and eax, ~(1 << 2)  ; Clear EM
+    or eax, 1 << 1      ; Set MP
+    mov cr0, eax
+
+.no_sse:
+.no_cpuid:
+    ret
 
 bits 64
 
 extern KernelMain
 
 long_mode:
-    ; load data segments
+    ; Load data segments (same as original)
     mov ax, 0x10 ; selector for data segment
     mov ss, ax
     mov ds, ax
     mov es, ax
+    mov fs, ax
+    mov gs, ax
 
-    ; jump to the C kernel
+    ; Setup proper 64-bit stack
+    mov rsp, stack_top
+
+    ; Clear direction flag
+    cld
+
+    ; Pass multiboot info to kernel
+    mov rdi, [multiboot_magic]
+    mov rsi, [multiboot_info]
+
+    ; Jump to the C kernel (same as original)
     call KernelMain
 
+    ; If kernel returns, halt
+    cli
+.halt_loop:
     hlt
+    jmp .halt_loop
+
+section .data
+multiboot_magic: dq 0
+multiboot_info: dq 0
 
 section .bss
 
@@ -112,3 +181,8 @@ align 4096
 pml4_table: resb 4096
 pdp_table:  resb 4096
 pd_table:   resb 4096
+
+; Larger stack for better stability
+align 16
+stack_bottom: resb 8192  ; 8KB stack
+stack_top:
