@@ -107,17 +107,13 @@ void PrintKernelAt(const char *str, int line, int col) {
     }
 }
 void task1(void) {
-    while(1) {
-        PrintKernelAt("AINT NO WAY THAT WORKS", 10, 0);
-        for(volatile int i = 0; i < 100000; i++);
-    }
+    PrintKernelAt("T1 running", 10, 0);
+    return;
 }
 
 void task2(void) {
-    while(1) {
-        PrintKernelAt("AINT NO WAY THAT WORKS x2", 11, 0);
-        for(volatile int i = 0; i < 100000; i++);
-    }
+    PrintKernelAt("T2 running", 11, 0);
+    return;
 }
 void KernelMain(void) {
     ClearScreen();
@@ -132,8 +128,8 @@ void KernelMain(void) {
     ProcessInit();
     PrintKernel("Process system ready\n");
     // Create your processes
-    CreateProcess(task2);
     CreateProcess(task1);
+    CreateProcess(task2);
 
     // Enable timer interrupt (IRQ0)
     outb(0x21, inb(0x21) & ~0x01);
@@ -141,8 +137,11 @@ void KernelMain(void) {
     // Enable all interrupts
     asm volatile("sti");
 
-    // The kernel's idle loop. The preemptive scheduler will handle the rest.
+    // The kernel's idle loop with scheduler check
     while (1) {
+        if (ShouldSchedule()) {
+            Schedule();
+        }
         asm volatile("hlt"); // Wait for the next interrupt
     }
 }

@@ -51,7 +51,7 @@ voidframe.krnl: boot.o kernel.o idt.o idt_load.o interrupts.o interrupts_s.o pic
 	$(LD) $(LDFLAGS) -o $@ $^
 
 run: iso
-	qemu-system-x86_64 -cdrom VoidFrame.iso -m 1G -d int,cpu_reset -no-reboot -no-shutdown
+	qemu-system-x86_64 -cdrom VoidFrame.iso -m 1G
 
 iso: voidframe.krnl
 	mkdir -p isodir/boot/grub
