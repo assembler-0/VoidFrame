@@ -1,6 +1,15 @@
 #include "Pic.h"
 #include "Io.h"
 
+void PitInstall() {
+    // Set PIT frequency to ~100Hz (10ms intervals)
+    uint16_t divisor = 1193180 / 100;
+    
+    outb(0x43, 0x36);  // Command byte: channel 0, lobyte/hibyte, rate generator
+    outb(0x40, divisor & 0xFF);        // Low byte
+    outb(0x40, (divisor >> 8) & 0xFF); // High byte
+}
+
 #define PIC1_COMMAND 0x20
 #define PIC1_DATA    0x21
 #define PIC2_COMMAND 0xA0
@@ -30,4 +39,7 @@ void PicInstall() {
 
     outb(PIC1_DATA, a1);
     outb(PIC2_DATA, a2);
+    
+    // Initialize PIT after PIC
+    PitInstall();
 }

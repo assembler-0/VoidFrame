@@ -1,17 +1,10 @@
 bits 64
 
 global SwitchContext
-global SaveContext
 
 ; void SwitchContext(ProcessContext* old, ProcessContext* new)
 SwitchContext:
-;    mov rax, [rsi + 0]    ; Load new RAX
-;    mov rsp, [rsi + 56]   ; Load new stack pointer
-;
-;    ; Fix: Jump to the address, not the value at the address
-;    mov rbx, [rsi + 128]  ; Load RIP into register
-;    jmp rbx               ; Jump to the address in rbx
-    ; Save old context
+    ; Save current context to old
     mov [rdi + 0], rax
     mov [rdi + 8], rbx
     mov [rdi + 16], rcx
@@ -28,8 +21,8 @@ SwitchContext:
     mov [rdi + 104], r13
     mov [rdi + 112], r14
     mov [rdi + 120], r15
-
-    ; Save RIP (return address)
+    
+    ; Save return address (RIP)
     mov rax, [rsp]
     mov [rdi + 128], rax
 
@@ -38,7 +31,7 @@ SwitchContext:
     pop rax
     mov [rdi + 136], rax
 
-    ; Load new context
+    ; Load new context from new
     mov rax, [rsi + 0]
     mov rbx, [rsi + 8]
     mov rcx, [rsi + 16]
@@ -55,15 +48,14 @@ SwitchContext:
     mov r15, [rsi + 120]
 
     ; Load RFLAGS
-    mov rdi, [rsi + 136]
-    push rdi
+    push qword [rsi + 136]
     popfq
 
-    ; Load new RIP and jump to it
-    mov r11, [rsi + 128]  ; Load new RIP into temp register
-    
+    ; Load new RIP and jump
+    push qword [rsi + 128]
+
     ; Load RSI and RDI last
     mov rdi, [rsi + 40]
     mov rsi, [rsi + 32]
-    
-    jmp r11               ; Jump directly to new RIP
+
+    ret  ; Jump to new RIP

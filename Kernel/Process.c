@@ -8,16 +8,6 @@ static uint32_t current_process = 0;
 static uint32_t process_count = 0;
 static int need_schedule = 0;
 extern void SwitchContext(ProcessContext * old, ProcessContext * new);
-int ShouldSchedule(void) {
-    if (need_schedule) {
-        need_schedule = 0;
-        return 1;
-    }
-    return 0;
-}
-void RequestSchedule(void) {
-    need_schedule = 1;
-}
 void ProcessInit(void) {
     for (int i = 0; i < MAX_PROCESSES; i++) {
         processes[i].pid = 0;
@@ -75,28 +65,34 @@ uint32_t CreateProcess(void (*entry_point)(void)) {
 
 void Schedule(void) {
     if (process_count <= 1) return;
+    
+    // Find next ready process
     uint32_t next = (current_process + 1) % MAX_PROCESSES;
-    while (next != current_process) {
+    uint32_t start = next;
+    
+    do {
         if (processes[next].state == PROC_READY) {
-            ProcessContext* old_ctx = &processes[current_process].context;
-            ProcessContext* new_ctx = &processes[next].context;
-            // Update states
+            // Update current process state
             if (processes[current_process].state == PROC_RUNNING) {
                 processes[current_process].state = PROC_READY;
             }
+            
+            // Update new process state
             processes[next].state = PROC_RUNNING;
-            current_process = next;
-            SwitchContext(old_ctx, new_ctx);
-            break;
+            
+            // Switch context if different process
+            if (next != current_process) {
+                ProcessContext* old_ctx = &processes[current_process].context;
+                ProcessContext* new_ctx = &processes[next].context;
+                current_process = next;
+                SwitchContext(old_ctx, new_ctx);
+            }
+            return;
         }
         next = (next + 1) % MAX_PROCESSES;
-    }
+    } while (next != start);
 }
 
-void TimerHandler(void) {
-    outb(0x20, 0x20); // Send EOI to PIC
-    RequestSchedule();
-}
 
 Process* GetCurrentProcess(void) {
     return &processes[current_process];

@@ -10,10 +10,8 @@ struct Registers {
     uint64_t rip, cs, rflags, rsp, ss;
 };
 
-// Static counter for timer ticks
 static uint64_t tick_count = 0;
 
-// Function to convert a number to string (reused from previous code)
 void itoa(uint64_t num, char* str) {
     int i = 0;
     if (num == 0) {
@@ -25,8 +23,6 @@ void itoa(uint64_t num, char* str) {
         }
     }
     str[i] = '\0';
-
-    // Reverse the string
     int start = 0;
     int end = i - 1;
     while (start < end) {
@@ -38,29 +34,33 @@ void itoa(uint64_t num, char* str) {
     }
 }
 
-// This is the C-level interrupt handler
+// The C-level interrupt handler
 void InterruptHandler(const struct Registers* regs) {
-    // Handle timer interrupt (IRQ0, remapped to 32)
+    // Handle hardware interrupts from the PIC (Programmable Interrupt Controller)
+    if (regs->interrupt_number >= 32 && regs->interrupt_number < 48) {
 
-    if (regs->interrupt_number == 32) {
-        tick_count++;
-        
-        static uint64_t last_schedule_tick = 0;
+        // If it's the timer interrupt (IRQ0), update ticks and schedule
+        if (regs->interrupt_number == 32) {
+            tick_count++;
 
-        // In your timer interrupt handler:
-        if (tick_count % 10 == 0 && tick_count != last_schedule_tick) {
-            last_schedule_tick = tick_count;
-            RequestSchedule();
+            // Display tick count for debugging
+            char tick_str[20];
+            itoa(tick_count, tick_str);
+            PrintKernelAt("Ticks: ", 20, 0);
+            PrintKernelAt(tick_str, 20, 7);
         }
-        char tick_str[20];
-        itoa(tick_count, tick_str);
-        PrintKernelAt("Ticks: ", 20, 0);
-        PrintKernelAt(tick_str, 20, 7);
-    }
 
-    // Send EOI to PICs
-    if (regs->interrupt_number >= 0x28) { // If interrupt is from secondary PIC
-        outb(0xA0, 0x20); // Send EOI to slave PIC
+        // Send End-of-Interrupt (EOI) to the appropriate PIC(s)
+        // This MUST be done before scheduling.
+        if (regs->interrupt_number >= 40) {
+            outb(0xA0, 0x20); // EOI to slave PIC
+        }
+        outb(0x20, 0x20); // EOI to master PIC
+
+        // If it was the timer interrupt, call the scheduler to preempt the current task
+        if (regs->interrupt_number == 32) {
+            Schedule();
+        }
     }
-    outb(0x20, 0x20); // Send EOI to master PIC
+    // Note: This does not handle CPU exceptions (interrupt numbers 0-31)
 }
