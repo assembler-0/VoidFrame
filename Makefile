@@ -44,7 +44,7 @@ vmem.o: Kernel/VMem.c
 process.o: Kernel/Process.c
 	$(CC) $(CFLAGS) -c -o $@ $<
 
-switch.o: Kernel/Switch.s
+switch.o: Kernel/Switch.asm
 	$(ASM) $(ASMFLAGS) -o $@ $<
 
 voidframe.krnl: boot.o kernel.o idt.o idt_load.o interrupts.o interrupts_s.o pic.o memory.o cpu.o memops.o vmem.o process.o switch.o

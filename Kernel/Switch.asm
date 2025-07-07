@@ -1,10 +1,10 @@
 bits 64
 
-global switch_context
-global save_context
+global SwitchContext
+global SaveContext
 
-; void switch_context(ProcessContext* old, ProcessContext* new)
-switch_context:
+; void SwitchContext(ProcessContext* old, ProcessContext* new)
+SwitchContext:
     ; Save old context
     mov [rdi + 0], rax
     mov [rdi + 8], rbx
@@ -22,16 +22,16 @@ switch_context:
     mov [rdi + 104], r13
     mov [rdi + 112], r14
     mov [rdi + 120], r15
-    
+
     ; Save RIP (return address)
     mov rax, [rsp]
     mov [rdi + 128], rax
-    
+
     ; Save RFLAGS
     pushfq
     pop rax
     mov [rdi + 136], rax
-    
+
     ; Load new context
     mov rax, [rsi + 0]
     mov rbx, [rsi + 8]
@@ -47,14 +47,14 @@ switch_context:
     mov r13, [rsi + 104]
     mov r14, [rsi + 112]
     mov r15, [rsi + 120]
-    
+
     ; Load RFLAGS
     mov rdi, [rsi + 136]
     push rdi
     popfq
-    
+
     ; Load RSI and RDI last
     mov rdi, [rsi + 40]
     mov rsi, [rsi + 32]
-    
+
     ret

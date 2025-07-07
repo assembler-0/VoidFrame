@@ -30,6 +30,8 @@ typedef struct {
 void ProcessInit(void);
 uint32_t CreateProcess(void (*entry_point)(void));
 void Schedule(void);
+int ShouldSchedule(void);
+void RequestSchedule(void);
 void Yield(void);
 Process* GetCurrentProcess(void);
 
