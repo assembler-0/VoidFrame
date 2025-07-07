@@ -6,6 +6,7 @@
 #include "Kernel.h"
 #include "Memory.h"
 #include "Process.h"
+#include "Io.h"
 int CurrentLine = 0;
 int CurrentColumn = 0;
 void ClearScreen(){
@@ -101,19 +102,23 @@ void PrintKernelAt(const char *str, int line, int col) {
     int offset = (line * 80 + col) * 2;
     for (int k = 0; str[k] != '\0'; k++) {
         vidptr[offset] = str[k];
-        vidptr[offset + 1] = 0x07;
+        vidptr[offset + 1] = 0x03;
         offset += 2;
     }
 }
-
 void task1(void) {
-    PrintKernel("Task 1 running\n");
+    while(1) {
+        PrintKernelAt("1", 10, 0);
+        for(volatile int i = 0; i < 100000; i++);
+    }
 }
 
 void task2(void) {
-    PrintKernel("Task 2 running\n");
+    while(1) {
+        PrintKernelAt("2", 10, 1);
+        for(volatile int i = 0; i < 100000; i++);
+    }
 }
-
 void KernelMain(void) {
     ClearScreen();
     PrintKernel("VoidFrame Kernel - Version 0.0.1-alpha\n");
@@ -128,6 +133,8 @@ void KernelMain(void) {
     PrintKernel("Process system ready\n");
     CreateProcess(task1);
     CreateProcess(task2);
+    // Enable timer interrupt (IRQ0)
+    outb(0x21, inb(0x21) & ~0x01);
     asm volatile("sti");
     while (1) {
         if (ShouldSchedule()) {

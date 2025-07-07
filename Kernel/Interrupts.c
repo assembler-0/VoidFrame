@@ -39,14 +39,17 @@ void itoa(uint64_t num, char* str) {
 }
 
 // This is the C-level interrupt handler
-void InterruptHandler(struct Registers* regs) {
+void InterruptHandler(const struct Registers* regs) {
     // Handle timer interrupt (IRQ0, remapped to 32)
 
     if (regs->interrupt_number == 32) {
         tick_count++;
         
-        // Task switch every 100 ticks
-        if (tick_count % 10 == 0) {
+        static uint64_t last_schedule_tick = 0;
+
+        // In your timer interrupt handler:
+        if (tick_count % 10 == 0 && tick_count != last_schedule_tick) {
+            last_schedule_tick = tick_count;
             RequestSchedule();
         }
         char tick_str[20];
@@ -56,7 +59,7 @@ void InterruptHandler(struct Registers* regs) {
     }
 
     // Send EOI to PICs
-    if (regs->interrupt_number >= 0x28) { // If interrupt is from slave PIC
+    if (regs->interrupt_number >= 0x28) { // If interrupt is from secondary PIC
         outb(0xA0, 0x20); // Send EOI to slave PIC
     }
     outb(0x20, 0x20); // Send EOI to master PIC

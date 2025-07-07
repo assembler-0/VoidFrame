@@ -68,10 +68,15 @@ start:
     lea eax, [pd_table + 0x3] ; Present, R/W
     mov [edi], eax
 
-    ; pd_table[0] maps the first 2MB
     mov edi, pd_table
     mov dword [edi], 0x83 ; Present, R/W, 2MB page
-
+    mov dword [edi + 8], 0x200083  ; 2-4MB
+    mov dword [edi + 16], 0x400083 ; 4-6MB
+    mov dword [edi + 24], 0x600083 ; 6-8MB
+    mov dword [edi + 32], 0x600083
+    mov dword [edi + 40], 0x600083
+    mov dword [edi + 48], 0x600083
+    mov dword [edi + 56], 0x600083
     ; enable long mode
     mov ecx, 0xC0000080 ; EFER MSR
     rdmsr
