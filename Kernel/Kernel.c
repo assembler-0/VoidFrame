@@ -107,12 +107,22 @@ void PrintKernelAt(const char *str, int line, int col) {
     }
 }
 void task1(void) {
-    PrintKernelAt("T1 running", 10, 0);
+    while (1) {
+        PrintKernelAt("T1 running", 10, 0);
+    }
     return;
 }
 
 void task2(void) {
-    PrintKernelAt("T2 running", 11, 0);
+    while (1) {
+        PrintKernelAt("T2 running", 11, 0);
+    }
+    return;
+}
+void task3(void) {
+    while (1) {
+        PrintKernelAt("T3 running", 12, 0);
+    }
     return;
 }
 void KernelMain(uint32_t magic, uint32_t info) {
@@ -130,7 +140,7 @@ void KernelMain(uint32_t magic, uint32_t info) {
     // Create your processes
     CreateProcess(task1);
     CreateProcess(task2);
-
+    CreateProcess(task3);
     // Enable timer interrupt (IRQ0)
     outb(0x21, inb(0x21) & ~0x01);
 
