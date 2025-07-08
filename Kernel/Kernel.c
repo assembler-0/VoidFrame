@@ -114,12 +114,18 @@ void task1(void) {
     return;
 }
 
+/**
+ * Continuously displays the message "T2 running" at line 11, column 0 on the screen.
+ */
 void task2(void) {
     while (1) {
         PrintKernelAt("T2 running", 11, 0);
     }
     return;
 }
+/**
+ * Executes a test system call to write "Syscall test!" to stdout, then repeatedly prints "T3 syscall" at line 12, column 0 with a delay loop.
+ */
 void task3(void) {
     // Test syscall
     asm volatile(
@@ -138,6 +144,13 @@ void task3(void) {
         for(volatile int i = 0; i < 50000; i++);
     }
 }
+/**
+ * Entry point for the kernel, performing system initialization and starting the main scheduler loop.
+ *
+ * Initializes core subsystems including the interrupt descriptor table, system calls, programmable interrupt controller, memory management, and process management. Creates initial user processes and enables hardware interrupts. Enters the kernel's idle loop, invoking the scheduler as needed and halting the CPU between interrupts.
+ * @param magic Bootloader-provided magic number for multiboot compliance.
+ * @param info Bootloader-provided information structure address.
+ */
 void KernelMain(uint32_t magic, uint32_t info) {
     ClearScreen();
     PrintKernel("VoidFrame Kernel - Version 0.0.1-alpha\n");
