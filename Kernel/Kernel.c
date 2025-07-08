@@ -121,7 +121,6 @@ void task2(void) {
     return;
 }
 void task3(void) {
-    // Test syscall
     asm volatile(
         "mov $2, %%rax\n"          // SYS_WRITE
         "mov $1, %%rbx\n"          // stdout
@@ -132,7 +131,7 @@ void task3(void) {
         : "r"("Syscall test!")
         : "rax", "rbx", "rcx", "r8"
     );
-    
+
     while (1) {
         PrintKernelAt("T3 syscall", 12, 0);
         for(volatile int i = 0; i < 50000; i++);
