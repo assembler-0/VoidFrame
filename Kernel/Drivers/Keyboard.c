@@ -17,10 +17,12 @@ static char keymap[128] = {
 static char key_buffer[256];
 static int buffer_head = 0;
 static int buffer_tail = 0;
+static int cursor_line = 16;
+static int cursor_col = 0;
 
 static void KeyboardInit(void) {
     // Keyboard is already initialized by BIOS
-    FastPrint("Keyboard ready", 15, 0);
+    PrintKernelAt("Keyboard ready", 15, 0);
 }
 
 static void KeyboardInterrupt(uint8_t irq) {
@@ -39,8 +41,26 @@ static void KeyboardInterrupt(uint8_t irq) {
             key_buffer[buffer_head] = key;
             buffer_head = next_head;
             
-            // Echo key to screen
-            FastPrintChar(key, 16, (buffer_head % 80));
+            // Handle special keys
+            if (key == '\n') {
+                cursor_line++;
+                cursor_col = 0;
+                if (cursor_line >= 25) cursor_line = 24;
+            } else if (key == '\b') {
+                if (cursor_col > 0) {
+                    cursor_col--;
+                    PrintKernelAt(" ", cursor_line, cursor_col);
+                }
+            } else {
+                char temp[2] = {key, 0};
+                PrintKernelAt(temp, cursor_line, cursor_col);
+                cursor_col++;
+                if (cursor_col >= 80) {
+                    cursor_col = 0;
+                    cursor_line++;
+                    if (cursor_line >= 25) cursor_line = 24;
+                }
+            }
         }
     }
 }

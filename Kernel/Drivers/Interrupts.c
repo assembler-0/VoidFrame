@@ -80,16 +80,7 @@ void InterruptHandler(struct Registers* regs) {
     // Handle timer interrupt (IRQ0, remapped to 32)
     if (likely(regs->interrupt_number == 32)) {
         tick_count++;
-        
-        // Display ticks rarely to reduce overhead
-        if ((tick_count & 0x3FF) == 0) { // Every 1024 ticks
-            FastDisplayTicks(tick_count);
-        }
-        
-        // Send EOI to master PIC
         outb(0x20, 0x20);
-        
-        // BLAZING FAST - schedule on EVERY interrupt
         ScheduleFromInterrupt(regs);
         return;
     }
