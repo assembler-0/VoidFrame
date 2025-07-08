@@ -25,6 +25,7 @@ typedef struct {
     ProcessContext context;
     void* stack;
     uint64_t priority;
+    uint8_t is_user_mode;
 } Process;
 
 struct Registers {
@@ -41,6 +42,7 @@ int ShouldSchedule();
 void Schedule(void);
 void Yield(void);
 Process* GetCurrentProcess(void);
+Process* GetProcessByPid(uint32_t pid);
 void ScheduleFromInterrupt(struct Registers* regs);
 
 #endif

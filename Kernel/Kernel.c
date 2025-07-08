@@ -7,6 +7,8 @@
 #include "Memory.h"
 #include "Process.h"
 #include "Syscall.h"
+#include "Gdt.h"
+#include "UserMode.h"
 #include "Io.h"
 int CurrentLine = 0;
 int CurrentColumn = 0;
@@ -99,7 +101,7 @@ void PrintKernelInt(int num) {
 }
 
 void PrintKernelAt(const char *str, int line, int col) {
-    if (CurrentLine >= 25) CurrentLine = 24;
+    if (line >= 25) line = 24;
     char *vidptr = (char*)0xb8000;
     int offset = (line * 80 + col) * 2;
     for (int k = 0; str[k] != '\0'; k++) {
@@ -121,26 +123,36 @@ void task2(void) {
     }
     return;
 }
-void task3(void) {
+void UserTask(void) {
+    // This runs in Ring 3!
     asm volatile(
         "mov $2, %%rax\n"          // SYS_WRITE
         "mov $1, %%rbx\n"          // stdout
         "mov %0, %%rcx\n"          // message
-        "mov $13, %%r8\n"          // length
+        "mov $11, %%r8\n"          // length
         "int $0x80\n"
         :
-        : "r"("Syscall test!")
+        : "r"("User Ring 3!")
         : "rax", "rbx", "rcx", "r8"
     );
+    
+    while(1) {
+        // User mode infinite loop
+        for(volatile int i = 0; i < 100000; i++);
+    }
+}
 
+void task3(void) {
     while (1) {
-        PrintKernelAt("T3 syscall", 12, 0);
+        PrintKernelAt("T3 kernel", 12, 0);
         for(volatile int i = 0; i < 50000; i++);
     }
 }
 void KernelMain(uint32_t magic, uint32_t info) {
     ClearScreen();
     PrintKernel("VoidFrame Kernel - Version 0.0.1-alpha\n");
+    PrintKernel("Initializing GDT...\n");
+    GdtInit();
     PrintKernel("Initializing IDT...\n");
     IdtInstall();
     PrintKernel("Initializing System Calls...\n");
@@ -156,6 +168,7 @@ void KernelMain(uint32_t magic, uint32_t info) {
     CreateProcess(task1);
     CreateProcess(task2);
     CreateProcess(task3);
+    CreateUserProcess(UserTask);  // Ring 3 process
     // Enable timer interrupt (IRQ0)
     outb(0x21, inb(0x21) & ~0x01);
 
