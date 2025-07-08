@@ -5,6 +5,6 @@ extern int CurrentColumn;
 void ClearScreen();
 void PrintKernel(const char *str);
 void PrintKernelInt(int num);
-void PrintKernelHex(int hex);
+void PrintKernelHex(uint64_t hex);
 void PrintKernelAt(const char *str, int line, int col);
 #endif
