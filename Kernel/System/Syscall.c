@@ -3,10 +3,13 @@
 #include "Process.h"
 #include "Idt.h"
 #include "Panic.h"
+
+#define likely(x)   __builtin_expect(!!(x), 1)
+#define unlikely(x) __builtin_expect(!!(x), 0)
 extern void SyscallEntry(void);
 uint64_t SyscallHandler(uint64_t syscall_num, uint64_t arg1, uint64_t arg2, uint64_t arg3) {
     Process* current = GetCurrentProcess();
-    if (!current) {
+    if (unlikely(!current)) {
         Panic("Syscall from invalid process");
     }
     switch (syscall_num) {
@@ -20,11 +23,11 @@ uint64_t SyscallHandler(uint64_t syscall_num, uint64_t arg1, uint64_t arg2, uint
             
         case SYS_WRITE:
             // arg1 = fd (ignored for now), arg2 = buffer, arg3 = count
-            if (arg1 == 1) { // stdout
-                if (!arg2) {
+            if (likely(arg1 == 1)) { // stdout
+                if (unlikely(!arg2)) {
                     return -1; // NULL buffer
                 }
-                if (arg3 > 4096) {
+                if (unlikely(arg3 > 4096)) {
                     return -1; // Buffer too large
                 }
                 
