@@ -10,6 +10,7 @@
 #include "Gdt.h"
 #include "UserMode.h"
 #include "Io.h"
+#include "Panic.h"
 int CurrentLine = 0;
 int CurrentColumn = 0;
 void ClearScreen(){
@@ -21,17 +22,23 @@ void ClearScreen(){
 }
 
 void PrintKernel(const char *str){
+    if (!str) return;
+    
     char *vidptr = (char*)0xb8000;
     int offset = (CurrentLine * 80 + CurrentColumn) * 2;
     
     for (int k = 0; str[k] != '\0'; k++) {
+        if (CurrentLine >= 25) break; // Screen bounds
+        
         if (str[k] == '\n') {
             CurrentLine++;
             CurrentColumn = 0;
             offset = (CurrentLine * 80 + CurrentColumn) * 2;
         } else {
-            vidptr[offset] = str[k];
-            vidptr[offset + 1] = 0x03;
+            if (offset < 80 * 25 * 2) {
+                vidptr[offset] = str[k];
+                vidptr[offset + 1] = 0x03;
+            }
             offset += 2;
             CurrentColumn++;
             if (CurrentColumn >= 80) {
@@ -101,10 +108,15 @@ void PrintKernelInt(int num) {
 }
 
 void PrintKernelAt(const char *str, int line, int col) {
-    if (line >= 25) line = 24;
+    if (!str) return;
+    if (line < 0 || line >= 25) return;
+    if (col < 0 || col >= 80) return;
+    
     char *vidptr = (char*)0xb8000;
     int offset = (line * 80 + col) * 2;
-    for (int k = 0; str[k] != '\0'; k++) {
+    
+    for (int k = 0; str[k] != '\0' && k < 80; k++) {
+        if (offset >= 80 * 25 * 2) break;
         vidptr[offset] = str[k];
         vidptr[offset + 1] = 0x03;
         offset += 2;
@@ -164,7 +176,6 @@ void KernelMain(uint32_t magic, uint32_t info) {
     PrintKernel("Initializing Processes...\n");
     ProcessInit();
     PrintKernel("Process system ready\n");
-    // Create your processes
     CreateProcess(task1);
     CreateProcess(task2);
     CreateProcess(task3);

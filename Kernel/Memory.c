@@ -2,6 +2,7 @@
 #include "MemOps.h"
 #include "Cpu.h"
 #include "Kernel.h"
+#include "Panic.h"
 static uint8_t page_bitmap[BITMAP_SIZE / 8];
 static uint64_t total_pages = 0;
 static uint64_t used_pages = 0;
@@ -40,11 +41,19 @@ void* AllocPage(void) {
 }
 
 void FreePage(void* page) {
+    if (!page) {
+        Panic("FreePage: NULL pointer");
+    }
+    
     uint64_t addr = (uint64_t)page;
-    if (addr < memory_start) return;
+    if (addr < memory_start) {
+        Panic("FreePage: Address below memory start");
+    }
     
     int page_idx = (addr - memory_start) / PAGE_SIZE;
-    if (page_idx >= total_pages) return;
+    if (page_idx >= total_pages) {
+        Panic("FreePage: Page index out of bounds");
+    }
     
     int byte_idx = page_idx / 8;
     int bit_idx = page_idx % 8;

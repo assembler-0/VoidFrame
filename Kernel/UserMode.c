@@ -2,11 +2,14 @@
 #include "Memory.h"
 #include "Process.h"
 #include "Gdt.h"
+#include "Panic.h"
 
 void JumpToUserMode(void (*user_function)(void)) {
     // Allocate user stack
     void* user_stack = AllocPage();
-    if (!user_stack) return;
+    if (!user_stack) {
+        Panic("Failed to allocate user stack");
+    }
     
     uint64_t user_stack_top = (uint64_t)user_stack + STACK_SIZE;
     
