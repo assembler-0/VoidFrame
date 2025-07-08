@@ -1,5 +1,5 @@
-#ifndef VOIDFRAME_KERNEL_H
-#define VOIDFRAME_KERNEL_H
+#ifndef KERNEL_H
+#define KERNEL_H
 extern int CurrentLine;
 extern int CurrentColumn;
 void ClearScreen();

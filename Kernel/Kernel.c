@@ -6,6 +6,7 @@
 #include "Kernel.h"
 #include "Memory.h"
 #include "Process.h"
+#include "Syscall.h"
 #include "Io.h"
 int CurrentLine = 0;
 int CurrentColumn = 0;
@@ -120,16 +121,30 @@ void task2(void) {
     return;
 }
 void task3(void) {
+    // Test syscall
+    asm volatile(
+        "mov $2, %%rax\n"          // SYS_WRITE
+        "mov $1, %%rbx\n"          // stdout
+        "mov %0, %%rcx\n"          // message
+        "mov $13, %%r8\n"          // length
+        "int $0x80\n"
+        :
+        : "r"("Syscall test!")
+        : "rax", "rbx", "rcx", "r8"
+    );
+    
     while (1) {
-        PrintKernelAt("T3 running", 12, 0);
+        PrintKernelAt("T3 syscall", 12, 0);
+        for(volatile int i = 0; i < 50000; i++);
     }
-    return;
 }
 void KernelMain(uint32_t magic, uint32_t info) {
     ClearScreen();
     PrintKernel("VoidFrame Kernel - Version 0.0.1-alpha\n");
     PrintKernel("Initializing IDT...\n");
     IdtInstall();
+    PrintKernel("Initializing System Calls...\n");
+    SyscallInit();
     PrintKernel("Initializing PIC...\n");
     PicInstall();
     PrintKernel("Initializing Memory...\n");
