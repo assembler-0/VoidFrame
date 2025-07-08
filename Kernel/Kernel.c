@@ -49,7 +49,7 @@ void PrintKernel(const char *str){
     }
 }
 
-void PrintKernelHex(int num) {
+void PrintKernelHex(uint64_t num) {
     PrintKernel("0x");
     if (num == 0) {
         PrintKernel("0");
@@ -57,7 +57,7 @@ void PrintKernelHex(int num) {
     }
     char buf[16];
     int i = 0;
-    char hex[] = "0123456789ABCDEF";
+    const char hex[] = "0123456789ABCDEF";
 
     while (num > 0 && i < 15) {
         buf[i++] = hex[num % 16];
@@ -66,7 +66,7 @@ void PrintKernelHex(int num) {
     buf[i] = '\0';
     // Reverse
     for (int j = 0; j < i/2; j++) {
-        char temp = buf[j];
+        const char temp = buf[j];
         buf[j] = buf[i-1-j];
         buf[i-1-j] = temp;
     }
