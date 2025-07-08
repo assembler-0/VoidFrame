@@ -157,6 +157,13 @@ long_mode:
 
     ; Clear direction flag
     cld
+    
+    ; DEBUG: Write 'BOOT' to VGA before calling C code
+    mov rax, 0xb8000
+    mov word [rax], 0x0442      ; Red 'B'
+    mov word [rax+2], 0x044F    ; Red 'O' 
+    mov word [rax+4], 0x044F    ; Red 'O'
+    mov word [rax+6], 0x0454    ; Red 'T'
 
     ; Pass multiboot info to kernel
     mov rdi, [multiboot_magic]

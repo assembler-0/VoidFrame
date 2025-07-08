@@ -62,7 +62,9 @@ c_sources = [
   'Kernel/System/Syscall.c',
   'Kernel/Drivers/Interrupts.c',
   'Kernel/Drivers/Pic.c',
-  'Kernel/Drivers/Cpu.c'
+  'Kernel/Drivers/Cpu.c',
+  'Kernel/Drivers/Driver.c',
+  'Kernel/Drivers/Keyboard.c'
 ]
 
 # Build include flags
