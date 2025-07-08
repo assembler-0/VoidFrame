@@ -1,5 +1,5 @@
 #include "Gdt.h"
-
+#include "Panic.h"
 // GDT with user mode segments
 static struct GdtEntry gdt[5];
 static struct GdtPtr gdt_ptr;

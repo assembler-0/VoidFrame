@@ -1,6 +1,7 @@
 #include "Process.h"
 #include "Kernel.h"
 #include "Memory.h"
+#include "Panic.h"
 #include "Io.h"
 static Process processes[MAX_PROCESSES];
 static uint32_t next_pid = 1;
@@ -40,7 +41,14 @@ void ProcessInit(void) {
 }
 
 uint32_t CreateProcess(void (*entry_point)(void)) {
-    if (process_count >= MAX_PROCESSES) return 0;
+    if (!entry_point) {
+        Panic("CreateProcess: NULL entry point");
+    }
+    
+    if (process_count >= MAX_PROCESSES) {
+        Panic("CreateProcess: Too many processes");
+    }
+    
     // Find free slot
     int slot = -1;
     for (int i = 1; i < MAX_PROCESSES; i++) {
@@ -49,11 +57,15 @@ uint32_t CreateProcess(void (*entry_point)(void)) {
             break;
         }
     }
-    if (slot == -1) return 0;
+    if (slot == -1) {
+        Panic("CreateProcess: No free process slots");
+    }
 
     // Allocate stack
     void* stack = AllocPage();
-    if (!stack) return 0;
+    if (!stack) {
+        Panic("CreateProcess: Failed to allocate stack");
+    }
 
     // Initialize a process
     processes[slot].pid = next_pid++;
@@ -126,6 +138,14 @@ void Schedule(void) {
 
 
 void ScheduleFromInterrupt(struct Registers* regs) {
+    if (!regs) {
+        Panic("ScheduleFromInterrupt: NULL registers");
+    }
+    
+    if (current_process >= MAX_PROCESSES) {
+        Panic("ScheduleFromInterrupt: Invalid current process");
+    }
+    
     if (process_count <= 1) return;
     
     // Find next ready process
@@ -200,6 +220,9 @@ void ScheduleFromInterrupt(struct Registers* regs) {
 }
 
 Process* GetCurrentProcess(void) {
+    if (current_process >= MAX_PROCESSES) {
+        Panic("GetCurrentProcess: Invalid current process index");
+    }
     return &processes[current_process];
 }
 

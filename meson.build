@@ -51,7 +51,8 @@ c_sources = [
   'Kernel/Process.c',
   'Kernel/Syscall.c',
   'Kernel/Gdt.c',
-  'Kernel/UserMode.c'
+  'Kernel/UserMode.c',
+  'Kernel/Panic.c'
 ]
 
 # Compile assembly files
