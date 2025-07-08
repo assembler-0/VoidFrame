@@ -86,12 +86,6 @@ uint32_t CreateProcess(void (*entry_point)(void)) {
     
     process_count++;
     
-    // Debug output
-    PrintKernelAt("Created process ", 22, 0);
-    PrintKernelAt((slot == 1) ? "1" : "2", 22, 16);
-    PrintKernelAt(" in slot ", 22, 17);
-    PrintKernelAt((slot == 1) ? "1" : "2", 22, 26);
-    
     return processes[slot].pid;
 }
 
@@ -118,13 +112,6 @@ void Schedule(void) {
             
             // Update new process state to RUNNING
             processes[next].state = PROC_RUNNING;
-            
-            // Debug output
-            PrintKernelAt("Switch: ", 21, 0);
-            PrintKernelAt((current_process == 0) ? "0" : (current_process == 1) ? "1" : "2", 21, 8);
-            PrintKernelAt(" -> ", 21, 9);
-            PrintKernelAt((next == 0) ? "0" : (next == 1) ? "1" : "2", 21, 13);
-            
             // Switch context
             ProcessContext* old_ctx = &processes[current_process].context;
             ProcessContext* new_ctx = &processes[next].context;
@@ -185,13 +172,7 @@ void ScheduleFromInterrupt(struct Registers* regs) {
                 processes[current_process].state = PROC_READY;
             }
             processes[next].state = PROC_RUNNING;
-            
-            // Debug output
-            PrintKernelAt("Switch: ", 21, 0);
-            PrintKernelAt((current_process == 0) ? "0" : (current_process == 1) ? "1" : "2", 21, 8);
-            PrintKernelAt(" -> ", 21, 9);
-            PrintKernelAt((next == 0) ? "0" : (next == 1) ? "1" : "2", 21, 13);
-            
+
             // Load new process context into interrupt frame
             regs->rax = processes[next].context.rax;
             regs->rbx = processes[next].context.rbx;

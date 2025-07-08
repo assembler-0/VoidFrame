@@ -11,9 +11,9 @@
 #include "../Process/UserMode.h"
 #include "../Drivers/Io.h"
 #include "../Drivers/Driver.h"
+#include "Shell.h"
 #include "Panic.h"
 
-// Driver registration
 extern void KeyboardRegister(void);
 int CurrentLine = 0;
 int CurrentColumn = 0;
@@ -27,23 +27,18 @@ void ClearScreen(){
 
 void PrintKernel(const char *str){
     if (!str) return;
-    
-    char *vidptr = (char*)0xb8000;
-    int offset = (CurrentLine * 80 + CurrentColumn) * 2;
-    
+    uint16_t *vidptr = (uint16_t*)0xb8000;
     for (int k = 0; str[k] != '\0'; k++) {
-        if (CurrentLine >= 25) break; // Screen bounds
+        if (CurrentLine >= 25) break;
         
         if (str[k] == '\n') {
             CurrentLine++;
             CurrentColumn = 0;
-            offset = (CurrentLine * 80 + CurrentColumn) * 2;
         } else {
-            if (offset < 80 * 25 * 2) {
-                vidptr[offset] = str[k];
-                vidptr[offset + 1] = 0x03;
+            int pos = CurrentLine * 80 + CurrentColumn;
+            if (pos < 80 * 25) {
+                vidptr[pos] = (0x03 << 8) | str[k]; // Fast 16-bit write
             }
-            offset += 2;
             CurrentColumn++;
             if (CurrentColumn >= 80) {
                 CurrentLine++;
@@ -54,61 +49,97 @@ void PrintKernel(const char *str){
 }
 
 void PrintKernelHex(uint64_t num) {
-    PrintKernel("0x");
+    uint16_t *vidptr = (uint16_t*)0xb8000;
+    
+    // Print "0x"
+    if (CurrentLine < 25) {
+        int pos = CurrentLine * 80 + CurrentColumn;
+        if (pos < 80 * 25 - 1) {
+            vidptr[pos] = (0x03 << 8) | '0';
+            vidptr[pos + 1] = (0x03 << 8) | 'x';
+            CurrentColumn += 2;
+        }
+    }
+    
     if (num == 0) {
-        PrintKernel("0");
+        if (CurrentLine < 25) {
+            int pos = CurrentLine * 80 + CurrentColumn;
+            if (pos < 80 * 25) {
+                vidptr[pos] = (0x03 << 8) | '0';
+                CurrentColumn++;
+            }
+        }
         return;
     }
+    
     char buf[16];
     int i = 0;
     const char hex[] = "0123456789ABCDEF";
-
+    
     while (num > 0 && i < 15) {
-        buf[i++] = hex[num % 16];
-        num /= 16;
+        buf[i++] = hex[num & 0xF];
+        num >>= 4;
     }
-    buf[i] = '\0';
-    // Reverse
-    for (int j = 0; j < i/2; j++) {
-        const char temp = buf[j];
-        buf[j] = buf[i-1-j];
-        buf[i-1-j] = temp;
+    
+    // Print reversed
+    while (i > 0 && CurrentLine < 25) {
+        int pos = CurrentLine * 80 + CurrentColumn;
+        if (pos < 80 * 25) {
+            vidptr[pos] = (0x03 << 8) | buf[--i];
+            CurrentColumn++;
+            if (CurrentColumn >= 80) {
+                CurrentLine++;
+                CurrentColumn = 0;
+            }
+        } else break;
     }
-    PrintKernel(buf);
 }
 
 
 void PrintKernelInt(int num) {
+    uint16_t *vidptr = (uint16_t*)0xb8000;
+    
     if (num == 0) {
-        PrintKernel("0");
+        if (CurrentLine < 25) {
+            int pos = CurrentLine * 80 + CurrentColumn;
+            if (pos < 80 * 25) {
+                vidptr[pos] = (0x03 << 8) | '0';
+                CurrentColumn++;
+            }
+        }
         return;
     }
+    
     char buf[16];
     int i = 0;
     int negative = 0;
-
+    
     if (num < 0) {
         negative = 1;
         num = -num;
     }
-    // Extract digits in reverse
+    
     while (num > 0 && i < 15) {
         buf[i++] = '0' + (num % 10);
         num /= 10;
     }
-    // Add negative sign
+    
     if (negative) {
         buf[i++] = '-';
     }
-    // Null terminate and reverse
-    buf[i] = '\0';
-    // Reverse the string
-    for (int j = 0; j < i/2; j++) {
-        char temp = buf[j];
-        buf[j] = buf[i-1-j];
-        buf[i-1-j] = temp;
+    
+    // Print reversed
+    while (i > 0 && CurrentLine < 25) {
+        int pos = CurrentLine * 80 + CurrentColumn;
+        if (pos < 80 * 25) {
+            vidptr[pos] = (0x03 << 8) | buf[--i];
+            CurrentColumn++;
+            if (CurrentColumn >= 80) {
+                CurrentLine++;
+                CurrentColumn = 0;
+            }
+        } else break;
     }
-    PrintKernel(buf);
 }
 
 void PrintKernelAt(const char *str, int line, int col) {
@@ -127,124 +158,35 @@ void PrintKernelAt(const char *str, int line, int col) {
     }
 }
 
-// Fast print - no bounds checking, direct memory write
-void FastPrint(const char *str, int line, int col) {
-    uint16_t *vidptr = (uint16_t*)0xb8000;
-    int pos = line * 80 + col;
-    
-    for (int i = 0; str[i]; i++) {
-        vidptr[pos + i] = (0x03 << 8) | str[i]; // Combine char + color in one write
-    }
-}
 
-// Fast print single character
-void FastPrintChar(char c, int line, int col) {
-    uint16_t *vidptr = (uint16_t*)0xb8000;
-    vidptr[line * 80 + col] = (0x03 << 8) | c;
-}
-
-// Fast print hex number
-void FastPrintHex(uint64_t num, int line, int col) {
-    uint16_t *vidptr = (uint16_t*)0xb8000;
-    int pos = line * 80 + col;
-    
-    vidptr[pos++] = (0x03 << 8) | '0';
-    vidptr[pos++] = (0x03 << 8) | 'x';
-    
-    if (num == 0) {
-        vidptr[pos] = (0x03 << 8) | '0';
-        return;
-    }
-    
-    char hex[] = "0123456789ABCDEF";
-    char buf[16];
-    int i = 0;
-    
-    while (num > 0) {
-        buf[i++] = hex[num & 0xF];
-        num >>= 4;
-    }
-    
-    // Reverse and write
-    while (i > 0) {
-        vidptr[pos++] = (0x03 << 8) | buf[--i];
-    }
-}
-void task1(void) {
+void KernelKeeper(void) { // keep the thing alive or else...
     while (1) {
-        FastPrint("T1 running", 10, 0);
-        for(volatile int i = 0; i < 100; i++); // Tiny loop
-    }
-}
-
-void task2(void) {
-    while (1) {
-        FastPrint("T2 running", 11, 0);
-        for(volatile int i = 0; i < 100; i++); // Tiny loop
-    }
-}
-void UserTask(void) {
-    // This runs in Ring 3!
-    asm volatile(
-        "mov $2, %%rax\n"          // SYS_WRITE
-        "mov $1, %%rbx\n"          // stdout
-        "mov %0, %%rcx\n"          // message
-        "mov $11, %%r8\n"          // length
-        "int $0x80\n"
-        :
-        : "r"("User Ring 3!")
-        : "rax", "rbx", "rcx", "r8"
-    );
-    
-    while(1) {
-        // User mode infinite loop
-        for(volatile int i = 0; i < 100000; i++);
-    }
-}
-
-void task3(void) {
-    while (1) {
-        FastPrint("T3 kernel", 12, 0);
         for(volatile int i = 0; i < 100; i++); // Tiny loop
     }
 }
 void KernelMain(uint32_t magic, uint32_t info) {
     
     ClearScreen();
-    PrintKernel("VoidFrame Kernel - Version 0.0.1-alpha\n");
-    PrintKernel("Initializing GDT...\n");
+    PrintKernel("[SUCCESS] VoidFrame Kernel - Version 0.0.1-alpha loaded\n");
     GdtInit();
-    PrintKernel("Initializing IDT...\n");
     IdtInstall();
-    PrintKernel("Initializing System Calls...\n");
     SyscallInit();
-    PrintKernel("Initializing PIC...\n");
     PicInstall();
-    PrintKernel("Initializing Memory...\n");
     MemoryInit();
-    PrintKernel("Initializing Processes...\n");
     ProcessInit();
-    PrintKernel("Initializing Drivers...\n");
     KeyboardRegister();
     DriverInit();
-    PrintKernel("Process system ready\n");
-    CreateProcess(task1);
-    CreateProcess(task2);
-    CreateProcess(task3);
-    CreateUserProcess(UserTask);  // Ring 3 process
-    // BLAZING FAST timer - ~4000Hz for maximum concurrency
+    PrintKernel("[SUCCESS] System modules loaded\n");
+    ClearScreen();
+    ShellInit();
+    CreateProcess(KernelKeeper);
     outb(0x43, 0x36);  // Command: channel 0, lobyte/hibyte, rate generator
     outb(0x40, 0x4B);  // Low byte of divisor (299 = ~4000Hz)
     outb(0x40, 0x01);  // High byte of divisor
-    
-    // Enable timer (IRQ0) and keyboard (IRQ1) interrupts
-    outb(0x21, inb(0x21) & ~0x03); // Enable IRQ0 and IRQ1
-
-    // Enable all interrupts
+    outb(0x21, inb(0x21) & ~0x03);
     asm volatile("sti");
-
-    // The kernel's idle loop with scheduler check
     while (1) {
+        ShellRun();
         if (ShouldSchedule()) {
             Schedule();
         }
