@@ -60,6 +60,7 @@ uint32_t CreateProcess(void (*entry_point)(void)) {
     processes[slot].state = PROC_READY;
     processes[slot].stack = stack;
     processes[slot].priority = 1;
+    processes[slot].is_user_mode = 0;
 
     // Clear all context registers
     for (int i = 0; i < sizeof(ProcessContext)/8; i++) {
@@ -200,4 +201,13 @@ void ScheduleFromInterrupt(struct Registers* regs) {
 
 Process* GetCurrentProcess(void) {
     return &processes[current_process];
+}
+
+Process* GetProcessByPid(uint32_t pid) {
+    for (int i = 0; i < MAX_PROCESSES; i++) {
+        if (processes[i].pid == pid && processes[i].state != PROC_TERMINATED) {
+            return &processes[i];
+        }
+    }
+    return 0;
 }
