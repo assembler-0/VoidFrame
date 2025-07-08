@@ -1,7 +1,11 @@
-#include "stdint.h"
-#include "Kernel.h"
+#include "../Core/stdint.h"
+#include "../Core/Kernel.h"
 #include "Io.h"
-#include "Process.h"
+#include "../Process/Process.h"
+#include "../Core/stdint.h"
+
+#define likely(x)   __builtin_expect(!!(x), 1)
+#define unlikely(x) __builtin_expect(!!(x), 0)
 
 static uint64_t tick_count = 0;
 
@@ -27,15 +31,50 @@ void itoa(uint64_t num, char* str) {
     }
 }
 
+// Fast tick display using direct memory write
+static inline void FastDisplayTicks(uint64_t ticks) {
+    uint16_t *vidptr = (uint16_t*)0xb8000;
+    int pos = 20 * 80; // Line 20
+    
+    // Write "Ticks: " 
+    vidptr[pos++] = (0x03 << 8) | 'T';
+    vidptr[pos++] = (0x03 << 8) | 'i';
+    vidptr[pos++] = (0x03 << 8) | 'c';
+    vidptr[pos++] = (0x03 << 8) | 'k';
+    vidptr[pos++] = (0x03 << 8) | 's';
+    vidptr[pos++] = (0x03 << 8) | ':';
+    vidptr[pos++] = (0x03 << 8) | ' ';
+    
+    // Fast number display
+    if (ticks == 0) {
+        vidptr[pos] = (0x03 << 8) | '0';
+        return;
+    }
+    
+    char buf[20];
+    int i = 0;
+    uint64_t temp = ticks;
+    
+    while (temp > 0) {
+        buf[i++] = '0' + (temp % 10);
+        temp /= 10;
+    }
+    
+    while (i > 0) {
+        vidptr[pos++] = (0x03 << 8) | buf[--i];
+    }
+}
+
 // The C-level interrupt handler
 void InterruptHandler(struct Registers* regs) {
     // Handle timer interrupt (IRQ0, remapped to 32)
-    if (regs->interrupt_number == 32) {
+    if (likely(regs->interrupt_number == 32)) {
         tick_count++;
-        char tick_str[20];
-        itoa(tick_count, tick_str);
-        PrintKernelAt("Ticks: ", 20, 0);
-        PrintKernelAt(tick_str, 20, 7);
+        
+        // Fast tick display every 100 ticks to reduce overhead
+        if ((tick_count & 0x3F) == 0) { // Every 64 ticks
+            FastDisplayTicks(tick_count);
+        }
         
         // Send EOI to master PIC
         outb(0x20, 0x20);

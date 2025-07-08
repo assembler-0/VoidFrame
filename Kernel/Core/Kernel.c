@@ -122,18 +122,62 @@ void PrintKernelAt(const char *str, int line, int col) {
         offset += 2;
     }
 }
+
+// Fast print - no bounds checking, direct memory write
+static inline void FastPrint(const char *str, int line, int col) {
+    uint16_t *vidptr = (uint16_t*)0xb8000;
+    int pos = line * 80 + col;
+    
+    for (int i = 0; str[i]; i++) {
+        vidptr[pos + i] = (0x03 << 8) | str[i]; // Combine char + color in one write
+    }
+}
+
+// Fast print single character
+static inline void FastPrintChar(char c, int line, int col) {
+    uint16_t *vidptr = (uint16_t*)0xb8000;
+    vidptr[line * 80 + col] = (0x03 << 8) | c;
+}
+
+// Fast print hex number
+static inline void FastPrintHex(uint64_t num, int line, int col) {
+    uint16_t *vidptr = (uint16_t*)0xb8000;
+    int pos = line * 80 + col;
+    
+    vidptr[pos++] = (0x03 << 8) | '0';
+    vidptr[pos++] = (0x03 << 8) | 'x';
+    
+    if (num == 0) {
+        vidptr[pos] = (0x03 << 8) | '0';
+        return;
+    }
+    
+    char hex[] = "0123456789ABCDEF";
+    char buf[16];
+    int i = 0;
+    
+    while (num > 0) {
+        buf[i++] = hex[num & 0xF];
+        num >>= 4;
+    }
+    
+    // Reverse and write
+    while (i > 0) {
+        vidptr[pos++] = (0x03 << 8) | buf[--i];
+    }
+}
 void task1(void) {
     while (1) {
-        PrintKernelAt("T1 running", 10, 0);
+        FastPrint("T1 running", 10, 0);
+        for(volatile int i = 0; i < 10000; i++); // Faster loop
     }
-    return;
 }
 
 void task2(void) {
     while (1) {
-        PrintKernelAt("T2 running", 11, 0);
+        FastPrint("T2 running", 11, 0);
+        for(volatile int i = 0; i < 10000; i++); // Faster loop
     }
-    return;
 }
 void UserTask(void) {
     // This runs in Ring 3!
@@ -156,8 +200,8 @@ void UserTask(void) {
 
 void task3(void) {
     while (1) {
-        PrintKernelAt("T3 kernel", 12, 0);
-        for(volatile int i = 0; i < 50000; i++);
+        FastPrint("T3 kernel", 12, 0);
+        for(volatile int i = 0; i < 10000; i++); // Faster loop
     }
 }
 void KernelMain(uint32_t magic, uint32_t info) {
@@ -180,6 +224,11 @@ void KernelMain(uint32_t magic, uint32_t info) {
     CreateProcess(task2);
     CreateProcess(task3);
     CreateUserProcess(UserTask);  // Ring 3 process
+    // Setup faster timer (PIT) - ~1000Hz instead of default 18.2Hz
+    outb(0x43, 0x36);  // Command: channel 0, lobyte/hibyte, rate generator
+    outb(0x40, 0xA9);  // Low byte of divisor (1193 = ~1000Hz)
+    outb(0x40, 0x04);  // High byte of divisor
+    
     // Enable timer interrupt (IRQ0)
     outb(0x21, inb(0x21) & ~0x01);
 
