@@ -34,6 +34,7 @@ asm_sources = [
   'Kernel/IdtLoad.asm',
   'Kernel/Interrupts.asm',
   'Kernel/Switch.asm',
+  'Kernel/SyscallEntry.asm',
 ]
 
 # C sources
@@ -46,7 +47,8 @@ c_sources = [
   'Kernel/Cpu.c',
   'Kernel/MemOps.c',
   'Kernel/VMem.c',
-  'Kernel/Process.c'
+  'Kernel/Process.c',
+  'Kernel/Syscall.c'
 ]
 
 # Compile assembly files
