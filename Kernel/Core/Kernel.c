@@ -10,7 +10,11 @@
 #include "../System/Gdt.h"
 #include "../Process/UserMode.h"
 #include "../Drivers/Io.h"
+#include "../Drivers/Driver.h"
 #include "Panic.h"
+
+// Driver registration
+extern void KeyboardRegister(void);
 int CurrentLine = 0;
 int CurrentColumn = 0;
 void ClearScreen(){
@@ -124,7 +128,7 @@ void PrintKernelAt(const char *str, int line, int col) {
 }
 
 // Fast print - no bounds checking, direct memory write
-static inline void FastPrint(const char *str, int line, int col) {
+void FastPrint(const char *str, int line, int col) {
     uint16_t *vidptr = (uint16_t*)0xb8000;
     int pos = line * 80 + col;
     
@@ -134,13 +138,13 @@ static inline void FastPrint(const char *str, int line, int col) {
 }
 
 // Fast print single character
-static inline void FastPrintChar(char c, int line, int col) {
+void FastPrintChar(char c, int line, int col) {
     uint16_t *vidptr = (uint16_t*)0xb8000;
     vidptr[line * 80 + col] = (0x03 << 8) | c;
 }
 
 // Fast print hex number
-static inline void FastPrintHex(uint64_t num, int line, int col) {
+void FastPrintHex(uint64_t num, int line, int col) {
     uint16_t *vidptr = (uint16_t*)0xb8000;
     int pos = line * 80 + col;
     
@@ -169,14 +173,14 @@ static inline void FastPrintHex(uint64_t num, int line, int col) {
 void task1(void) {
     while (1) {
         FastPrint("T1 running", 10, 0);
-        for(volatile int i = 0; i < 10000; i++); // Faster loop
+        for(volatile int i = 0; i < 100; i++); // Tiny loop
     }
 }
 
 void task2(void) {
     while (1) {
         FastPrint("T2 running", 11, 0);
-        for(volatile int i = 0; i < 10000; i++); // Faster loop
+        for(volatile int i = 0; i < 100; i++); // Tiny loop
     }
 }
 void UserTask(void) {
@@ -201,10 +205,11 @@ void UserTask(void) {
 void task3(void) {
     while (1) {
         FastPrint("T3 kernel", 12, 0);
-        for(volatile int i = 0; i < 10000; i++); // Faster loop
+        for(volatile int i = 0; i < 100; i++); // Tiny loop
     }
 }
 void KernelMain(uint32_t magic, uint32_t info) {
+    
     ClearScreen();
     PrintKernel("VoidFrame Kernel - Version 0.0.1-alpha\n");
     PrintKernel("Initializing GDT...\n");
@@ -219,18 +224,21 @@ void KernelMain(uint32_t magic, uint32_t info) {
     MemoryInit();
     PrintKernel("Initializing Processes...\n");
     ProcessInit();
+    PrintKernel("Initializing Drivers...\n");
+    KeyboardRegister();
+    DriverInit();
     PrintKernel("Process system ready\n");
     CreateProcess(task1);
     CreateProcess(task2);
     CreateProcess(task3);
     CreateUserProcess(UserTask);  // Ring 3 process
-    // Setup faster timer (PIT) - ~1000Hz instead of default 18.2Hz
+    // BLAZING FAST timer - ~4000Hz for maximum concurrency
     outb(0x43, 0x36);  // Command: channel 0, lobyte/hibyte, rate generator
-    outb(0x40, 0xA9);  // Low byte of divisor (1193 = ~1000Hz)
-    outb(0x40, 0x04);  // High byte of divisor
+    outb(0x40, 0x4B);  // Low byte of divisor (299 = ~4000Hz)
+    outb(0x40, 0x01);  // High byte of divisor
     
-    // Enable timer interrupt (IRQ0)
-    outb(0x21, inb(0x21) & ~0x01);
+    // Enable timer (IRQ0) and keyboard (IRQ1) interrupts
+    outb(0x21, inb(0x21) & ~0x03); // Enable IRQ0 and IRQ1
 
     // Enable all interrupts
     asm volatile("sti");

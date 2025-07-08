@@ -2,7 +2,7 @@
 #include "../Core/Kernel.h"
 #include "Io.h"
 #include "../Process/Process.h"
-#include "../Core/stdint.h"
+#include "Driver.h"
 
 #define likely(x)   __builtin_expect(!!(x), 1)
 #define unlikely(x) __builtin_expect(!!(x), 0)
@@ -32,7 +32,7 @@ void itoa(uint64_t num, char* str) {
 }
 
 // Fast tick display using direct memory write
-static inline void FastDisplayTicks(uint64_t ticks) {
+static void FastDisplayTicks(uint64_t ticks) {
     uint16_t *vidptr = (uint16_t*)0xb8000;
     int pos = 20 * 80; // Line 20
     
@@ -67,19 +67,29 @@ static inline void FastDisplayTicks(uint64_t ticks) {
 
 // The C-level interrupt handler
 void InterruptHandler(struct Registers* regs) {
+    // Handle keyboard interrupt (IRQ1, remapped to 33)
+    if (regs->interrupt_number == 33) {
+        Driver* kbd = DriverGet(DRIVER_KEYBOARD);
+        if (kbd && kbd->handle_interrupt) {
+            kbd->handle_interrupt(1);
+        }
+        outb(0x20, 0x20); // EOI
+        return;
+    }
+    
     // Handle timer interrupt (IRQ0, remapped to 32)
     if (likely(regs->interrupt_number == 32)) {
         tick_count++;
         
-        // Fast tick display every 100 ticks to reduce overhead
-        if ((tick_count & 0x3F) == 0) { // Every 64 ticks
+        // Display ticks rarely to reduce overhead
+        if ((tick_count & 0x3FF) == 0) { // Every 1024 ticks
             FastDisplayTicks(tick_count);
         }
         
         // Send EOI to master PIC
         outb(0x20, 0x20);
         
-        // Do preemptive scheduling directly
+        // BLAZING FAST - schedule on EVERY interrupt
         ScheduleFromInterrupt(regs);
         return;
     }
