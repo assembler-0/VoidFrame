@@ -99,6 +99,7 @@ void PrintKernelInt(int num) {
 }
 
 void PrintKernelAt(const char *str, int line, int col) {
+    if (CurrentLine >= 25) CurrentLine = 24;
     char *vidptr = (char*)0xb8000;
     int offset = (line * 80 + col) * 2;
     for (int k = 0; str[k] != '\0'; k++) {

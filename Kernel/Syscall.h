@@ -8,8 +8,10 @@
 #define SYS_WRITE   2
 #define SYS_READ    3
 #define SYS_GETPID  4
-#define SYSCALL_INTERRUPT_VECTOR 0x08
+#define SYSCALL_INTERRUPT_VECTOR 0x80
 #define IDT_INTERRUPT_GATE_KERNEL 0x8E
+#define SYSCALL_SEGMENT_SELECTOR  0x08
+#define MAX_SYSCALL_BUFFER_SIZE 4096
 // System call handler
 void SyscallInit(void);
 uint64_t SyscallHandler(uint64_t syscall_num, uint64_t arg1, uint64_t arg2, uint64_t arg3);
