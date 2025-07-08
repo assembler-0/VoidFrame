@@ -11,49 +11,65 @@ project('voidframe', 'c',
 nasm = find_program('nasm')
 grub_mkrescue = find_program('grub-mkrescue')
 
-# Compiler flags
+# Light optimization flags
 c_flags = [
   '-m64',
+  '-O2',
   '-fno-omit-frame-pointer',
   '-finline-functions',
+
+  '-foptimize-sibling-calls',
   '-nostdinc',
   '-fno-builtin',
   '-ffreestanding',
-  '-fno-stack-protector'
+  '-fno-stack-protector',
+  '-ffast-math'
 ]
 
 # Assembly flags
-asm_flags = ['-f', 'elf64']
+asm_flags = ['-f', 'elf64', '-O2']
 
-# Include directory
-inc_dir = include_directories('Kernel')
+# Include directories
+inc_dirs = [
+  'Kernel/Core',
+  'Kernel/Memory', 
+  'Kernel/Process',
+  'Kernel/System',
+  'Kernel/Drivers'
+]
 
-# Assembly sources
+# Assembly sources (organized)
 asm_sources = [
   'Boot/boot.asm',
-  'Kernel/IdtLoad.asm',
-  'Kernel/Interrupts.asm',
-  'Kernel/Switch.asm',
-  'Kernel/SyscallEntry.asm',
-  'Kernel/GdtFlush.asm'
+  'Kernel/System/IdtLoad.asm',
+  'Kernel/System/GdtFlush.asm',
+  'Kernel/System/SyscallEntry.asm',
+  'Kernel/Process/Switch.asm',
+  'Kernel/Drivers/Interrupts.asm'
 ]
 
-# C sources
+# C sources (organized)
 c_sources = [
-  'Kernel/Kernel.c',
-  'Kernel/Idt.c',
-  'Kernel/Interrupts.c',
-  'Kernel/Pic.c',
-  'Kernel/Memory.c',
-  'Kernel/Cpu.c',
-  'Kernel/MemOps.c',
-  'Kernel/VMem.c',
-  'Kernel/Process.c',
-  'Kernel/Syscall.c',
-  'Kernel/Gdt.c',
-  'Kernel/UserMode.c',
-  'Kernel/Panic.c'
+  'Kernel/Core/Kernel.c',
+  'Kernel/Core/Panic.c',
+  'Kernel/Memory/Memory.c',
+  'Kernel/Memory/MemOps.c',
+  'Kernel/Memory/VMem.c',
+  'Kernel/Process/Process.c',
+  'Kernel/Process/UserMode.c',
+  'Kernel/System/Idt.c',
+  'Kernel/System/Gdt.c',
+  'Kernel/System/Syscall.c',
+  'Kernel/Drivers/Interrupts.c',
+  'Kernel/Drivers/Pic.c',
+  'Kernel/Drivers/Cpu.c'
 ]
+
+# Build include flags
+inc_flags = []
+foreach inc : inc_dirs
+  inc_flags += ['-I' + meson.current_source_dir() + '/' + inc]
+endforeach
 
 # Compile assembly files
 asm_objects = []
@@ -74,7 +90,7 @@ foreach c_file : c_sources
   c_obj = custom_target('c_' + obj_name,
     input : c_file,
     output : obj_name,
-    command : ['clang', c_flags, '-I' + meson.current_source_dir() + '/Kernel', '-c', '-o', '@OUTPUT@', '@INPUT@']
+    command : ['clang', c_flags, inc_flags, '-c', '-o', '@OUTPUT@', '@INPUT@']
   )
   c_objects += c_obj
 endforeach

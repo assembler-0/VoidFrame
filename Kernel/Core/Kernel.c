@@ -1,15 +1,15 @@
 /*
  * Kernel.c
  */
-#include "Idt.h"
-#include "Pic.h"
+#include "../System/Idt.h"
+#include "../Drivers/Pic.h"
 #include "Kernel.h"
-#include "Memory.h"
-#include "Process.h"
-#include "Syscall.h"
-#include "Gdt.h"
-#include "UserMode.h"
-#include "Io.h"
+#include "../Memory/Memory.h"
+#include "../Process/Process.h"
+#include "../System/Syscall.h"
+#include "../System/Gdt.h"
+#include "../Process/UserMode.h"
+#include "../Drivers/Io.h"
 #include "Panic.h"
 int CurrentLine = 0;
 int CurrentColumn = 0;
