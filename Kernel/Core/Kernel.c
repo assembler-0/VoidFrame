@@ -173,7 +173,6 @@ void KernelMain(uint32_t magic, uint32_t info) {
     ClearScreen();
     PrintKernel("[SUCCESS] VoidFrame Kernel - Version 0.0.1-alpha loaded\n");
 
-    // Initialize core systems
     GdtInit();
     IdtInstall();
     SyscallInit();
@@ -192,13 +191,6 @@ void KernelMain(uint32_t magic, uint32_t info) {
 
     PrintKernel("[SUCCESS] Core system modules loaded\n");
 
-    RemapPIC();
-    outb(0x43, 0x36);  // Command: channel 0, lobyte/hibyte, rate generator
-    outb(0x40, 0x4B);  // Low byte of divisor (299 = ~4000Hz)
-    outb(0x40, 0x01);  // High byte of divisor
-    outb(0x21, inb(0x21) & ~1);
-
-    // Enable interrupts
     asm volatile("sti");
 
     PrintKernel("[SUCCESS] Kernel initialization complete - entering main loop\n");
