@@ -52,7 +52,6 @@ asm_sources = [
 c_sources = [
   'Kernel/Core/Kernel.c',
   'Kernel/Core/Panic.c',
-  'Kernel/Core/Shell.c',
   'Kernel/Memory/Memory.c',
   'Kernel/Memory/MemOps.c',
   'Kernel/Memory/VMem.c',
@@ -64,8 +63,6 @@ c_sources = [
   'Kernel/Drivers/Interrupts.c',
   'Kernel/Drivers/Pic.c',
   'Kernel/Drivers/Cpu.c',
-  'Kernel/Drivers/Driver.c',
-  'Kernel/Drivers/Keyboard.c'
 ]
 
 # Build include flags

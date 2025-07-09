@@ -10,11 +10,8 @@
 #include "../System/Gdt.h"
 #include "../Process/UserMode.h"
 #include "../Drivers/Io.h"
-#include "../Drivers/Driver.h"
-#include "Shell.h"
 #include "Panic.h"
 
-extern void KeyboardRegister(void);
 int CurrentLine = 0;
 int CurrentColumn = 0;
 void ClearScreen(){
@@ -158,35 +155,41 @@ void PrintKernelAt(const char *str, int line, int col) {
     }
 }
 
-
-void KernelKeeper(void) { // keep the thing alive or else...
-    while (1) {
-        for(volatile int i = 0; i < 100; i++); // Tiny loop
-    }
-}
 void KernelMain(uint32_t magic, uint32_t info) {
-    
     ClearScreen();
     PrintKernel("[SUCCESS] VoidFrame Kernel - Version 0.0.1-alpha loaded\n");
+
+    // Initialize core systems
     GdtInit();
     IdtInstall();
     SyscallInit();
     PicInstall();
     MemoryInit();
     ProcessInit();
-    KeyboardRegister();
-    DriverInit();
-    PrintKernel("[SUCCESS] System modules loaded\n");
-    ClearScreen();
-    ShellInit();
-    CreateProcess(KernelKeeper);
+
+    // Create the security manager process (PID 1) - this is critical
+    uint32_t security_pid = CreateSecureProcess(SecureKernelIntegritySubsystem, PROC_PRIV_SYSTEM);
+    if (!security_pid) {
+        Panic("Cannot create SecureKernelIntegritySubsystem() - Critical security failure");
+    }
+
+    PrintKernel("[SUCCESS] Security manager created with PID: ");
+    PrintKernelInt(security_pid);
+    PrintKernel("\n");
+
+    PrintKernel("[SUCCESS] Core system modules loaded\n");
+
+    // Timer setup for scheduling
     outb(0x43, 0x36);  // Command: channel 0, lobyte/hibyte, rate generator
     outb(0x40, 0x4B);  // Low byte of divisor (299 = ~4000Hz)
     outb(0x40, 0x01);  // High byte of divisor
     outb(0x21, inb(0x21) & ~0x03);
+
+    // Enable interrupts
     asm volatile("sti");
+
+    PrintKernel("[SUCCESS] Kernel initialization complete - entering main loop\n");
     while (1) {
-        ShellRun();
         if (ShouldSchedule()) {
             Schedule();
         }

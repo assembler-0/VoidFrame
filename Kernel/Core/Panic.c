@@ -11,34 +11,27 @@ void __attribute__((noreturn)) KernelPanicHandler() {
     PrintKernel("KernelPanicHandler() has encountered a fatal problem that it could not handled.");
     while (1) {
         asm volatile("hlt");
-    } // fun for now
+    }
 }
 
 void __attribute__((noreturn)) Panic(const char* message) {
-
     asm volatile("cli");
-
     ClearScreen();
     CurrentLine = 0;
     CurrentColumn = 0;
     for(volatile int i = 0; i < 1000000000; i++);
     PrintKernel("[FATAL] - [----KERNEL PANIC----]\n\n");
     PrintKernel(message);
-    PrintKernel("\nSystem halted.\n\n");
-    PrintKernel("Calling KernelPanicHandler()...\n");
+    PrintKernel("\nCalling KernelPanicHandler()...\n");
     KernelPanicHandler();
 }
 
 void __attribute__((noreturn)) PanicWithCode(const char* message, uint64_t error_code) {
     asm volatile("cli");
-    
     ClearScreen();
     CurrentLine = 0;
     CurrentColumn = 0;
-    int i = 10000000;
-    while (i > 0) {
-        i--;
-    }
+    for(volatile int i = 0; i < 1000000000; i++);
     PrintKernel("[FATAL] - [----KERNEL PANIC----]\n");
     PrintKernel(message);
     PrintKernel("\nError Code: ");
