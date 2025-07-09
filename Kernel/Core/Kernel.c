@@ -15,8 +15,6 @@
 int CurrentLine = 0;
 int CurrentColumn = 0;
 void ClearScreen(){
-    PrintKernel("ClearScreen\n");
-
     char *vidptr = (char*)0xb8000;
     for (int j = 0; j < 80 * 25 * 2; j += 2) {
         vidptr[j] = ' ';
@@ -158,7 +156,6 @@ void PrintKernelAt(const char *str, int line, int col) {
 }
 
 void RemapPIC() {
-
     outb(0x20, 0x11); // Start init
     outb(0xA0, 0x11);
     outb(0x21, 0x20); // Master offset = 0x20 (32)
@@ -173,7 +170,6 @@ void RemapPIC() {
 
 
 void KernelMain(uint32_t magic, uint32_t info) {
-    PrintKernel("KernelMain\n");
     ClearScreen();
     PrintKernel("[SUCCESS] VoidFrame Kernel - Version 0.0.1-alpha loaded\n");
 
