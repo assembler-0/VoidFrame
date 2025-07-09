@@ -16,9 +16,9 @@ void __attribute__((noreturn)) KernelPanicHandler() {
 
 void __attribute__((noreturn)) Panic(const char* message) {
     asm volatile("cli");
-    ClearScreen();
-    CurrentLine = 0;
-    CurrentColumn = 0;
+    // ClearScreen();
+    // CurrentLine = 0;
+    // CurrentColumn = 0;
     for(volatile int i = 0; i < 1000000000; i++);
     PrintKernel("[FATAL] - [----KERNEL PANIC----]\n\n");
     PrintKernel(message);
@@ -28,9 +28,9 @@ void __attribute__((noreturn)) Panic(const char* message) {
 
 void __attribute__((noreturn)) PanicWithCode(const char* message, uint64_t error_code) {
     asm volatile("cli");
-    ClearScreen();
-    CurrentLine = 0;
-    CurrentColumn = 0;
+    // ClearScreen();
+    // CurrentLine = 0;
+    // CurrentColumn = 0;
     for(volatile int i = 0; i < 1000000000; i++);
     PrintKernel("[FATAL] - [----KERNEL PANIC----]\n");
     PrintKernel(message);

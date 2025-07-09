@@ -1,5 +1,5 @@
 #include "Idt.h"
-
+#include "../Core/Kernel.h"
 #define IDT_ENTRIES 256
 
 struct IdtEntry g_Idt[IDT_ENTRIES];

@@ -68,9 +68,6 @@ static void FastDisplayTicks(uint64_t ticks) {
 
 // The C-level interrupt handler
 void InterruptHandler(struct Registers* regs) {
-    PrintKernel("InterruptHandler: interrupt_number=");
-    PrintKernelInt(regs->interrupt_number);
-    PrintKernel("\n");
     if (regs->interrupt_number == 32) {
         tick_count++;
         FastDisplayTicks(tick_count); // Re-enabled
@@ -81,7 +78,6 @@ void InterruptHandler(struct Registers* regs) {
     if (regs->interrupt_number == 13) {
         Panic("InterruptHandler: Page fault (GPF handler)");
     }
-    // Send EOI to PICs for other hardware interruptsi
     if (regs->interrupt_number >= 255) {
         Panic("FATAL EXECPTION - OVERFLOWING - Cannot handle interrupt. (>256)");
     }

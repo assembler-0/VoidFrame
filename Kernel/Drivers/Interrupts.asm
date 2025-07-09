@@ -27,11 +27,30 @@ isr%1:
     push rcx
     push rbx
     push rax
+    ; Push segment registers (in reverse order of struct: gs, fs, es, ds)
+    ; Use general-purpose registers to push/pop segment register values
+    mov rax, gs
+    push rax
+    mov rax, fs
+    push rax
+    mov rax, es
+    push rax
+    mov rax, ds
+    push rax
 
     ; The pointer to the Registers struct should be RSP
     mov rdi, rsp
     call InterruptHandler
 
+    ; Pop segment registers (in order: ds, es, fs, gs)
+    pop rax
+    mov ds, rax
+    pop rax
+    mov es, rax
+    pop rax
+    mov fs, rax
+    pop rax
+    mov gs, rax
     ; Pop general purpose registers
     pop rax
     pop rbx
@@ -77,11 +96,30 @@ isr%1:
     push rcx
     push rbx
     push rax
+    ; Push segment registers (in reverse order of struct: gs, fs, es, ds)
+    ; Use general-purpose registers to push/pop segment register values
+    mov rax, gs
+    push rax
+    mov rax, fs
+    push rax
+    mov rax, es
+    push rax
+    mov rax, ds
+    push rax
 
     ; The pointer to the Registers struct should be RSP
     mov rdi, rsp
     call InterruptHandler
 
+    ; Pop segment registers (in order: ds, es, fs, gs)
+    pop rax
+    mov ds, rax
+    pop rax
+    mov es, rax
+    pop rax
+    mov fs, rax
+    pop rax
+    mov gs, rax
     ; Pop general purpose registers
     pop rax
     pop rbx
