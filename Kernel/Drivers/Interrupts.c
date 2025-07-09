@@ -1,6 +1,7 @@
 #include "../Core/stdint.h"
 #include "../Core/Kernel.h"
 #include "Io.h"
+#include "../Core/Panic.h"
 #include "../Process/Process.h"
 
 #define likely(x)   __builtin_expect(!!(x), 1)
@@ -64,17 +65,31 @@ static void FastDisplayTicks(uint64_t ticks) {
     }
 }
 
+void PrintStack(uint64_t* ptr, int count) {
+    for (int i = 0; i < count; i++) {
+        PrintKernelHex(ptr[i]);
+        PrintKernel(" ");
+    }
+    PrintKernel("\n");
+}
+
 // The C-level interrupt handler
 void InterruptHandler(struct Registers* regs) {
-
-    // Handle timer interrupt (IRQ0, remapped to 32)
-    if (likely(regs->interrupt_number == 32)) {
+    PrintKernel("Stack dump: ");
+    PrintStack((uint64_t*)regs, 20);
+    PrintKernel("InterruptHandler: interrupt_number=");
+    PrintKernelInt(regs->interrupt_number);
+    PrintKernel("\n");
+    if (regs->interrupt_number == 32) {
         tick_count++;
+        FastDisplayTicks(tick_count); // Re-enabled
         outb(0x20, 0x20);
-        ScheduleFromInterrupt(regs);
+        ScheduleFromInterrupt(regs); // Re-enabled
         return;
     }
-
+    // if (regs->interrupt_number == 13) {
+    //     Panic("InterruptHandler: Page fault (GPF handler)");
+    // }
     // Send EOI to PICs for other hardware interrupts
     if (regs->interrupt_number >= 40) {
         outb(0xA0, 0x20); // EOI to slave PIC

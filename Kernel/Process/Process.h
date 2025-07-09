@@ -25,11 +25,19 @@ typedef enum {
     PROC_TERMINATED = 0
 } ProcessState;
 
-typedef struct {
-    uint64_t rax, rbx, rcx, rdx, rsi, rdi, rbp, rsp;
-    uint64_t r8, r9, r10, r11, r12, r13, r14, r15;
-    uint64_t rip, rflags;
-} ProcessContext;
+// DO NOT TOUCH THIS STRUCTURE - must match interrupt ASM stack layout
+typedef struct Registers {
+    uint64_t r15, r14, r13, r12, r11, r10, r9, r8;
+    uint64_t rbp, rsi, rdi, rdx, rcx, rbx, rax;
+    uint64_t ds, es, fs, gs;
+    uint64_t interrupt_number;
+    uint64_t error_code;
+    uint64_t rip, cs, rflags;
+    uint64_t rsp, ss;
+} __attribute__((packed)) Registers;
+
+// Use the same structure for context switching to avoid mismatches
+typedef struct Registers ProcessContext;
 
 typedef struct {
     uint32_t pid;
@@ -42,13 +50,6 @@ typedef struct {
     SecurityToken token;
     ProcessContext context;
 } Process;
-
-struct Registers {
-    uint64_t rax, rbx, rcx, rdx, rdi, rsi, rbp, r8, r9, r10, r11, r12, r13, r14, r15;
-    uint64_t interrupt_number;
-    uint64_t error_code;
-    uint64_t rip, cs, rflags, rsp;
-};
 
 void ProcessInit(void);
 uint32_t CreateProcess(void (*entry_point)(void));

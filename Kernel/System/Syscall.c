@@ -18,7 +18,7 @@ uint64_t SyscallHandler(uint64_t syscall_num, uint64_t arg1, uint64_t arg2, uint
             if (current) {
                 current->state = PROC_TERMINATED;
             }
-            Schedule(); // Switch to next process
+            RequestSchedule(); // Switch to next process
             return 0;
             
         case SYS_WRITE:
