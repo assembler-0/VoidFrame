@@ -3,7 +3,7 @@ header_start:
     dd 0xE85250D6                ; Multiboot2 magic number
     dd 0                         ; Architecture 0 (protected mode i386)
     dd header_end - header_start ; header length
-    dd -(0xE85250D6 + 0 + (header_end - header_start)) ; checksum
+    dd 0x17ADAF12 ; checksum (calculated: -(0xE85250D6 + 0 + 24))
     ; end tag
     dw 0    ; type
     dw 0    ; flags
@@ -13,6 +13,13 @@ header_end:
 bits 32
 
 section .text
+
+; Macro for debugging output
+%macro debug_print 1
+    mov dx, 0xE9
+    mov al, %1
+    out dx, al
+%endmacro
 
 ; Enhanced GDT for long mode (keeping your original structure)
 gdt64:
@@ -37,12 +44,14 @@ gdt64:
 
 global start
 start:
+    debug_print '1'
     cli
     cld
 
     ; Save multiboot info for kernel
     mov [multiboot_magic], eax
     mov [multiboot_info], ebx
+    debug_print 'B'
 
     ; Setup temporary stack
     mov esp, stack_top
@@ -52,15 +61,18 @@ start:
 
     ; Load GDT (same as original)
     lgdt [gdt64.pointer]
+    debug_print '2'
 
     ; Enable PAE (same as original)
     mov eax, cr4
     or eax, 1 << 5
     mov cr4, eax
+    debug_print '3'
 
     ; Setup paging (keeping your original mapping approach)
     mov edi, pml4_table
     mov cr3, edi
+    debug_print '4'
 
     ; Initialize the tables by zeroing them out (same as original)
     mov edi, pml4_table
@@ -89,19 +101,23 @@ start:
     add edi, 8
     add eax, 0x200000   ; Next 2MB
     loop .map_loop
+    debug_print '5'
 
     ; Enable long mode (same as original)
     mov ecx, 0xC0000080 ; EFER MSR
     rdmsr
     or eax, 1 << 8      ; LME (Long Mode Enable)
     wrmsr
+    debug_print '6'
 
     ; Enable paging (same as original)
     mov eax, cr0
     or eax, 1 << 31     ; PG (Paging)
     mov cr0, eax
+    debug_print '7'
 
     ; Jump to long mode (same as original)
+    debug_print '8'
     jmp 0x08:long_mode
 
 ; Check and enable CPU features (non-critical)
@@ -144,6 +160,7 @@ bits 64
 extern KernelMain
 
 long_mode:
+    debug_print '9'
     ; Load data segments (same as original)
     mov ax, 0x10 ; selector for data segment
     mov ss, ax
@@ -157,18 +174,13 @@ long_mode:
 
     ; Clear direction flag
     cld
-    
-    ; DEBUG: Write 'BOOT' to VGA before calling C code
-    mov rax, 0xb8000
-    mov word [rax], 0x0442      ; Red 'B'
-    mov word [rax+2], 0x044F    ; Red 'O' 
-    mov word [rax+4], 0x044F    ; Red 'O'
-    mov word [rax+6], 0x0454    ; Red 'T'
+
 
     ; Pass multiboot info to kernel
     mov rdi, [multiboot_magic]
     mov rsi, [multiboot_info]
 
+    debug_print 'A'
     ; Jump to the C kernel (same as original)
     call KernelMain
 
@@ -179,8 +191,8 @@ long_mode:
     jmp .halt_loop
 
 section .data
-multiboot_magic: dq 0
-multiboot_info: dq 0
+multiboot_magic: dd 0
+multiboot_info: dd 0
 
 section .bss
 

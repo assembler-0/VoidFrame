@@ -15,6 +15,8 @@
 int CurrentLine = 0;
 int CurrentColumn = 0;
 void ClearScreen(){
+    PrintKernel("ClearScreen\n");
+
     char *vidptr = (char*)0xb8000;
     for (int j = 0; j < 80 * 25 * 2; j += 2) {
         vidptr[j] = ' ';
@@ -155,7 +157,23 @@ void PrintKernelAt(const char *str, int line, int col) {
     }
 }
 
+void RemapPIC() {
+
+    outb(0x20, 0x11); // Start init
+    outb(0xA0, 0x11);
+    outb(0x21, 0x20); // Master offset = 0x20 (32)
+    outb(0xA1, 0x28); // Slave offset = 0x28 (40)
+    outb(0x21, 0x04);
+    outb(0xA1, 0x02);
+    outb(0x21, 0x01);
+    outb(0xA1, 0x01);
+    outb(0x21, 0xFF); // Mask all
+    outb(0xA1, 0xFF);
+}
+
+
 void KernelMain(uint32_t magic, uint32_t info) {
+    PrintKernel("KernelMain\n");
     ClearScreen();
     PrintKernel("[SUCCESS] VoidFrame Kernel - Version 0.0.1-alpha loaded\n");
 
@@ -178,11 +196,11 @@ void KernelMain(uint32_t magic, uint32_t info) {
 
     PrintKernel("[SUCCESS] Core system modules loaded\n");
 
-    // Timer setup for scheduling
+    RemapPIC();
     outb(0x43, 0x36);  // Command: channel 0, lobyte/hibyte, rate generator
     outb(0x40, 0x4B);  // Low byte of divisor (299 = ~4000Hz)
     outb(0x40, 0x01);  // High byte of divisor
-    outb(0x21, inb(0x21) & ~0x03);
+    outb(0x21, inb(0x21) & ~1);
 
     // Enable interrupts
     asm volatile("sti");
@@ -190,7 +208,7 @@ void KernelMain(uint32_t magic, uint32_t info) {
     PrintKernel("[SUCCESS] Kernel initialization complete - entering main loop\n");
     while (1) {
         if (ShouldSchedule()) {
-            Schedule();
+            RequestSchedule();
         }
         asm volatile("hlt"); // Wait for the next interrupt
     }

@@ -3,6 +3,7 @@
 #include "Memory.h"
 #include "Panic.h"
 #include "Io.h"
+#include "../Memory/MemOps.h" // Use kernel memory ops instead of <string.h>
 #define NULL ((void*)0)
 static Process processes[MAX_PROCESSES];
 static uint32_t next_pid = 1;
@@ -53,6 +54,8 @@ void RequestSchedule(void) {
 }
 
 void ProcessInit(void) {
+    PrintKernel("ProcessInit\n");
+
     // Clear all processes
     for (int i = 0; i < MAX_PROCESSES; i++) {
         processes[i].pid = 0;
@@ -80,15 +83,20 @@ void ProcessInit(void) {
 }
 
 uint32_t CreateProcess(void (*entry_point)(void)) {
+    PrintKernel("CreateProcess\n");
+
     return CreateSecureProcess(entry_point, PROC_PRIV_USER);
 }
 
 void SecureProcessExitStub() {
-    PrintKernel("[SKIS] Process returned! This shouldn't happen!\n");
+    PrintKernel("SecureProcessExitStub\n");
+
+    PrintKernel("[SECURITY] Process returned! This shouldn't happen!\n");
     while (1) { __asm__ __volatile__("hlt"); }
 }
 
 uint32_t CreateSecureProcess(void (*entry_point)(void), uint8_t privilege) {
+    PrintKernel("CreateSecureProcess\n");
     if (!entry_point) {
         Panic("CreateSecureProcess: NULL entry point");
     }
@@ -140,32 +148,45 @@ uint32_t CreateSecureProcess(void (*entry_point)(void), uint8_t privilege) {
     init_token(&processes[slot].token, creator_pid, privilege);
 
     // Clear context
-    for (int i = 0; i < sizeof(ProcessContext)/8; i++) {
-        ((uint64_t*)&processes[slot].context)[i] = 0;
-    }
+    FastMemset(&processes[slot].context, 0, sizeof(ProcessContext));
 
-    // Set up initial context
-    // Start RSP at the very top of the stack (STACK_SIZE)
-    // Then push the exit stub onto the stack
-    processes[slot].context.rsp = (uint64_t)processes[slot].stack + STACK_SIZE;
-    uint64_t* stack_ptr = (uint64_t*)processes[slot].context.rsp;
+    uint64_t rsp = (uint64_t)processes[slot].stack + STACK_SIZE;
+    rsp &= ~0xF; // 16-byte alignment
+
+    // Set up stack with proper return address
+    uint64_t* stack_ptr = (uint64_t*)rsp;
     *(--stack_ptr) = (uint64_t)&SecureProcessExitStub;
-    processes[slot].context.rsp = (uint64_t)stack_ptr; // Update RSP after pushing
 
-    // Ensure RSP is 16-byte aligned for the entry_point function
-    processes[slot].context.rsp &= ~0xF; // Clear the last 4 bits to align to 16 bytes
-
+    // Initialize the context as a proper interrupt frame
+    processes[slot].context.rsp = (uint64_t)stack_ptr;
     processes[slot].context.rip = (uint64_t)entry_point;
-    processes[slot].context.rflags = 0x202;
+    processes[slot].context.rflags = 0x202; // Interrupts enabled, bit 1 always 1
+    processes[slot].context.cs = 0x08;  // Kernel code segment
+    processes[slot].context.ss = 0x10;  // Kernel data segment
+    processes[slot].context.ds = 0x10;  // Kernel data segment
+    processes[slot].context.es = 0x10;  // Kernel data segment
+    processes[slot].context.fs = 0x10;  // Kernel data segment
+    processes[slot].context.gs = 0x10;  // Kernel data segment
+    processes[slot].context.interrupt_number = 0;
+    processes[slot].context.error_code = 0;
 
     process_count++;
-
     return processes[slot].pid;
 }
 
-void Schedule(void) {
-    if (process_count <= 1) return;
+void ScheduleFromInterrupt(struct Registers* regs) {
+    PrintKernel("ScheduleFromInterrupt\n");
+
+    if (!regs) {
+        Panic("ScheduleFromInterrupt: NULL registers");
+    }
     
+    if (current_process >= MAX_PROCESSES) {
+        Panic("ScheduleFromInterrupt: Invalid current process");
+    }
+    
+    if (process_count <= 1) return;
+
     // Find next ready process, prioritizing system processes
     uint32_t next = (current_process + 1) % MAX_PROCESSES;
     uint32_t start = next;
@@ -199,6 +220,10 @@ void Schedule(void) {
 
     // Switch to best candidate if different from current
     if (best_candidate != current_process) {
+        // Save current process's full interrupt frame
+        // Now this is safe because ProcessContext == struct Registers
+        FastMemcpy(&processes[current_process].context, regs, sizeof(struct Registers));
+
         // Update current process state
         if (processes[current_process].state == PROC_RUNNING) {
             processes[current_process].state = PROC_READY;
@@ -207,92 +232,15 @@ void Schedule(void) {
         // Update new process state
         processes[best_candidate].state = PROC_RUNNING;
 
-        // Context switch
-        ProcessContext* old_ctx = &processes[current_process].context;
-        ProcessContext* new_ctx = &processes[best_candidate].context;
+        // Restore next process's full interrupt frame
+        FastMemcpy(regs, &processes[best_candidate].context, sizeof(struct Registers));
         current_process = best_candidate;
-        SwitchContext(old_ctx, new_ctx);
     }
-}
-
-
-void ScheduleFromInterrupt(struct Registers* regs) {
-    if (!regs) {
-        Panic("ScheduleFromInterrupt: NULL registers");
-    }
-    
-    if (current_process >= MAX_PROCESSES) {
-        Panic("ScheduleFromInterrupt: Invalid current process");
-    }
-    
-    if (process_count <= 1) return;
-    
-    // Find next ready process
-    uint32_t next = (current_process + 1) % MAX_PROCESSES;
-    uint32_t start = next;
-    
-    do {
-        if (processes[next].state == PROC_READY || processes[next].state == PROC_RUNNING) {
-            if (next == current_process) {
-                next = (next + 1) % MAX_PROCESSES;
-                if (next == start) break;
-                continue;
-            }
-            
-            // Save current process context from interrupt frame
-            processes[current_process].context.rax = regs->rax;
-            processes[current_process].context.rbx = regs->rbx;
-            processes[current_process].context.rcx = regs->rcx;
-            processes[current_process].context.rdx = regs->rdx;
-            processes[current_process].context.rsi = regs->rsi;
-            processes[current_process].context.rdi = regs->rdi;
-            processes[current_process].context.rbp = regs->rbp;
-            processes[current_process].context.rsp = regs->rsp;
-            processes[current_process].context.r8 = regs->r8;
-            processes[current_process].context.r9 = regs->r9;
-            processes[current_process].context.r10 = regs->r10;
-            processes[current_process].context.r11 = regs->r11;
-            processes[current_process].context.r12 = regs->r12;
-            processes[current_process].context.r13 = regs->r13;
-            processes[current_process].context.r14 = regs->r14;
-            processes[current_process].context.r15 = regs->r15;
-            processes[current_process].context.rip = regs->rip;
-            processes[current_process].context.rflags = regs->rflags;
-            
-            // Update states
-            if (processes[current_process].state == PROC_RUNNING) {
-                processes[current_process].state = PROC_READY;
-            }
-            processes[next].state = PROC_RUNNING;
-
-            // Load new process context into interrupt frame
-            regs->rax = processes[next].context.rax;
-            regs->rbx = processes[next].context.rbx;
-            regs->rcx = processes[next].context.rcx;
-            regs->rdx = processes[next].context.rdx;
-            regs->rsi = processes[next].context.rsi;
-            regs->rdi = processes[next].context.rdi;
-            regs->rbp = processes[next].context.rbp;
-            regs->rsp = processes[next].context.rsp;
-            regs->r8 = processes[next].context.r8;
-            regs->r9 = processes[next].context.r9;
-            regs->r10 = processes[next].context.r10;
-            regs->r11 = processes[next].context.r11;
-            regs->r12 = processes[next].context.r12;
-            regs->r13 = processes[next].context.r13;
-            regs->r14 = processes[next].context.r14;
-            regs->r15 = processes[next].context.r15;
-            regs->rip = processes[next].context.rip;
-            regs->rflags = processes[next].context.rflags;
-            
-            current_process = next;
-            return;
-        }
-        next = (next + 1) % MAX_PROCESSES;
-    } while (next != start);
 }
 
 Process* GetCurrentProcess(void) {
+    PrintKernel("GetCurrentProcess\n");
+
     if (current_process >= MAX_PROCESSES) {
         Panic("GetCurrentProcess: Invalid current process index");
     }
@@ -300,6 +248,8 @@ Process* GetCurrentProcess(void) {
 }
 
 Process* GetProcessByPid(uint32_t pid) {
+    PrintKernel("GetProcessByPid\n");
+
     for (int i = 0; i < MAX_PROCESSES; i++) {
         if (processes[i].pid == pid && processes[i].state != PROC_TERMINATED) {
             return &processes[i];
@@ -309,6 +259,8 @@ Process* GetProcessByPid(uint32_t pid) {
 }
 
 void RegisterSecurityManager(uint32_t pid) {
+    PrintKernel("RegisterSecurityManager\n");
+
     security_manager_pid = pid;
     PrintKernel("[SECURITY] Security manager registered with PID: ");
     PrintKernelInt(pid);
@@ -316,6 +268,7 @@ void RegisterSecurityManager(uint32_t pid) {
 }
 
 void SystemService(void) {
+    PrintKernel("SystemService\n");
     PrintKernel("[SYSTEM] System service started\n");
     while (1) {
         // Do system work
@@ -324,6 +277,7 @@ void SystemService(void) {
 }
 
 void SecureKernelIntegritySubsystem(void) {
+    PrintKernel("SecureKernelIntegritySubsystem\n");
     // Register this process as the security manager
     Process* current = GetCurrentProcess();
     if (current) {
