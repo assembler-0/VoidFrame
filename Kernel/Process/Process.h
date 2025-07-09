@@ -6,11 +6,23 @@
 #define MAX_PROCESSES 64
 #define STACK_SIZE 4096
 
+#define PROC_PRIV_SYSTEM    0   // Highest privilege (kernel services)
+#define PROC_PRIV_USER      1   // User processes
+#define PROC_PRIV_RESTRICTED 2  // Restricted processes
+
+typedef struct {
+    uint64_t magic;          // Magic number for validation
+    uint32_t creator_pid;    // PID of creating process
+    uint8_t  privilege;      // Process privilege level
+    uint8_t  flags;          // Security flags
+    uint16_t checksum;       // Simple checksum
+} SecurityToken;
+
 typedef enum {
     PROC_READY,
     PROC_RUNNING,
     PROC_BLOCKED,
-    PROC_TERMINATED
+    PROC_TERMINATED = 0
 } ProcessState;
 
 typedef struct {
@@ -22,21 +34,25 @@ typedef struct {
 typedef struct {
     uint32_t pid;
     ProcessState state;
-    ProcessContext context;
     void* stack;
-    uint64_t priority;
+    uint8_t priority;
     uint8_t is_user_mode;
+    uint8_t privilege_level;
+    uint8_t _padding;
+    SecurityToken token;
+    ProcessContext context;
 } Process;
 
 struct Registers {
     uint64_t rax, rbx, rcx, rdx, rdi, rsi, rbp, r8, r9, r10, r11, r12, r13, r14, r15;
     uint64_t interrupt_number;
     uint64_t error_code;
-    uint64_t rip, cs, rflags, rsp, ss;
+    uint64_t rip, cs, rflags, rsp;
 };
 
 void ProcessInit(void);
 uint32_t CreateProcess(void (*entry_point)(void));
+uint32_t CreateSecureProcess(void (*entry_point)(void), uint8_t privilege);
 void RequestSchedule();
 int ShouldSchedule();
 void Schedule(void);
@@ -44,5 +60,7 @@ void Yield(void);
 Process* GetCurrentProcess(void);
 Process* GetProcessByPid(uint32_t pid);
 void ScheduleFromInterrupt(struct Registers* regs);
-
+void RegisterSecurityManager(uint32_t pid);
+void SecureKernelIntegritySubsystem(void);
+void SystemService(void);
 #endif

@@ -2,7 +2,6 @@
 #include "../Core/Kernel.h"
 #include "Io.h"
 #include "../Process/Process.h"
-#include "Driver.h"
 
 #define likely(x)   __builtin_expect(!!(x), 1)
 #define unlikely(x) __builtin_expect(!!(x), 0)
@@ -67,15 +66,6 @@ static void FastDisplayTicks(uint64_t ticks) {
 
 // The C-level interrupt handler
 void InterruptHandler(struct Registers* regs) {
-    // Handle keyboard interrupt (IRQ1, remapped to 33)
-    if (regs->interrupt_number == 33) {
-        Driver* kbd = DriverGet(DRIVER_KEYBOARD);
-        if (kbd && kbd->handle_interrupt) {
-            kbd->handle_interrupt(1);
-        }
-        outb(0x20, 0x20); // EOI
-        return;
-    }
     
     // Handle timer interrupt (IRQ0, remapped to 32)
     if (likely(regs->interrupt_number == 32)) {
