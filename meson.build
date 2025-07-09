@@ -121,5 +121,5 @@ iso = custom_target('VoidFrame.iso',
 
 # Run target
 run_target('run',
-  command : ['qemu-system-x86_64', '-cdrom', 'VoidFrame.iso', '-m', '1G']
+  command : ['qemu-system-x86_64', '-cdrom', 'VoidFrame.iso', '-no-reboot', '-no-shutdown' , '-m', '1G']
 )
