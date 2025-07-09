@@ -54,8 +54,6 @@ void RequestSchedule(void) {
 }
 
 void ProcessInit(void) {
-    PrintKernel("ProcessInit\n");
-
     // Clear all processes
     for (int i = 0; i < MAX_PROCESSES; i++) {
         processes[i].pid = 0;
@@ -83,20 +81,15 @@ void ProcessInit(void) {
 }
 
 uint32_t CreateProcess(void (*entry_point)(void)) {
-    PrintKernel("CreateProcess\n");
-
     return CreateSecureProcess(entry_point, PROC_PRIV_USER);
 }
 
 void SecureProcessExitStub() {
-    PrintKernel("SecureProcessExitStub\n");
-
     PrintKernel("[SECURITY] Process returned! This shouldn't happen!\n");
     while (1) { __asm__ __volatile__("hlt"); }
 }
 
 uint32_t CreateSecureProcess(void (*entry_point)(void), uint8_t privilege) {
-    PrintKernel("CreateSecureProcess\n");
     if (!entry_point) {
         Panic("CreateSecureProcess: NULL entry point");
     }
@@ -175,8 +168,6 @@ uint32_t CreateSecureProcess(void (*entry_point)(void), uint8_t privilege) {
 }
 
 void ScheduleFromInterrupt(struct Registers* regs) {
-    PrintKernel("ScheduleFromInterrupt\n");
-
     if (!regs) {
         Panic("ScheduleFromInterrupt: NULL registers");
     }
@@ -239,8 +230,6 @@ void ScheduleFromInterrupt(struct Registers* regs) {
 }
 
 Process* GetCurrentProcess(void) {
-    PrintKernel("GetCurrentProcess\n");
-
     if (current_process >= MAX_PROCESSES) {
         Panic("GetCurrentProcess: Invalid current process index");
     }
@@ -248,8 +237,6 @@ Process* GetCurrentProcess(void) {
 }
 
 Process* GetProcessByPid(uint32_t pid) {
-    PrintKernel("GetProcessByPid\n");
-
     for (int i = 0; i < MAX_PROCESSES; i++) {
         if (processes[i].pid == pid && processes[i].state != PROC_TERMINATED) {
             return &processes[i];
@@ -259,8 +246,6 @@ Process* GetProcessByPid(uint32_t pid) {
 }
 
 void RegisterSecurityManager(uint32_t pid) {
-    PrintKernel("RegisterSecurityManager\n");
-
     security_manager_pid = pid;
     PrintKernel("[SECURITY] Security manager registered with PID: ");
     PrintKernelInt(pid);
@@ -268,7 +253,6 @@ void RegisterSecurityManager(uint32_t pid) {
 }
 
 void SystemService(void) {
-    PrintKernel("SystemService\n");
     PrintKernel("[SYSTEM] System service started\n");
     while (1) {
         // Do system work
@@ -277,7 +261,7 @@ void SystemService(void) {
 }
 
 void SecureKernelIntegritySubsystem(void) {
-    PrintKernel("SecureKernelIntegritySubsystem\n");
+    PrintKernel("SecureKernelIntegritySubsystem() Initializing...\n");
     // Register this process as the security manager
     Process* current = GetCurrentProcess();
     if (current) {
@@ -295,7 +279,6 @@ void SecureKernelIntegritySubsystem(void) {
 
     // Main security loop
     while (1) {
-        // Periodic security checks
         static int check_counter = 0;
         if (++check_counter % 1000 != 0) {
             for (volatile int i = 0; i < 1000; i++);

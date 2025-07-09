@@ -65,18 +65,9 @@ static void FastDisplayTicks(uint64_t ticks) {
     }
 }
 
-void PrintStack(uint64_t* ptr, int count) {
-    for (int i = 0; i < count; i++) {
-        PrintKernelHex(ptr[i]);
-        PrintKernel(" ");
-    }
-    PrintKernel("\n");
-}
 
 // The C-level interrupt handler
 void InterruptHandler(struct Registers* regs) {
-    PrintKernel("Stack dump: ");
-    PrintStack((uint64_t*)regs, 20);
     PrintKernel("InterruptHandler: interrupt_number=");
     PrintKernelInt(regs->interrupt_number);
     PrintKernel("\n");
@@ -87,10 +78,13 @@ void InterruptHandler(struct Registers* regs) {
         ScheduleFromInterrupt(regs); // Re-enabled
         return;
     }
-    // if (regs->interrupt_number == 13) {
-    //     Panic("InterruptHandler: Page fault (GPF handler)");
-    // }
-    // Send EOI to PICs for other hardware interrupts
+    if (regs->interrupt_number == 13) {
+        Panic("InterruptHandler: Page fault (GPF handler)");
+    }
+    // Send EOI to PICs for other hardware interruptsi
+    if (regs->interrupt_number >= 255) {
+        Panic("FATAL EXECPTION - OVERFLOWING - Cannot handle interrupt. (>256)");
+    }
     if (regs->interrupt_number >= 40) {
         outb(0xA0, 0x20); // EOI to slave PIC
     }
