@@ -34,8 +34,8 @@ void itoa(uint64_t num, char* str) {
 static void FastDisplayTicks(uint64_t ticks) {
     uint16_t *vidptr = (uint16_t*)0xb8000;
     int pos = 20 * 80; // Line 20
-    
-    // Write "Ticks: " 
+
+    // Write "Ticks: "
     vidptr[pos++] = (0x03 << 8) | 'T';
     vidptr[pos++] = (0x03 << 8) | 'i';
     vidptr[pos++] = (0x03 << 8) | 'c';
@@ -43,22 +43,22 @@ static void FastDisplayTicks(uint64_t ticks) {
     vidptr[pos++] = (0x03 << 8) | 's';
     vidptr[pos++] = (0x03 << 8) | ':';
     vidptr[pos++] = (0x03 << 8) | ' ';
-    
+
     // Fast number display
     if (ticks == 0) {
         vidptr[pos] = (0x03 << 8) | '0';
         return;
     }
-    
+
     char buf[20];
     int i = 0;
     uint64_t temp = ticks;
-    
+
     while (temp > 0) {
         buf[i++] = '0' + (temp % 10);
         temp /= 10;
     }
-    
+
     while (i > 0) {
         vidptr[pos++] = (0x03 << 8) | buf[--i];
     }
@@ -66,7 +66,7 @@ static void FastDisplayTicks(uint64_t ticks) {
 
 // The C-level interrupt handler
 void InterruptHandler(struct Registers* regs) {
-    
+
     // Handle timer interrupt (IRQ0, remapped to 32)
     if (likely(regs->interrupt_number == 32)) {
         tick_count++;
@@ -74,7 +74,7 @@ void InterruptHandler(struct Registers* regs) {
         ScheduleFromInterrupt(regs);
         return;
     }
-    
+
     // Send EOI to PICs for other hardware interrupts
     if (regs->interrupt_number >= 40) {
         outb(0xA0, 0x20); // EOI to slave PIC

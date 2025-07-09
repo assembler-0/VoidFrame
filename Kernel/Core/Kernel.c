@@ -166,11 +166,10 @@ void KernelMain(uint32_t magic, uint32_t info) {
     PicInstall();
     MemoryInit();
     ProcessInit();
-
     // Create the security manager process (PID 1) - this is critical
     uint32_t security_pid = CreateSecureProcess(SecureKernelIntegritySubsystem, PROC_PRIV_SYSTEM);
     if (!security_pid) {
-        Panic("Cannot create SecureKernelIntegritySubsystem() - Critical security failure");
+        Panic("\nCannot create SecureKernelIntegritySubsystem() - Critical security failure\n");
     }
 
     PrintKernel("[SUCCESS] Security manager created with PID: ");

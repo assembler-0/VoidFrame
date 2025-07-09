@@ -3,6 +3,7 @@
 #include "Memory.h"
 #include "Panic.h"
 #include "Io.h"
+#define NULL ((void*)0)
 static Process processes[MAX_PROCESSES];
 static uint32_t next_pid = 1;
 static uint32_t current_process = 0;
@@ -82,6 +83,11 @@ uint32_t CreateProcess(void (*entry_point)(void)) {
     return CreateSecureProcess(entry_point, PROC_PRIV_USER);
 }
 
+void SecureProcessExitStub() {
+    PrintKernel("[SKIS] Process returned! This shouldn't happen!\n");
+    while (1) { __asm__ __volatile__("hlt"); }
+}
+
 uint32_t CreateSecureProcess(void (*entry_point)(void), uint8_t privilege) {
     if (!entry_point) {
         Panic("CreateSecureProcess: NULL entry point");
@@ -139,7 +145,16 @@ uint32_t CreateSecureProcess(void (*entry_point)(void), uint8_t privilege) {
     }
 
     // Set up initial context
-    processes[slot].context.rsp = (uint64_t)stack + STACK_SIZE - 8;
+    // Start RSP at the very top of the stack (STACK_SIZE)
+    // Then push the exit stub onto the stack
+    processes[slot].context.rsp = (uint64_t)processes[slot].stack + STACK_SIZE;
+    uint64_t* stack_ptr = (uint64_t*)processes[slot].context.rsp;
+    *(--stack_ptr) = (uint64_t)&SecureProcessExitStub;
+    processes[slot].context.rsp = (uint64_t)stack_ptr; // Update RSP after pushing
+
+    // Ensure RSP is 16-byte aligned for the entry_point function
+    processes[slot].context.rsp &= ~0xF; // Clear the last 4 bits to align to 16 bytes
+
     processes[slot].context.rip = (uint64_t)entry_point;
     processes[slot].context.rflags = 0x202;
 
@@ -172,8 +187,9 @@ void Schedule(void) {
                     PrintKernel("[SECURITY] Invalid token detected, terminating process\n");
                     processes[next].state = PROC_TERMINATED;
                     if (processes[next].stack) {
-                        // FreePage(processes[next].stack); // Assuming you have this function
-                    }
+                        FreePage(processes[next].stack);
+                        processes[next].stack = NULL;
+                        }
                     process_count--;
                 }
             }
@@ -326,6 +342,11 @@ void SecureKernelIntegritySubsystem(void) {
     // Main security loop
     while (1) {
         // Periodic security checks
+        static int check_counter = 0;
+        if (++check_counter % 1000 != 0) {
+            for (volatile int i = 0; i < 1000; i++);
+            continue;
+        }
         for (int i = 0; i < MAX_PROCESSES; i++) {
             if (processes[i].state != PROC_TERMINATED) {
                 // Validate process tokens
@@ -339,10 +360,7 @@ void SecureKernelIntegritySubsystem(void) {
                 }
             }
         }
-
         // Small delay to prevent excessive CPU usage
         for (volatile int i = 0; i < 1000; i++);
     }
 }
-
-// Example system service that can only be created by security manager
