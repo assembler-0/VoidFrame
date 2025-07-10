@@ -1,6 +1,6 @@
 bits 64
 
-extern SyscallHandler
+extern Syscall
 
 global SyscallEntry
 
@@ -28,7 +28,7 @@ SyscallEntry:
     mov rdx, rcx    ; arg2
     mov rcx, r8     ; arg3
     
-    call SyscallHandler
+    call Syscall
     
     ; Return value in rax is already set
     

@@ -4,8 +4,7 @@
 #include "Panic.h"
 #include "Io.h"
 #include "../Memory/MemOps.h"
-
-#define NULL ((void*)0)
+#include "../Core/Ipc.h"
 #define offsetof(type, member) ((uint64_t)&(((type*)0)->member))
 
 static Process processes[MAX_PROCESSES];
@@ -121,7 +120,7 @@ uint32_t CreateProcess(void (*entry_point)(void)) {
 }
 
 void ProcessExitStub() {
-    PrintKernel("[KERNEL] Process returned from its main function. This is an error!\n");
+    PrintKernel("[KERNEL] Process returned from its main function. -FATAL EXECPTION-\n");
     PrintKernel("Terminating process PID: ");
     PrintKernelInt(GetCurrentProcess()->pid);
     PrintKernel("\n");
@@ -177,6 +176,11 @@ uint32_t CreateSecureProcess(void (*entry_point)(void), uint8_t privilege) {
     processes[slot].priority = (privilege == PROC_PRIV_SYSTEM) ? 10 : 100;
     processes[slot].is_user_mode = (privilege != PROC_PRIV_SYSTEM);
 
+    // Initialize IPC queue
+    processes[slot].ipc_queue.head = 0;
+    processes[slot].ipc_queue.tail = 0;
+    processes[slot].ipc_queue.count = 0;
+
     // Create the token
     init_token(&processes[slot].token, creator->pid, privilege, new_pid);
 
@@ -198,6 +202,7 @@ uint32_t CreateSecureProcess(void (*entry_point)(void), uint8_t privilege) {
 }
 
 void ScheduleFromInterrupt(struct Registers* regs) {
+    ASSERT(regs != NULL);
     if (process_count <= 1) return;
 
     // Save current context

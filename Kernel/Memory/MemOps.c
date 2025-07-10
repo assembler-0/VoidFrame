@@ -1,7 +1,9 @@
 #include "MemOps.h"
 #include "Cpu.h"
+#include "../Core/Panic.h"
 
 void* FastMemset(void* dest, int value, uint64_t size) {
+    ASSERT(dest != NULL);
     CpuFeatures* features = GetCpuFeatures();
     uint8_t* d = (uint8_t*)dest;
     
@@ -34,6 +36,7 @@ void* FastMemset(void* dest, int value, uint64_t size) {
 }
 
 void* FastMemcpy(void* dest, const void* src, uint64_t size) {
+    ASSERT(dest != NULL && src != NULL);
     CpuFeatures* features = GetCpuFeatures();
     uint8_t* d = (uint8_t*)dest;
     const uint8_t* s = (const uint8_t*)src;
@@ -58,6 +61,7 @@ void* FastMemcpy(void* dest, const void* src, uint64_t size) {
 }
 
 void FastZeroPage(void* page) {
+    ASSERT(page != NULL);
     CpuFeatures* features = GetCpuFeatures();
     
     if (features->sse2) {

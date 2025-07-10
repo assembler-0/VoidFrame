@@ -68,6 +68,7 @@ static void FastDisplayTicks(uint64_t ticks) {
 
 // The C-level interrupt handler
 void InterruptHandler(struct Registers* regs) {
+    ASSERT(regs != NULL);
     if (regs->interrupt_number == 32) {
         tick_count++;
         // FastDisplayTicks(tick_count); // Re-enabled

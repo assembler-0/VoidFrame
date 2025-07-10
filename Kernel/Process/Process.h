@@ -2,6 +2,7 @@
 #define PROCESS_H
 
 #include "stdint.h"
+#include "../Core/Ipc.h"
 
 #define MAX_PROCESSES 64
 #define STACK_SIZE 4096
@@ -48,6 +49,7 @@ typedef struct {
     uint8_t privilege_level;
     uint8_t _padding;
     SecurityToken token;
+    MessageQueue ipc_queue;
     ProcessContext context;
 } Process;
 
