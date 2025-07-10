@@ -26,21 +26,31 @@ void PrintKernel(const char *str){
     if (!str) return;
     uint16_t *vidptr = (uint16_t*)0xb8000;
     for (int k = 0; str[k] != '\0'; k++) {
-        if (CurrentLine >= 25) break;
-        
         if (str[k] == '\n') {
             CurrentLine++;
             CurrentColumn = 0;
         } else {
             int pos = CurrentLine * 80 + CurrentColumn;
-            if (pos < 80 * 25) {
-                vidptr[pos] = (0x03 << 8) | str[k]; // Fast 16-bit write
-            }
+            vidptr[pos] = (0x03 << 8) | str[k]; // Fast 16-bit write
             CurrentColumn++;
             if (CurrentColumn >= 80) {
                 CurrentLine++;
                 CurrentColumn = 0;
             }
+        }
+        // Handle scrolling
+        if (CurrentLine >= 25) {
+            // Move all lines up by one
+            for (int i = 1; i < 25; i++) {
+                for (int j = 0; j < 80; j++) {
+                    vidptr[(i - 1) * 80 + j] = vidptr[i * 80 + j];
+                }
+            }
+            // Clear the last line
+            for (int j = 0; j < 80; j++) {
+                vidptr[24 * 80 + j] = (0x03 << 8) | ' ';
+            }
+            CurrentLine = 24; // Keep cursor on the last line
         }
     }
 }

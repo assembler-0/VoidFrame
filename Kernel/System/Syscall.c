@@ -3,6 +3,7 @@
 #include "Process.h"
 #include "Idt.h"
 #include "Panic.h"
+#include "../Memory/MemOps.h" // For FastMemcpy
 
 #define likely(x)   __builtin_expect(!!(x), 1)
 #define unlikely(x) __builtin_expect(!!(x), 0)
@@ -27,20 +28,17 @@ uint64_t SyscallHandler(uint64_t syscall_num, uint64_t arg1, uint64_t arg2, uint
                 if (unlikely(!arg2)) {
                     return -1; // NULL buffer
                 }
-                if (unlikely(arg3 > 4096)) {
+                // Limit the size to prevent buffer overflows in kernel space
+                if (unlikely(arg3 > MAX_SYSCALL_BUFFER_SIZE)) {
                     return -1; // Buffer too large
                 }
                 
-                char* buffer = (char*)arg2;
-                for (uint64_t i = 0; i < arg3; i++) {
-                    if (buffer[i] == '\0') break;
-                    PrintKernelAt(&buffer[i], CurrentLine, CurrentColumn++);
-                    if (CurrentColumn >= 80) {
-                        CurrentLine++;
-                        CurrentColumn = 0;
-                        if (CurrentLine >= 25) CurrentLine = 24; // Screen bounds
-                    }
-                }
+                // Copy user buffer to a kernel-controlled buffer
+                char kernel_buffer[MAX_SYSCALL_BUFFER_SIZE + 1]; // +1 for null terminator
+                FastMemcpy(kernel_buffer, (const void*)arg2, arg3);
+                kernel_buffer[arg3] = '\0'; // Ensure null termination
+                
+                PrintKernel(kernel_buffer);
                 return arg3;
             }
             return -1;
