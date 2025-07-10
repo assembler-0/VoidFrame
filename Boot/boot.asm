@@ -8,6 +8,7 @@ header_start:
     dw 0    ; type
     dw 0    ; flags
     dd 8    ; size
+
 header_end:
 
 bits 32
@@ -20,7 +21,6 @@ section .text
     mov al, %1
     out dx, al
 %endmacro
-
 ; Enhanced GDT for long mode (keeping your original structure)
 gdt64:
     dq 0 ; NULL descriptor

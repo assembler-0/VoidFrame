@@ -12,6 +12,7 @@
 #include "../Drivers/Io.h"
 #include "Panic.h"
 
+
 int CurrentLine = 0;
 int CurrentColumn = 0;
 void ClearScreen(){
@@ -165,22 +166,23 @@ void PrintKernelAt(const char *str, int line, int col) {
     }
 }
 
-void RemapPIC() {
-    outb(0x20, 0x11); // Start init
-    outb(0xA0, 0x11);
-    outb(0x21, 0x20); // Master offset = 0x20 (32)
-    outb(0xA1, 0x28); // Slave offset = 0x28 (40)
-    outb(0x21, 0x04);
-    outb(0xA1, 0x02);
-    outb(0x21, 0x01);
-    outb(0xA1, 0x01);
-    outb(0x21, 0xFF); // Mask all
-    outb(0xA1, 0xFF);
+void AsciiSplash() {
+    ClearScreen();
+    PrintKernel("+-----------------------------------------------------------------------------+\n");
+    PrintKernel("|                   >> VoidFrameKernel Version 0.0.1-alpha <<                 |\n");
+    PrintKernel("|                                                                             |\n");
+    PrintKernel("|    Copyright (C) 2025 VoidFrame Project - Atheria                           |\n");
+    PrintKernel("|    Licensed under GNU General Public License v2.0                           |\n");
+    PrintKernel("|                                                                             |\n");
+    PrintKernel("|    This program is free software; you can redistribute it and/or modify     |\n");
+    PrintKernel("|    it under the terms of the GNU General Public License as published by     |\n");
+    PrintKernel("|    the Free Software Foundation; either version 2 of the License.           |\n");
+    PrintKernel("|                                                                             |\n");
+    PrintKernel("+-----------------------------------------------------------------------------+\n\n");
 }
 
-
 void KernelMain(uint32_t magic, uint32_t info) {
-    ClearScreen();
+    AsciiSplash();
     PrintKernel("[SUCCESS] VoidFrame Kernel - Version 0.0.1-alpha loaded\n");
     GdtInit();
     IdtInstall();
@@ -199,10 +201,10 @@ void KernelMain(uint32_t magic, uint32_t info) {
     PrintKernel("\n");
 
     PrintKernel("[SUCCESS] Core system modules loaded\n");
-
+    PrintKernel("[SUCCESS] Kernel initialization complete.\n");
+    PrintKernel("[SYSTEM] Handling control to SecureKernelIntegritySubsystem()...\n\n");
     asm volatile("sti");
-
-    PrintKernel("[SUCCESS] Kernel initialization complete - entering main loop\n");
+    // Failsafe - Not used
     while (1) {
         if (ShouldSchedule()) {
             RequestSchedule();
