@@ -4,11 +4,12 @@
 #include "Idt.h"
 #include "Panic.h"
 #include "../Memory/MemOps.h" // For FastMemcpy
+#include "../Core/Ipc.h"
 
 #define likely(x)   __builtin_expect(!!(x), 1)
 #define unlikely(x) __builtin_expect(!!(x), 0)
 extern void SyscallEntry(void);
-uint64_t SyscallHandler(uint64_t syscall_num, uint64_t arg1, uint64_t arg2, uint64_t arg3) {
+uint64_t Syscall(uint64_t syscall_num, uint64_t arg1, uint64_t arg2, uint64_t arg3) {
     Process* current = GetCurrentProcess();
     if (unlikely(!current)) {
         Panic("Syscall from invalid process");
@@ -49,6 +50,15 @@ uint64_t SyscallHandler(uint64_t syscall_num, uint64_t arg1, uint64_t arg2, uint
             
         case SYS_GETPID:
             return current ? current->pid : -1;
+
+        case SYS_IPC_SEND:
+            // arg1 = target_pid, arg2 = message
+            IpcSendMessage((uint32_t)arg1, (IpcMessage*)arg2);
+            return 0;
+
+        case SYS_IPC_RECV:
+            // arg1 = message_buffer
+            return IpcReceiveMessage((IpcMessage*)arg1);
             
         default:
             return -1;

@@ -5,6 +5,7 @@
 #include "Panic.h"
 
 void JumpToUserMode(void (*user_function)(void)) {
+    ASSERT(user_function != NULL);
     // Allocate user stack
     void* user_stack = AllocPage();
     if (!user_stack) {
@@ -32,6 +33,7 @@ void JumpToUserMode(void (*user_function)(void)) {
 }
 
 void CreateUserProcess(void (*user_function)(void)) {
+    ASSERT(user_function != NULL);
     // Create process but mark it as user mode
     uint32_t pid = CreateProcess(user_function);
     if (pid > 0) {

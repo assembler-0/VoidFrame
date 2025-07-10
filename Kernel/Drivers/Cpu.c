@@ -1,8 +1,9 @@
 #include "Cpu.h"
-
+#include "../Core/Panic.h"
 static CpuFeatures cpu_features = {0};
 
 static void cpuid(uint32_t leaf, uint32_t* eax, uint32_t* ebx, uint32_t* ecx, uint32_t* edx) {
+    ASSERT(eax != NULL && ebx != NULL && ecx != NULL && edx != NULL);
     asm volatile("cpuid" : "=a"(*eax), "=b"(*ebx), "=c"(*ecx), "=d"(*edx) : "a"(leaf));
 }
 

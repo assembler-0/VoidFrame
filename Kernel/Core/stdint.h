@@ -5,6 +5,8 @@
 #ifndef VOIDFRAME_STDINT_H
 #define VOIDFRAME_STDINT_H
 
+#define NULL ((void*)0)
+
 typedef unsigned char uint8_t;
 _Static_assert(sizeof(uint8_t) == 1, "sizeof(uint8_t) != 1");
 
