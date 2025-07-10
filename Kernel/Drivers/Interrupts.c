@@ -70,7 +70,7 @@ static void FastDisplayTicks(uint64_t ticks) {
 void InterruptHandler(struct Registers* regs) {
     if (regs->interrupt_number == 32) {
         tick_count++;
-        FastDisplayTicks(tick_count); // Re-enabled
+        // FastDisplayTicks(tick_count); // Re-enabled
         outb(0x20, 0x20);
         ScheduleFromInterrupt(regs); // Re-enabled
         return;

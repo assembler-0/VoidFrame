@@ -12,10 +12,8 @@ void MemoryInit(void) {
     total_pages = BITMAP_SIZE;
     used_pages = 0;
     
-    // Clear bitmap (all pages free) - use simple loop for now
-    for (int i = 0; i < BITMAP_SIZE / 8; i++) {
-        page_bitmap[i] = 0;
-    }
+    // Clear bitmap (all pages free) using FastMemset
+    FastMemset(page_bitmap, 0, BITMAP_SIZE / 8);
     
     // Mark first 256 pages as used (kernel space)
     for (int i = 0; i < 256; i++) {
