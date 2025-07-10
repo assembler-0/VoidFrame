@@ -64,5 +64,4 @@ void ScheduleFromInterrupt(struct Registers* regs);
 void RegisterSecurityManager(uint32_t pid);
 void SecureKernelIntegritySubsystem(void);
 void SystemService(void);
-void CheckPid0Magic(const char* location);
 #endif
