@@ -16,7 +16,7 @@ typedef struct {
     uint8_t  privilege;      // Process privilege level
     uint8_t  flags;          // Security flags
     uint16_t checksum;       // Simple checksum
-} SecurityToken;
+} __attribute__((packed)) SecurityToken;
 
 typedef enum {
     PROC_READY,
@@ -64,4 +64,5 @@ void ScheduleFromInterrupt(struct Registers* regs);
 void RegisterSecurityManager(uint32_t pid);
 void SecureKernelIntegritySubsystem(void);
 void SystemService(void);
+void CheckPid0Magic(const char* location);
 #endif
