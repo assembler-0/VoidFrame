@@ -17,19 +17,54 @@ static uint64_t security_magic = 0x5EC0DE4D41474943ULL;  // "SECODEMAGIC"
 
 extern void SwitchContext(ProcessContext * old, ProcessContext * new);
 
+// Debug function to check PID 0's token magic
+void CheckPid0Magic(const char* location) {
+    PrintKernel("CheckPid0Magic at ");
+    PrintKernel(location);
+    PrintKernel(": ");
+    PrintKernelHex(processes[0].token.magic);
+    PrintKernel("\n");
+}
+
 static inline uint16_t CalculateChecksum(const SecurityToken* token) {
-    const uint8_t* data = (const uint8_t*)token;
     uint16_t sum = 0;
-    // Skip checksum field itself (last 2 bytes)
-    for (int i = 0; i < sizeof(SecurityToken) - 2; i++) {
-        sum += data[i];
-    }
+
+    // Sum magic (8 bytes)
+    sum += (uint16_t)(token->magic & 0xFFFF);
+    sum += (uint16_t)((token->magic >> 16) & 0xFFFF);
+    sum += (uint16_t)((token->magic >> 32) & 0xFFFF);
+    sum += (uint16_t)((token->magic >> 48) & 0xFFFF);
+
+    // Sum creator_pid (4 bytes)
+    sum += (uint16_t)(token->creator_pid & 0xFFFF);
+    sum += (uint16_t)((token->creator_pid >> 16) & 0xFFFF);
+
+    // Sum privilege (1 byte)
+    sum += (uint16_t)token->privilege;
+
+    // Sum flags (1 byte)
+    sum += (uint16_t)token->flags;
+
     return sum;
 }
 
 static inline int ValidateToken(const SecurityToken* token) {
-    return (token->magic == security_magic) &&
-           (token->checksum == CalculateChecksum(token));
+    uint16_t calculated_checksum = CalculateChecksum(token);
+    int is_valid = (token->magic == security_magic) &&
+                   (token->checksum == calculated_checksum);
+
+    PrintKernel("ValidateToken Debug for PID: ");
+    PrintKernelInt(token->creator_pid); // Using creator_pid as a proxy for process ID
+    PrintKernel("\n");
+    PrintKernel("  Token Magic: "); PrintKernelHex(token->magic); PrintKernel("\n");
+    PrintKernel("  Expected Magic: "); PrintKernelHex(security_magic); PrintKernel("\n");
+    PrintKernel("  Token Checksum: "); PrintKernelHex(token->checksum); PrintKernel("\n");
+    PrintKernel("  Calculated Checksum: "); PrintKernelHex(calculated_checksum); PrintKernel("\n");
+    PrintKernel("  Magic Match: "); PrintKernelInt(token->magic == security_magic); PrintKernel("\n");
+    PrintKernel("  Checksum Match: "); PrintKernelInt(token->checksum == calculated_checksum); PrintKernel("\n");
+    PrintKernel("  Is Valid: "); PrintKernelInt(is_valid); PrintKernel("\n");
+
+    return is_valid;
 }
 
 static void init_token(SecurityToken* token, uint32_t creator_pid, uint8_t privilege) {
@@ -37,6 +72,7 @@ static void init_token(SecurityToken* token, uint32_t creator_pid, uint8_t privi
     token->creator_pid = creator_pid;
     token->privilege = privilege;
     token->flags = 0;
+    token->checksum = 0; // Zero out checksum before calculating
     token->checksum = CalculateChecksum(token);
 }
 
@@ -54,16 +90,18 @@ void RequestSchedule(void) {
 }
 
 void ProcessInit(void) {
-    // Clear all processes
-    for (int i = 0; i < MAX_PROCESSES; i++) {
-        processes[i].pid = 0;
-        processes[i].state = PROC_TERMINATED;
-        processes[i].stack = 0;
-        processes[i].privilege_level = PROC_PRIV_RESTRICTED;
-    }
+    // Clear all processes array
+    FastMemset(processes, 0, sizeof(Process) * MAX_PROCESSES);
+
+    // Debug print for SecurityToken size
+    PrintKernel("sizeof(SecurityToken): ");
+    PrintKernelInt(sizeof(SecurityToken));
+    PrintKernel("\n");
 
     // Create idle process (PID 0) - system privilege
     processes[0].pid = 0;
+
+
     processes[0].state = PROC_RUNNING;
     processes[0].priority = 0;
     processes[0].privilege_level = PROC_PRIV_SYSTEM;
@@ -71,6 +109,7 @@ void ProcessInit(void) {
 
     // Initialize security token for idle process
     init_token(&processes[0].token, 0, PROC_PRIV_SYSTEM);
+    CheckPid0Magic("After init_token in ProcessInit");
 
     // Clear context
     for (int i = 0; i < sizeof(ProcessContext)/8; i++) {
@@ -122,6 +161,9 @@ uint32_t CreateSecureProcess(void (*entry_point)(void), uint8_t privilege) {
         Panic("CreateSecureProcess: No free process slots");
     }
 
+    // Clear the entire process slot to ensure a clean state
+    FastMemset(&processes[slot], 0, sizeof(Process));
+
     // Allocate stack
     void* stack = AllocPage();
     if (!stack) {
@@ -168,6 +210,7 @@ uint32_t CreateSecureProcess(void (*entry_point)(void), uint8_t privilege) {
 }
 
 void ScheduleFromInterrupt(struct Registers* regs) {
+    CheckPid0Magic("Start of ScheduleFromInterrupt");
     if (!regs) {
         Panic("ScheduleFromInterrupt: NULL registers");
     }
@@ -279,6 +322,7 @@ void SecureKernelIntegritySubsystem(void) {
 
     // Main security loop
     while (1) {
+        CheckPid0Magic("Start of SecureKernelIntegritySubsystem loop");
         static int check_counter = 0;
         if (++check_counter % 1000 != 0) {
             for (volatile int i = 0; i < 1000; i++);
