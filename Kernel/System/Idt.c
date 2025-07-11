@@ -275,7 +275,7 @@ void IdtSetGate(uint8_t num, uint64_t base, uint16_t sel, uint8_t flags) {
     g_Idt[num].Reserved2 = 0;
 }
 
-void IdtInstall() {
+int IdtInstall() {
     g_IdtPtr.Limit = (sizeof(struct IdtEntry) * IDT_ENTRIES) - 1;
     g_IdtPtr.Base  = (uint64_t)&g_Idt;
 
@@ -541,4 +541,5 @@ void IdtInstall() {
     IdtSetGate(255, (uint64_t)isr255, kernelCodeSegment, flags);
 
     IdtLoad(&g_IdtPtr);
+    return 0;
 }

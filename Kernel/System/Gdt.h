@@ -25,6 +25,6 @@ struct GdtPtr {
     uint64_t base;
 } __attribute__((packed));
 
-void GdtInit(void);
+int GdtInit(void);
 
 #endif

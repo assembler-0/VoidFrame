@@ -1,11 +1,18 @@
 #ifndef KERNEL_H
 #define KERNEL_H
 #include "stdint.h"
-extern int CurrentLine;
-extern int CurrentColumn;
 void ClearScreen();
-void PrintKernel(const char *str);
-void PrintKernelInt(int num);
-void PrintKernelHex(uint64_t hex);
-void PrintKernelAt(const char *str, int line, int col);
+void PrintKernel(const char* str);
+void PrintKernelHex(uint64_t num);
+void PrintKernelInt(int64_t num);
+void PrintKernelAt(const char* str, uint32_t line, uint32_t col);
+
+// Compatibility functions for existing code
+void PrintKernelHex32(uint32_t num);
+void PrintKernelInt32(int32_t num);
+
+// New colored output functions
+void PrintKernelSuccess(const char* str);
+void PrintKernelError(const char* str);
+void PrintKernelWarning(const char* str);
 #endif

@@ -8,7 +8,7 @@ static uint64_t total_pages = 0;
 static uint64_t used_pages = 0;
 static uint64_t memory_start = 0x100000; // Start after 1MB
 
-void MemoryInit(void) {
+int MemoryInit(void) {
     total_pages = BITMAP_SIZE;
     used_pages = 0;
     
@@ -22,6 +22,7 @@ void MemoryInit(void) {
         page_bitmap[byte_idx] |= (1 << bit_idx);
         used_pages++;
     }
+    return 0;
 }
 
 void* AllocPage(void) {

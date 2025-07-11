@@ -19,7 +19,7 @@ void PitInstall() {
 #define ICW1_INIT    0x10
 #define ICW4_8086    0x01
 
-void PicInstall() {
+int PicInstall() {
     uint8_t a1, a2;
 
     a1 = inb(PIC1_DATA);
@@ -42,4 +42,5 @@ void PicInstall() {
     
     // Initialize PIT after PIC
     PitInstall();
+    return 0;
 }

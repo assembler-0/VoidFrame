@@ -79,7 +79,7 @@ typedef struct {
 } Scheduler;
 
 // Core process functions
-void ProcessInit(void);
+int ProcessInit(void);
 uint32_t CreateProcess(void (*entry_point)(void));
 uint32_t CreateSecureProcess(void (*entry_point)(void), uint8_t privilege);
 Process* GetCurrentProcess(void);

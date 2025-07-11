@@ -326,7 +326,7 @@ static void init_token(SecurityToken* token, uint32_t creator_pid, uint8_t privi
     token->checksum = CalculateChecksum(token, new_pid);
 }
 
-void ProcessInit(void) {
+int ProcessInit(void) {
     FastMemset(processes, 0, sizeof(Process) * MAX_PROCESSES);
 
     // Initialize idle process
@@ -336,6 +336,7 @@ void ProcessInit(void) {
 
     InitScheduler();  // Initialize new scheduler
     process_count = 1;
+    return 0;
 }
 
 uint32_t CreateProcess(void (*entry_point)(void)) {
@@ -343,8 +344,8 @@ uint32_t CreateProcess(void (*entry_point)(void)) {
 }
 
 void ProcessExitStub() {
-    PrintKernel("[KERNEL] Process returned from its main function. -FATAL EXECPTION-\n");
-    PrintKernel("Terminating process PID: ");
+    PrintKernelError("[KERNEL] Process returned from its main function. -FATAL EXECPTION-\n");
+    PrintKernelWarning("Terminating process PID: ");
     PrintKernelInt(GetCurrentProcess()->pid);
     PrintKernel("\n");
 
@@ -362,9 +363,9 @@ uint32_t CreateSecureProcess(void (*entry_point)(void), uint8_t privilege) {
     // Security check
     if (privilege == PROC_PRIV_SYSTEM) {
         if (creator->pid != 0 && creator->privilege_level != PROC_PRIV_SYSTEM) {
-            PrintKernel("[SYSTEM] Denied: PID ");
+            PrintKernelError("[SYSTEM] Denied: PID ");
             PrintKernelInt(creator->pid);
-            PrintKernel(" attempted to create a system-level process.\n");
+            PrintKernelError(" attempted to create a system-level process.\n");
             return 0;
         }
     }
@@ -472,19 +473,19 @@ void SystemService(void) {
     }
 }
 void SecureKernelIntegritySubsystem(void) {
-    PrintKernel("[SYSTEM] MLFQ scheduler initializing...\n");
-    PrintKernel("[SYSTEM] SecureKernelIntegritySubsystem() initializing...\n");
+    PrintKernelSuccess("[SYSTEM] MLFQ scheduler initializing...\n");
+    PrintKernelSuccess("[SYSTEM] SecureKernelIntegritySubsystem() initializing...\n");
     Process* current = GetCurrentProcess();
     RegisterSecurityManager(current->pid);
 
-    PrintKernel("[SYSTEM] Creating system service...\n");
+    PrintKernelSuccess("[SYSTEM] Creating system service...\n");
     uint32_t service_pid = CreateSecureProcess(SystemService, PROC_PRIV_SYSTEM);
     if (service_pid) {
-        PrintKernel("[SYSTEM] System now under SecureKernelIntegritySubsystem() control.\n");
+        PrintKernelSuccess("[SYSTEM] System now under SecureKernelIntegritySubsystem() control.\n");
     } else {
         Panic("[SYSTEM] Failed to create system service.\n");
     }
-    PrintKernel("[SYSTEM] SecureKernelIntegritySubsystem() deploying...");
+    PrintKernelSuccess("[SYSTEM] SecureKernelIntegritySubsystem() deploying...");
     while (1) {
         Yield();
         for (int i = 0; i < MAX_PROCESSES; i++) {

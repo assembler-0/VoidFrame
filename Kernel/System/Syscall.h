@@ -15,7 +15,7 @@
 #define SYSCALL_SEGMENT_SELECTOR  0x08
 #define MAX_SYSCALL_BUFFER_SIZE 4096
 // System call handler
-void SyscallInit(void);
+int SyscallInit(void);
 uint64_t Syscall(uint64_t syscall_num, uint64_t arg1, uint64_t arg2, uint64_t arg3);
 
 #endif
