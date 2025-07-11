@@ -469,11 +469,15 @@ void RegisterSecurityManager(uint32_t pid) {
     security_manager_pid = pid;
 }
 
-void SystemService(void) {
+void SystemTracer(void) {
+    PrintKernelSuccess("[SYSTEM] SystemTracer() has started. Scanning...\n");
     while (1) {
+        CleanupTerminatedProcesses();
         Yield();
+        __asm__ __volatile__("hlt");
     }
 }
+
 void SecureKernelIntegritySubsystem(void) {
     PrintKernelSuccess("[SYSTEM] MLFQ scheduler initializing...\n");
     PrintKernelSuccess("[SYSTEM] SecureKernelIntegritySubsystem() initializing...\n");
@@ -481,13 +485,13 @@ void SecureKernelIntegritySubsystem(void) {
     RegisterSecurityManager(current->pid);
 
     PrintKernelSuccess("[SYSTEM] Creating system service...\n");
-    uint32_t service_pid = CreateSecureProcess(SystemService, PROC_PRIV_SYSTEM);
+    uint32_t service_pid = CreateSecureProcess(SystemTracer, PROC_PRIV_SYSTEM);
     if (service_pid) {
         PrintKernelSuccess("[SYSTEM] System now under SecureKernelIntegritySubsystem() control.\n");
     } else {
         Panic("[SYSTEM] Failed to create system service.\n");
     }
-    PrintKernelSuccess("[SYSTEM] SecureKernelIntegritySubsystem() deploying...");
+    PrintKernelSuccess("[SYSTEM] SecureKernelIntegritySubsystem() deploying...\n");
     while (1) {
         Yield();
         for (int i = 0; i < MAX_PROCESSES; i++) {
