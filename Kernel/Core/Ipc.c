@@ -1,5 +1,5 @@
 #include "Ipc.h"
-#include "Process.h"
+#include "../Process/Process.h"
 #include "Panic.h"
 #include "../Memory/MemOps.h"
 
@@ -17,7 +17,6 @@ void IpcSendMessage(uint32_t target_pid, IpcMessage* msg) {
         // Handle error: queue is full
         return;
     }
-
     FastMemcpy(&queue->messages[queue->tail], msg, sizeof(IpcMessage));
     queue->tail = (queue->tail + 1) % MAX_MESSAGES;
     queue->count++;
@@ -37,7 +36,6 @@ int IpcReceiveMessage(IpcMessage* msg_buffer) {
         current->state = PROC_BLOCKED;
         Yield();
     }
-
     FastMemcpy(msg_buffer, &queue->messages[queue->head], sizeof(IpcMessage));
     queue->head = (queue->head + 1) % MAX_MESSAGES;
     queue->count--;

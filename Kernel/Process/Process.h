@@ -3,9 +3,14 @@
 
 #include "stdint.h"
 #include "../Core/Ipc.h"
+#include "../Drivers/Cpu.h"
 
 #define MAX_PROCESSES 64
 #define STACK_SIZE 4096
+
+#define MAX_PRIORITY_LEVELS 4
+#define QUANTUM_BASE 10  // Base time quantum in ticks
+#define BOOST_INTERVAL 1000  // Boost all processes every 1000 ticks
 
 #define PROC_PRIV_SYSTEM    0   // Highest privilege (kernel services)
 #define PROC_PRIV_USER      1   // User processes
@@ -25,17 +30,6 @@ typedef enum {
     PROC_RUNNING,
     PROC_BLOCKED
 } ProcessState;
-
-// DO NOT TOUCH THIS STRUCTURE - must match interrupt ASM stack layout
-typedef struct Registers {
-    uint64_t r15, r14, r13, r12, r11, r10, r9, r8;
-    uint64_t rbp, rsi, rdi, rdx, rcx, rbx, rax;
-    uint64_t ds, es, fs, gs;
-    uint64_t interrupt_number;
-    uint64_t error_code;
-    uint64_t rip, cs, rflags;
-    uint64_t rsp, ss;
-} __attribute__((packed)) Registers;
 
 // Use the same structure for context switching to avoid mismatches
 typedef struct Registers ProcessContext;
@@ -57,9 +51,6 @@ typedef struct {
 } Process;
 
 // New scheduler constants
-#define MAX_PRIORITY_LEVELS 4
-#define QUANTUM_BASE 10  // Base time quantum in ticks
-#define BOOST_INTERVAL 1000  // Boost all processes every 1000 ticks
 
 typedef struct {
     uint32_t process_slots[MAX_PROCESSES];

@@ -71,8 +71,8 @@ void InterruptHandler(struct Registers* regs) {
     ASSERT(regs != NULL);
     if (regs->interrupt_number == 32) {
         tick_count++;
-        // FastDisplayTicks(tick_count);
-        ScheduleFromInterrupt(regs); // Re-enabledc
+        FastDisplayTicks(tick_count);
+        FastSchedule(regs);
         outb(0x20, 0x20);
         return;
     }
