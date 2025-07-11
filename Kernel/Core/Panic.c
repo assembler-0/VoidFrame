@@ -20,7 +20,7 @@ void __attribute__((noreturn)) Panic(const char* message) {
     // CurrentLine = 0;
     // CurrentColumn = 0;
     // No busy-wait, just halt
-    PrintKernelError("[FATAL] - [----KERNEL PANIC----]\n\n");
+    PrintKernelError("\n[FATAL] - [----KERNEL PANIC----]\n\n");
     PrintKernelError(message);
     PrintKernelError("\nCalling KernelPanicHandler()...\n");
     KernelPanicHandler();
@@ -32,7 +32,7 @@ void __attribute__((noreturn)) PanicWithCode(const char* message, uint64_t error
     // CurrentLine = 0;
     // CurrentColumn = 0;
     // No busy-wait, just halt
-    PrintKernelError("[FATAL] - [----KERNEL PANIC----]\n");
+    PrintKernelError("\n[FATAL] - [----KERNEL PANIC----]\n");
     PrintKernelError(message);
     PrintKernelError("\nError Code: ");
     PrintKernelHex(error_code);
