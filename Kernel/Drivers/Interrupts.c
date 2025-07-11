@@ -68,6 +68,22 @@ static void FastDisplayTicks(uint64_t ticks) {
 }
 
 
+static void HandleFatalException(const char* message, uint64_t interrupt_number) {
+    PrintKernelWarning(message);
+    PrintKernelWarning(" at interrupt: ");
+    PrintKernelInt(interrupt_number);
+    PrintKernelWarning("\n");
+
+    Process* current_process = GetCurrentProcess();
+    if (current_process != NULL) {
+        current_process->state = PROC_TERMINATED;
+        RequestSchedule();
+    } else {
+        Panic("Cannot terminate process, NULL process found!");
+    }
+}
+
+
 // The C-level interrupt handler
 void InterruptHandler(struct Registers* regs) {
     ASSERT(regs != NULL);
@@ -79,11 +95,14 @@ void InterruptHandler(struct Registers* regs) {
         return;
     }
     if (regs->interrupt_number == 13) {
-        Panic("InterruptHandler: Page fault (GPF handler)");
+        HandleFatalException("FATAL EXCEPTION - Page fault (GPF handler)", regs->interrupt_number);
+        return;
     }
     if (regs->interrupt_number >= 255) {
-        Panic("FATAL EXECPTION - OVERFLOWING - Cannot handle interrupt. (>256)");
+        HandleFatalException("FATAL  EXCEPTION - OVERFLOWING - Cannot handle interrupt. (>256)", regs->interrupt_number);
+        return;
     }
+
     if (regs->interrupt_number >= 40) {
         outb(0xA0, 0x20); // EOI to slave PIC
     }
