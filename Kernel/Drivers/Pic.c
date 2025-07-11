@@ -11,8 +11,7 @@
 #define ICW4_8086    0x01
 
 void PitInstall() {
-    // Set PIT frequency to ~100Hz (10ms intervals)
-    uint16_t divisor = 1193180 / 100;
+    uint16_t divisor = 1193180 / PIT_FREQUENCY_HZ;
     
     outb(0x43, 0x36);  // Command byte: channel 0, lobyte/hibyte, rate generator
     outb(0x40, divisor & 0xFF);        // Low byte
