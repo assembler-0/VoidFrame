@@ -65,7 +65,8 @@ uint64_t Syscall(uint64_t syscall_num, uint64_t arg1, uint64_t arg2, uint64_t ar
     }
 }
 
-void SyscallInit(void) {
+int SyscallInit(void) {
     // Install syscall interrupt (0x80)
     IdtSetGate(0x80, (uint64_t)SyscallEntry, SYSCALL_SEGMENT_SELECTOR, IDT_INTERRUPT_GATE_KERNEL);
+    return 0;
 }

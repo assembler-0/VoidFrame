@@ -17,7 +17,7 @@ static void SetGdtGate(int num, uint32_t base, uint32_t limit, uint8_t access, u
     gdt[num].access      = access;
 }
 
-void GdtInit(void) {
+int GdtInit(void) {
     gdt_ptr.limit = (sizeof(struct GdtEntry) * 5) - 1;
     gdt_ptr.base  = (uint64_t)&gdt;
     
@@ -28,4 +28,5 @@ void GdtInit(void) {
     SetGdtGate(4, 0, 0xFFFFFFFF, 0xF2, 0xA0); // User data (Ring 3)
     
     GdtFlush((uint64_t)&gdt_ptr);
+    return 0;
 }

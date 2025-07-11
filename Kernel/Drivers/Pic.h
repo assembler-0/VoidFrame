@@ -2,7 +2,6 @@
 #define PIC_H
 
 #include "stdint.h"
-
-void PicInstall();
+int PicInstall();
 
 #endif

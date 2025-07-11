@@ -21,6 +21,6 @@ struct IdtPtr {
 } __attribute__((packed));
 
 
-void IdtInstall();
+int IdtInstall();
 void IdtSetGate(uint8_t num, uint64_t base, uint16_t sel, uint8_t flags);
 #endif
