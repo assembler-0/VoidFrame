@@ -63,7 +63,6 @@ c_sources = [
   'Kernel/Drivers/Interrupts.c',
   'Kernel/Drivers/Pic.c',
   'Kernel/Drivers/Cpu.c',
-  'Kernel/Memory/VMemTest.c',
   'Kernel/Core/Ipc.c'
 ]
 
