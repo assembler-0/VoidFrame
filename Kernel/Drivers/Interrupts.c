@@ -9,7 +9,8 @@
 
 static uint64_t tick_count = 0;
 
-void itoa(uint64_t num, char* str) {
+char * itoa(uint64_t num) {
+    char* str;
     int i = 0;
     if (num == 0) {
         str[i++] = '0';
@@ -29,6 +30,7 @@ void itoa(uint64_t num, char* str) {
         start++;
         end--;
     }
+    return str;
 }
 
 // Fast tick display using direct memory write
