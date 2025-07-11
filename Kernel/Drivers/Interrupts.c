@@ -68,7 +68,7 @@ static void FastDisplayTicks(uint64_t ticks) {
 }
 
 
-static void HandleFatalException(const char* message, uint64_t interrupt_number) {
+static void FatalExceptionHandler(const char* message, uint64_t interrupt_number) {
     PrintKernelWarning(message);
     PrintKernelWarning(" at interrupt: ");
     PrintKernelInt(interrupt_number);
@@ -89,17 +89,17 @@ void InterruptHandler(struct Registers* regs) {
     ASSERT(regs != NULL);
     if (regs->interrupt_number == 32) {
         tick_count++;
-        FastDisplayTicks(tick_count);
+        // FastDisplayTicks(tick_count);
         FastSchedule(regs);
         outb(0x20, 0x20);
         return;
     }
     if (regs->interrupt_number == 13) {
-        HandleFatalException("FATAL EXCEPTION - Page fault (GPF handler)", regs->interrupt_number);
+        FatalExceptionHandler("FATAL EXCEPTION - Page fault (GPF handler)", regs->interrupt_number);
         return;
     }
     if (regs->interrupt_number >= 255) {
-        HandleFatalException("FATAL  EXCEPTION - OVERFLOWING - Cannot handle interrupt. (>256)", regs->interrupt_number);
+        FatalExceptionHandler("FATAL  EXCEPTION - OVERFLOWING - Cannot handle interrupt. (>256)", regs->interrupt_number);
         return;
     }
 

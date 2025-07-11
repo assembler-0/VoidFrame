@@ -268,8 +268,6 @@ void AsciiSplash(void) {
     ConsoleSetColor(VGA_COLOR_DEFAULT);
 }
 
-// Enhanced kernel initialization with better error handling
-
 
 static InitResultT SystemInitialize(void) {
     // Initialize GDT
@@ -323,7 +321,6 @@ void KernelMain(uint32_t magic, uint32_t info) {
     PrintKernelSuccess("[KERNEL] Security manager created with PID: ");
     PrintKernelInt(security_pid);
     PrintKernel("\n");
-    
     PrintKernelSuccess("[KERNEL] Core system modules loaded\n");
     PrintKernelSuccess("[KERNEL] Kernel initialization complete\n");
     PrintKernelSuccess("[SYSTEM] Transferring control to SecureKernelIntegritySubsystem...\n\n");
