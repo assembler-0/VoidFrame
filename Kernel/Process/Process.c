@@ -68,7 +68,7 @@ void InitScheduler(void) {
 
     // Initialize priority queues with different time quantums
     for (int i = 0; i < MAX_PRIORITY_LEVELS; i++) {
-        MLFQscheduler.queues[i].quantum = QUANTUM_BASE * (1 << i);  // 10, 20, 40, 80 ticks
+        MLFQscheduler.queues[i].quantum = QUANTUM_BASE / (1 << i);  // 10, 5, 2, 1 ticks
         MLFQscheduler.queues[i].head = 0;
         MLFQscheduler.queues[i].tail = 0;
         MLFQscheduler.queues[i].count = 0;
@@ -384,6 +384,8 @@ uint32_t CreateSecureProcess(void (*entry_point)(void), uint8_t privilege) {
 
     // Clear the entire slot first
     FastMemset(&processes[slot], 0, sizeof(Process));
+
+
 
     // Allocate stack
     void* stack = AllocPage();

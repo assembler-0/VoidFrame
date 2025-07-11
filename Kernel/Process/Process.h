@@ -10,7 +10,7 @@
 
 #define MAX_PRIORITY_LEVELS 4
 #define QUANTUM_BASE 10  // Base time quantum in ticks
-#define BOOST_INTERVAL 1000  // Boost all processes every 1000 ticks
+#define BOOST_INTERVAL 100  // Boost all processes every 100 ticks
 
 #define PROC_PRIV_SYSTEM    0   // Highest privilege (kernel services)
 #define PROC_PRIV_USER      1   // User processes

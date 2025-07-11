@@ -303,7 +303,6 @@ static InitResultT SystemInitialize(void) {
     
     return INIT_SUCCESS;
 }
-// Main kernel entry point with improved error handling
 void KernelMain(uint32_t magic, uint32_t info) {
     AsciiSplash();
     PrintKernelSuccess("[KERNEL] VoidFrame Kernel - Version 0.0.1-alpha loaded\n");
