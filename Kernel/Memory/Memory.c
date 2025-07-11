@@ -1,7 +1,5 @@
 #include "Memory.h"
 #include "MemOps.h"
-#include "Cpu.h"
-#include "Kernel.h"
 #include "Panic.h"
 static uint8_t page_bitmap[BITMAP_SIZE / 8];
 static uint64_t total_pages = 0;

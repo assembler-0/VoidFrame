@@ -11,6 +11,7 @@
 #include "../System/Syscall.h"
 #include "../System/Gdt.h"
 #include "Panic.h"
+#include "UserMode.h"
 #include "../Drivers/Io.h"
 
 #define NULL ((void*)0)
@@ -191,7 +192,7 @@ void PrintKernelHex(uint64_t num) {
 }
 
 // Optimized integer printing with proper sign handling
-void PrintKernelInt(uint64_t num) {
+void PrintKernelInt(int64_t num) {
     char buffer[21]; // Max digits for 64-bit signed integer + sign + null
     
     if (num == 0) {
@@ -302,7 +303,6 @@ static InitResultT SystemInitialize(void) {
     
     return INIT_SUCCESS;
 }
-
 // Main kernel entry point with improved error handling
 void KernelMain(uint32_t magic, uint32_t info) {
     AsciiSplash();
@@ -313,7 +313,7 @@ void KernelMain(uint32_t magic, uint32_t info) {
     PrintKernelHex(info);
     PrintKernel("\n\n");
     SystemInitialize();
-    
+
     // Create the security manager process (PID 1)
     PrintKernel("[INFO] Creating security manager process...\n");
     uint64_t security_pid = CreateSecureProcess(SecureKernelIntegritySubsystem, PROC_PRIV_SYSTEM);
@@ -321,7 +321,6 @@ void KernelMain(uint32_t magic, uint32_t info) {
         PrintKernelError("[FATAL] Cannot create SecureKernelIntegritySubsystem\n");
         Panic("Critical security failure - cannot create security manager");
     }
-    
     PrintKernelSuccess("[KERNEL] Security manager created with PID: ");
     PrintKernelInt(security_pid);
     PrintKernel("\n");
@@ -332,12 +331,11 @@ void KernelMain(uint32_t magic, uint32_t info) {
     
     // Enable interrupts
     asm volatile("sti");
-    
-    // Main kernel loop with better power management
-    while (true) {
+
+    while (1) {
         if (ShouldSchedule()) {
             RequestSchedule();
         }
-        asm volatile("hlt" ::: "memory");
+        asm volatile("hlt");
     }
 }
