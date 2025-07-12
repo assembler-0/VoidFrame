@@ -24,6 +24,78 @@ static Scheduler MLFQscheduler;
 static SchedulerNode scheduler_node_pool[MAX_PROCESSES];
 static uint32_t scheduler_node_pool_bitmap[(MAX_PROCESSES + 31) / 32];
 
+static uint32_t termination_queue[MAX_PROCESSES];
+static uint32_t term_queue_head = 0;
+static uint32_t term_queue_tail = 0;
+static uint32_t term_queue_count = 0;
+
+uint64_t GetSystemTicks(void) {
+    return MLFQscheduler.tick_counter;
+}
+
+static void AddToTerminationQueue(uint32_t slot) {
+    if (term_queue_count >= MAX_PROCESSES) return;
+
+    termination_queue[term_queue_tail] = slot;
+    term_queue_tail = (term_queue_tail + 1) % MAX_PROCESSES;
+    term_queue_count++;
+}
+
+// Remove from termination queue
+static uint32_t RemoveFromTerminationQueue(void) {
+    if (term_queue_count == 0) return MAX_PROCESSES;
+
+    uint32_t slot = termination_queue[term_queue_head];
+    term_queue_head = (term_queue_head + 1) % MAX_PROCESSES;
+    term_queue_count--;
+    return slot;
+}
+
+void TerminateProcess(uint32_t pid, TerminationReason reason, uint32_t exit_code) {
+    if (pid == 0) return; // Cannot terminate idle process
+
+    Process* proc = GetProcessByPid(pid);
+    if (!proc || proc->state == PROC_TERMINATED || proc->state == PROC_ZOMBIE) {
+        return; // Already terminated or doesn't exist
+    }
+
+    // Find the slot
+    uint32_t slot = proc - processes;
+    if (slot >= MAX_PROCESSES) return;
+
+    PrintKernel("[KERNEL] Terminating process PID: ");
+    PrintKernelInt(pid);
+    PrintKernel(" Reason: ");
+    PrintKernelInt(reason);
+    PrintKernel("\n");
+
+    // Mark as dying to prevent double termination
+    proc->state = PROC_DYING;
+    proc->term_reason = reason;
+    proc->exit_code = exit_code;
+    proc->termination_time = GetSystemTicks(); // You'll need to implement this
+
+    // Remove from scheduler immediately
+    RemoveFromScheduler(slot);
+
+    // If this is the currently running process, we need special handling
+    if (slot == MLFQscheduler.current_running) {
+        // Mark for immediate context switch
+        MLFQscheduler.quantum_remaining = 0;
+        RequestSchedule();
+    }
+
+    // Add to termination queue for deferred cleanup
+    AddToTerminationQueue(slot);
+
+    // Move to zombie state
+    proc->state = PROC_ZOMBIE;
+}
+
+void KillProcess(uint32_t pid) {
+    TerminateProcess(pid, TERM_KILLED, 1);
+}
+
 void InitSchedulerNodePool(void) {
     FastMemset(scheduler_node_pool, 0, sizeof(scheduler_node_pool));
     FastMemset(scheduler_node_pool_bitmap, 0, sizeof(scheduler_node_pool_bitmap));
@@ -280,34 +352,42 @@ void FastSchedule(struct Registers* regs) {
 
     // Handle current process
     if (MLFQscheduler.current_running != 0) {  // Not idle
-        // Save context
-        FastMemcpy(&current->context, regs, sizeof(struct Registers));
+        // Check if current process is dying or terminated
+        if (current->state == PROC_DYING || current->state == PROC_ZOMBIE ||
+            current->state == PROC_TERMINATED) {
+            // Don't save context, just switch away
+            MLFQscheduler.current_running = 0; // Switch to idle
+            MLFQscheduler.quantum_remaining = 0;
+        } else {
+            // Save context for healthy processes
+            FastMemcpy(&current->context, regs, sizeof(struct Registers));
 
-        // Update process state
-        if (current->state == PROC_RUNNING) {
-            current->state = PROC_READY;
+            // Update process state
+            if (current->state == PROC_RUNNING) {
+                current->state = PROC_READY;
 
-            // Check if quantum expired
-            if (MLFQscheduler.quantum_remaining > 0) {
-                MLFQscheduler.quantum_remaining--;
+                // Check if quantum expired
+                if (MLFQscheduler.quantum_remaining > 0) {
+                    MLFQscheduler.quantum_remaining--;
 
-                // If quantum not expired and no higher priority processes, keep running
-                int highest_priority = FindHighestPriorityQueue();
-                if (MLFQscheduler.quantum_remaining > 0 &&
-                    (highest_priority == -1 || highest_priority >= (int)current->priority)) {
-                    current->state = PROC_RUNNING;
-                    return;  // Keep current process running
+                    // If quantum not expired and no higher priority processes, keep running
+                    int highest_priority = FindHighestPriorityQueue();
+                    if (MLFQscheduler.quantum_remaining > 0 &&
+                        (highest_priority == -1 || highest_priority >= (int)current->priority)) {
+                        current->state = PROC_RUNNING;
+                        return;  // Keep current process running
+                    }
                 }
-            }
 
-            // Quantum expired or higher priority process available
-            // Demote to lower priority (unless already at lowest)
-            if (current->priority < MAX_PRIORITY_LEVELS - 1) {
-                current->priority++;
-            }
+                // Quantum expired or higher priority process available
+                // Demote to lower priority (unless already at lowest)
+                if (current->priority < MAX_PRIORITY_LEVELS - 1) {
+                    current->priority++;
+                }
 
-            // Add back to appropriate queue
-            AddToScheduler(MLFQscheduler.current_running);
+                // Add back to appropriate queue
+                AddToScheduler(MLFQscheduler.current_running);
+            }
         }
     }
 
@@ -324,13 +404,27 @@ void FastSchedule(struct Registers* regs) {
             MLFQscheduler.active_bitmap &= ~(1U << next_priority);
         }
 
-        MLFQscheduler.current_running = next_slot;
-        MLFQscheduler.quantum_remaining = MLFQscheduler.queues[next_priority].quantum;
+        // Verify the process is still valid
+        if (processes[next_slot].state == PROC_READY) {
+            MLFQscheduler.current_running = next_slot;
+            MLFQscheduler.quantum_remaining = MLFQscheduler.queues[next_priority].quantum;
+        } else {
+            // Process became invalid, try again
+            MLFQscheduler.current_running = 0;
+            MLFQscheduler.quantum_remaining = 0;
+        }
     }
 
-
-    processes[MLFQscheduler.current_running].state = PROC_RUNNING;
-    FastMemcpy(regs, &processes[MLFQscheduler.current_running].context, sizeof(struct Registers));
+    // Switch to new process
+    if (MLFQscheduler.current_running != 0) {
+        processes[MLFQscheduler.current_running].state = PROC_RUNNING;
+        current_process = MLFQscheduler.current_running;
+        FastMemcpy(regs, &processes[MLFQscheduler.current_running].context, sizeof(struct Registers));
+    } else {
+        // Running idle - set up idle context
+        current_process = 0;
+        // You might want to set up a proper idle context here
+    }
 }
 
 // Called when process blocks (I/O, IPC, etc.)
@@ -449,14 +543,19 @@ uint32_t CreateProcess(void (*entry_point)(void)) {
 }
 
 void ProcessExitStub() {
-    PrintKernelError("[KERNEL] Process returned from its main function. -FATAL EXECPTION-\n");
-    PrintKernelWarning("Terminating process PID: ");
-    PrintKernelInt(GetCurrentProcess()->pid);
-    PrintKernel("\n");
+    Process* current = GetCurrentProcess();
 
-    GetCurrentProcess()->state = PROC_TERMINATED;
-    RequestSchedule();
-    while (1) { __asm__ __volatile__("hlt"); }
+    PrintKernelWarning("[KERNEL] Process PID ");
+    PrintKernelInt(current->pid);
+    PrintKernelWarning(" exited normally\n");
+
+    // Use the safe termination function
+    TerminateProcess(current->pid, TERM_NORMAL, 0);
+
+    // Should not reach here, but just in case
+    while (1) {
+        __asm__ __volatile__("hlt");
+    }
 }
 
 uint32_t CreateSecureProcess(void (*entry_point)(void), uint8_t privilege) {
@@ -543,15 +642,48 @@ void ScheduleFromInterrupt(struct Registers* regs) {
 
 
 void CleanupTerminatedProcesses(void) {
-    for (int i = 1; i < MAX_PROCESSES; i++) {
-        if (processes[i].state == PROC_TERMINATED && processes[i].pid != 0) {
-            if (processes[i].stack) {
-                FreePage(processes[i].stack);
-            }
-            FastMemset(&processes[i], 0, sizeof(Process));
-            FreeSlot(i);
-            process_count--;
+    // Process a limited number per call to avoid long interrupt delays
+    int cleanup_count = 0;
+    const int MAX_CLEANUP_PER_CALL = 3;
+
+    while (term_queue_count > 0 && cleanup_count < MAX_CLEANUP_PER_CALL) {
+        uint32_t slot = RemoveFromTerminationQueue();
+        if (slot >= MAX_PROCESSES) break;
+
+        Process* proc = &processes[slot];
+
+        // Double-check state
+        if (proc->state != PROC_ZOMBIE && proc->state != PROC_TERMINATED) {
+            continue;
         }
+
+        PrintKernel("[KERNEL] Cleaning up process PID: ");
+        PrintKernelInt(proc->pid);
+        PrintKernel("\n");
+
+        // Cleanup resources
+        if (proc->stack) {
+            FreePage(proc->stack);
+            proc->stack = NULL;
+        }
+
+        // Clear IPC queue
+        proc->ipc_queue.head = 0;
+        proc->ipc_queue.tail = 0;
+        proc->ipc_queue.count = 0;
+
+        // Clear process structure - this will set state to PROC_TERMINATED (0)
+        uint32_t pid_backup = proc->pid; // Keep for logging
+        FastMemset(proc, 0, sizeof(Process));
+
+        // Free the slot
+        FreeSlot(slot);
+        process_count--;
+        cleanup_count++;
+
+        PrintKernel("[KERNEL] Process PID ");
+        PrintKernelInt(pid_backup);
+        PrintKernel(" cleaned up successfully (state now PROC_TERMINATED=0)\n");
     }
 }
 
@@ -597,23 +729,27 @@ void SecureKernelIntegritySubsystem(void) {
     } else {
         Panic("[SYSTEM] Failed to create system service.\n");
     }
+
     PrintKernelSuccess("[SYSTEM] SecureKernelIntegritySubsystem() deploying...\n");
     while (1) {
         Yield();
+
+        // Check for security violations
         for (int i = 0; i < MAX_PROCESSES; i++) {
-            if ((processes[i].state == PROC_READY || processes[i].state == PROC_RUNNING) && processes[i].pid != 0) {
+            if ((processes[i].state == PROC_READY || processes[i].state == PROC_RUNNING) &&
+                processes[i].pid != 0) {
                 if (!ValidateToken(&processes[i].token, processes[i].pid)) {
-                    PrintKernel("[SYSTEM] SecureKernelIntegritySubsystem found a corrupt token for PID: ");
+                    PrintKernel("[SYSTEM] SecureKernelIntegritySubsystem found corrupt token for PID: ");
                     PrintKernelInt(processes[i].pid);
                     PrintKernel("! Terminating.\n");
-                    processes[i].state = PROC_TERMINATED;
-                    if (processes[i].stack) {
-                        FreePage(processes[i].stack);
-                        processes[i].stack = NULL;
-                    }
-                    process_count--;
+
+                    // Use proper termination instead of direct manipulation
+                    TerminateProcess(processes[i].pid, TERM_SECURITY, 1);
                 }
-            }
+                }
         }
+
+        // Perform cleanup
+        CleanupTerminatedProcesses();
     }
 }
