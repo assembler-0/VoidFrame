@@ -353,6 +353,7 @@ static void BoostAllProcesses(void) {
 }
 
 // Main scheduler - called from timer interrupt
+// Main scheduler - called from timer interrupt
 void FastSchedule(struct Registers* regs) {
     MLFQscheduler.tick_counter++;
 
@@ -362,82 +363,82 @@ void FastSchedule(struct Registers* regs) {
         MLFQscheduler.last_boost_tick = MLFQscheduler.tick_counter;
     }
 
-    Process* current = &processes[MLFQscheduler.current_running];
+    uint32_t old_slot = MLFQscheduler.current_running;
+    Process* old_proc = &processes[old_slot];
 
-    // Handle current process
-    if (MLFQscheduler.current_running != 0) {  // Not idle
-        // Check if current process is dying or terminated
-        if (current->state == PROC_DYING || current->state == PROC_ZOMBIE ||
-            current->state == PROC_TERMINATED) {
-            // Don't save context, just switch away
-            MLFQscheduler.current_running = 0; // Switch to idle
-            MLFQscheduler.quantum_remaining = 0;
+    // --- Step 1: Handle the currently running process ---
+    if (old_slot != 0) { // If we were not running the idle process
+        // Check if the process was terminated while running
+        if (old_proc->state == PROC_DYING || old_proc->state == PROC_ZOMBIE || old_proc->state == PROC_TERMINATED) {
+            // The process is dead. Do not save its context or re-queue it.
+            // It has already been removed from the scheduler by TerminateProcess.
+            // We just need to find a new process to run.
         } else {
-            // Save context for healthy processes
-            FastMemcpy(&current->context, regs, sizeof(struct Registers));
+            // Process is healthy, save its context.
+            FastMemcpy(&old_proc->context, regs, sizeof(struct Registers));
 
-            // Update process state
-            if (current->state == PROC_RUNNING) {
-                current->state = PROC_READY;
-
-                // Check if quantum expired
-                if (MLFQscheduler.quantum_remaining > 0) {
-                    MLFQscheduler.quantum_remaining--;
-
-                    // If quantum not expired and no higher priority processes, keep running
-                    int highest_priority = FindHighestPriorityQueue();
-                    if (MLFQscheduler.quantum_remaining > 0 &&
-                        (highest_priority == -1 || highest_priority >= (int)current->priority)) {
-                        current->state = PROC_RUNNING;
-                        return;  // Keep current process running
-                    }
-                }
-
-                // Quantum expired or higher priority process available
-                // Demote to lower priority (unless already at lowest)
-                if (current->priority < MAX_PRIORITY_LEVELS - 1) {
-                    current->priority++;
-                }
-
-                // Add back to appropriate queue
-                AddToScheduler(MLFQscheduler.current_running);
+            // Decrement quantum and check if it can continue running.
+            if (MLFQscheduler.quantum_remaining > 0) {
+                MLFQscheduler.quantum_remaining--;
             }
+
+            // Check for preemption or end of quantum
+            int highest_priority = FindHighestPriorityQueue();
+
+            // *** FIX FOR FLAW 1 ***
+            // The process can continue ONLY if its quantum is not expired AND
+            // there is NO HIGHER priority process waiting.
+            // A process of equal priority must wait its turn (for round-robin).
+            if (MLFQscheduler.quantum_remaining > 0 && (highest_priority == -1 || highest_priority > (int)old_proc->priority)) {
+                // No preemption needed, continue running the same process.
+                return;
+            }
+
+            // --- Time to switch ---
+            // The quantum has expired OR a higher priority process is ready.
+            // Set the old process state to READY, demote it, and re-queue it.
+            old_proc->state = PROC_READY;
+
+            // Demote to lower priority (unless already at lowest)
+            if (old_proc->priority < MAX_PRIORITY_LEVELS - 1) {
+                old_proc->priority++;
+            }
+            AddToScheduler(old_slot);
         }
     }
 
-    // Find next process to run
+    // --- Step 2: Find and dispatch the next process to run ---
     int next_priority = FindHighestPriorityQueue();
-    if (next_priority == -1) {
-        // No processes ready, run idle
-        MLFQscheduler.current_running = 0;
-        MLFQscheduler.quantum_remaining = 0;
-    } else {
-        // Get next process from highest priority queue
-        uint32_t next_slot = DeQueue(&MLFQscheduler.queues[next_priority]);
-        if (MLFQscheduler.queues[next_priority].count == 0) {
-            MLFQscheduler.active_bitmap &= ~(1U << next_priority);
-        }
+    uint32_t next_slot;
 
-        // Verify the process is still valid
-        if (processes[next_slot].state == PROC_READY) {
-            MLFQscheduler.current_running = next_slot;
-            MLFQscheduler.quantum_remaining = MLFQscheduler.queues[next_priority].quantum;
-        } else {
-            // Process became invalid, try again
-            MLFQscheduler.current_running = 0;
-            MLFQscheduler.quantum_remaining = 0;
+    if (next_priority == -1) {
+        // No processes are ready. Run the idle process.
+        next_slot = 0;
+    } else {
+        // Get the next process from the highest priority non-empty queue.
+        next_slot = DeQueue(&MLFQscheduler.queues[next_priority]);
+        if (processes[next_slot].state != PROC_READY) {
+             // This can happen if a process was terminated but not yet cleaned up.
+             // Just run idle for this tick and let the next tick sort it out.
+             next_slot = 0;
         }
     }
 
-    // Switch to new process
-    if (MLFQscheduler.current_running != 0) {
-        processes[MLFQscheduler.current_running].state = PROC_RUNNING;
-        current_process = MLFQscheduler.current_running;
-        FastMemcpy(regs, &processes[MLFQscheduler.current_running].context, sizeof(struct Registers));
+    MLFQscheduler.current_running = next_slot;
+    current_process = next_slot;
+
+    if (next_slot != 0) {
+        // We are switching to a real process.
+        Process* new_proc = &processes[next_slot];
+        new_proc->state = PROC_RUNNING;
+        MLFQscheduler.quantum_remaining = MLFQscheduler.queues[new_proc->priority].quantum;
+        FastMemcpy(regs, &new_proc->context, sizeof(struct Registers));
     } else {
-        // Running idle - set up idle context
-        current_process = 0;
-        // You might want to set up a proper idle context here
+        // We are switching to the idle process.
+        MLFQscheduler.quantum_remaining = 0; // Idle process has no quantum
+        // The context for idle is effectively just letting the CPU continue from
+        // the interrupt return, where it will likely enter a `hlt` loop.
+        // We don't need to copy an idle context here.
     }
 }
 
@@ -459,7 +460,7 @@ void ProcessBlocked(uint32_t slot) {
 // Simple interface for your existing code
 
 
-static int FindFreeSlot(void) {
+static inline int FindFreeSlot(void) {
     // Skip slot 0 (idle process)
     for (int i = 1; i < MAX_PROCESSES && i < 32; i++) {
         if (!(active_process_bitmap & (1U << i))) {
@@ -475,7 +476,7 @@ static int FindFreeSlot(void) {
 }
 
 // Mark slot as free
-static void FreeSlot(int slot) {
+static inline void FreeSlot(int slot) {
     if (slot > 0 && slot < 32) {
         active_process_bitmap &= ~(1U << slot);
     }
@@ -733,7 +734,6 @@ void SystemTracer(void) {
     while (1) {
         CleanupTerminatedProcesses();
         Yield();
-        __asm__ __volatile__("hlt");
     }
 }
 
