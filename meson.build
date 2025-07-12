@@ -35,6 +35,7 @@ inc_dirs = [
   'Kernel/Memory', 
   'Kernel/Process',
   'Kernel/System',
+  'Kernel/Atomic',
   'Kernel/Drivers'
 ]
 
@@ -63,6 +64,7 @@ c_sources = [
   'Kernel/Drivers/Interrupts.c',
   'Kernel/Drivers/Pic.c',
   'Kernel/Drivers/Cpu.c',
+  'Kernel/Atomic/Atomics.c',
   'Kernel/Core/Ipc.c'
 ]
 
