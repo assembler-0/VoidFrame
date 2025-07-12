@@ -324,10 +324,7 @@ void KernelMain(uint32_t magic, uint32_t info) {
     PrintKernelSuccess("[KERNEL] Core system modules loaded\n");
     PrintKernelSuccess("[KERNEL] Kernel initialization complete\n");
     PrintKernelSuccess("[SYSTEM] Transferring control to SecureKernelIntegritySubsystem...\n\n");
-
-    // Enable interrupts
     asm volatile("sti");
-
     while (1) {
         if (ShouldSchedule()) {
             RequestSchedule();

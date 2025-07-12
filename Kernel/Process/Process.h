@@ -28,9 +28,18 @@ typedef enum {
     PROC_TERMINATED = 0,  // IMPORTANT: Keep this as 0 since your code expects it
     PROC_READY,
     PROC_RUNNING,
-    PROC_BLOCKED
+    PROC_BLOCKED,
+    PROC_ZOMBIE,        // New: Waiting for cleanup
+    PROC_DYING          // New: In process of termination
 } ProcessState;
 
+typedef enum {
+    TERM_NORMAL = 0,    // Normal exit
+    TERM_KILLED,        // Killed by another process
+    TERM_CRASHED,       // Crashed/exception
+    TERM_SECURITY,      // Security violation
+    TERM_RESOURCE       // Resource exhaustion
+} TerminationReason;
 // Use the same structure for context switching to avoid mismatches
 typedef struct Registers ProcessContext;
 
@@ -51,13 +60,15 @@ typedef struct {
     uint32_t weight; // Base weight for scheduling (legacy - can remove later)
     uint64_t cpu_time_accumulated; // Accumulated CPU time
     int32_t dynamic_priority_score; // Score for dynamic adjustment (legacy - can remove later)
+    TerminationReason term_reason;
+    uint32_t exit_code;
+    uint64_t termination_time;
+    uint32_t parent_pid;        // For process hierarchy
     SecurityToken token;
     MessageQueue ipc_queue;
     ProcessContext context;
     SchedulerNode* scheduler_node;
 } Process;
-
-
 
 typedef struct {
     uint32_t process_slots[MAX_PROCESSES];
@@ -102,5 +113,6 @@ void DumpSchedulerState(void);
 void RegisterSecurityManager(uint32_t pid);
 void SecureKernelIntegritySubsystem(void);
 void SystemService(void);
-
+void KillProcess(uint32_t pid);
+uint64_t GetSystemTicks(void);
 #endif
