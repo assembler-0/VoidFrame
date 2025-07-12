@@ -17,11 +17,12 @@
 #define PROC_PRIV_RESTRICTED 2  // Restricted processes
 
 typedef struct {
-    uint64_t magic;          // Magic number for validation
-    uint32_t creator_pid;    // PID of creating process
-    uint8_t  privilege;      // Process privilege level
-    uint8_t  flags;          // Security flags
-    uint16_t checksum;       // Simple checksum
+    uint64_t magic;
+    uint32_t creator_pid;
+    uint8_t  privilege;
+    uint8_t  flags;
+    uint64_t creation_tick;
+    uint64_t checksum;
 } __attribute__((packed)) SecurityToken;
 
 typedef enum {
@@ -68,6 +69,7 @@ typedef struct {
     MessageQueue ipc_queue;
     ProcessContext context;
     SchedulerNode* scheduler_node;
+    uint64_t creation_time;
 } Process;
 
 typedef struct {
