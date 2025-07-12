@@ -35,7 +35,12 @@ uint64_t GetSystemTicks(void) {
 
 static void AddToTerminationQueue(uint32_t slot) {
     if (term_queue_count >= MAX_PROCESSES) return;
-
+    if (term_queue_count >= MAX_PROCESSES) {
+        PrintKernelError("[KERNEL] Termination queue full! Cannot add slot ");
+        PrintKernelInt(slot);
+        PrintKernelError("\n");
+        Panic("Termination queue overflow");
+    }
     termination_queue[term_queue_tail] = slot;
     term_queue_tail = (term_queue_tail + 1) % MAX_PROCESSES;
     term_queue_count++;
@@ -63,7 +68,7 @@ void TerminateProcess(uint32_t pid, TerminationReason reason, uint32_t exit_code
     uint32_t slot = proc - processes;
     if (slot >= MAX_PROCESSES) return;
 
-    PrintKernel("[KERNEL] Terminating process PID: ");
+    PrintKernel("[SYSTEM] Terminating process PID: ");
     PrintKernelInt(pid);
     PrintKernel(" Reason: ");
     PrintKernelInt(reason);
@@ -545,7 +550,7 @@ uint32_t CreateProcess(void (*entry_point)(void)) {
 void ProcessExitStub() {
     Process* current = GetCurrentProcess();
 
-    PrintKernelWarning("[KERNEL] Process PID ");
+    PrintKernelWarning("[SYSTEM] Process PID ");
     PrintKernelInt(current->pid);
     PrintKernelWarning(" exited normally\n");
 
@@ -657,7 +662,7 @@ void CleanupTerminatedProcesses(void) {
             continue;
         }
 
-        PrintKernel("[KERNEL] Cleaning up process PID: ");
+        PrintKernel("[SYSTEM] Cleaning up process PID: ");
         PrintKernelInt(proc->pid);
         PrintKernel("\n");
 
@@ -681,7 +686,7 @@ void CleanupTerminatedProcesses(void) {
         process_count--;
         cleanup_count++;
 
-        PrintKernel("[KERNEL] Process PID ");
+        PrintKernel("[SYSTEM] Process PID ");
         PrintKernelInt(pid_backup);
         PrintKernel(" cleaned up successfully (state now PROC_TERMINATED=0)\n");
     }
