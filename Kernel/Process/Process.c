@@ -7,6 +7,8 @@
 #include "../Core/Ipc.h"
 #define offsetof(type, member) ((uint64_t)&(((type*)0)->member))
 
+#define PROC_FLAG_IMMUNE (1U << 0)
+
 static Process processes[MAX_PROCESSES];
 static uint32_t next_pid = 1;
 static uint32_t current_process = 0;
@@ -34,9 +36,8 @@ uint64_t GetSystemTicks(void) {
 }
 
 static void AddToTerminationQueue(uint32_t slot) {
-    if (term_queue_count >= MAX_PROCESSES) return;
     if (term_queue_count >= MAX_PROCESSES) {
-        PrintKernelError("[KERNEL] Termination queue full! Cannot add slot ");
+        PrintKernelError("[SYSTEM] Termination queue full! Cannot add slot ");
         PrintKernelInt(slot);
         PrintKernelError("\n");
         Panic("Termination queue overflow");
@@ -57,14 +58,44 @@ static uint32_t RemoveFromTerminationQueue(void) {
 }
 
 void TerminateProcess(uint32_t pid, TerminationReason reason, uint32_t exit_code) {
-    if (pid == 0) return; // Cannot terminate idle process
-
     Process* proc = GetProcessByPid(pid);
-    if (!proc || proc->state == PROC_TERMINATED || proc->state == PROC_ZOMBIE) {
-        return; // Already terminated or doesn't exist
+    if (!proc || proc->state == PROC_DYING || proc->state == PROC_ZOMBIE || proc->state == PROC_TERMINATED) {
+        return; // Process doesn't exist or is already on its way out.
     }
 
-    // Find the slot
+    Process* caller = GetCurrentProcess();
+
+    // The security bypass check. If the kernel's security system has ordered this termination,
+    // we skip all further checks. This is critical to break recursive termination loops.
+    if (reason != TERM_SECURITY) {
+        // Normal security checks for a process trying to terminate another.
+        if (caller->pid != proc->pid) {
+            if (caller->privilege_level != PROC_PRIV_SYSTEM) {
+                PrintKernelError("[SYSTEM] Denied: Non-system PID ");
+                PrintKernelInt(caller->pid);
+                PrintKernelError(" attempted to kill PID ");
+                PrintKernelInt(proc->pid);
+                PrintKernelError(". Terminating attacker.\n");
+                // Use the special reason to ensure the attacker is terminated without further checks.
+                TerminateProcess(caller->pid, TERM_SECURITY, 1);
+                // The above call will not return, but we return here just in case for clarity.
+                return;
+            }
+
+            if (proc->token.flags & PROC_FLAG_IMMUNE) {
+                PrintKernelError("[SECURITY] Denied: PID ");
+                PrintKernelInt(caller->pid);
+                PrintKernelError(" attempted to kill IMMUNE process PID ");
+                PrintKernelInt(proc->pid);
+                PrintKernelError(". Terminating attacker.\n");
+                // Use the special reason.
+                TerminateProcess(caller->pid, TERM_SECURITY, 1);
+                return;
+            }
+        }
+    }
+
+    // --- Proceed with termination ---
     uint32_t slot = proc - processes;
     if (slot >= MAX_PROCESSES) return;
 
@@ -74,27 +105,27 @@ void TerminateProcess(uint32_t pid, TerminationReason reason, uint32_t exit_code
     PrintKernelInt(reason);
     PrintKernel("\n");
 
-    // Mark as dying to prevent double termination
     proc->state = PROC_DYING;
     proc->term_reason = reason;
     proc->exit_code = exit_code;
-    proc->termination_time = GetSystemTicks(); // You'll need to implement this
+    proc->termination_time = GetSystemTicks();
 
-    // Remove from scheduler immediately
     RemoveFromScheduler(slot);
 
-    // If this is the currently running process, we need special handling
+    // If the currently running process is the one being terminated, request an immediate reschedule.
     if (slot == MLFQscheduler.current_running) {
-        // Mark for immediate context switch
         MLFQscheduler.quantum_remaining = 0;
         RequestSchedule();
     }
 
-    // Add to termination queue for deferred cleanup
     AddToTerminationQueue(slot);
-
-    // Move to zombie state
     proc->state = PROC_ZOMBIE;
+
+    if (pid == caller->pid) {
+        while (1) {
+            __asm__ __volatile__("hlt");
+        }
+    }
 }
 
 void KillProcess(uint32_t pid) {
@@ -135,28 +166,6 @@ static void FreeSchedulerNode(SchedulerNode* node) {
     node->next = NULL;
     node->prev = NULL;
     node->slot = 0;
-}
-// Fast slot allocation using bitmap
-void DumpSchedulerState(void) {
-    PrintKernel("[SCHED] Current: ");
-    PrintKernelInt(MLFQscheduler.current_running);
-    PrintKernel(" Quantum: ");
-    PrintKernelInt(MLFQscheduler.quantum_remaining);
-    PrintKernel(" Bitmap: ");
-    PrintKernelInt(MLFQscheduler.active_bitmap);
-    PrintKernel("\n");
-    
-    for (int i = 0; i < MAX_PRIORITY_LEVELS; i++) {
-        if (MLFQscheduler.queues[i].count > 0) {
-            PrintKernel("  Priority ");
-            PrintKernelInt(i);
-            PrintKernel(": ");
-            PrintKernelInt(MLFQscheduler.queues[i].count);
-            PrintKernel(" processes, quantum: ");
-            PrintKernelInt(MLFQscheduler.queues[i].quantum);
-            PrintKernel("\n");
-        }
-    }
 }
 
 static inline void EnQueue(PriorityQueue* q, uint32_t slot) {
@@ -538,7 +547,15 @@ int ProcessInit(void) {
     processes[0].privilege_level = PROC_PRIV_SYSTEM;
     processes[0].scheduler_node = NULL;
 
-    InitScheduler();  // This now initializes the node pool too
+    // Initialize the security token for the Idle Process
+    init_token(&processes[0].token, 0, PROC_PRIV_SYSTEM, 0);
+
+    // Now, make it immune and recalculate the checksum
+    processes[0].token.flags |= PROC_FLAG_IMMUNE;
+    processes[0].token.checksum = 0; // Must be zero for calculation
+    processes[0].token.checksum = CalculateChecksum(&processes[0].token, 0);
+
+    InitScheduler();
     process_count = 1;
     return 0;
 }
@@ -556,7 +573,6 @@ void ProcessExitStub() {
 
     // Use the safe termination function
     TerminateProcess(current->pid, TERM_NORMAL, 0);
-
     // Should not reach here, but just in case
     while (1) {
         __asm__ __volatile__("hlt");
@@ -725,11 +741,27 @@ void SecureKernelIntegritySubsystem(void) {
     PrintKernelSuccess("[SYSTEM] MLFQ scheduler initializing...\n");
     PrintKernelSuccess("[SYSTEM] SecureKernelIntegritySubsystem() initializing...\n");
     Process* current = GetCurrentProcess();
+
+    // --- KERNEL SECURITY CHANGE ---
+    // Make SKIS itself immune and update its security token checksum so it's not
+    // flagged as corrupt by its own checks later on.
+    current->token.flags |= PROC_FLAG_IMMUNE;
+    current->token.checksum = 0; // Checksum must be zero during calculation
+    current->token.checksum = CalculateChecksum(&current->token, current->pid);
+
     RegisterSecurityManager(current->pid);
 
     PrintKernelSuccess("[SYSTEM] Creating system service...\n");
     uint32_t service_pid = CreateSecureProcess(SystemTracer, PROC_PRIV_SYSTEM);
     if (service_pid) {
+        // --- KERNEL SECURITY CHANGE ---
+        // Also make the critical SystemTracer process immune to termination.
+        Process* service_proc = GetProcessByPid(service_pid);
+        if (service_proc) {
+            service_proc->token.flags |= PROC_FLAG_IMMUNE;
+            service_proc->token.checksum = 0; // Recalculate checksum
+            service_proc->token.checksum = CalculateChecksum(&service_proc->token, service_proc->pid);
+        }
         PrintKernelSuccess("[SYSTEM] System now under SecureKernelIntegritySubsystem() control.\n");
     } else {
         Panic("[SYSTEM] Failed to create system service.\n");
@@ -747,14 +779,68 @@ void SecureKernelIntegritySubsystem(void) {
                     PrintKernel("[SYSTEM] SecureKernelIntegritySubsystem found corrupt token for PID: ");
                     PrintKernelInt(processes[i].pid);
                     PrintKernel("! Terminating.\n");
-
-                    // Use proper termination instead of direct manipulation
                     TerminateProcess(processes[i].pid, TERM_SECURITY, 1);
                 }
-                }
+            }
         }
 
         // Perform cleanup
         CleanupTerminatedProcesses();
+    }
+}
+
+static const char* GetStateString(ProcessState state) {
+    switch (state) {
+        case PROC_TERMINATED: return "TERMINATED";
+        case PROC_READY:      return "READY     ";
+        case PROC_RUNNING:    return "RUNNING   ";
+        case PROC_BLOCKED:    return "BLOCKED   ";
+        case PROC_ZOMBIE:     return "ZOMBIE    ";
+        case PROC_DYING:      return "DYING     ";
+        default:              return "UNKNOWN   ";
+    }
+}
+
+void ListProcesses(void) {
+    PrintKernel("--- Process List ---\n");
+    PrintKernel("PID\tState     \tPriv  \tImmune\n");
+    PrintKernel("-------------------------------------\n");
+    for (int i = 0; i < MAX_PROCESSES; i++) {
+        // --- CHANGE HERE: The condition now correctly includes the Idle Process (i == 0) ---
+        if (i == 0 || processes[i].pid != 0) {
+            Process* p = &processes[i];
+
+            PrintKernelInt(p->pid);
+            PrintKernel("\t");
+            PrintKernel(GetStateString(p->state));
+            PrintKernel("\t");
+            PrintKernel(p->privilege_level == PROC_PRIV_SYSTEM ? "SYSTEM" : "USER  ");
+            PrintKernel("\t");
+            PrintKernel(p->token.flags & PROC_FLAG_IMMUNE ? "YES" : "NO");
+            PrintKernel("\n");
+        }
+    }
+    PrintKernel("-------------------------------------\n");
+}
+
+void DumpSchedulerState(void) {
+    PrintKernel("[SCHED] Current: ");
+    PrintKernelInt(MLFQscheduler.current_running);
+    PrintKernel(" Quantum: ");
+    PrintKernelInt(MLFQscheduler.quantum_remaining);
+    PrintKernel(" Bitmap: ");
+    PrintKernelInt(MLFQscheduler.active_bitmap);
+    PrintKernel("\n");
+
+    for (int i = 0; i < MAX_PRIORITY_LEVELS; i++) {
+        if (MLFQscheduler.queues[i].count > 0) {
+            PrintKernel("  Priority ");
+            PrintKernelInt(i);
+            PrintKernel(": ");
+            PrintKernelInt(MLFQscheduler.queues[i].count);
+            PrintKernel(" processes, quantum: ");
+            PrintKernelInt(MLFQscheduler.queues[i].quantum);
+            PrintKernel("\n");
+        }
     }
 }

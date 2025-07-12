@@ -112,7 +112,7 @@ void DumpSchedulerState(void);
 // Security functions
 void RegisterSecurityManager(uint32_t pid);
 void SecureKernelIntegritySubsystem(void);
-void SystemService(void);
 void KillProcess(uint32_t pid);
 uint64_t GetSystemTicks(void);
+void ListProcesses(void);
 #endif
