@@ -11,14 +11,10 @@
 #include "../System/Syscall.h"
 #include "../System/Gdt.h"
 #include "Panic.h"
+#include "stdbool.h"
 #include "UserMode.h"
 #include "../Drivers/Io.h"
 #include "../Memory/VMem.h"
-
-#define NULL ((void*)0)
-#define true 1
-#define false 0
-typedef int bool;
 
 // VGA Constants
 #define VGA_BUFFER_ADDR     0xB8000
@@ -136,14 +132,14 @@ static void ConsolePutchar(char c) {
 // Modern string output with length checking
 void PrintKernel(const char* str) {
     if (!str) return;
-    
+
     // Cache the original color
     const uint8_t original_color = console.color;
-    
+
     for (const char* p = str; *p; p++) {
         ConsolePutchar(*p);
     }
-    
+
     console.color = original_color;
 }
 
@@ -170,52 +166,52 @@ void PrintKernelWarning(const char* str) {
 void PrintKernelHex(uint64_t num) {
     static const char hex_chars[] = "0123456789ABCDEF";
     char buffer[19]; // "0x" + 16 hex digits + null terminator
-    
+
     buffer[0] = '0';
     buffer[1] = 'x';
-    
+
     if (num == 0) {
         buffer[2] = '0';
         buffer[3] = '\0';
         PrintKernel(buffer);
         return;
     }
-    
+
     int pos = 18;
     buffer[pos--] = '\0';
-    
+
     while (num > 0 && pos >= 2) {
         buffer[pos--] = hex_chars[num & 0xF];
         num >>= 4;
     }
-    
+
     PrintKernel(&buffer[pos + 1]);
 }
 
 // Optimized integer printing with proper sign handling
 void PrintKernelInt(int64_t num) {
     char buffer[21]; // Max digits for 64-bit signed integer + sign + null
-    
+
     if (num == 0) {
         PrintKernel("0");
         return;
     }
-    
+
     bool negative = num < 0;
     if (negative) num = -num;
-    
+
     int pos = 20;
     buffer[pos--] = '\0';
-    
+
     while (num > 0 && pos >= 0) {
         buffer[pos--] = '0' + (num % 10);
         num /= 10;
     }
-    
+
     if (negative && pos >= 0) {
         buffer[pos--] = '-';
     }
-    
+
     PrintKernel(&buffer[pos + 1]);
 }
 

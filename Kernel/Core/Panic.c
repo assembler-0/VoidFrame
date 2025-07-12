@@ -10,6 +10,9 @@ int ForceReboot() {
     asm volatile("lidt %0" :: "m"(*(short*)0));
     PrintKernelWarning("[SYSTEM] Rebooting now...");
     asm volatile("int $0x3");
+    while (1) {
+        __asm__ __volatile__("hlt");
+    }
 }
 
 
@@ -31,6 +34,9 @@ void __attribute__((noreturn)) Panic(const char* message) {
     PrintKernelError(message);
     PrintKernelError("\n[SYSTEM] Calling KernelPanicHandler()...\n");
     KernelPanicHandler();
+    while (1) {
+        __asm__ __volatile__("hlt");
+    }
 }
 
 void __attribute__((noreturn)) PanicWithCode(const char* message, uint64_t error_code) {
@@ -41,4 +47,7 @@ void __attribute__((noreturn)) PanicWithCode(const char* message, uint64_t error
     PrintKernelHex(error_code);
     PrintKernelError(" -- Not handled");
     KernelPanicHandler();
+    while (1) {
+        __asm__ __volatile__("hlt");
+    }
 }
