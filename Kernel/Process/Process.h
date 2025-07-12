@@ -34,6 +34,12 @@ typedef enum {
 // Use the same structure for context switching to avoid mismatches
 typedef struct Registers ProcessContext;
 
+typedef struct SchedulerNode {
+    uint32_t slot;
+    struct SchedulerNode* next;
+    struct SchedulerNode* prev;
+} SchedulerNode;
+
 typedef struct {
     uint32_t pid;
     ProcessState state;
@@ -48,14 +54,15 @@ typedef struct {
     SecurityToken token;
     MessageQueue ipc_queue;
     ProcessContext context;
+    SchedulerNode* scheduler_node;
 } Process;
 
-// New scheduler constants
+
 
 typedef struct {
     uint32_t process_slots[MAX_PROCESSES];
-    uint32_t head;
-    uint32_t tail;
+    SchedulerNode* head;
+    SchedulerNode* tail;
     uint32_t count;
     uint32_t quantum;  // Time quantum for this priority level
 } PriorityQueue;
