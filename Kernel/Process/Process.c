@@ -21,6 +21,44 @@ static uint32_t last_scheduled_slot = 0;  // For round-robin optimization
 static uint32_t active_process_bitmap = 0;  // Bitmap for fast slot tracking (up to 32 processes)
 
 static Scheduler MLFQscheduler;
+static SchedulerNode scheduler_node_pool[MAX_PROCESSES];
+static uint32_t scheduler_node_pool_bitmap[(MAX_PROCESSES + 31) / 32];
+
+void InitSchedulerNodePool(void) {
+    FastMemset(scheduler_node_pool, 0, sizeof(scheduler_node_pool));
+    FastMemset(scheduler_node_pool_bitmap, 0, sizeof(scheduler_node_pool_bitmap));
+}
+
+static SchedulerNode* AllocSchedulerNode(void) {
+    for (uint32_t i = 0; i < MAX_PROCESSES; i++) {
+        uint32_t word_idx = i / 32;
+        uint32_t bit_idx = i % 32;
+
+        if (!(scheduler_node_pool_bitmap[word_idx] & (1U << bit_idx))) {
+            scheduler_node_pool_bitmap[word_idx] |= (1U << bit_idx);
+            SchedulerNode* node = &scheduler_node_pool[i];
+            node->next = NULL;
+            node->prev = NULL;
+            return node;
+        }
+    }
+    return NULL;  // Pool exhausted
+}
+
+static void FreeSchedulerNode(SchedulerNode* node) {
+    if (!node) return;
+
+    uint32_t index = node - scheduler_node_pool;
+    if (index >= MAX_PROCESSES) return;
+
+    uint32_t word_idx = index / 32;
+    uint32_t bit_idx = index % 32;
+
+    scheduler_node_pool_bitmap[word_idx] &= ~(1U << bit_idx);
+    node->next = NULL;
+    node->prev = NULL;
+    node->slot = 0;
+}
 // Fast slot allocation using bitmap
 void DumpSchedulerState(void) {
     PrintKernel("[SCHED] Current: ");
@@ -45,16 +83,42 @@ void DumpSchedulerState(void) {
 }
 
 static inline void EnQueue(PriorityQueue* q, uint32_t slot) {
-    if (q->count >= MAX_PROCESSES) return;
-    q->process_slots[q->tail] = slot;
-    q->tail = (q->tail + 1) % MAX_PROCESSES;
+    SchedulerNode* node = AllocSchedulerNode();
+    if (!node) return;  // Pool exhausted
+
+    node->slot = slot;
+    processes[slot].scheduler_node = node;
+
+    if (q->tail) {
+        q->tail->next = node;
+        node->prev = q->tail;
+        q->tail = node;
+    } else {
+        // Empty queue
+        q->head = q->tail = node;
+    }
+
     q->count++;
 }
 
 static inline uint32_t DeQueue(PriorityQueue* q) {
-    if (q->count == 0) return MAX_PROCESSES;
-    uint32_t slot = q->process_slots[q->head];
-    q->head = (q->head + 1) % MAX_PROCESSES;
+    if (!q->head) return MAX_PROCESSES;
+
+    SchedulerNode* node = q->head;
+    uint32_t slot = node->slot;
+
+    // Remove from front
+    q->head = node->next;
+    if (q->head) {
+        q->head->prev = NULL;
+    } else {
+        q->tail = NULL;  // Queue became empty
+    }
+
+    // Clear process reference and free node
+    processes[slot].scheduler_node = NULL;
+    FreeSchedulerNode(node);
+
     q->count--;
     return slot;
 }
@@ -65,16 +129,17 @@ static inline int QueueEmpty(PriorityQueue* q) {
 
 void InitScheduler(void) {
     FastMemset(&MLFQscheduler, 0, sizeof(Scheduler));
+    InitSchedulerNodePool();  // Initialize the node pool
 
     // Initialize priority queues with different time quantums
     for (int i = 0; i < MAX_PRIORITY_LEVELS; i++) {
-        MLFQscheduler.queues[i].quantum = QUANTUM_BASE / (1 << i);  // 10, 5, 2, 1 ticks
-        MLFQscheduler.queues[i].head = 0;
-        MLFQscheduler.queues[i].tail = 0;
+        MLFQscheduler.queues[i].quantum = QUANTUM_BASE / (1 << i);
+        MLFQscheduler.queues[i].head = NULL;
+        MLFQscheduler.queues[i].tail = NULL;
         MLFQscheduler.queues[i].count = 0;
     }
 
-    MLFQscheduler.current_running = 0;  // Start with idle
+    MLFQscheduler.current_running = 0;
     MLFQscheduler.quantum_remaining = 0;
     MLFQscheduler.active_bitmap = 0;
 }
@@ -106,30 +171,44 @@ void AddToScheduler(uint32_t slot) {
 
 // Remove process from scheduler
 void RemoveFromScheduler(uint32_t slot) {
-    // This is expensive but rarely called
-    for (int level = 0; level < MAX_PRIORITY_LEVELS; level++) {
-        PriorityQueue* q = &MLFQscheduler.queues[level];
-        for (uint32_t i = 0; i < q->count; i++) {
-            uint32_t idx = (q->head + i) % MAX_PROCESSES;
-            if (q->process_slots[idx] == slot) {
-                // Remove by shifting
-                for (uint32_t j = i; j < q->count - 1; j++) {
-                    uint32_t curr_idx = (q->head + j) % MAX_PROCESSES;
-                    uint32_t next_idx = (q->head + j + 1) % MAX_PROCESSES;
-                    q->process_slots[curr_idx] = q->process_slots[next_idx];
-                }
-                q->count--;
-                if (q->tail == 0) q->tail = MAX_PROCESSES - 1;
-                else q->tail--;
+    if (slot == 0 || slot >= MAX_PROCESSES) return;
 
-                if (q->count == 0) {
-                    MLFQscheduler.active_bitmap &= ~(1U << level);
-                }
-                return;
-            }
-        }
+    SchedulerNode* node = processes[slot].scheduler_node;
+    if (!node) return;  // Process not in any queue
+
+    // Find which queue this node belongs to by checking the process priority
+    uint32_t priority = processes[slot].priority;
+    if (priority >= MAX_PRIORITY_LEVELS) return;
+
+    PriorityQueue* q = &MLFQscheduler.queues[priority];
+
+    // Remove node from doubly-linked list
+    if (node->prev) {
+        node->prev->next = node->next;
+    } else {
+        // This was the head
+        q->head = node->next;
     }
+
+    if (node->next) {
+        node->next->prev = node->prev;
+    } else {
+        // This was the tail
+        q->tail = node->prev;
+    }
+
+    q->count--;
+
+    // Update bitmap if queue became empty
+    if (q->count == 0) {
+        MLFQscheduler.active_bitmap &= ~(1U << priority);
+    }
+
+    // Clear process reference and free node
+    processes[slot].scheduler_node = NULL;
+    FreeSchedulerNode(node);
 }
+
 static inline int FindHighestPriorityQueue(void) {
     if (MLFQscheduler.active_bitmap == 0) return -1;
 
@@ -149,11 +228,36 @@ static void BoostAllProcesses(void) {
         PriorityQueue* src = &MLFQscheduler.queues[level];
         PriorityQueue* dst = &MLFQscheduler.queues[0];
 
-        while (!QueueEmpty(src)) {
-            uint32_t slot = DeQueue(src);
+        // Move all nodes from src to dst
+        while (src->head) {
+            SchedulerNode* node = src->head;
+            uint32_t slot = node->slot;
+
+            // Remove from source queue
+            src->head = node->next;
+            if (src->head) {
+                src->head->prev = NULL;
+            } else {
+                src->tail = NULL;
+            }
+            src->count--;
+
+            // Update process priority
             processes[slot].priority = 0;
-            EnQueue(dst, slot);
+
+            // Add to destination queue
+            node->next = NULL;
+            node->prev = dst->tail;
+
+            if (dst->tail) {
+                dst->tail->next = node;
+                dst->tail = node;
+            } else {
+                dst->head = dst->tail = node;
+            }
+            dst->count++;
         }
+
         MLFQscheduler.active_bitmap &= ~(1U << level);
     }
 
@@ -224,7 +328,7 @@ void FastSchedule(struct Registers* regs) {
         MLFQscheduler.quantum_remaining = MLFQscheduler.queues[next_priority].quantum;
     }
 
-    // Switch to new process
+
     processes[MLFQscheduler.current_running].state = PROC_RUNNING;
     FastMemcpy(regs, &processes[MLFQscheduler.current_running].context, sizeof(struct Registers));
 }
@@ -333,8 +437,9 @@ int ProcessInit(void) {
     processes[0].pid = 0;
     processes[0].state = PROC_RUNNING;
     processes[0].privilege_level = PROC_PRIV_SYSTEM;
+    processes[0].scheduler_node = NULL;
 
-    InitScheduler();  // Initialize new scheduler
+    InitScheduler();  // This now initializes the node pool too
     process_count = 1;
     return 0;
 }
@@ -404,6 +509,7 @@ uint32_t CreateSecureProcess(void (*entry_point)(void), uint8_t privilege) {
     processes[slot].weight = (privilege == PROC_PRIV_SYSTEM) ? 100 : 50;
     processes[slot].cpu_time_accumulated = 0;
     processes[slot].dynamic_priority_score = 0;
+    processes[slot].scheduler_node = NULL;
 
     // Initialize IPC queue
     processes[slot].ipc_queue.head = 0;
