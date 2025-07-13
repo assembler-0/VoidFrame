@@ -3,8 +3,8 @@
 #include "Process.h"
 #include "Idt.h"
 #include "Panic.h"
-#include "../Memory/MemOps.h" // For FastMemcpy
-#include "../Core/Ipc.h"
+#include "MemOps.h" // For FastMemcpy
+#include "Ipc.h"
 
 #define likely(x)   __builtin_expect(!!(x), 1)
 #define unlikely(x) __builtin_expect(!!(x), 0)

@@ -2,8 +2,8 @@
 #define PROCESS_H
 
 #include "stdint.h"
-#include "../Core/Ipc.h"
-#include "../Drivers/Cpu.h"
+#include "Ipc.h"
+#include "Cpu.h"
 
 #define MAX_PROCESSES 64
 #define STACK_SIZE 4096

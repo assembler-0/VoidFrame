@@ -13,9 +13,9 @@
 #include "VMem.h"
 #include "Memory.h"
 #include "MemOps.h"
-#include "../Core/Kernel.h"
-#include "../Drivers/Interrupts.h"
-#include "../Core/Panic.h"
+#include "Kernel.h"
+#include "Interrupts.h"
+#include "Panic.h"
 
 /**
  * @brief The kernel's virtual address space structure

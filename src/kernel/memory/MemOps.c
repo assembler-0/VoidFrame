@@ -1,6 +1,6 @@
 #include "MemOps.h"
 #include "Cpu.h"
-#include "../Core/Panic.h"
+#include "Panic.h"
 
 void* FastMemset(void* dest, int value, uint64_t size) {
     ASSERT(dest != NULL);

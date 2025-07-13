@@ -3,18 +3,18 @@
  * Modern C implementation with optimizations
  */
 #include "stdint.h"
-#include "../System/Idt.h"
-#include "../Drivers/Pic.h"
+#include "Idt.h"
+#include "Pic.h"
 #include "Kernel.h"
-#include "../Memory/Memory.h"
-#include "../Process/Process.h"
-#include "../System/Syscall.h"
-#include "../System/Gdt.h"
+#include "Memory.h"
+#include "Process.h"
+#include "Syscall.h"
+#include "Gdt.h"
 #include "Panic.h"
 #include "stdbool.h"
 #include "UserMode.h"
-#include "../Drivers/Io.h"
-#include "../Memory/VMem.h"
+#include "Io.h"
+#include "VMem.h"
 
 // VGA Constants
 #define VGA_BUFFER_ADDR     0xB8000

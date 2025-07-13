@@ -1,8 +1,8 @@
-#include "../Core/stdint.h"
-#include "../Core/Kernel.h"
+#include "stdint.h"
+#include "Kernel.h"
 #include "Io.h"
-#include "../Core/Panic.h"
-#include "../Process/Process.h"
+#include "Panic.h"
+#include "Process.h"
 
 #define likely(x)   __builtin_expect(!!(x), 1)
 #define unlikely(x) __builtin_expect(!!(x), 0)

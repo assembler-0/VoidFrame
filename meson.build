@@ -11,13 +11,16 @@ project('voidframe', 'c',
 nasm = find_program('nasm')
 grub_mkrescue = find_program('grub-mkrescue')
 
+# Source root
+src_root = 'src'
+arch_root = src_root + '/arch/x86_64'
+
 # Light optimization flags
 c_flags = [
   '-m64',
   '-O2',
   '-fno-omit-frame-pointer',
   '-finline-functions',
-
   '-foptimize-sibling-calls',
   '-nostdinc',
   '-fno-builtin',
@@ -31,41 +34,47 @@ asm_flags = ['-f', 'elf64', '-O2']
 
 # Include directories
 inc_dirs = [
-  'Kernel/Core',
-  'Kernel/Memory', 
-  'Kernel/Process',
-  'Kernel/System',
-  'Kernel/Atomic',
-  'Kernel/Drivers'
+  src_root + '/include',
+  src_root + '/kernel/atomic',
+  src_root + '/kernel/core',
+  src_root + '/kernel/ipc',
+  src_root + '/kernel/memory',
+  src_root + '/kernel/process',
+  src_root + '/drivers',
+  arch_root + '/cpu',
+  arch_root + '/gdt',
+  arch_root + '/idt',
+  arch_root + '/interrupts',
+  arch_root + '/syscall'
 ]
 
 # Assembly sources (organized)
 asm_sources = [
-  'Boot/boot.asm',
-  'Kernel/System/IdtLoad.asm',
-  'Kernel/System/GdtFlush.asm',
-  'Kernel/System/SyscallEntry.asm',
-  'Kernel/Process/Switch.asm',
-  'Kernel/Drivers/Interrupts.asm'
+  arch_root + '/asm/pxs.asm',
+  arch_root + '/idt/IdtLoad.asm',
+  arch_root + '/gdt/GdtFlush.asm',
+  arch_root + '/syscall/SyscallEntry.asm',
+  arch_root + '/asm/Switch.asm',
+  arch_root + '/interrupts/Interrupts.asm'
 ]
 
 # C sources (organized)
 c_sources = [
-  'Kernel/Core/Kernel.c',
-  'Kernel/Core/Panic.c',
-  'Kernel/Memory/Memory.c',
-  'Kernel/Memory/MemOps.c',
-  'Kernel/Memory/VMem.c',
-  'Kernel/Process/Process.c',
-  'Kernel/Process/UserMode.c',
-  'Kernel/System/Idt.c',
-  'Kernel/System/Gdt.c',
-  'Kernel/System/Syscall.c',
-  'Kernel/Drivers/Interrupts.c',
-  'Kernel/Drivers/Pic.c',
-  'Kernel/Drivers/Cpu.c',
-  'Kernel/Atomic/Atomics.c',
-  'Kernel/Core/Ipc.c'
+  src_root + '/kernel/core/Kernel.c',
+  src_root + '/kernel/core/Panic.c',
+  src_root + '/kernel/memory/Memory.c',
+  src_root + '/kernel/memory/MemOps.c',
+  src_root + '/kernel/memory/VMem.c',
+  src_root + '/kernel/process/Process.c',
+  src_root + '/kernel/process/UserMode.c',
+  arch_root + '/idt/Idt.c',
+  arch_root + '/gdt/Gdt.c',
+  arch_root + '/syscall/Syscall.c',
+  arch_root + '/interrupts/Interrupts.c',
+  src_root + '/drivers/Pic.c',
+  arch_root + '/cpu/Cpu.c',
+  src_root + '/kernel/atomic/Atomics.c',
+  src_root + '/kernel/ipc/Ipc.c'
 ]
 
 # Build include flags

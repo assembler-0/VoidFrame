@@ -2,10 +2,10 @@
 #include "Kernel.h"
 #include "Memory.h"
 #include "Panic.h"
-#include "../Drivers/Cpu.h"
-#include "../Memory/MemOps.h"
-#include "../Core/Ipc.h"
-#include "../Atomic/Atomics.h"
+#include "Cpu.h"
+#include "MemOps.h"
+#include "Ipc.h"
+#include "Atomics.h"
 
 #define offsetof(type, member) ((uint64_t)&(((type*)0)->member))
 
