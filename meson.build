@@ -12,8 +12,8 @@ nasm = find_program('nasm')
 grub_mkrescue = find_program('grub-mkrescue')
 
 # Source root
-src_root = 'src'
-arch_root = src_root + '/arch/x86_64'
+src_root = './'
+arch_root = src_root + 'arch/x86_64'
 
 # Light optimization flags
 c_flags = [
