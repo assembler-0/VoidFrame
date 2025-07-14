@@ -2,5 +2,5 @@ section .text
 global EnablePagingAndJump
 
 EnablePagingAndJump:
-    mov rdi, cr3
+    mov cr3, rdi
     jmp rsi
