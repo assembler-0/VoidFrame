@@ -76,7 +76,7 @@ static void FatalExceptionHandler(const char* message, uint64_t interrupt_number
 
     Process* current_process = GetCurrentProcess();
     if (current_process != NULL) {
-        current_process->state = PROC_TERMINATED;
+        KillProcess(current_process->pid);
         RequestSchedule();
     } else {
         Panic("Cannot terminate process, NULL process found!");

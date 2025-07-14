@@ -65,34 +65,23 @@ void VMemInit(void) {
     void* pml4_phys = AllocPage();
     if (!pml4_phys) {
         Panic("VMemInit: Failed to allocate PML4 table");
-        return;
     }
 
     // CRITICAL FIX: Store physical address BEFORE converting
     uint64_t pml4_phys_addr = (uint64_t)pml4_phys;
-
-    // Convert to virtual address and zero it
-    uint64_t* pml4_virt = (uint64_t*)PHYS_TO_VIRT(pml4_phys);
-    FastZeroPage(pml4_virt);
-
+    // Zero the newly allocated physical page directly, assuming it's identity-mapped by the bootloader.
+    FastZeroPage(pml4_phys);
     // Initialize kernel space tracking
     kernel_space.next_vaddr = VIRT_ADDR_SPACE_START;
     kernel_space.used_pages = 0;
     kernel_space.total_mapped = 0;
-
     // CRITICAL FIX: Store physical address, not virtual!
     kernel_space.pml4 = (uint64_t*)pml4_phys_addr;
-
-    PrintKernel("VMemInit: Initialized kernel virtual memory manager at phys");
-    PrintKernel(pml4_phys);
+    PrintKernelSuccess("[SYSTEM] Initialized kernel virtual memory manager at address: ");
+    PrintKernelHex(pml4_phys_addr);
     PrintKernel("\n");
 }
 
-/**
- * @brief Retrieves or creates a page table entry at a specific level
- *
- * CRITICAL FIX: Proper physical address masking and validation
- */
 static uint64_t VMemGetPageTablePhys(uint64_t pml4_phys, uint64_t vaddr, int level, int create) {
     // Validate physical address
     if (!is_valid_phys_addr(pml4_phys)) {
@@ -127,6 +116,11 @@ static uint64_t VMemGetPageTablePhys(uint64_t pml4_phys, uint64_t vaddr, int lev
 
         // Zero the new table
         uint64_t* new_table_virt = (uint64_t*)PHYS_TO_VIRT(new_table_phys);
+        if (!VMemIsPageMapped((uint64_t)new_table_virt)) {
+            FreePage(new_table_phys);
+            Panic("VMemGetPageTablePhys: Newly allocated page is not accessible via PHYS_TO_VIRT!");
+        }
+
         FastZeroPage(new_table_virt);
 
         // Set the entry with physical address
@@ -296,53 +290,60 @@ void* VMemAlloc(uint64_t size) {
     return (void*)vaddr;
 }
 
-/**
- * @brief Frees previously allocated virtual memory
- *
- * CRITICAL FIX: Get physical addresses before unmapping
- */
 void VMemFree(void* vaddr, uint64_t size) {
     if (!vaddr || size == 0) return;
 
     size = PAGE_ALIGN_UP(size);
-    uint64_t current_vaddr = PAGE_ALIGN_DOWN((uint64_t)vaddr);
+    uint64_t start_vaddr = PAGE_ALIGN_DOWN((uint64_t)vaddr);
+    uint64_t num_pages = size / PAGE_SIZE;
 
-    // First pass: collect physical addresses
-    uint64_t* phys_addrs = (uint64_t*)VMemAlloc(size / PAGE_SIZE * sizeof(uint64_t));
-    if (!phys_addrs) return; // Can't allocate tracking array
+    for (uint64_t i = 0; i < num_pages; i++) {
+        uint64_t current_vaddr = start_vaddr + (i * PAGE_SIZE);
 
-    int page_count = 0;
-    for (uint64_t offset = 0; offset < size; offset += PAGE_SIZE) {
-        uint64_t page_vaddr = current_vaddr + offset;
-        uint64_t paddr = VMemGetPhysAddr(page_vaddr);
-        if (paddr) {
-            phys_addrs[page_count++] = paddr;
+        // This lock is to protect the page table walk in VMemGetPhysAddr
+        // and the modification below.
+        vmem_spin_lock(&vmem_lock);
+
+        // Find the physical page before we destroy the mapping
+        uint64_t paddr = VMemGetPhysAddr(current_vaddr);
+
+        // Navigate to the Page Table Entry (PTE)
+        uint64_t pdp_phys = VMemGetPageTablePhys((uint64_t)kernel_space.pml4, current_vaddr, 0, 0);
+        if (!pdp_phys) { vmem_spin_unlock(&vmem_lock); continue; }
+
+        uint64_t pd_phys = VMemGetPageTablePhys(pdp_phys, current_vaddr, 1, 0);
+        if (!pd_phys) { vmem_spin_unlock(&vmem_lock); continue; }
+
+        uint64_t pt_phys = VMemGetPageTablePhys(pd_phys, current_vaddr, 2, 0);
+        if (!pt_phys) { vmem_spin_unlock(&vmem_lock); continue; }
+
+        // Get virtual address of the page table to modify it
+        uint64_t* pt_virt = (uint64_t*)PHYS_TO_VIRT(pt_phys);
+        int pt_index = (current_vaddr >> PT_SHIFT) & PT_INDEX_MASK;
+
+        // Check if it's actually mapped before proceeding
+        if (pt_virt[pt_index] & PAGE_PRESENT) {
+            // Clear the entry (unmap)
+            pt_virt[pt_index] = 0;
+
+            // Flush the TLB for this specific address
+            VMemFlushTLBSingle(current_vaddr);
+
+            // Update stats
+            kernel_space.used_pages--;
+            kernel_space.total_mapped -= PAGE_SIZE;
+        }
+
+        vmem_spin_unlock(&vmem_lock);
+
+        // Now that the page is unmapped and the lock is released,
+        // free the physical page. Only do this if a valid paddr was found.
+        if (paddr != 0) {
+            FreePage((void*)paddr);
         }
     }
-
-    // Second pass: unmap
-    VMemUnmap(current_vaddr, size);
-
-    // Third pass: free physical pages
-    for (int i = 0; i < page_count; i++) {
-        FreePage((void*)phys_addrs[i]);
-    }
-
-    // Update tracking
-    vmem_spin_lock(&vmem_lock);
-    kernel_space.used_pages -= size / PAGE_SIZE;
-    kernel_space.total_mapped -= size;
-    vmem_spin_unlock(&vmem_lock);
-
-    // Free the tracking array (recursive call, but small)
-    VMemFree(phys_addrs, size / PAGE_SIZE * sizeof(uint64_t));
 }
 
-/**
- * @brief Gets the physical address for a virtual address
- *
- * CRITICAL FIX: Proper address masking and validation
- */
 uint64_t VMemGetPhysAddr(uint64_t vaddr) {
     uint64_t pdp_phys = VMemGetPageTablePhys((uint64_t)kernel_space.pml4, vaddr, 0, 0);
     if (!pdp_phys) return 0;

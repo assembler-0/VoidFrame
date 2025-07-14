@@ -36,7 +36,6 @@ static void MarkPageFree(uint64_t page_idx) {
 }
 
 int MemoryInit(uint32_t multiboot_info_addr) {
-    PrintKernel("[INFO] MemoryInit: Initializing memory manager...\n");
     FastMemset(page_bitmap, 0, MAX_BITMAP_SIZE);
 
     uint32_t total_multiboot_size = *(uint32_t*)multiboot_info_addr;
@@ -111,10 +110,6 @@ int MemoryInit(uint32_t multiboot_info_addr) {
     for (uint64_t i = 0; i < kernel_end_page; i++) {
         MarkPageUsed(i);
     }
-
-    PrintKernel("[INFO] MemoryInit: Used pages after kernel and reserved regions: ");
-    PrintKernelInt(used_pages);
-    PrintKernel("\n");
     return 0;
 }
 

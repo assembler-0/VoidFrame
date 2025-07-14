@@ -337,7 +337,7 @@ static InitResultT SystemInitialize(void) {
     PrintKernel("[INFO] Initializing process management...\n");
     ProcessInit();  // void function - assume success
     PrintKernelSuccess("[SYSTEM] Process management initialized\n");
-    
+    // VMemInit();
     return INIT_SUCCESS;
 }
 void KernelMain(uint32_t magic, uint32_t info) {
