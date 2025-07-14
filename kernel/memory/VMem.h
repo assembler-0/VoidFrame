@@ -88,14 +88,15 @@ typedef enum {
     VMEM_ERROR_NOT_MAPPED = -4,
     VMEM_ERROR_ALIGN = -5
 } VMem_Result;
-
+#define KERNEL_VIRTUAL_OFFSET 0xFFFFFFFF80000000ULL
+#define PT_ADDR_MASK        0x000FFFFFFFFFF000ULL
 // Core virtual memory functions
 void VMemInit(void);
 void* VMemAlloc(uint64_t size);
 void VMemFree(void* vaddr, uint64_t size);
 int VMemMap(uint64_t vaddr, uint64_t paddr, uint64_t flags);
 int VMemUnmap(uint64_t vaddr, uint64_t size);
-
+void VMemMapKernel(uint64_t kernel_phys_start, uint64_t kernel_phys_end);
 // Page table management functions
 uint64_t* VMemGetPageTable(uint64_t* pml4, uint64_t vaddr, int level, int create);
 int VMemSetPageFlags(uint64_t vaddr, uint64_t flags);
@@ -111,7 +112,7 @@ int VMemSwitchAddressSpace(VirtAddrSpace* space);
 void VMemFlushTLB(void);
 void VMemFlushTLBSingle(uint64_t vaddr);
 void VMemGetStats(uint64_t* used_pages, uint64_t* total_mapped);
-
+uint64_t VMemGetPML4PhysAddr(void);
 // Debug functions
 void VMemDumpPageTable(uint64_t vaddr);
 void VMemValidatePageTable(uint64_t* pml4);

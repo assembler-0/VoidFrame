@@ -7,7 +7,7 @@ ENTRY(start) /* The entry point of our kernel is the 'start' label */
 SECTIONS
 {
     . = 1M;
-
+    _kernel_phys_start = .;
     .boot :
     {
         *(.multiboot)
@@ -36,4 +36,5 @@ SECTIONS
     {
         *(.bss)
     }
+    _kernel_phys_end = .;
 }

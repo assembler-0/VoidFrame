@@ -55,7 +55,8 @@ asm_sources = [
   arch_root + '/gdt/GdtFlush.asm',
   arch_root + '/syscall/SyscallEntry.asm',
   arch_root + '/asm/Switch.asm',
-  arch_root + '/interrupts/Interrupts.asm'
+  arch_root + '/interrupts/Interrupts.asm',
+  src_root + '/kernel/memory/AsmHelpers.asm',
 ]
 
 # C sources (organized)

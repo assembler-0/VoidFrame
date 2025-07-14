@@ -16,26 +16,12 @@
 #include "Kernel.h"
 #include "Interrupts.h"
 #include "Panic.h"
-
-/**
- * @brief The kernel's virtual address space structure
- */
 static VirtAddrSpace kernel_space;
 
-/**
- * @brief Spinlock for virtual memory operations
- */
 static volatile int vmem_lock = 0;
 
-/**
- * @brief Physical address mask for page table entries
- * This is the critical fix - PAGE_MASK is for offset bits, not address bits
- */
-#define PT_ADDR_MASK        0x000FFFFFFFFFF000ULL
 
-/**
- * @brief Simple spinlock implementation
- */
+
 static inline void vmem_spin_lock(volatile int* lock) {
     while (__sync_lock_test_and_set(lock, 1)) {
         while (*lock) __builtin_ia32_pause();
@@ -46,20 +32,12 @@ static inline void vmem_spin_unlock(volatile int* lock) {
     __sync_lock_release(lock);
 }
 
-/**
- * @brief Validate that a physical address can be converted to virtual
- */
 extern uint64_t total_pages;
 static inline int is_valid_phys_addr(uint64_t paddr) {
     // Basic sanity check - adjust limits based on your system
     return (paddr != 0 && paddr < (total_pages * PAGE_SIZE));
 }
 
-/**
- * @brief Initializes the kernel's virtual memory manager
- *
- * CRITICAL FIX: Don't overwrite the PML4 pointer after converting to virtual!
- */
 void VMemInit(void) {
     // Allocate physical page for PML4
     void* pml4_phys = AllocPage();
@@ -116,11 +94,6 @@ static uint64_t VMemGetPageTablePhys(uint64_t pml4_phys, uint64_t vaddr, int lev
 
         // Zero the new table
         uint64_t* new_table_virt = (uint64_t*)PHYS_TO_VIRT(new_table_phys);
-        if (!VMemIsPageMapped((uint64_t)new_table_virt)) {
-            FreePage(new_table_phys);
-            Panic("VMemGetPageTablePhys: Newly allocated page is not accessible via PHYS_TO_VIRT!");
-        }
-
         FastZeroPage(new_table_virt);
 
         // Set the entry with physical address
@@ -363,6 +336,32 @@ uint64_t VMemGetPhysAddr(uint64_t vaddr) {
     return (pt_virt[pt_index] & PT_ADDR_MASK) | (vaddr & PAGE_MASK);
 }
 
+void VMemMapKernel(uint64_t kernel_phys_start, uint64_t kernel_phys_end) {
+    // Align addresses to page boundaries
+    uint64_t start = PAGE_ALIGN_DOWN(kernel_phys_start);
+    uint64_t end = PAGE_ALIGN_UP(kernel_phys_end);
+
+    PrintKernel("VMem: Mapping kernel from phys 0x");
+    PrintKernelHex(start);
+    PrintKernel(" to 0x");
+    PrintKernelHex(end);
+    PrintKernel("\n");
+
+    for (uint64_t paddr = start; paddr < end; paddr += PAGE_SIZE) {
+        // Map the physical address to its higher-half virtual address
+        uint64_t vaddr = paddr + KERNEL_VIRTUAL_OFFSET;
+
+        // Map with Present and Writable flags. You might want to map
+        // .text sections as read-only later, but this is a good start.
+        int result = VMemMap(vaddr, paddr, PAGE_WRITABLE);
+        if (result != VMEM_SUCCESS) {
+            Panic("VMemMapKernel: Failed to map kernel page!");
+            return;
+        }
+    }
+    PrintKernel("VMem: Kernel mapping complete.\n");
+}
+
 /**
  * @brief Checks if a virtual address is mapped
  */
@@ -396,4 +395,9 @@ void VMemGetStats(uint64_t* used_pages, uint64_t* total_mapped) {
     if (used_pages) *used_pages = kernel_space.used_pages;
     if (total_mapped) *total_mapped = kernel_space.total_mapped;
     vmem_spin_unlock(&vmem_lock);
+}
+
+// Add this function definition
+uint64_t VMemGetPML4PhysAddr(void) {
+    return (uint64_t)kernel_space.pml4;
 }

@@ -13,10 +13,12 @@
 #include "Panic.h"
 #include "stdbool.h"
 #include "Multiboot2.h"
-#include "UserMode.h"
-#include "Io.h"
+#include "AsmHelpers.h"
+#include "MemOps.h"
 #include "VMem.h"
-
+void KernelMainHigherHalf(void);
+extern uint8_t _kernel_phys_start[];
+extern uint8_t _kernel_phys_end[];
 // VGA Constants
 #define VGA_BUFFER_ADDR     0xB8000
 #define VGA_WIDTH           80
@@ -307,7 +309,54 @@ void ParseMultibootInfo(uint32_t info) {
     PrintKernelSuccess("[SYSTEM] Multiboot2 info parsed.\n");
 }
 
-static InitResultT SystemInitialize(void) {
+void BootstrapMapPage(uint64_t pml4_phys, uint64_t vaddr, uint64_t paddr, uint64_t flags) {
+    uint64_t* pml4 = (uint64_t*)pml4_phys;
+
+    // 1. Get/Create PDPT
+    int pml4_idx = (vaddr >> 39) & 0x1FF;
+    uint64_t pdpt_phys;
+    if (!(pml4[pml4_idx] & PAGE_PRESENT)) {
+        pdpt_phys = (uint64_t)AllocPage();
+        if (!pdpt_phys) Panic("BootstrapMapPage: Out of memory for PDPT");
+        FastZeroPage((void*)pdpt_phys);
+        pml4[pml4_idx] = pdpt_phys | PAGE_PRESENT | PAGE_WRITABLE;
+    } else {
+        pdpt_phys = pml4[pml4_idx] & PT_ADDR_MASK;
+    }
+
+    // 2. Get/Create PD
+    uint64_t* pdpt = (uint64_t*)pdpt_phys;
+    int pdpt_idx = (vaddr >> 30) & 0x1FF;
+    uint64_t pd_phys;
+    if (!(pdpt[pdpt_idx] & PAGE_PRESENT)) {
+        pd_phys = (uint64_t)AllocPage();
+        if (!pd_phys) Panic("BootstrapMapPage: Out of memory for PD");
+        FastZeroPage((void*)pd_phys);
+        pdpt[pdpt_idx] = pd_phys | PAGE_PRESENT | PAGE_WRITABLE;
+    } else {
+        pd_phys = pdpt[pdpt_idx] & PT_ADDR_MASK;
+    }
+
+    // 3. Get/Create PT
+    uint64_t* pd = (uint64_t*)pd_phys;
+    int pd_idx = (vaddr >> 21) & 0x1FF;
+    uint64_t pt_phys;
+    if (!(pd[pd_idx] & PAGE_PRESENT)) {
+        pt_phys = (uint64_t)AllocPage();
+        if (!pt_phys) Panic("BootstrapMapPage: Out of memory for PT");
+        FastZeroPage((void*)pt_phys);
+        pd[pd_idx] = pt_phys | PAGE_PRESENT | PAGE_WRITABLE;
+    } else {
+        pt_phys = pd[pd_idx] & PT_ADDR_MASK;
+    }
+
+    // 4. Set the final PTE
+    uint64_t* pt = (uint64_t*)pt_phys;
+    int pt_idx = (vaddr >> 12) & 0x1FF;
+    pt[pt_idx] = paddr | flags | PAGE_PRESENT;
+}
+
+static InitResultT CoreInit(void) {
     // Initialize GDT
     PrintKernel("[INFO] Initializing GDT...\n");
     GdtInit();  // void function - assume success
@@ -328,18 +377,13 @@ static InitResultT SystemInitialize(void) {
     PicInstall();  // void function - assume success
     PrintKernelSuccess("[SYSTEM] PIC initialized\n");
 
-    // Initialize Memory Management
-    PrintKernel("[INFO] Initializing memory management...\n");
-    MemoryInit(g_multiboot_info_addr);  // Pass Multiboot2 info address
-    PrintKernelSuccess("[SYSTEM] Memory management initialized\n");
-
     // Initialize Process Management
     PrintKernel("[INFO] Initializing process management...\n");
     ProcessInit();  // void function - assume success
     PrintKernelSuccess("[SYSTEM] Process management initialized\n");
-    // VMemInit();
     return INIT_SUCCESS;
 }
+
 void KernelMain(uint32_t magic, uint32_t info) {
     if (magic != MULTIBOOT2_BOOTLOADER_MAGIC) {
         ClearScreen();
@@ -355,8 +399,34 @@ void KernelMain(uint32_t magic, uint32_t info) {
     PrintKernelHex(info);
     PrintKernel("\n\n");
     ParseMultibootInfo(info);
-    SystemInitialize();
-    // Create the security manager process (PID 1)
+    MemoryInit(g_multiboot_info_addr);
+    VMemInit();
+    uint64_t pml4_phys = VMemGetPML4PhysAddr();
+
+    uint64_t kernel_start = (uint64_t)_kernel_phys_start;
+    uint64_t kernel_end = (uint64_t)_kernel_phys_end;
+
+    PrintKernelSuccess("[SYSTEM] Bootstrap: Mapping kernel...\n");
+    // Map the kernel itself using the bootstrap function
+    for (uint64_t paddr = kernel_start; paddr < kernel_end; paddr += PAGE_SIZE) {
+        BootstrapMapPage(pml4_phys, paddr + KERNEL_VIRTUAL_OFFSET, paddr, PAGE_WRITABLE);
+    }
+
+    PrintKernelSuccess("[SYSTEM] Bootstrap: Identity mapping low memory...\n");
+    // Map the first 4MB identity-mapped for safety (VGA, etc.)
+    for (uint64_t paddr = 0; paddr < 4 * 1024 * 1024; paddr += PAGE_SIZE) {
+        BootstrapMapPage(pml4_phys, paddr, paddr, PAGE_WRITABLE);
+    }
+
+    PrintKernelSuccess("[SYSTEM] Page tables prepared. Switching to virtual addressing...\n");
+
+    uint64_t higher_half_entry = (uint64_t)&KernelMainHigherHalf;
+    EnablePagingAndJump(pml4_phys, higher_half_entry);
+}
+
+void KernelMainHigherHalf(void) {
+    CoreInit();
+    PrintKernelSuccess("[SYSTEM] Successfully jumped to higher half. Virtual memory is active.\n");
     PrintKernel("[INFO] Creating security manager process...\n");
     uint64_t security_pid = CreateSecureProcess(SecureKernelIntegritySubsystem, PROC_PRIV_SYSTEM);
     if (!security_pid) {
@@ -368,7 +438,8 @@ void KernelMain(uint32_t magic, uint32_t info) {
     PrintKernel("\n");
     PrintKernelSuccess("[SYSTEM] Core system modules loaded\n");
     PrintKernelSuccess("[SYSTEM] Kernel initialization complete\n");
-    PrintKernelSuccess("[SYSTEM] Transferring control to SecureKernelIntegritySubsystem...\n\n");
+    PrintKernelSuccess("[SYSTEM] Transferring control to SecureKernelIntegritySubsystem...\n");
+    PrintKernelSuccess("[SYSTEM] Initializing interrupts...\n\n");
     asm volatile("sti");
     while (1) {
         if (ShouldSchedule()) {

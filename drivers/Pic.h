@@ -1,7 +1,7 @@
 #ifndef PIC_H
 #define PIC_H
 
-#define PIT_FREQUENCY_HZ 1000
+#define PIT_FREQUENCY_HZ 100
 
 int PicInstall();
 void PitInstall();

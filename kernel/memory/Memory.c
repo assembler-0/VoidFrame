@@ -7,6 +7,8 @@
 // Max 4GB memory for now (1M pages)
 #define MAX_PAGES (4ULL * 1024 * 1024 * 1024 / PAGE_SIZE)
 #define MAX_BITMAP_SIZE (MAX_PAGES / 8)
+extern uint8_t _kernel_phys_start[];
+extern uint8_t _kernel_phys_end[];
 
 static uint8_t page_bitmap[MAX_BITMAP_SIZE];
 uint64_t total_pages = 0;
@@ -73,14 +75,13 @@ int MemoryInit(uint32_t multiboot_info_addr) {
     PrintKernelInt(total_pages);
     PrintKernel(" pages)\n");
 
-    // Second pass: mark available memory and reserved regions
     tag = (struct MultibootTag*)(multiboot_info_addr + 8); // Reset tag pointer
     while (tag->type != MULTIBOOT2_TAG_TYPE_END) {
         if (tag->type == MULTIBOOT2_TAG_TYPE_MMAP) {
             struct MultibootTagMmap* mmap_tag = (struct MultibootTagMmap*)tag;
             for (uint32_t i = 0; i < (mmap_tag->size - sizeof(struct MultibootTagMmap)) / mmap_tag->entry_size; i++) {
                 struct MultibootMmapEntry* entry = (struct MultibootMmapEntry*)((uint8_t*)mmap_tag + sizeof(struct MultibootTagMmap) + (i * mmap_tag->entry_size));
-                
+
                 uint64_t start_page = entry->addr / PAGE_SIZE;
                 uint64_t end_page = (entry->addr + entry->len - 1) / PAGE_SIZE;
 
@@ -101,15 +102,36 @@ int MemoryInit(uint32_t multiboot_info_addr) {
         }
         tag = (struct MultibootTag*)((uint8_t*)tag + ((tag->size + 7) & ~7));
     }
-
-    // Mark pages used by the kernel and initial structures (first 1MB + Multiboot info)
-    // This is a rough estimate, a proper solution would parse ELF sections
-    uint64_t kernel_end_addr = (uint64_t)multiboot_info_addr + total_multiboot_size; // Approx end of kernel + multiboot info
-    uint64_t kernel_end_page = (kernel_end_addr + PAGE_SIZE - 1) / PAGE_SIZE;
-
-    for (uint64_t i = 0; i < kernel_end_page; i++) {
+    PrintKernel("[INFO] Reserving first 1MB of physical memory.\n");
+    for (uint64_t i = 0; i < 0x100000 / PAGE_SIZE; i++) {
         MarkPageUsed(i);
     }
+
+    // 2. Reserve the physical memory used by the kernel itself.
+    uint64_t kernel_start_addr = (uint64_t)_kernel_phys_start;
+    uint64_t kernel_end_addr = (uint64_t)_kernel_phys_end;
+
+    uint64_t kernel_start_page = kernel_start_addr / PAGE_SIZE;
+    uint64_t kernel_end_page = (kernel_end_addr + PAGE_SIZE - 1) / PAGE_SIZE;
+
+    PrintKernel("[INFO] Reserving kernel memory from page ");
+    PrintKernelInt(kernel_start_page);
+    PrintKernel(" to ");
+    PrintKernelInt(kernel_end_page);
+    PrintKernel("\n");
+
+    for (uint64_t i = kernel_start_page; i < kernel_end_page; i++) {
+        MarkPageUsed(i);
+    }
+
+    // 3. (Optional but good) Reserve the memory used by the multiboot info itself
+    uint64_t mb_info_start_page = multiboot_info_addr / PAGE_SIZE;
+    uint64_t mb_info_end_page = (multiboot_info_addr + total_multiboot_size + PAGE_SIZE - 1) / PAGE_SIZE;
+    for (uint64_t i = mb_info_start_page; i < mb_info_end_page; i++) {
+        MarkPageUsed(i);
+    }
+    // --- END OF REPLACEMENT ---
+
     return 0;
 }
 
