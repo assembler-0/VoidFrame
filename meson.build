@@ -40,6 +40,7 @@ inc_dirs = [
   src_root + '/kernel/ipc',
   src_root + '/kernel/memory',
   src_root + '/kernel/process',
+  src_root + '/kernel/etc',
   src_root + '/drivers',
   arch_root + '/cpu',
   arch_root + '/gdt',
@@ -75,7 +76,8 @@ c_sources = [
   src_root + '/drivers/Pic.c',
   arch_root + '/cpu/Cpu.c',
   src_root + '/kernel/atomic/Atomics.c',
-  src_root + '/kernel/ipc/Ipc.c'
+  src_root + '/kernel/ipc/Ipc.c',
+  src_root + '/kernel/etc/Splash.c'
 ]
 
 # Build include flags

@@ -16,6 +16,8 @@
 #include "AsmHelpers.h"
 #include "MemOps.h"
 #include "VMem.h"
+#include "Splash.h"
+
 void KernelMainHigherHalf(void);
 extern uint8_t _kernel_phys_start[];
 extern uint8_t _kernel_phys_end[];
@@ -238,33 +240,7 @@ void PrintKernelAt(const char* str, uint32_t line, uint32_t col) {
     console.column = saved_col;
 }
 
-// Modern splash screen with better formatting
-void AsciiSplash(void) {
-    ClearScreen();
-    
-    const char* splash_lines[] = {
-        "+-----------------------------------------------------------------------------+",
-        "|                   >> VoidFrameKernel Version 0.0.1-alpha <<                 |",
-        "|                                                                             |",
-        "|    Copyright (C) 2025 VoidFrame Project - Atheria                           |",
-        "|    Licensed under GNU General Public License v2.0                           |",
-        "|                                                                             |",
-        "|    This program is free software; you can redistribute it and/or modify     |",
-        "|    it under the terms of the GNU General Public License as published by     |",
-        "|    the Free Software Foundation; either version 2 of the License.           |",
-        "|                                                                             |",
-        "+-----------------------------------------------------------------------------+",
-        "",
-        NULL
-    };
-    
-    ConsoleSetColor(VGA_COLOR_SUCCESS);
-    for (int i = 0; splash_lines[i]; i++) {
-        PrintKernel(splash_lines[i]);
-        PrintKernel("\n");
-    }
-    ConsoleSetColor(VGA_COLOR_DEFAULT);
-}
+
 
 // Global variable to store the Multiboot2 info address
 static uint32_t g_multiboot_info_addr = 0;
@@ -391,7 +367,7 @@ void KernelMain(uint32_t magic, uint32_t info) {
         PrintKernelHex(magic);
         Panic("Unrecognized Multiboot2 magic.");
     }
-    AsciiSplash();
+    ShowSplashScreen();
     PrintKernelSuccess("[SYSTEM] VoidFrame Kernel - Version 0.0.1-alpha loaded\n");
     PrintKernel("Magic: ");
     PrintKernelHex(magic);
