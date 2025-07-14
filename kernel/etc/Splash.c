@@ -74,25 +74,6 @@ void DrawProgressBar(int x, int y, int width, int progress, uint8_t color) {
     }
 }
 
-void DrawLogo(int x, int y) {
-    uint16_t* video_memory = (uint16_t*)VIDEO_MEMORY;
-    uint16_t attr = (COLOR_CYAN_ON_BLACK << 8);
-
-    // Simple kernel logo using CP437 characters
-    const char* logo[] = {
-        "    ██╗  ██╗███████╗██████╗ ███╗   ██╗███████╗██╗     ",
-        "    ██║ ██╔╝██╔════╝██╔══██╗████╗  ██║██╔════╝██║     ",
-        "    █████╔╝ █████╗  ██████╔╝██╔██╗ ██║█████╗  ██║     ",
-        "    ██╔═██╗ ██╔══╝  ██╔══██╗██║╚██╗██║██╔══╝  ██║     ",
-        "    ██║  ██╗███████╗██║  ██║██║ ╚████║███████╗███████╗",
-        "    ╚═╝  ╚═╝╚══════╝╚═╝  ╚═╝╚═╝  ╚═══╝╚══════╝╚══════╝"
-    };
-
-    for (int i = 0; i < 6; i++) {
-        PrintString(x, y + i, logo[i], COLOR_CYAN_ON_BLACK);
-    }
-}
-
 void ShowSplashScreen() {
     ClearScreen();
 
@@ -100,28 +81,20 @@ void ShowSplashScreen() {
     DrawBox(5, 2, 70, 21, COLOR_CYAN_ON_BLACK);
     ClearScreen();
     // Title section
-    DrawBox(10, 4, 60, 5, COLOR_WHITE_ON_BLACK);
-    PrintCentered(5, "VoidFrame", COLOR_GREEN_ON_BLACK);
-    PrintCentered(6, "Version 0.0.1-beta", COLOR_WHITE_ON_BLACK);
-    PrintCentered(7, "A lightweight 64-bit kernel", COLOR_GREEN_ON_BLACK);
-
-    // Info section
-    PrintString(12, 11, "Features:", COLOR_YELLOW_ON_BLACK);
-    PrintString(14, 12, "• 64-bit architecture", COLOR_WHITE_ON_BLACK);
-    PrintString(14, 13, "• Memory management", COLOR_WHITE_ON_BLACK);
-    PrintString(14, 14, "• Interrupt handling", COLOR_WHITE_ON_BLACK);
-    PrintString(14, 15, "• Basic VGA text mode", COLOR_WHITE_ON_BLACK);
-
+    DrawBox(10, 4, 60, 13, COLOR_WHITE_ON_BLACK);
+    PrintCentered(9, "VoidFrame", COLOR_CYAN_ON_BLACK);
+    PrintCentered(10, "Version 0.0.1-beta", COLOR_CYAN_ON_BLACK);
+    PrintCentered(11, "Copyright (c) 2025, Atheria", COLOR_CYAN_ON_BLACK);
     // System info
-    PrintString(12, 17, "System Status:", COLOR_YELLOW_ON_BLACK);
-    PrintString(14, 18, "Initializing...", COLOR_GREEN_ON_BLACK);
+    PrintString(12, 17, "System Status:", COLOR_CYAN_ON_BLACK);
+    PrintString(16, 18, "Initializing...", COLOR_CYAN_ON_BLACK);
 
     // Loading progress bar
-    PrintString(12, 20, "Loading: ", COLOR_WHITE_ON_BLACK);
-    PrintCentered(24, "Copyright (c) 2025, Atheria", COLOR_BLUE_ON_BLACK);
+    PrintString(12, 20, "Loading: ", COLOR_CYAN_ON_BLACK);
+
     // Simulate loading progress
     for (int progress = 0; progress <= 100; progress += 10) {
-        DrawProgressBar(21, 20, 30, progress, COLOR_GREEN_ON_BLACK);
+        DrawProgressBar(21, 20, 48, progress, COLOR_CYAN_ON_BLACK);
 
         // Simple delay
         for (volatile int i = 0; i < 100000000; i++);
@@ -131,5 +104,5 @@ void ShowSplashScreen() {
 
 
     // Final delay
-    for (volatile int i = 0; i < 1000000000; i++);
+    for (volatile int i = 0; i < 500000000; i++);
 }

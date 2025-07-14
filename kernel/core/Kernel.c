@@ -27,7 +27,7 @@ extern uint8_t _kernel_phys_end[];
 #define VGA_HEIGHT          25
 #define VGA_BUFFER_SIZE     (VGA_WIDTH * VGA_HEIGHT)
 #define VGA_COLOR_DEFAULT   0x08
-#define VGA_COLOR_SUCCESS   0x0A
+#define VGA_COLOR_SUCCESS   0x0B
 #define VGA_COLOR_ERROR     0x0C
 #define VGA_COLOR_WARNING   0x0E
 // Console state
@@ -254,7 +254,7 @@ void ParseMultibootInfo(uint32_t info) {
     PrintKernel("\n");
 
     // Start parsing tags after the total_size and reserved fields (8 bytes)
-    struct MultibootTag* tag = (struct MultibootTag*)(info + 8);
+    struct MultibootTag* tag = (struct MultibootTag*)(uintptr_t)(info + 8);
     while (tag->type != MULTIBOOT2_TAG_TYPE_END) {
         PrintKernel("  Tag type: ");
         PrintKernelInt(tag->type);
@@ -293,7 +293,7 @@ void BootstrapMapPage(uint64_t pml4_phys, uint64_t vaddr, uint64_t paddr, uint64
     uint64_t pdpt_phys;
     if (!(pml4[pml4_idx] & PAGE_PRESENT)) {
         pdpt_phys = (uint64_t)AllocPage();
-        if (!pdpt_phys) Panic("BootstrapMapPage: Out of memory for PDPT");
+        if (!pdpt_phys) PANIC("BootstrapMapPage: Out of memory for PDPT");
         FastZeroPage((void*)pdpt_phys);
         pml4[pml4_idx] = pdpt_phys | PAGE_PRESENT | PAGE_WRITABLE;
     } else {
@@ -306,7 +306,7 @@ void BootstrapMapPage(uint64_t pml4_phys, uint64_t vaddr, uint64_t paddr, uint64
     uint64_t pd_phys;
     if (!(pdpt[pdpt_idx] & PAGE_PRESENT)) {
         pd_phys = (uint64_t)AllocPage();
-        if (!pd_phys) Panic("BootstrapMapPage: Out of memory for PD");
+        if (!pd_phys) PANIC("BootstrapMapPage: Out of memory for PD");
         FastZeroPage((void*)pd_phys);
         pdpt[pdpt_idx] = pd_phys | PAGE_PRESENT | PAGE_WRITABLE;
     } else {
@@ -319,7 +319,7 @@ void BootstrapMapPage(uint64_t pml4_phys, uint64_t vaddr, uint64_t paddr, uint64
     uint64_t pt_phys;
     if (!(pd[pd_idx] & PAGE_PRESENT)) {
         pt_phys = (uint64_t)AllocPage();
-        if (!pt_phys) Panic("BootstrapMapPage: Out of memory for PT");
+        if (!pt_phys) PANIC("BootstrapMapPage: Out of memory for PT");
         FastZeroPage((void*)pt_phys);
         pd[pd_idx] = pt_phys | PAGE_PRESENT | PAGE_WRITABLE;
     } else {
@@ -365,7 +365,7 @@ void KernelMain(uint32_t magic, uint32_t info) {
         ClearScreen();
         PrintKernelError("Magic: ");
         PrintKernelHex(magic);
-        Panic("Unrecognized Multiboot2 magic.");
+        PANIC("Unrecognized Multiboot2 magic.");
     }
     ShowSplashScreen();
     PrintKernelSuccess("[SYSTEM] VoidFrame Kernel - Version 0.0.1-alpha loaded\n");
@@ -407,7 +407,7 @@ void KernelMainHigherHalf(void) {
     uint64_t security_pid = CreateSecureProcess(SecureKernelIntegritySubsystem, PROC_PRIV_SYSTEM);
     if (!security_pid) {
         PrintKernelError("[FATAL] Cannot create SecureKernelIntegritySubsystem\n");
-        Panic("Critical security failure - cannot create security manager");
+        PANIC("Critical security 1failure - cannot create security manager");
     }
     PrintKernelSuccess("[SYSTEM] Security manager created with PID: ");
     PrintKernelInt(security_pid);
@@ -416,7 +416,6 @@ void KernelMainHigherHalf(void) {
     PrintKernelSuccess("[SYSTEM] Kernel initialization complete\n");
     PrintKernelSuccess("[SYSTEM] Transferring control to SecureKernelIntegritySubsystem...\n");
     PrintKernelSuccess("[SYSTEM] Initializing interrupts...\n\n");
-    Panic("called for no reason");
     asm volatile("sti");
     while (1) {
         if (ShouldSchedule()) {

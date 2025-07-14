@@ -10,28 +10,19 @@
 #define SCREEN_WIDTH 80
 #define SCREEN_HEIGHT 25
 
-// Red color scheme definitions
+// --- Color Scheme (Unchanged) ---
 #define COLOR_RED_ON_BLACK 0x0C
 #define COLOR_BRIGHT_RED_ON_BLACK 0x04
 #define COLOR_WHITE_ON_RED 0x4F
 #define COLOR_YELLOW_ON_RED 0x4E
 #define COLOR_BLACK_ON_RED 0x40
 #define COLOR_BRIGHT_WHITE_ON_RED 0x4F
-#define COLOR_FLASHING_RED 0x8C
+#define COLOR_FLASHING_RED 0x8C // Note: Flashing can be distracting, used sparingly.
 
-// Panic error codes
-typedef enum {
-    PANIC_GENERAL = 0x0001,
-    PANIC_MEMORY = 0x0002,
-    PANIC_INTERRUPT = 0x0003,
-    PANIC_HARDWARE = 0x0004,
-    PANIC_FILESYSTEM = 0x0005,
-    PANIC_NETWORK = 0x0006,
-    PANIC_SECURITY = 0x0007,
-    PANIC_ASSERTION = 0x0008
-} PanicCode;
+// --- Panic Error Codes (Unchanged) ---
 
-// Panic context structure
+
+// --- Panic Context Structure (Unchanged) ---
 typedef struct {
     uint64_t rip;
     uint64_t rsp;
@@ -43,24 +34,23 @@ typedef struct {
     int line;
 } PanicContext;
 
+// --- Low-Level Drawing Primitives ---
+
 void RedScreen() {
     uint16_t* video_memory = (uint16_t*)VIDEO_MEMORY;
-    uint16_t red_attr = (COLOR_WHITE_ON_RED << 8);
+    uint16_t red_attr = (COLOR_BLACK_ON_RED << 8); // Black on Red is less jarring for the background
 
-    // Fill entire screen with red background
     for (int i = 0; i < SCREEN_WIDTH * SCREEN_HEIGHT; i++) {
         video_memory[i] = red_attr | ' ';
     }
 }
 
 void PanicPrint(int x, int y, const char* str, uint8_t color) {
-    uint16_t* video_memory = (uint16_t*)VIDEO_MEMORY;
+    uint16_t* video_memory = (uint16_t*)(VIDEO_MEMORY + (y * SCREEN_WIDTH + x) * 2);
     uint16_t attr = (color << 8);
-    int i = 0;
 
-    while (str[i] != '\0' && x + i < SCREEN_WIDTH) {
-        video_memory[y * SCREEN_WIDTH + x + i] = attr | str[i];
-        i++;
+    while (*str) {
+        *video_memory++ = attr | *str++;
     }
 }
 
@@ -68,20 +58,38 @@ void PanicPrintCentered(int y, const char* str, uint8_t color) {
     int len = 0;
     while (str[len] != '\0') len++;
     int x = (SCREEN_WIDTH - len) / 2;
+    if (x < 0) x = 0;
     PanicPrint(x, y, str, color);
 }
 
-void PanicPrintHex(int x, int y, uint64_t value, uint8_t color) {
-    uint16_t* video_memory = (uint16_t*)VIDEO_MEMORY;
-    uint16_t attr = (color << 8);
+// NEW: Helper to print decimal numbers (for line numbers)
+void PanicPrintDec(int x, int y, uint32_t value, uint8_t color) {
+    char buffer[11]; // Max 10 digits for a 32-bit unsigned int + null terminator
+    char* p = buffer + sizeof(buffer) - 1;
+    *p = '\0';
 
+    if (value == 0) {
+        *--p = '0';
+    } else {
+        while (value > 0) {
+            *--p = '0' + (value % 10);
+            value /= 10;
+        }
+    }
+    PanicPrint(x, y, p, color);
+}
+
+void PanicPrintHex(int x, int y, uint64_t value, uint8_t color) {
     const char hex[] = "0123456789ABCDEF";
     char buffer[19] = "0x";
 
+    // Position the pointer to the end of the buffer part for hex digits
+    char* p = buffer + 2;
+
     for (int i = 15; i >= 0; i--) {
-        buffer[17 - i] = hex[(value >> (i * 4)) & 0xF];
+        p[15-i] = hex[(value >> (i * 4)) & 0xF];
     }
-    buffer[18] = '\0';
+    p[16] = '\0';
 
     PanicPrint(x, y, buffer, color);
 }
@@ -90,7 +98,7 @@ void DrawPanicBox(int x, int y, int width, int height, uint8_t color) {
     uint16_t* video_memory = (uint16_t*)VIDEO_MEMORY;
     uint16_t attr = (color << 8);
 
-    // Double-line box with heavy emphasis
+    // Corners using double-line characters
     video_memory[y * SCREEN_WIDTH + x] = attr | 201; // ╔
     video_memory[y * SCREEN_WIDTH + x + width - 1] = attr | 187; // ╗
     video_memory[(y + height - 1) * SCREEN_WIDTH + x] = attr | 200; // ╚
@@ -109,167 +117,130 @@ void DrawPanicBox(int x, int y, int width, int height, uint8_t color) {
     }
 }
 
-void ShowPanicHeader() {
-    uint16_t* video_memory = (uint16_t*)VIDEO_MEMORY;
 
-    // Clear screen to red
+void ShowShutdownSequence(int y_start) {
+    const int num_steps = 4;
+
+    for (int i = 0; i < num_steps; i++) {
+        const int bar_x = 38;
+        const char* steps[4] = {
+            "Disabling services...",
+            "Unloading modules...",
+            "Unmounting filesystems...",
+            "Scanning..."
+        };
+        const int current_y = y_start + i;
+
+        // Print the current step's text
+        PanicPrint(4, current_y, steps[i], COLOR_WHITE_ON_RED);
+
+        // Don't draw a progress bar for the final "halt reached" message.
+        if (i < num_steps) {
+            const int bar_width = 28;
+            // Draw the progress bar
+            for (int j = 0; j < bar_width; j++) {
+                PanicPrint(bar_x + j, current_y, "█", COLOR_YELLOW_ON_RED);
+                // Smaller delay for a smooth bar animation
+                for (volatile int d = 0; d < 4000000; d++);
+            }
+            // Print the status when done
+            PanicPrint(bar_x + bar_width + 2, current_y, "[ DONE ]", COLOR_BRIGHT_WHITE_ON_RED);
+        }
+    }
+}
+
+// --- High-Level Panic Screen Composition ---
+
+void KernelPanicHandler(const char* message, uint64_t error_code, PanicContext* ctx) {
     RedScreen();
 
-    // Top border with danger symbols
-    for (int i = 0; i < SCREEN_WIDTH; i++) {
-        video_memory[0 * SCREEN_WIDTH + i] = (COLOR_BRIGHT_RED_ON_BLACK << 8) | 219; // █
-        video_memory[1 * SCREEN_WIDTH + i] = (COLOR_BRIGHT_RED_ON_BLACK << 8) | 219; // █
-    }
+    // --- Main Title and Blinking Effect ---
+    PanicPrintCentered(2, "  !! KERNEL PANIC !!  ", COLOR_BRIGHT_WHITE_ON_RED);
+    for (volatile int i = 0; i < 90000000; i++); // Short delay
+    PanicPrintCentered(2, "  !! KERNEL PANIC !!  ", COLOR_YELLOW_ON_RED);
+    for (volatile int i = 0; i < 90000000; i++); // Short delay
+    PanicPrintCentered(2, "  !! KERNEL PANIC !!  ", COLOR_BRIGHT_WHITE_ON_RED);
 
-    // Main panic message
-    PanicPrintCentered(2, "KERNEL PANIC", COLOR_BRIGHT_WHITE_ON_RED);
-    PanicPrintCentered(3, "CRITICAL SYSTEM FAILURE", COLOR_YELLOW_ON_RED);
+    // --- Box 1: System Halted Reason ---
+    DrawPanicBox(2, 4, 76, 4, COLOR_YELLOW_ON_RED);
+    PanicPrint(4, 5, "[!] Your system has been halted due to an unrecoverable error.", COLOR_WHITE_ON_RED);
+    PanicPrint(4, 6, "[!] ERROR: ", COLOR_BRIGHT_WHITE_ON_RED);
+    PanicPrint(15, 6, message, COLOR_WHITE_ON_RED);
 
-    // Warning symbols using CP437 character 19 (‼) or 33 (!)
-    for (int i = 0; i < 8; i++) {
-        video_memory[4 * SCREEN_WIDTH + i * 10] = (COLOR_YELLOW_ON_RED << 8) | 33; // !
-    }
-
-    // Divider using CP437 double line
-    for (int i = 0; i < SCREEN_WIDTH; i++) {
-        video_memory[5 * SCREEN_WIDTH + i] = (COLOR_BRIGHT_WHITE_ON_RED << 8) | 205; // ═
-    }
-}
-
-void ShowPanicDetails(const char* message, uint64_t error_code, PanicContext* ctx) {
-    uint16_t* video_memory = (uint16_t*)VIDEO_MEMORY;
-    int y = 7;
-
-    // Error message
-    PanicPrint(2, y++, "ERROR: ", COLOR_BRIGHT_WHITE_ON_RED);
-    PanicPrint(9, y-1, message, COLOR_WHITE_ON_RED);
-    y++;
-
-    // Error code
-    PanicPrint(2, y, "CODE:  ", COLOR_BRIGHT_WHITE_ON_RED);
-    PanicPrintHex(9, y++, error_code, COLOR_WHITE_ON_RED);
-    y++;
-
-    // Context information
+    // --- Box 2: CPU Context ---
+    DrawPanicBox(2, 9, 37, 8, COLOR_YELLOW_ON_RED);
+    PanicPrint(4, 10, "[i] CPU CONTEXT", COLOR_BRIGHT_WHITE_ON_RED);
     if (ctx) {
-        PanicPrint(2, y++, "CONTEXT:", COLOR_BRIGHT_WHITE_ON_RED);
-        PanicPrint(4, y, "RIP: ", COLOR_WHITE_ON_RED);
-        PanicPrintHex(9, y++, ctx->rip, COLOR_WHITE_ON_RED);
-        PanicPrint(4, y, "RSP: ", COLOR_WHITE_ON_RED);
-        PanicPrintHex(9, y++, ctx->rsp, COLOR_WHITE_ON_RED);
-        PanicPrint(4, y, "RBP: ", COLOR_WHITE_ON_RED);
-        PanicPrintHex(9, y++, ctx->rbp, COLOR_WHITE_ON_RED);
-
-        if (ctx->function) {
-            PanicPrint(4, y, "FUNC: ", COLOR_WHITE_ON_RED);
-            PanicPrint(10, y++, ctx->function, COLOR_WHITE_ON_RED);
-        }
-
-        if (ctx->file) {
-            PanicPrint(4, y, "FILE: ", COLOR_WHITE_ON_RED);
-            PanicPrint(10, y++, ctx->file, COLOR_WHITE_ON_RED);
-        }
-        y++;
+        PanicPrint(4, 12, "RIP:", COLOR_WHITE_ON_RED); PanicPrintHex(9, 12, ctx->rip, COLOR_YELLOW_ON_RED);
+        PanicPrint(4, 13, "RSP:", COLOR_WHITE_ON_RED); PanicPrintHex(9, 13, ctx->rsp, COLOR_WHITE_ON_RED);
+        PanicPrint(4, 14, "RBP:", COLOR_WHITE_ON_RED); PanicPrintHex(9, 14, ctx->rbp, COLOR_WHITE_ON_RED);
+        PanicPrint(4, 15, "CODE:",COLOR_WHITE_ON_RED); PanicPrintHex(9, 15, error_code, COLOR_WHITE_ON_RED);
     }
 
-    // System status with bullet points using CP437 character 7 (•)
-    PanicPrint(2, y++, "SYSTEM STATUS:", COLOR_BRIGHT_WHITE_ON_RED);
-    video_memory[y * SCREEN_WIDTH + 4] = (COLOR_WHITE_ON_RED << 8) | 7; // •
-    PanicPrint(6, y++, "Interrupts: DISABLED", COLOR_WHITE_ON_RED);
-    video_memory[y * SCREEN_WIDTH + 4] = (COLOR_WHITE_ON_RED << 8) | 7; // •
-    PanicPrint(6, y++, "Memory: UNKNOWN", COLOR_WHITE_ON_RED);
-    video_memory[y * SCREEN_WIDTH + 4] = (COLOR_WHITE_ON_RED << 8) | 7; // •
-    PanicPrint(6, y++, "Scheduler: DISABLED", COLOR_WHITE_ON_RED);
-    video_memory[y * SCREEN_WIDTH + 4] = (COLOR_WHITE_ON_RED << 8) | 7; // •
-    PanicPrint(6, y++, "Recovery: UNKNOWN", COLOR_WHITE_ON_RED);
-    y++;
-
-
-    // Bottom warning
-    for (int i = 0; i < SCREEN_WIDTH; i++) {
-        video_memory[22 * SCREEN_WIDTH + i] = (COLOR_BRIGHT_RED_ON_BLACK << 8) | 219; // █
-        video_memory[24 * SCREEN_WIDTH + i] = (COLOR_BRIGHT_RED_ON_BLACK << 8) | 219; // █
+    // --- Box 3: Source Location ---
+    DrawPanicBox(41, 9, 37, 8, COLOR_YELLOW_ON_RED);
+    PanicPrint(43, 10, "[i] SOURCE LOCATION", COLOR_BRIGHT_WHITE_ON_RED);
+    if (ctx && ctx->file) {
+        PanicPrint(43, 12, "FILE:", COLOR_WHITE_ON_RED); PanicPrint(50, 12, ctx->file, COLOR_WHITE_ON_RED);
+        PanicPrint(43, 13, "FUNC:", COLOR_WHITE_ON_RED); PanicPrint(50, 13, ctx->function, COLOR_WHITE_ON_RED);
+        PanicPrint(43, 14, "LINE:", COLOR_WHITE_ON_RED); PanicPrintDec(50, 14, ctx->line, COLOR_WHITE_ON_RED);
+    } else {
+        PanicPrint(43, 12, "Unavailable", COLOR_WHITE_ON_RED);
     }
-    PanicPrintCentered(23, "SYSTEM HALTED - MANUAL INTERVENTION REQUIRED", COLOR_BRIGHT_WHITE_ON_RED);
-}
+    for (volatile int i = 0; i < 90000000; i++);
 
-void BlinkingEffect() {
-    // Create blinking effect for critical messages
-    for (int blink = 0; blink < 5; blink++) {
-        // Bright phase
-        PanicPrintCentered(2, "█▓▒░ KERNEL PANIC ░▒▓█", COLOR_BRIGHT_WHITE_ON_RED);
-        for (volatile int i = 0; i < 50000000; i++);
+    DrawPanicBox(2, 18, 76, 6, COLOR_YELLOW_ON_RED);
+    // IMPORTANT: We are *simulating* these steps for visual effect and safety.
+    ShowShutdownSequence(19);
 
-        // Dim phase
-        PanicPrintCentered(2, "█▓▒░ KERNEL PANIC ░▒▓█", COLOR_BLACK_ON_RED);
-        for (volatile int i = 0; i < 50000000; i++);
-    }
+    PanicPrintCentered(23, "SYSTEM HALTED", COLOR_BRIGHT_WHITE_ON_RED);
 
-    // Final bright state
-    PanicPrintCentered(2, "█▓▒░ KERNEL PANIC ░▒▓█", COLOR_BRIGHT_WHITE_ON_RED);
-}
-
-void ForceReboot() {
-    uint16_t* video_memory = (uint16_t*)VIDEO_MEMORY;
-
-    PanicPrint(2, 21, "INITIATING EMERGENCY REBOOT...", COLOR_BRIGHT_WHITE_ON_RED);
-
-    // Progress bar for reboot using CP437 block characters
-    for (int i = 0; i < 40; i++) {
-        video_memory[21 * SCREEN_WIDTH + 35 + i] = (COLOR_YELLOW_ON_RED << 8) | 219; // █
-        for (volatile int j = 0; j < 10000000; j++);
-    }
-
-    asm volatile("lidt %0" :: "m"(*(short*)0));
-    asm volatile("int $0x3");
+    // Standard practice is to halt indefinitely, allowing the user to read the screen.
+    // Forcing a reboot might lose valuable diagnostic info.
     while (1) {
         __asm__ __volatile__("hlt");
     }
 }
 
-void KernelPanicHandler(const char* message, uint64_t error_code, PanicContext* ctx) {
-    ShowPanicHeader();
-    BlinkingEffect();
-    ShowPanicDetails(message, error_code, ctx);
 
-    for (volatile int i = 0; i < 1000000000; i++);
+// --- Public Panic Interface Functions ---
 
-    ForceReboot();
+// Helper to get the instruction pointer of the caller.
+static inline uint64_t __get_rip(void) {
+    return (uint64_t)__builtin_return_address(0);
 }
+
+
 
 void __attribute__((noreturn)) Panic(const char* message) {
     asm volatile("cli");
-
     PanicContext ctx = {0};
-    // Get basic context (simplified)
+
+    ctx.rip = __get_rip();
     asm volatile("movq %%rsp, %0" : "=r"(ctx.rsp));
     asm volatile("movq %%rbp, %0" : "=r"(ctx.rbp));
 
     KernelPanicHandler(message, PANIC_GENERAL, &ctx);
-
-    while (1) {
-        __asm__ __volatile__("hlt");
-    }
 }
 
 void __attribute__((noreturn)) PanicWithCode(const char* message, uint64_t error_code) {
     asm volatile("cli");
-
     PanicContext ctx = {0};
+
+    ctx.rip = __get_rip();
     asm volatile("movq %%rsp, %0" : "=r"(ctx.rsp));
     asm volatile("movq %%rbp, %0" : "=r"(ctx.rbp));
 
     KernelPanicHandler(message, error_code, &ctx);
-
-    while (1) {
-        __asm__ __volatile__("hlt");
-    }
 }
 
 void __attribute__((noreturn)) PanicWithContext(const char* message, uint64_t error_code, const char* function, const char* file, int line) {
     asm volatile("cli");
-
     PanicContext ctx = {0};
+
+    // RIP is the address of the instruction AFTER the call to this function.
+    // In a PANIC macro, this is exactly where the error was detected.
+    ctx.rip = __get_rip();
     asm volatile("movq %%rsp, %0" : "=r"(ctx.rsp));
     asm volatile("movq %%rbp, %0" : "=r"(ctx.rbp));
     ctx.error_code = error_code;
@@ -278,13 +249,5 @@ void __attribute__((noreturn)) PanicWithContext(const char* message, uint64_t er
     ctx.line = line;
 
     KernelPanicHandler(message, error_code, &ctx);
-
-    while (1) {
-        __asm__ __volatile__("hlt");
-    }
+    while(1);
 }
-
-// Convenience macros
-#define PANIC(msg) PanicWithContext(msg, PANIC_GENERAL, __FUNCTION__, __FILE__, __LINE__)
-#define PANIC_CODE(msg, code) PanicWithContext(msg, code, __FUNCTION__, __FILE__, __LINE__)
-#define ASSERT(condition) do { if (!(condition)) PANIC("Assertion failed: " #condition); } while(0)

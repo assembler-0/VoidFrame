@@ -42,7 +42,7 @@ void VMemInit(void) {
     // Allocate physical page for PML4
     void* pml4_phys = AllocPage();
     if (!pml4_phys) {
-        Panic("VMemInit: Failed to allocate PML4 table");
+        PANIC("VMemInit: Failed to allocate PML4 table");
     }
 
     // CRITICAL FIX: Store physical address BEFORE converting
@@ -355,7 +355,7 @@ void VMemMapKernel(uint64_t kernel_phys_start, uint64_t kernel_phys_end) {
         // .text sections as read-only later, but this is a good start.
         int result = VMemMap(vaddr, paddr, PAGE_WRITABLE);
         if (result != VMEM_SUCCESS) {
-            Panic("VMemMapKernel: Failed to map kernel page!");
+            PANIC("VMemMapKernel: Failed to map kernel page!");
             return;
         }
     }

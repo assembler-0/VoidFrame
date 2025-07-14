@@ -109,7 +109,7 @@ static void AddToTerminationQueueAtomic(uint32_t slot) {
     uint32_t new_tail = (tail + 1) % MAX_PROCESSES;
 
     if (UNLIKELY(term_queue_count >= MAX_PROCESSES)) {
-        Panic("Termination queu1e overflow");
+        PANIC("Termination queu1e overflow");
     }
 
     termination_queue[tail] = slot;
@@ -246,7 +246,7 @@ static void SecurityViolationHandler(uint32_t violator_pid, const char* reason) 
     PrintKernelError("\n");
 
     if (UNLIKELY(security_violation_count > MAX_SECURITY_VIOLATIONS)) {
-        Panic("Too many security violations - system compromised");
+        PANIC("Too many security violations - system compromised");
     }
 
     // Immediate termination with security flag
@@ -533,7 +533,7 @@ void FastSchedule(struct Registers* regs) {
         AddToScheduler(old_slot);
     }
 
-select_next:
+select_next:;
     // Find next process to run
     int next_priority = FindHighestPriorityQueue();
     uint32_t next_slot;
@@ -659,7 +659,7 @@ void ProcessExitStub() {
 
 uint32_t CreateSecureProcess(void (*entry_point)(void), uint8_t privilege) {
     if (UNLIKELY(!entry_point)) {
-        Panic("CreateSecureProcess: NULL entry point");
+        PANIC("CreateSecureProcess: NULL entry point");
     }
 
     Process* creator = GetCurrentProcess();
@@ -679,13 +679,13 @@ uint32_t CreateSecureProcess(void (*entry_point)(void), uint8_t privilege) {
     }
 
     if (UNLIKELY(process_count >= MAX_PROCESSES)) {
-        Panic("CreateSecureProcess: Too many processes");
+        PANIC("CreateSecureProcess: Too many processes");
     }
 
     // Fast slot allocation
     int slot = FindFreeSlotFast();
     if (UNLIKELY(slot == -1)) {
-        Panic("CreateSecureProcess: No free process slots");
+        PANIC("CreateSecureProcess: No free process slots");
     }
 
     uint32_t new_pid = __sync_fetch_and_add(&next_pid, 1);
@@ -697,7 +697,7 @@ uint32_t CreateSecureProcess(void (*entry_point)(void), uint8_t privilege) {
     void* stack = AllocPage();
     if (UNLIKELY(!stack)) {
         FreeSlotFast(slot);
-        Panic("CreateSecureProcess: Failed to allocate stack");
+        PANIC("CreateSecureProcess: Failed to allocate stack");
     }
 
     // Initialize process with enhanced security
@@ -800,7 +800,7 @@ void CleanupTerminatedProcesses(void) {
 
 Process* GetCurrentProcess(void) {
     if (current_process >= MAX_PROCESSES) {
-        Panic("GetCurrentProcess: Invalid current process index");
+        PANIC("GetCurrentProcess: Invalid current process index");
     }
     return &processes[current_process];
 }

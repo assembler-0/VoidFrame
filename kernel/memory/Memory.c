@@ -75,7 +75,7 @@ int MemoryInit(uint32_t multiboot_info_addr) {
     PrintKernelInt(total_pages);
     PrintKernel(" pages)\n");
 
-    tag = (struct MultibootTag*)(multiboot_info_addr + 8); // Reset tag pointer
+    tag = (struct MultibootTag*)(uintptr_t)(multiboot_info_addr + 8); // Reset tag pointer
     while (tag->type != MULTIBOOT2_TAG_TYPE_END) {
         if (tag->type == MULTIBOOT2_TAG_TYPE_MMAP) {
             struct MultibootTagMmap* mmap_tag = (struct MultibootTagMmap*)tag;
