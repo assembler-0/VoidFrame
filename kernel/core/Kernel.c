@@ -416,6 +416,7 @@ void KernelMainHigherHalf(void) {
     PrintKernelSuccess("[SYSTEM] Kernel initialization complete\n");
     PrintKernelSuccess("[SYSTEM] Transferring control to SecureKernelIntegritySubsystem...\n");
     PrintKernelSuccess("[SYSTEM] Initializing interrupts...\n\n");
+    Panic("called for no reason");
     asm volatile("sti");
     while (1) {
         if (ShouldSchedule()) {

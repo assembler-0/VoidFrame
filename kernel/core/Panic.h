@@ -3,12 +3,12 @@
 
 #include "stdint.h"
 
-// Panic function - never returns
 void __attribute__((noreturn)) Panic(const char* message);
 void __attribute__((noreturn)) PanicWithCode(const char* message, uint64_t error_code);
 
 #define STRINGIFY_HELPER(x) #x
 #define STRINGIFY(x) STRINGIFY_HELPER(x)
+
 #define ASSERT(condition) \
     do { \
         if (!(condition)) { \
@@ -16,4 +16,5 @@ void __attribute__((noreturn)) PanicWithCode(const char* message, uint64_t error
         } \
     } while(0)
 
-#endif
+#endif // PANIC_H
+
