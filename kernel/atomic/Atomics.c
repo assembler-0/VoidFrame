@@ -3,13 +3,13 @@
 //
 
 #include "Atomics.h"
-void AtomicInc(volatile int* ptr) {
+void AtomicInc(volatile uint32_t* ptr) {
     asm volatile("lock incl %0" : "+m" (*ptr));
 }
-void AtomicDec(volatile int* ptr) {
+void AtomicDec(volatile uint32_t* ptr) {
     asm volatile("lock decl %0" : "+m" (*ptr));
 }
-int AtomicCmpxchg(volatile int* ptr, int expected, int desired) {
+int AtomicCmpxchg(volatile uint32_t* ptr, int expected, int desired) {
     int old;
     asm volatile(
         "lock cmpxchgl %2, %1"

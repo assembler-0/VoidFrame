@@ -49,9 +49,10 @@ static inline void vmem_spin_unlock(volatile int* lock) {
 /**
  * @brief Validate that a physical address can be converted to virtual
  */
+extern uint64_t total_pages;
 static inline int is_valid_phys_addr(uint64_t paddr) {
     // Basic sanity check - adjust limits based on your system
-    return (paddr != 0 && paddr < 0x100000000ULL); // 4GB limit example
+    return (paddr != 0 && paddr < (total_pages * PAGE_SIZE));
 }
 
 /**

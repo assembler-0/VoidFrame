@@ -239,7 +239,7 @@ void TerminateProcess(uint32_t pid, TerminationReason reason, uint32_t exit_code
 static void SecurityViolationHandler(uint32_t violator_pid, const char* reason) {
     AtomicInc(&security_violation_count);
 
-    PrintKernelError("[SECURITY] Violation by PID ");
+    PrintKernelError("[SYSTEM] Violation by PID ");
     PrintKernelInt(violator_pid);
     PrintKernelError(": ");
     PrintKernelError(reason);
@@ -827,7 +827,7 @@ void SystemTracer(void) {
 }
 
 void SecureKernelIntegritySubsystem(void) {
-    PrintKernelSuccess("[SECURITY] SecureKernelIntegritySubsystem() initializing...\n");
+    PrintKernelSuccess("[SYSTEM] SecureKernelIntegritySubsystem() initializing...\n");
 
     Process* current = GetCurrentProcess();
 
@@ -852,7 +852,7 @@ void SecureKernelIntegritySubsystem(void) {
         }
     }
 
-    PrintKernelSuccess("[SECURITY] SecureKernelIntegritySubsystem() active\n");
+    PrintKernelSuccess("[SYSTEM] SecureKernelIntegritySubsystem() active\n");
 
     uint64_t last_check = 0;
 
@@ -874,7 +874,7 @@ void SecureKernelIntegritySubsystem(void) {
 
                 if (proc->state == PROC_READY || proc->state == PROC_RUNNING) {
                     if (UNLIKELY(!ValidateToken(&proc->token, proc->pid))) {
-                        PrintKernelError("[SECURITY] Token corruption detected for PID ");
+                        PrintKernelError("[SYSTEM] Token corruption detected for PID ");
                         PrintKernelInt(proc->pid);
                         PrintKernelError("\n");
 

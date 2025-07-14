@@ -1,27 +1,39 @@
 /*
- * linker.ld
+ * Simple linker script for our kernel.
  */
 
-ENTRY(start)
-OUTPUT_FORMAT(elf64-x86-64)
+ENTRY(start) /* The entry point of our kernel is the 'start' label */
 
-SECTIONS {
-    . = 0x100000;
+SECTIONS
+{
+    . = 1M;
 
-    .text : {
+    .boot :
+    {
         *(.multiboot)
+    }
+
+    /* Then, put the executable code. */
+    .text :
+    {
         *(.text)
     }
 
-    .rodata : {
+    /* Then, read-only data. */
+    .rodata :
+    {
         *(.rodata)
     }
 
-    .data : {
+    /* Then, initialized data. */
+    .data :
+    {
         *(.data)
     }
 
-    .bss : {
+    /* Finally, the uninitialized data (BSS). */
+    .bss :
+    {
         *(.bss)
     }
 }

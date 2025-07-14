@@ -12,6 +12,7 @@
 #include "Gdt.h"
 #include "Panic.h"
 #include "stdbool.h"
+#include "Multiboot2.h"
 #include "UserMode.h"
 #include "Io.h"
 #include "VMem.h"
@@ -25,7 +26,6 @@
 #define VGA_COLOR_SUCCESS   0x0A
 #define VGA_COLOR_ERROR     0x0C
 #define VGA_COLOR_WARNING   0x0E
-
 // Console state
 typedef struct {
     uint32_t line;
@@ -264,48 +264,97 @@ void AsciiSplash(void) {
     ConsoleSetColor(VGA_COLOR_DEFAULT);
 }
 
+// Global variable to store the Multiboot2 info address
+static uint32_t g_multiboot_info_addr = 0;
+
+void ParseMultibootInfo(uint32_t info) {
+    g_multiboot_info_addr = info;
+    PrintKernel("[INFO] Parsing Multiboot2 info...\n");
+    uint32_t total_size = *(uint32_t*)info;
+    PrintKernel("Multiboot2 total size: ");
+    PrintKernelInt(total_size);
+    PrintKernel("\n");
+
+    // Start parsing tags after the total_size and reserved fields (8 bytes)
+    struct MultibootTag* tag = (struct MultibootTag*)(info + 8);
+    while (tag->type != MULTIBOOT2_TAG_TYPE_END) {
+        PrintKernel("  Tag type: ");
+        PrintKernelInt(tag->type);
+        PrintKernel(", size: ");
+        PrintKernelInt(tag->size);
+        PrintKernel("\n");
+
+        if (tag->type == MULTIBOOT2_TAG_TYPE_MMAP) {
+            struct MultibootTagMmap* mmap_tag = (struct MultibootTagMmap*)tag;
+            PrintKernel("    Memory Map Tag found! Entry size: ");
+            PrintKernelInt(mmap_tag->entry_size);
+            PrintKernel("\n");
+
+            for (uint32_t i = 0; i < (mmap_tag->size - sizeof(struct MultibootTagMmap)) / mmap_tag->entry_size; i++) {
+                struct MultibootMmapEntry* entry = (struct MultibootMmapEntry*)((uint8_t*)mmap_tag + sizeof(struct MultibootTagMmap) + (i * mmap_tag->entry_size));
+                PrintKernel("      Addr: ");
+                PrintKernelHex(entry->addr);
+                PrintKernel(", Len: ");
+                PrintKernelHex(entry->len);
+                PrintKernel(", Type: ");
+                PrintKernelInt(entry->type);
+                PrintKernel("\n");
+            }
+        }
+        // Move to the next tag, ensuring 8-byte alignment
+        tag = (struct MultibootTag*)((uint8_t*)tag + ((tag->size + 7) & ~7));
+    }
+    PrintKernelSuccess("[SYSTEM] Multiboot2 info parsed.\n");
+}
 
 static InitResultT SystemInitialize(void) {
     // Initialize GDT
     PrintKernel("[INFO] Initializing GDT...\n");
     GdtInit();  // void function - assume success
-    PrintKernelSuccess("[KERNEL] GDT initialized\n");
+    PrintKernelSuccess("[SYSTEM] GDT initialized\n");
 
     // Initialize IDT
     PrintKernel("[INFO] Initializing IDT...\n");
     IdtInstall();  // void function - assume success
-    PrintKernelSuccess("[KERNEL] IDT initialized\n");
+    PrintKernelSuccess("[SYSTEM] IDT initialized\n");
 
     // Initialize System Calls
     PrintKernel("[INFO] Initializing system calls...\n");
     SyscallInit();  // void function - assume success
-    PrintKernelSuccess("[KERNEL] System calls initialized\n");
+    PrintKernelSuccess("[SYSTEM] System calls initialized\n");
 
     // Initialize PIC
     PrintKernel("[INFO] Initializing PIC...\n");
     PicInstall();  // void function - assume success
-    PrintKernelSuccess("[KERNEL] PIC initialized\n");
+    PrintKernelSuccess("[SYSTEM] PIC initialized\n");
 
     // Initialize Memory Management
     PrintKernel("[INFO] Initializing memory management...\n");
-    MemoryInit();  // void function - assume success
-    PrintKernelSuccess("[KERNEL] Memory management initialized\n");
+    MemoryInit(g_multiboot_info_addr);  // Pass Multiboot2 info address
+    PrintKernelSuccess("[SYSTEM] Memory management initialized\n");
 
     // Initialize Process Management
     PrintKernel("[INFO] Initializing process management...\n");
     ProcessInit();  // void function - assume success
-    PrintKernelSuccess("[KERNEL] Process management initialized\n");
+    PrintKernelSuccess("[SYSTEM] Process management initialized\n");
     
     return INIT_SUCCESS;
 }
 void KernelMain(uint32_t magic, uint32_t info) {
+    if (magic != MULTIBOOT2_BOOTLOADER_MAGIC) {
+        ClearScreen();
+        PrintKernelError("Magic: ");
+        PrintKernelHex(magic);
+        Panic("Unrecognized Multiboot2 magic.");
+    }
     AsciiSplash();
-    PrintKernelSuccess("[KERNEL] VoidFrame Kernel - Version 0.0.1-alpha loaded\n");
+    PrintKernelSuccess("[SYSTEM] VoidFrame Kernel - Version 0.0.1-alpha loaded\n");
     PrintKernel("Magic: ");
     PrintKernelHex(magic);
     PrintKernel(", Info: ");
     PrintKernelHex(info);
     PrintKernel("\n\n");
+    ParseMultibootInfo(info);
     SystemInitialize();
     // Create the security manager process (PID 1)
     PrintKernel("[INFO] Creating security manager process...\n");
@@ -314,11 +363,11 @@ void KernelMain(uint32_t magic, uint32_t info) {
         PrintKernelError("[FATAL] Cannot create SecureKernelIntegritySubsystem\n");
         Panic("Critical security failure - cannot create security manager");
     }
-    PrintKernelSuccess("[KERNEL] Security manager created with PID: ");
+    PrintKernelSuccess("[SYSTEM] Security manager created with PID: ");
     PrintKernelInt(security_pid);
     PrintKernel("\n");
-    PrintKernelSuccess("[KERNEL] Core system modules loaded\n");
-    PrintKernelSuccess("[KERNEL] Kernel initialization complete\n");
+    PrintKernelSuccess("[SYSTEM] Core system modules loaded\n");
+    PrintKernelSuccess("[SYSTEM] Kernel initialization complete\n");
     PrintKernelSuccess("[SYSTEM] Transferring control to SecureKernelIntegritySubsystem...\n\n");
     asm volatile("sti");
     while (1) {

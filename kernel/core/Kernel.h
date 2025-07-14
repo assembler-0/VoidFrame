@@ -15,4 +15,5 @@ void PrintKernelInt32(int32_t num);
 void PrintKernelSuccess(const char* str);
 void PrintKernelError(const char* str);
 void PrintKernelWarning(const char* str);
+void ParseMultibootInfo(uint32_t info);
 #endif
