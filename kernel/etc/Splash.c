@@ -6,7 +6,8 @@
 #define VIDEO_MEMORY (0xB8000)
 #define SCREEN_WIDTH 80
 #define SCREEN_HEIGHT 25
-
+#define DATE __DATE__
+#define TIME __TIME__
 // Color definitions for better readability
 #define COLOR_WHITE_ON_BLACK 0x0F
 #define COLOR_CYAN_ON_BLACK 0x0B
@@ -81,10 +82,13 @@ void ShowSplashScreen() {
     DrawBox(5, 2, 70, 21, COLOR_CYAN_ON_BLACK);
     ClearScreen();
     // Title section
-    DrawBox(10, 4, 60, 13, COLOR_WHITE_ON_BLACK);
+    DrawBox(10, 5, 60, 12, COLOR_WHITE_ON_BLACK);
     PrintCentered(9, "VoidFrame", COLOR_CYAN_ON_BLACK);
     PrintCentered(10, "Version 0.0.1-beta", COLOR_CYAN_ON_BLACK);
-    PrintCentered(11, "Copyright (c) 2025, Atheria", COLOR_CYAN_ON_BLACK);
+    PrintString(23,11, "Compiled on ", COLOR_CYAN_ON_BLACK);
+    PrintString(35,11, TIME, COLOR_CYAN_ON_BLACK);
+    PrintString(44,11, DATE, COLOR_CYAN_ON_BLACK);
+    PrintCentered(12, "Copyright (c) 2025, Atheria", COLOR_CYAN_ON_BLACK);
     // System info
     PrintString(12, 17, "System Status:", COLOR_CYAN_ON_BLACK);
     PrintString(16, 18, "Initializing...", COLOR_CYAN_ON_BLACK);
