@@ -53,7 +53,7 @@ inc_dirs = [
 asm_sources = [
   arch_root + '/asm/pxs.asm',
   arch_root + '/idt/IdtLoad.asm',
-  arch_root + '/gdt/GdtFlush.asm',
+  arch_root + '/gdt/GdtTssFlush.asm',
   arch_root + '/syscall/SyscallEntry.asm',
   arch_root + '/asm/Switch.asm',
   arch_root + '/interrupts/Interrupts.asm',

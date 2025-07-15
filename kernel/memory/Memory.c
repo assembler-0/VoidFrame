@@ -3,6 +3,7 @@
 #include "Panic.h"
 #include "Kernel.h"
 #include "Multiboot2.h"
+#include "Spinlock.h"
 
 // Max 4GB memory for now (1M pages)
 #define MAX_PAGES (4ULL * 1024 * 1024 * 1024 / PAGE_SIZE)
@@ -13,28 +14,39 @@ extern uint8_t _kernel_phys_end[];
 static uint8_t page_bitmap[MAX_BITMAP_SIZE];
 uint64_t total_pages = 0;
 static uint64_t used_pages = 0;
+static volatile int memory_lock = 0;
 static uint64_t memory_start = 0x100000; // Start after 1MB
 
 // Helper to mark a page as used
 static void MarkPageUsed(uint64_t page_idx) {
-    if (page_idx >= total_pages) return;
+    // SpinLock(&memory_lock);
+    if (page_idx >= total_pages) {
+        SpinUnlock(&memory_lock);
+        return;
+    }
     uint64_t byte_idx = page_idx / 8;
     uint8_t bit_idx = page_idx % 8;
     if (!(page_bitmap[byte_idx] & (1 << bit_idx))) {
         page_bitmap[byte_idx] |= (1 << bit_idx);
         used_pages++;
     }
+    // SpinUnlock(&memory_lock);
 }
 
 // Helper to mark a page as free
 static void MarkPageFree(uint64_t page_idx) {
-    if (page_idx >= total_pages) return;
+    // SpinLock(&memory_lock);
+    if (page_idx >= total_pages) {
+        SpinUnlock(&memory_lock);
+        return;
+    }
     uint64_t byte_idx = page_idx / 8;
     uint8_t bit_idx = page_idx % 8;
     if (page_bitmap[byte_idx] & (1 << bit_idx)) {
         page_bitmap[byte_idx] &= ~(1 << bit_idx);
         used_pages--;
     }
+    // SpinUnlock(&memory_lock);
 }
 
 int MemoryInit(uint32_t multiboot_info_addr) {
@@ -94,14 +106,18 @@ int MemoryInit(uint32_t multiboot_info_addr) {
                     // We will mark used pages later
                 } else {
                     // Mark reserved/unavailable pages as used
-                    for (uint64_t p = start_page; p <= end_page; p++) {
-                        MarkPageUsed(p);
+                    for (uint64_t current_addr = entry->addr; current_addr < entry->addr + entry->len; current_addr += PAGE_SIZE) {
+                        uint64_t page_idx = current_addr / PAGE_SIZE;
+                        if (page_idx < total_pages) {
+                            MarkPageUsed(page_idx);
+                        }
                     }
                 }
             }
         }
         tag = (struct MultibootTag*)((uint8_t*)tag + ((tag->size + 7) & ~7));
     }
+
     PrintKernel("[INFO] Reserving first 1MB of physical memory.\n");
     for (uint64_t i = 0; i < 0x100000 / PAGE_SIZE; i++) {
         MarkPageUsed(i);
@@ -131,40 +147,47 @@ int MemoryInit(uint32_t multiboot_info_addr) {
         MarkPageUsed(i);
     }
     // --- END OF REPLACEMENT ---
-
     return 0;
 }
 
 
 void* AllocPage(void) {
+    // SpinLock(&memory_lock);
     for (uint64_t i = 0; i < total_pages; i++) {
         uint64_t byte_idx = i / 8;
         uint8_t bit_idx = i % 8;
         if (!(page_bitmap[byte_idx] & (1 << bit_idx))) {
             MarkPageUsed(i);
             void* page = (void*)(i * PAGE_SIZE);
+            // SpinUnlock(&memory_lock);
             return page;
         }
     }
+    // SpinUnlock(&memory_lock);
     return NULL; // Out of memory
 }
 
 void FreePage(void* page) {
+    // SpinLock(&memory_lock);
     if (!page) {
+        SpinUnlock(&memory_lock);
         Panic("FreePage: NULL pointer");
     }
-    
+
     uint64_t addr = (uint64_t)page;
     if (addr % PAGE_SIZE != 0) {
+        SpinUnlock(&memory_lock);
         Panic("FreePage: Address not page aligned");
     }
-    
+
     uint64_t page_idx = addr / PAGE_SIZE;
     if (page_idx >= total_pages) {
+        SpinUnlock(&memory_lock);
         Panic("FreePage: Page index out of bounds");
     }
-    
+
     MarkPageFree(page_idx);
+    // SpinUnlock(&memory_lock);
 }
 
 uint64_t GetFreeMemory(void) {

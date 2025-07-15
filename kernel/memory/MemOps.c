@@ -8,19 +8,19 @@ void* FastMemset(void* dest, int value, uint64_t size) {
     uint8_t* d = (uint8_t*)dest;
     
     if (features->sse2 && size >= 16) {
-        // Use SSE2 for large blocks
-        uint64_t val64 = ((uint64_t)value << 56) | ((uint64_t)value << 48) | 
-                        ((uint64_t)value << 40) | ((uint64_t)value << 32) |
-                        ((uint64_t)value << 24) | ((uint64_t)value << 16) |
-                        ((uint64_t)value << 8) | value;
+        // Create a 128-bit value where all bytes are 'value'
+        uint64_t val64 = ((uint64_t)value << 56) | ((uint64_t)value << 48) |
+                         ((uint64_t)value << 40) | ((uint64_t)value << 32) |
+                         ((uint64_t)value << 24) | ((uint64_t)value << 16) |
+                         ((uint64_t)value << 8) | value;
         
         asm volatile(
             "movq %0, %%xmm0\n"
-            "movq %0, %%xmm1\n"
-            "punpcklqdq %%xmm1, %%xmm0\n"
+            "punpcklqdq %%xmm0, %%xmm0\n"
+            "punpcklqdq %%xmm0, %%xmm0\n"
             :
             : "r"(val64)
-            : "xmm0", "xmm1"
+            : "xmm0"
         );
         
         while (size >= 16) {
@@ -74,4 +74,15 @@ void FastZeroPage(void* page) {
     } else {
         FastMemset(page, 0, 4096);
     }
+}
+
+int FastMemcmp(const void* ptr1, const void* ptr2, uint64_t size) {
+    const uint8_t* p1 = (const uint8_t*)ptr1;
+    const uint8_t* p2 = (const uint8_t*)ptr2;
+
+    for (uint64_t i = 0; i < size; i++) {
+        if (p1[i] < p2[i]) return -1;
+        if (p1[i] > p2[i]) return 1;
+    }
+    return 0;
 }

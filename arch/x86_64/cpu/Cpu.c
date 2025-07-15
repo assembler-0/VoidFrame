@@ -20,9 +20,8 @@ void CpuInit(void) {
     cpuid(7, &eax, &ebx, &ecx, &edx);
     cpu_features.avx2 = (ebx >> 5) & 1;
     
-    if (cpu_features.sse) {
-        EnableSse();
-    }
+    // SSE/SSE2 are already enabled by the bootloader (pxs.asm)
+    // No need to call EnableSse() here.
 }
 
 void EnableSse(void) {

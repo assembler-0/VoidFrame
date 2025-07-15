@@ -1,27 +1,28 @@
-/**
- * @file VMem.c
- * @brief Fixed Implementation of the Virtual Memory Manager
- *
- * CRITICAL FIXES:
- * 1. Fixed PML4 address corruption in VMemInit
- * 2. Fixed physical address masking (PAGE_MASK -> PT_ADDR_MASK)
- * 3. Added proper error handling for PHYS_TO_VIRT conversion
- * 4. Fixed spinlock usage in VMemMap/VMemUnmap
- * 5. Added bounds checking for virtual addresses
- */
-
+//
+// Created by Atheria on 7/15/25.
+//
 #include "VMem.h"
 #include "Memory.h"
 #include "MemOps.h"
 #include "Kernel.h"
 #include "Interrupts.h"
 #include "Panic.h"
+#include "Spinlock.h"
 static VirtAddrSpace kernel_space;
 
 static volatile int vmem_lock = 0;
 
 
 extern uint64_t total_pages;
+
+extern uint8_t _text_start[];
+extern uint8_t _text_end[];
+extern uint8_t _rodata_start[];
+extern uint8_t _rodata_end[];
+extern uint8_t _data_start[];
+extern uint8_t _data_end[];
+extern uint8_t _bss_start[];
+extern uint8_t _bss_end[];
 static inline int is_valid_phys_addr(uint64_t paddr) {
     // Basic sanity check - adjust limits based on your system
     return (paddr != 0 && paddr < (total_pages * PAGE_SIZE));
@@ -33,7 +34,6 @@ void VMemInit(void) {
     if (!pml4_phys) {
         PANIC("VMemInit: Failed to allocate PML4 table");
     }
-
     // CRITICAL FIX: Store physical address BEFORE converting
     uint64_t pml4_phys_addr = (uint64_t)pml4_phys;
     // Zero the newly allocated physical page directly, assuming it's identity-mapped by the bootloader.
@@ -164,38 +164,7 @@ int VMemMap(uint64_t vaddr, uint64_t paddr, uint64_t flags) {
  *
  * CRITICAL FIX: Proper spinlock usage (don't call VMemMap from inside lock!)
  */
-int VMemUnmap(uint64_t vaddr, uint64_t size) {
-    size = PAGE_ALIGN_UP(size);
-    vaddr = PAGE_ALIGN_DOWN(vaddr);
 
-    SpinLock(&vmem_lock);
-
-    for (uint64_t offset = 0; offset < size; offset += PAGE_SIZE) {
-        uint64_t current_vaddr = vaddr + offset;
-
-        // Navigate to page table
-        uint64_t pdp_phys = VMemGetPageTablePhys((uint64_t)kernel_space.pml4, current_vaddr, 0, 0);
-        if (!pdp_phys) continue;
-
-        uint64_t pd_phys = VMemGetPageTablePhys(pdp_phys, current_vaddr, 1, 0);
-        if (!pd_phys) continue;
-
-        uint64_t pt_phys = VMemGetPageTablePhys(pd_phys, current_vaddr, 2, 0);
-        if (!pt_phys) continue;
-
-        // Clear page table entry
-        uint64_t* pt_virt = (uint64_t*)PHYS_TO_VIRT(pt_phys);
-        int pt_index = (current_vaddr >> PT_SHIFT) & PT_INDEX_MASK;
-
-        if (pt_virt[pt_index] & PAGE_PRESENT) {
-            pt_virt[pt_index] = 0;
-            VMemFlushTLBSingle(current_vaddr);
-        }
-    }
-
-    SpinUnlock(&vmem_lock);
-    return VMEM_SUCCESS;
-}
 
 /**
  * @brief Allocates contiguous virtual memory
@@ -262,13 +231,13 @@ void VMemFree(void* vaddr, uint64_t size) {
     for (uint64_t i = 0; i < num_pages; i++) {
         uint64_t current_vaddr = start_vaddr + (i * PAGE_SIZE);
 
-        // This lock is to protect the page table walk in VMemGetPhysAddr
-        // and the modification below.
-        SpinLock(&vmem_lock);
-
-        // Find the physical page before we destroy the mapping
+        // Get physical address first (this has its own locking internally)
         uint64_t paddr = VMemGetPhysAddr(current_vaddr);
 
+        if (paddr == 0) continue; // Not mapped
+
+        // Now acquire lock for modification
+        SpinLock(&vmem_lock);
         // Navigate to the Page Table Entry (PTE)
         uint64_t pdp_phys = VMemGetPageTablePhys((uint64_t)kernel_space.pml4, current_vaddr, 0, 0);
         if (!pdp_phys) { SpinUnlock(&vmem_lock); continue; }
@@ -298,11 +267,8 @@ void VMemFree(void* vaddr, uint64_t size) {
 
         SpinUnlock(&vmem_lock);
 
-        // Now that the page is unmapped and the lock is released,
-        // free the physical page. Only do this if a valid paddr was found.
-        if (paddr != 0) {
-            FreePage((void*)paddr);
-        }
+        // Free physical page outside the lock
+        FreePage((void*)paddr);
     }
 }
 
@@ -326,29 +292,60 @@ uint64_t VMemGetPhysAddr(uint64_t vaddr) {
 }
 
 void VMemMapKernel(uint64_t kernel_phys_start, uint64_t kernel_phys_end) {
-    // Align addresses to page boundaries
-    uint64_t start = PAGE_ALIGN_DOWN(kernel_phys_start);
-    uint64_t end = PAGE_ALIGN_UP(kernel_phys_end);
+    (void)kernel_phys_start; // Unused, but kept for signature compatibility
+    (void)kernel_phys_end;   // Unused, but kept for signature compatibility
 
-    PrintKernel("VMem: Mapping kernel from phys 0x");
-    PrintKernelHex(start);
-    PrintKernel(" to 0x");
-    PrintKernelHex(end);
-    PrintKernel("\n");
+    PrintKernelSuccess("[SYSTEM] VMem: Mapping kernel sections...\n");
 
-    for (uint64_t paddr = start; paddr < end; paddr += PAGE_SIZE) {
-        // Map the physical address to its higher-half virtual address
+    // Map .text section (read-only)
+    uint64_t text_start = PAGE_ALIGN_DOWN((uint64_t)_text_start);
+    uint64_t text_end = PAGE_ALIGN_UP((uint64_t)_text_end);
+    for (uint64_t paddr = text_start; paddr < text_end; paddr += PAGE_SIZE) {
         uint64_t vaddr = paddr + KERNEL_VIRTUAL_OFFSET;
-
-        // Map with Present and Writable flags. You might want to map
-        // .text sections as read-only later, but this is a good start.
-        int result = VMemMap(vaddr, paddr, PAGE_WRITABLE);
+        int result = VMemMap(vaddr, paddr, PAGE_PRESENT);
         if (result != VMEM_SUCCESS) {
-            PANIC("VMemMapKernel: Failed to map kernel page!");
-            return;
+            PANIC_CODE("VMemMapKernel: Failed to map .text page!", result);
         }
     }
-    PrintKernel("VMem: Kernel mapping complete.\n");
+    PrintKernel("  .text mapped (RO): 0x"); PrintKernelHex(text_start); PrintKernel(" - 0x"); PrintKernelHex(text_end); PrintKernel("\n");
+
+    // Map .rodata section (read-only)
+    uint64_t rodata_start = PAGE_ALIGN_DOWN((uint64_t)_rodata_start);
+    uint64_t rodata_end = PAGE_ALIGN_UP((uint64_t)_rodata_end);
+    for (uint64_t paddr = rodata_start; paddr < rodata_end; paddr += PAGE_SIZE) {
+        uint64_t vaddr = paddr + KERNEL_VIRTUAL_OFFSET;
+        int result = VMemMap(vaddr, paddr, PAGE_PRESENT);
+        if (result != VMEM_SUCCESS) {
+            PANIC_CODE("VMemMapKernel: Failed to map .rodata page!", result);
+        }
+    }
+    PrintKernel("  .rodata mapped (RO): 0x"); PrintKernelHex(rodata_start); PrintKernel(" - 0x"); PrintKernelHex(rodata_end); PrintKernel("\n");
+
+    // Map .data section (read-write)
+    uint64_t data_start = PAGE_ALIGN_DOWN((uint64_t)_data_start);
+    uint64_t data_end = PAGE_ALIGN_UP((uint64_t)_data_end);
+    for (uint64_t paddr = data_start; paddr < data_end; paddr += PAGE_SIZE) {
+        uint64_t vaddr = paddr + KERNEL_VIRTUAL_OFFSET;
+        int result = VMemMap(vaddr, paddr, PAGE_WRITABLE);
+        if (result != VMEM_SUCCESS) {
+            PANIC_CODE("VMemMapKernel: Failed to map .data page!", result);
+        }
+    }
+    PrintKernel("  .data mapped (RW): 0x"); PrintKernelHex(data_start); PrintKernel(" - 0x"); PrintKernelHex(data_end); PrintKernel("\n");
+
+    // Map .bss section (read-write)
+    uint64_t bss_start = PAGE_ALIGN_DOWN((uint64_t)_bss_start);
+    uint64_t bss_end = PAGE_ALIGN_UP((uint64_t)_bss_end);
+    for (uint64_t paddr = bss_start; paddr < bss_end; paddr += PAGE_SIZE) {
+        uint64_t vaddr = paddr + KERNEL_VIRTUAL_OFFSET;
+        int result = VMemMap(vaddr, paddr, PAGE_WRITABLE);
+        if (result != VMEM_SUCCESS) {
+            PANIC_CODE("VMemMapKernel: Failed to map .bss page!", result);
+        }
+    }
+    PrintKernel("  .bss mapped (RW): 0x"); PrintKernelHex(bss_start); PrintKernel(" - 0x"); PrintKernelHex(bss_end); PrintKernel("\n");
+
+    PrintKernelSuccess("[SYSTEM] VMem: Kernel section mapping complete.\n");
 }
 
 /**

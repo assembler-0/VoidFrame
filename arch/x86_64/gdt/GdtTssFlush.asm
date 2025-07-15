@@ -1,6 +1,7 @@
 bits 64
 
 global GdtFlush
+global TssFlush
 
 GdtFlush:
     lgdt [rdi]          ; Load new GDT
@@ -20,4 +21,9 @@ GdtFlush:
     retfq
     
 .flush:
+    ret
+
+TssFlush:
+    mov ax, 0x28        ; TSS selector (index 5 * 8 = 40 = 0x28)
+    ltr ax              ; Load Task Register
     ret

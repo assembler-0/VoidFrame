@@ -483,7 +483,7 @@ static void BoostAllProcesses(void) {
 // Main scheduler - called from timer interrupt
 void FastSchedule(struct Registers* regs) {
     AtomicInc(&scheduler_calls);
-    MLFQscheduler.tick_counter++;
+    AtomicInc(&MLFQscheduler.tick_counter);
 
     // Periodic starvation prevention
     if (UNLIKELY(MLFQscheduler.tick_counter - MLFQscheduler.last_boost_tick >= BOOST_INTERVAL)) {
@@ -821,6 +821,7 @@ void RegisterSecurityManager(uint32_t pid) {
 void SystemTracer(void) {
     PrintKernelSuccess("[SYSTEM] SystemTracer() has started. Scanning...\n");
     while (1) {
+        PrintKernel("id");
         CleanupTerminatedProcesses();
         Yield();
     }

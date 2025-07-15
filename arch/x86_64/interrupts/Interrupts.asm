@@ -142,7 +142,75 @@ isr%1:
     iretq
 %endmacro
 
-; Define all 256 ISRs explicitly
+%macro ISR_ERRCODE 1
+section .text
+global isr%1
+isr%1:
+    ; CPU pushes: Error Code, RIP, CS, RFLAGS, RSP, SS
+    ; Push interrupt number
+    push qword %1
+    ; Push general purpose registers
+    push r15
+    push r14
+    push r13
+    push r12
+    push r11
+    push r10
+    push r9
+    push r8
+    push rbp
+    push rsi
+    push rdi
+    push rdx
+    push rcx
+    push rbx
+    push rax
+    ; Push segment registers (in reverse order of struct: gs, fs, es, ds)
+    ; Use general-purpose registers to push/pop segment register values
+    mov rax, gs
+    push rax
+    mov rax, fs
+    push rax
+    mov rax, es
+    push rax
+    mov rax, ds
+    push rax
+
+    ; The pointer to the Registers struct should be RSP
+    mov rdi, rsp
+    call InterruptHandler
+
+    ; Pop segment registers (in order: ds, es, fs, gs)
+    pop rax
+    mov ds, rax
+    pop rax
+    mov es, rax
+    pop rax
+    mov fs, rax
+    pop rax
+    mov gs, rax
+    ; Pop general purpose registers
+    pop rax
+    pop rbx
+    pop rcx
+    pop rdx
+    pop rdi
+    pop rsi
+    pop rbp
+    pop r8
+    pop r9
+    pop r10
+    pop r11
+    pop r12
+    pop r13
+    pop r14
+    pop r15
+
+    ; Pop interrupt number
+    add rsp, 8
+    iretq
+%endmacro
+
 ISR_NOERRCODE 0
 ISR_NOERRCODE 1
 ISR_NOERRCODE 2
@@ -403,3 +471,267 @@ ISR_NOERRCODE 252
 ISR_NOERRCODE 253
 ISR_NOERRCODE 254
 ISR_NOERRCODE 255
+
+section .rodata
+global isr_stub_table
+isr_stub_table:
+dq isr0
+dq isr1
+dq isr2
+dq isr3
+dq isr4
+dq isr5
+dq isr6
+dq isr7
+dq isr8
+dq isr9
+dq isr10
+dq isr11
+dq isr12
+dq isr13
+dq isr14
+dq isr15
+dq isr16
+dq isr17
+dq isr18
+dq isr19
+dq isr20
+dq isr21
+dq isr22
+dq isr23
+dq isr24
+dq isr25
+dq isr26
+dq isr27
+dq isr28
+dq isr29
+dq isr30
+dq isr31
+
+; IRQs (Interrupt Requests) - these are external interrupts
+dq isr32
+dq isr33
+dq isr34
+dq isr35
+dq isr36
+dq isr37
+dq isr38
+dq isr39
+dq isr40
+dq isr41
+dq isr42
+dq isr43
+dq isr44
+dq isr45
+dq isr46
+dq isr47
+
+; Remaining ISRs (48-255) - generic, no error code
+dq isr48
+dq isr49
+dq isr50
+dq isr51
+dq isr52
+dq isr53
+dq isr54
+dq isr55
+dq isr56
+dq isr57
+dq isr58
+dq isr59
+dq isr60
+dq isr61
+dq isr62
+dq isr63
+dq isr64
+dq isr65
+dq isr66
+dq isr67
+dq isr68
+dq isr69
+dq isr70
+dq isr71
+dq isr72
+dq isr73
+dq isr74
+dq isr75
+dq isr76
+dq isr77
+dq isr78
+dq isr79
+dq isr80
+dq isr81
+dq isr82
+dq isr83
+dq isr84
+dq isr85
+dq isr86
+dq isr87
+dq isr88
+dq isr89
+dq isr90
+dq isr91
+dq isr92
+dq isr93
+dq isr94
+dq isr95
+dq isr96
+dq isr97
+dq isr98
+dq isr99
+dq isr100
+dq isr101
+dq isr102
+dq isr103
+dq isr104
+dq isr105
+dq isr106
+dq isr107
+dq isr108
+dq isr109
+dq isr110
+dq isr111
+dq isr112
+dq isr113
+dq isr114
+dq isr115
+dq isr116
+dq isr117
+dq isr118
+dq isr119
+dq isr120
+dq isr121
+dq isr122
+dq isr123
+dq isr124
+dq isr125
+dq isr126
+dq isr127
+dq isr128
+dq isr129
+dq isr130
+dq isr131
+dq isr132
+dq isr133
+dq isr134
+dq isr135
+dq isr136
+dq isr137
+dq isr138
+dq isr139
+dq isr140
+dq isr141
+dq isr142
+dq isr143
+dq isr144
+dq isr145
+dq isr146
+dq isr147
+dq isr148
+dq isr149
+dq isr150
+dq isr151
+dq isr152
+dq isr153
+dq isr154
+dq isr155
+dq isr156
+dq isr157
+dq isr158
+dq isr159
+dq isr160
+dq isr161
+dq isr162
+dq isr163
+dq isr164
+dq isr165
+dq isr166
+dq isr167
+dq isr168
+dq isr169
+dq isr170
+dq isr171
+dq isr172
+dq isr173
+dq isr174
+dq isr175
+dq isr176
+dq isr177
+dq isr178
+dq isr179
+dq isr180
+dq isr181
+dq isr182
+dq isr183
+dq isr184
+dq isr185
+dq isr186
+dq isr187
+dq isr188
+dq isr189
+dq isr190
+dq isr191
+dq isr192
+dq isr193
+dq isr194
+dq isr195
+dq isr196
+dq isr197
+dq isr198
+dq isr199
+dq isr200
+dq isr201
+dq isr202
+dq isr203
+dq isr204
+dq isr205
+dq isr206
+dq isr207
+dq isr208
+dq isr209
+dq isr210
+dq isr211
+dq isr212
+dq isr213
+dq isr214
+dq isr215
+dq isr216
+dq isr217
+dq isr218
+dq isr219
+dq isr220
+dq isr221
+dq isr222
+dq isr223
+dq isr224
+dq isr225
+dq isr226
+dq isr227
+dq isr228
+dq isr229
+dq isr230
+dq isr231
+dq isr232
+dq isr233
+dq isr234
+dq isr235
+dq isr236
+dq isr237
+dq isr238
+dq isr239
+dq isr240
+dq isr241
+dq isr242
+dq isr243
+dq isr244
+dq isr245
+dq isr246
+dq isr247
+dq isr248
+dq isr249
+dq isr250
+dq isr251
+dq isr252
+dq isr253
+dq isr254
+dq isr255

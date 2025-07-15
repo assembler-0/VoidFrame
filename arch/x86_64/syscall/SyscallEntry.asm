@@ -47,6 +47,6 @@ SyscallEntry:
     pop rdx
     pop rcx
     pop rbx
-    add rsp, 8      ; Skip original rax (return value)
+    pop rax      ; Pop original rax, but leave the syscall return value in rax
     
     iretq

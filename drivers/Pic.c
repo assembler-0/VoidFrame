@@ -20,7 +20,7 @@ void PitInstall() {
 
 
 
-int PicInstall() {
+void PicInstall() {
     uint8_t a1, a2;
 
     a1 = inb(PIC1_DATA);
@@ -38,10 +38,22 @@ int PicInstall() {
     outb(PIC1_DATA, ICW4_8086);
     outb(PIC2_DATA, ICW4_8086);
 
+    outb(PIC2_DATA, ICW4_8086);
+
+    // Mask all interrupts initially
+    outb(PIC1_DATA, 0xFF); // Mask all on master PIC
+    outb(PIC2_DATA, 0xFF); // Mask all on slave PIC
+
+    // Restore original masks (a1, a2) - this will unmask IRQ2 on master
+    // and whatever was unmasked on slave. Then explicitly unmask IRQ0.
     outb(PIC1_DATA, a1);
     outb(PIC2_DATA, a2);
+
+    // Explicitly unmask IRQ0 (timer) on master PIC
+    // Read current mask, clear bit 0, write back
+    uint8_t pic1_mask = inb(PIC1_DATA);
+    outb(PIC1_DATA, pic1_mask & ~0x01); // Clear bit 0 (IRQ0)
     
     // Initialize PIT after PIC
     PitInstall();
-    return 0;
 }

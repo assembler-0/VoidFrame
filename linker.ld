@@ -14,27 +14,35 @@ SECTIONS
     }
 
     /* Then, put the executable code. */
-    .text :
+    .text ALIGN(4K) :
     {
+        _text_start = .;
         *(.text)
+        _text_end = .;
     }
 
     /* Then, read-only data. */
-    .rodata :
+    .rodata ALIGN(4K) :
     {
+        _rodata_start = .;
         *(.rodata)
+        _rodata_end = .;
     }
 
     /* Then, initialized data. */
-    .data :
+    .data ALIGN(4K) :
     {
+        _data_start = .;
         *(.data)
+        _data_end = .;
     }
 
     /* Finally, the uninitialized data (BSS). */
-    .bss :
+    .bss ALIGN(4K) :
     {
+        _bss_start = .;
         *(.bss)
+        _bss_end = .;
     }
     _kernel_phys_end = .;
 }

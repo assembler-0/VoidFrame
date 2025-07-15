@@ -16,9 +16,12 @@
 #include "AsmHelpers.h"
 #include "MemOps.h"
 #include "VMem.h"
+#include "Spinlock.h"
 #include "Splash.h"
 
 void KernelMainHigherHalf(void);
+#define KERNEL_STACK_SIZE (16 * 1024) // 16KB stack
+static uint8_t kernel_stack[KERNEL_STACK_SIZE]; // Statically allocate for simplicity
 extern uint8_t _kernel_phys_start[];
 extern uint8_t _kernel_phys_end[];
 // VGA Constants
@@ -341,6 +344,11 @@ static InitResultT CoreInit(void) {
     GdtInit();  // void function - assume success
     PrintKernelSuccess("[SYSTEM] GDT initialized\n");
 
+    // Initialize CPU features
+    PrintKernel("[INFO] Initializing CPU features...\n");
+    CpuInit();
+    PrintKernelSuccess("[SYSTEM] CPU features initialized\n");
+
     // Initialize IDT
     PrintKernel("[INFO] Initializing IDT...\n");
     IdtInstall();  // void function - assume success
@@ -370,7 +378,9 @@ void KernelMain(uint32_t magic, uint32_t info) {
         PrintKernelHex(magic);
         PANIC("Unrecognized Multiboot2 magic.");
     }
+    console.buffer = (volatile uint16_t*)VGA_BUFFER_ADDR;
     ShowSplashScreen();
+    ClearScreen();
     PrintKernelSuccess("[SYSTEM] VoidFrame Kernel - Version 0.0.1-alpha loaded\n");
     PrintKernel("Magic: ");
     PrintKernelHex(magic);
@@ -380,27 +390,30 @@ void KernelMain(uint32_t magic, uint32_t info) {
     ParseMultibootInfo(info);
     MemoryInit(g_multiboot_info_addr);
     VMemInit();
-    uint64_t pml4_phys = VMemGetPML4PhysAddr();
 
+    uint64_t pml4_phys = VMemGetPML4PhysAddr();
+    PrintKernelSuccess("[SYSTEM] Bootstrap: Mapping kernel...\n");
     uint64_t kernel_start = (uint64_t)_kernel_phys_start;
     uint64_t kernel_end = (uint64_t)_kernel_phys_end;
-
-    PrintKernelSuccess("[SYSTEM] Bootstrap: Mapping kernel...\n");
-    // Map the kernel itself using the bootstrap function
     for (uint64_t paddr = kernel_start; paddr < kernel_end; paddr += PAGE_SIZE) {
         BootstrapMapPage(pml4_phys, paddr + KERNEL_VIRTUAL_OFFSET, paddr, PAGE_WRITABLE);
     }
-
+    PrintKernelSuccess("[SYSTEM] Bootstrap: Mapping new kernel stack...\n");
+    uint64_t stack_phys_start = (uint64_t)kernel_stack;
+    for (uint64_t paddr = stack_phys_start; paddr < stack_phys_start + KERNEL_STACK_SIZE; paddr += PAGE_SIZE) {
+        // The virtual address of the stack will be its physical address + offset
+        BootstrapMapPage(pml4_phys, paddr + KERNEL_VIRTUAL_OFFSET, paddr, PAGE_WRITABLE);
+    }
     PrintKernelSuccess("[SYSTEM] Bootstrap: Identity mapping low memory...\n");
-    // Map the first 4MB identity-mapped for safety (VGA, etc.)
     for (uint64_t paddr = 0; paddr < 4 * 1024 * 1024; paddr += PAGE_SIZE) {
         BootstrapMapPage(pml4_phys, paddr, paddr, PAGE_WRITABLE);
     }
 
     PrintKernelSuccess("[SYSTEM] Page tables prepared. Switching to virtual addressing...\n");
 
-    uint64_t higher_half_entry = (uint64_t)&KernelMainHigherHalf;
-    EnablePagingAndJump(pml4_phys, higher_half_entry);
+    uint64_t new_stack_top = ((uint64_t)kernel_stack + KERNEL_VIRTUAL_OFFSET) + KERNEL_STACK_SIZE;
+    uint64_t higher_half_entry = (uint64_t)&KernelMainHigherHalf + KERNEL_VIRTUAL_OFFSET;
+    EnablePagingAndJump(pml4_phys, higher_half_entry, new_stack_top);
 }
 
 void KernelMainHigherHalf(void) {

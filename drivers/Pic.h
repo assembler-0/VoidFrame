@@ -3,7 +3,7 @@
 
 #define PIT_FREQUENCY_HZ 1000
 
-int PicInstall();
+void PicInstall();
 void PitInstall();
 
 #endif
