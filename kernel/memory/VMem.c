@@ -21,17 +21,6 @@ static VirtAddrSpace kernel_space;
 static volatile int vmem_lock = 0;
 
 
-
-static inline void vmem_spin_lock(volatile int* lock) {
-    while (__sync_lock_test_and_set(lock, 1)) {
-        while (*lock) __builtin_ia32_pause();
-    }
-}
-
-static inline void vmem_spin_unlock(volatile int* lock) {
-    __sync_lock_release(lock);
-}
-
 extern uint64_t total_pages;
 static inline int is_valid_phys_addr(uint64_t paddr) {
     // Basic sanity check - adjust limits based on your system
@@ -127,26 +116,26 @@ int VMemMap(uint64_t vaddr, uint64_t paddr, uint64_t flags) {
         return VMEM_ERROR_INVALID_ADDR;
     }
 
-    vmem_spin_lock(&vmem_lock);
+    SpinLock(&vmem_lock);
 
     // Get PDP table
     uint64_t pdp_phys = VMemGetPageTablePhys((uint64_t)kernel_space.pml4, vaddr, 0, 1);
     if (!pdp_phys) {
-        vmem_spin_unlock(&vmem_lock);
+        SpinUnlock(&vmem_lock);
         return VMEM_ERROR_NOMEM;
     }
 
     // Get PD table
     uint64_t pd_phys = VMemGetPageTablePhys(pdp_phys, vaddr, 1, 1);
     if (!pd_phys) {
-        vmem_spin_unlock(&vmem_lock);
+        SpinUnlock(&vmem_lock);
         return VMEM_ERROR_NOMEM;
     }
 
     // Get PT table
     uint64_t pt_phys = VMemGetPageTablePhys(pd_phys, vaddr, 2, 1);
     if (!pt_phys) {
-        vmem_spin_unlock(&vmem_lock);
+        SpinUnlock(&vmem_lock);
         return VMEM_ERROR_NOMEM;
     }
 
@@ -156,7 +145,7 @@ int VMemMap(uint64_t vaddr, uint64_t paddr, uint64_t flags) {
 
     // Check if already mapped
     if (pt_virt[pt_index] & PAGE_PRESENT) {
-        vmem_spin_unlock(&vmem_lock);
+        SpinUnlock(&vmem_lock);
         return VMEM_ERROR_ALREADY_MAPPED;
     }
 
@@ -166,7 +155,7 @@ int VMemMap(uint64_t vaddr, uint64_t paddr, uint64_t flags) {
     // Invalidate TLB
     VMemFlushTLBSingle(vaddr);
 
-    vmem_spin_unlock(&vmem_lock);
+    SpinUnlock(&vmem_lock);
     return VMEM_SUCCESS;
 }
 
@@ -179,7 +168,7 @@ int VMemUnmap(uint64_t vaddr, uint64_t size) {
     size = PAGE_ALIGN_UP(size);
     vaddr = PAGE_ALIGN_DOWN(vaddr);
 
-    vmem_spin_lock(&vmem_lock);
+    SpinLock(&vmem_lock);
 
     for (uint64_t offset = 0; offset < size; offset += PAGE_SIZE) {
         uint64_t current_vaddr = vaddr + offset;
@@ -204,7 +193,7 @@ int VMemUnmap(uint64_t vaddr, uint64_t size) {
         }
     }
 
-    vmem_spin_unlock(&vmem_lock);
+    SpinUnlock(&vmem_lock);
     return VMEM_SUCCESS;
 }
 
@@ -218,14 +207,14 @@ void* VMemAlloc(uint64_t size) {
 
     size = PAGE_ALIGN_UP(size);
 
-    vmem_spin_lock(&vmem_lock);
+    SpinLock(&vmem_lock);
 
     uint64_t vaddr = kernel_space.next_vaddr;
 
     // Reserve the virtual address space
     kernel_space.next_vaddr += size;
 
-    vmem_spin_unlock(&vmem_lock);
+    SpinUnlock(&vmem_lock);
 
     // Now map pages without holding the lock
     uint64_t allocated_size = 0;
@@ -253,10 +242,10 @@ void* VMemAlloc(uint64_t size) {
     }
 
     // Update tracking
-    vmem_spin_lock(&vmem_lock);
+    SpinLock(&vmem_lock);
     kernel_space.used_pages += size / PAGE_SIZE;
     kernel_space.total_mapped += size;
-    vmem_spin_unlock(&vmem_lock);
+    SpinUnlock(&vmem_lock);
 
     // Zero the allocated memory
     FastMemset((void*)vaddr, 0, size);
@@ -275,20 +264,20 @@ void VMemFree(void* vaddr, uint64_t size) {
 
         // This lock is to protect the page table walk in VMemGetPhysAddr
         // and the modification below.
-        vmem_spin_lock(&vmem_lock);
+        SpinLock(&vmem_lock);
 
         // Find the physical page before we destroy the mapping
         uint64_t paddr = VMemGetPhysAddr(current_vaddr);
 
         // Navigate to the Page Table Entry (PTE)
         uint64_t pdp_phys = VMemGetPageTablePhys((uint64_t)kernel_space.pml4, current_vaddr, 0, 0);
-        if (!pdp_phys) { vmem_spin_unlock(&vmem_lock); continue; }
+        if (!pdp_phys) { SpinUnlock(&vmem_lock); continue; }
 
         uint64_t pd_phys = VMemGetPageTablePhys(pdp_phys, current_vaddr, 1, 0);
-        if (!pd_phys) { vmem_spin_unlock(&vmem_lock); continue; }
+        if (!pd_phys) { SpinUnlock(&vmem_lock); continue; }
 
         uint64_t pt_phys = VMemGetPageTablePhys(pd_phys, current_vaddr, 2, 0);
-        if (!pt_phys) { vmem_spin_unlock(&vmem_lock); continue; }
+        if (!pt_phys) { SpinUnlock(&vmem_lock); continue; }
 
         // Get virtual address of the page table to modify it
         uint64_t* pt_virt = (uint64_t*)PHYS_TO_VIRT(pt_phys);
@@ -307,7 +296,7 @@ void VMemFree(void* vaddr, uint64_t size) {
             kernel_space.total_mapped -= PAGE_SIZE;
         }
 
-        vmem_spin_unlock(&vmem_lock);
+        SpinUnlock(&vmem_lock);
 
         // Now that the page is unmapped and the lock is released,
         // free the physical page. Only do this if a valid paddr was found.
@@ -391,10 +380,10 @@ void VMemFlushTLBSingle(uint64_t vaddr) {
  * @brief Gets virtual memory statistics
  */
 void VMemGetStats(uint64_t* used_pages, uint64_t* total_mapped) {
-    vmem_spin_lock(&vmem_lock);
+    SpinLock(&vmem_lock);
     if (used_pages) *used_pages = kernel_space.used_pages;
     if (total_mapped) *total_mapped = kernel_space.total_mapped;
-    vmem_spin_unlock(&vmem_lock);
+    SpinUnlock(&vmem_lock);
 }
 
 // Add this function definition

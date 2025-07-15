@@ -116,5 +116,14 @@ uint64_t VMemGetPML4PhysAddr(void);
 // Debug functions
 void VMemDumpPageTable(uint64_t vaddr);
 void VMemValidatePageTable(uint64_t* pml4);
+// Locks
+static inline void SpinLock(volatile int* lock) {
+    while (__sync_lock_test_and_set(lock, 1)) {
+        while (*lock) __builtin_ia32_pause();
+    }
+}
 
+static inline void SpinUnlock(volatile int* lock) {
+    __sync_lock_release(lock);
+}
 #endif // VMEM_H

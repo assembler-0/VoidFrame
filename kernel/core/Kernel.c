@@ -55,7 +55,7 @@ static ConsoleT console = {
     .buffer = (volatile uint16_t*)VGA_BUFFER_ADDR,
     .color = VGA_COLOR_DEFAULT
 };
-
+static volatile int lock = 0;
 // Inline functions for better performance
 static inline void ConsoleSetColor(uint8_t color) {
     console.color = color;
@@ -73,6 +73,7 @@ static inline void ConsolePutcharAt(char c, uint32_t x, uint32_t y, uint8_t colo
 
 // Optimized screen clear using memset-like approach
 void ClearScreen(void) {
+    SpinLock(&lock);
     const uint16_t blank = MakeVGAEntry(' ', VGA_COLOR_DEFAULT);
     
     // Use 32-bit writes for better performance
@@ -86,6 +87,7 @@ void ClearScreen(void) {
     
     console.line = 0;
     console.column = 0;
+    SpinUnlock(&lock);;
 }
 
 // Optimized scrolling
@@ -136,7 +138,7 @@ static void ConsolePutchar(char c) {
 // Modern string output with length checking
 void PrintKernel(const char* str) {
     if (!str) return;
-
+    SpinLock(&lock);
     // Cache the original color
     const uint8_t original_color = console.color;
 
@@ -145,6 +147,7 @@ void PrintKernel(const char* str) {
     }
 
     console.color = original_color;
+    SpinUnlock(&lock);
 }
 
 // Colored output variants

@@ -93,16 +93,13 @@ void ShowSplashScreen() {
     PrintString(12, 20, "Loading: ", COLOR_CYAN_ON_BLACK);
 
     // Simulate loading progress
-    for (int progress = 0; progress <= 100; progress += 10) {
+    for (int progress = 0; progress <= 100; progress += 7) {
         DrawProgressBar(21, 20, 48, progress, COLOR_CYAN_ON_BLACK);
 
         // Simple delay
-        for (volatile int i = 0; i < 100000000; i++);
+        for (volatile int i = 0; i < 50000000; i++);
     }
 
-    // Copyright notice
-
-
     // Final delay
-    for (volatile int i = 0; i < 500000000; i++);
+    for (volatile int i = 0; i < 70000000; i++);
 }
