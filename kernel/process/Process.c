@@ -821,7 +821,6 @@ void RegisterSecurityManager(uint32_t pid) {
 void SystemTracer(void) {
     PrintKernelSuccess("[SYSTEM] SystemTracer() has started. Scanning...\n");
     while (1) {
-        PrintKernel("id");
         CleanupTerminatedProcesses();
         Yield();
     }
