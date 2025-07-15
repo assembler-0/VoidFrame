@@ -66,6 +66,7 @@ c_sources = [
   src_root + '/kernel/core/Panic.c',
   src_root + '/kernel/memory/Memory.c',
   src_root + '/kernel/memory/MemOps.c',
+  src_root + '/kernel/memory/KernelHeap.c',
   src_root + '/kernel/memory/VMem.c',
   src_root + '/kernel/process/Process.c',
   src_root + '/kernel/process/UserMode.c',

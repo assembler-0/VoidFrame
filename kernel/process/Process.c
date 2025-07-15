@@ -6,6 +6,8 @@
 #include "MemOps.h"
 #include "Ipc.h"
 #include "Atomics.h"
+#include "Io.h"
+#include "Spinlock.h"
 
 #define offsetof(type, member) ((uint64_t)&(((type*)0)->member))
 
@@ -30,6 +32,7 @@ static volatile uint32_t next_pid = 1;
 static volatile uint32_t current_process = 0;
 static volatile uint32_t process_count = 0;
 static volatile int need_schedule = 0;
+static volatile int scheduler_lock = 0;
 
 // Security subsystem
 static uint32_t security_manager_pid = 0;
@@ -155,9 +158,11 @@ static int ValidateToken(const SecurityToken* token, uint32_t pid_to_check) {
 }
 
 void TerminateProcess(uint32_t pid, TerminationReason reason, uint32_t exit_code) {
+    irq_flags_t flags = SpinLockIrqSave(&scheduler_lock);
     Process* proc = GetProcessByPid(pid);
     if (UNLIKELY(!proc || proc->state == PROC_DYING || 
                  proc->state == PROC_ZOMBIE || proc->state == PROC_TERMINATED)) {
+        SpinUnlockIrqRestore(&scheduler_lock, flags);
         return;
     }
 
@@ -165,6 +170,7 @@ void TerminateProcess(uint32_t pid, TerminationReason reason, uint32_t exit_code
     uint32_t slot = proc - processes;
     
     if (UNLIKELY(slot >= MAX_PROCESSES)) {
+        SpinUnlockIrqRestore(&scheduler_lock, flags);
         return;
     }
 
@@ -174,18 +180,21 @@ void TerminateProcess(uint32_t pid, TerminationReason reason, uint32_t exit_code
         if (caller->pid != proc->pid) {
             // Only system processes can terminate other processes
             if (UNLIKELY(caller->privilege_level != PROC_PRIV_SYSTEM)) {
+                SpinUnlockIrqRestore(&scheduler_lock, flags);
                 TerminateProcess(caller->pid, TERM_SECURITY, 0);
                 return;
             }
             
             // Cannot terminate immune processes
             if (UNLIKELY(proc->token.flags & PROC_FLAG_IMMUNE)) {
+                SpinUnlockIrqRestore(&scheduler_lock, flags);
                 TerminateProcess(caller->pid, TERM_SECURITY, 0);
                 return;
             }
             
             // Cannot terminate critical system processes
             if (UNLIKELY(proc->token.flags & PROC_FLAG_CRITICAL)) {
+                SpinUnlockIrqRestore(&scheduler_lock, flags);
                 TerminateProcess(caller->pid, TERM_SECURITY, 0);
                 return;
             }
@@ -193,6 +202,7 @@ void TerminateProcess(uint32_t pid, TerminationReason reason, uint32_t exit_code
         
         // Validate caller's token before allowing termination
         if (UNLIKELY(!ValidateToken(&caller->token, caller->pid))) {
+            SpinUnlockIrqRestore(&scheduler_lock, flags);
             TerminateProcess(caller->pid, TERM_SECURITY, 0);
             return;
         }
@@ -201,6 +211,7 @@ void TerminateProcess(uint32_t pid, TerminationReason reason, uint32_t exit_code
     // Atomic state transition
     ProcessState old_state = proc->state;
     if (UNLIKELY(AtomicCmpxchg((volatile uint32_t*)&proc->state, old_state, PROC_DYING) != old_state)) {
+        SpinUnlockIrqRestore(&scheduler_lock, flags);
         return; // Race condition, another thread is handling termination
     }
 
@@ -231,8 +242,10 @@ void TerminateProcess(uint32_t pid, TerminationReason reason, uint32_t exit_code
 
     // Self-termination handling
     if (UNLIKELY(pid == caller->pid)) {
+        SpinUnlockIrqRestore(&scheduler_lock, flags);
         __asm__ __volatile__("cli; hlt" ::: "memory");
     }
+    SpinUnlockIrqRestore(&scheduler_lock, flags);
 }
 
 
@@ -482,6 +495,8 @@ static void BoostAllProcesses(void) {
 // Main scheduler - called from timer interrupt
 // Main scheduler - called from timer interrupt
 void FastSchedule(struct Registers* regs) {
+    irq_flags_t flags = SpinLockIrqSave(&scheduler_lock);
+
     AtomicInc(&scheduler_calls);
     AtomicInc(&MLFQscheduler.tick_counter);
 
@@ -518,6 +533,7 @@ void FastSchedule(struct Registers* regs) {
         // Continue if quantum remains and no higher priority process
         if (LIKELY(MLFQscheduler.quantum_remaining > 0 &&
                   (highest_priority == -1 || highest_priority > (int)old_proc->priority))) {
+            SpinUnlockIrqRestore(&scheduler_lock, flags);
             return; // No context switch needed
         }
 
@@ -568,6 +584,7 @@ select_next:;
     } else {
         MLFQscheduler.quantum_remaining = 0;
     }
+    SpinUnlockIrqRestore(&scheduler_lock, flags);
 }
 
 // Called when process blocks (I/O, IPC, etc.)
@@ -658,7 +675,9 @@ void ProcessExitStub() {
 }
 
 uint32_t CreateSecureProcess(void (*entry_point)(void), uint8_t privilege) {
+    irq_flags_t flags = SpinLockIrqSave(&scheduler_lock);
     if (UNLIKELY(!entry_point)) {
+        SpinUnlockIrqRestore(&scheduler_lock, flags);
         PANIC("CreateSecureProcess: NULL entry point");
     }
 
@@ -666,6 +685,7 @@ uint32_t CreateSecureProcess(void (*entry_point)(void), uint8_t privilege) {
 
     // Enhanced security validation
     if (UNLIKELY(!ValidateToken(&creator->token, creator->pid))) {
+        SpinUnlockIrqRestore(&scheduler_lock, flags);
         SecurityViolationHandler(creator->pid, "Corrupt token during process creation");
         return 0;
     }
@@ -673,18 +693,21 @@ uint32_t CreateSecureProcess(void (*entry_point)(void), uint8_t privilege) {
     // Privilege escalation check
     if (privilege == PROC_PRIV_SYSTEM) {
         if (UNLIKELY(creator->pid != 0 && creator->privilege_level != PROC_PRIV_SYSTEM)) {
+            SpinUnlockIrqRestore(&scheduler_lock, flags);
             SecurityViolationHandler(creator->pid, "Unauthorized system process creation");
             return 0;
         }
     }
 
     if (UNLIKELY(process_count >= MAX_PROCESSES)) {
+        SpinUnlockIrqRestore(&scheduler_lock, flags);
         PANIC("CreateSecureProcess: Too many processes");
     }
 
     // Fast slot allocation
     int slot = FindFreeSlotFast();
     if (UNLIKELY(slot == -1)) {
+        SpinUnlockIrqRestore(&scheduler_lock, flags);
         PANIC("CreateSecureProcess: No free process slots");
     }
 
@@ -697,6 +720,7 @@ uint32_t CreateSecureProcess(void (*entry_point)(void), uint8_t privilege) {
     void* stack = AllocPage();
     if (UNLIKELY(!stack)) {
         FreeSlotFast(slot);
+        SpinUnlockIrqRestore(&scheduler_lock, flags);
         PANIC("CreateSecureProcess: Failed to allocate stack");
     }
 
@@ -741,6 +765,7 @@ uint32_t CreateSecureProcess(void (*entry_point)(void), uint8_t privilege) {
     // Add to scheduler
     AddToScheduler(slot);
 
+    SpinUnlockIrqRestore(&scheduler_lock, flags);
     return new_pid;
 }
 
@@ -748,6 +773,7 @@ void ScheduleFromInterrupt(struct Registers* regs) {
     FastSchedule(regs);
 }
 void CleanupTerminatedProcesses(void) {
+    irq_flags_t flags = SpinLockIrqSave(&scheduler_lock);
     // Process a limited number per call to avoid long interrupt delays
     int cleanup_count = 0;
     const int MAX_CLEANUP_PER_CALL = 3;
@@ -796,6 +822,7 @@ void CleanupTerminatedProcesses(void) {
         PrintKernelInt(pid_backup);
         PrintKernel(" cleaned up successfully (state now PROC_TERMINATED=0)\n");
     }
+    SpinUnlockIrqRestore(&scheduler_lock, flags);
 }
 
 Process* GetCurrentProcess(void) {

@@ -14,6 +14,7 @@
 #include "stdbool.h"
 #include "Multiboot2.h"
 #include "AsmHelpers.h"
+#include "KernelHeap.h"
 #include "MemOps.h"
 #include "VMem.h"
 #include "Spinlock.h"
@@ -390,7 +391,7 @@ void KernelMain(uint32_t magic, uint32_t info) {
     ParseMultibootInfo(info);
     MemoryInit(g_multiboot_info_addr);
     VMemInit();
-
+    KernelHeapInit();
     uint64_t pml4_phys = VMemGetPML4PhysAddr();
     PrintKernelSuccess("[SYSTEM] Bootstrap: Mapping kernel...\n");
     uint64_t kernel_start = (uint64_t)_kernel_phys_start;

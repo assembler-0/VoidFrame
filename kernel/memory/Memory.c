@@ -19,9 +19,7 @@ static uint64_t memory_start = 0x100000; // Start after 1MB
 
 // Helper to mark a page as used
 static void MarkPageUsed(uint64_t page_idx) {
-    // SpinLock(&memory_lock);
     if (page_idx >= total_pages) {
-        SpinUnlock(&memory_lock);
         return;
     }
     uint64_t byte_idx = page_idx / 8;
@@ -30,14 +28,11 @@ static void MarkPageUsed(uint64_t page_idx) {
         page_bitmap[byte_idx] |= (1 << bit_idx);
         used_pages++;
     }
-    // SpinUnlock(&memory_lock);
 }
 
 // Helper to mark a page as free
 static void MarkPageFree(uint64_t page_idx) {
-    // SpinLock(&memory_lock);
     if (page_idx >= total_pages) {
-        SpinUnlock(&memory_lock);
         return;
     }
     uint64_t byte_idx = page_idx / 8;
@@ -46,7 +41,6 @@ static void MarkPageFree(uint64_t page_idx) {
         page_bitmap[byte_idx] &= ~(1 << bit_idx);
         used_pages--;
     }
-    // SpinUnlock(&memory_lock);
 }
 
 int MemoryInit(uint32_t multiboot_info_addr) {
@@ -146,48 +140,48 @@ int MemoryInit(uint32_t multiboot_info_addr) {
     for (uint64_t i = mb_info_start_page; i < mb_info_end_page; i++) {
         MarkPageUsed(i);
     }
-    // --- END OF REPLACEMENT ---
+    PrintKernelSuccess("[SYSTEM] Physical memory manager initialized");
     return 0;
 }
 
 
 void* AllocPage(void) {
-    // SpinLock(&memory_lock);
+    irq_flags_t flags = SpinLockIrqSave(&memory_lock);
     for (uint64_t i = 0; i < total_pages; i++) {
         uint64_t byte_idx = i / 8;
         uint8_t bit_idx = i % 8;
         if (!(page_bitmap[byte_idx] & (1 << bit_idx))) {
             MarkPageUsed(i);
             void* page = (void*)(i * PAGE_SIZE);
-            // SpinUnlock(&memory_lock);
+            SpinUnlockIrqRestore(&memory_lock, flags);
             return page;
         }
     }
-    // SpinUnlock(&memory_lock);
+    SpinUnlockIrqRestore(&memory_lock, flags);
     return NULL; // Out of memory
 }
 
 void FreePage(void* page) {
-    // SpinLock(&memory_lock);
+    irq_flags_t flags = SpinLockIrqSave(&memory_lock);
     if (!page) {
-        SpinUnlock(&memory_lock);
+        SpinUnlockIrqRestore(&memory_lock, flags);
         Panic("FreePage: NULL pointer");
     }
 
     uint64_t addr = (uint64_t)page;
     if (addr % PAGE_SIZE != 0) {
-        SpinUnlock(&memory_lock);
+        SpinUnlockIrqRestore(&memory_lock, flags);
         Panic("FreePage: Address not page aligned");
     }
 
     uint64_t page_idx = addr / PAGE_SIZE;
     if (page_idx >= total_pages) {
-        SpinUnlock(&memory_lock);
+        SpinUnlockIrqRestore(&memory_lock, flags);
         Panic("FreePage: Page index out of bounds");
     }
 
     MarkPageFree(page_idx);
-    // SpinUnlock(&memory_lock);
+    SpinUnlockIrqRestore(&memory_lock, flags);
 }
 
 uint64_t GetFreeMemory(void) {

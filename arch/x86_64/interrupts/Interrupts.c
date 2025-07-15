@@ -57,11 +57,11 @@ static void FatalExceptionHandler(const char* message, uint64_t interrupt_number
 // The C-level interrupt handler
 void InterruptHandler(struct Registers* regs) {
     ASSERT(regs != NULL);
-    if (regs->interrupt_number == 32) {
+    if (regs->interrupt_number == 32 || regs->interrupt_number == 33) { // Force ignore keyboard interrupt
         tick_count++;
         // FastDisplayTicks(tick_count);
         FastSchedule(regs);
-        outb(0x20, 0x20);
+        outb(0x20, 0x20); // EOI to master PIC
         return;
     }
 
@@ -90,7 +90,8 @@ void InterruptHandler(struct Registers* regs) {
 
     if (regs->error_code & 0x4) {
         PrintKernelError("  Mode: User\n");
-    } else {
+    }
+    else {
         PrintKernelError("  Mode: Supervisor\n");
     }
 
