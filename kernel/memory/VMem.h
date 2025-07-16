@@ -1,10 +1,6 @@
 /**
  * @file VMem.h
- * @brief Virtual Memory Manager Header
- *
- * This module provides virtual memory management for the kernel,
- * including page table management, virtual address allocation,
- * and memory mapping functionality.
+ * @brief Virtual Memory Manager Header - FIXED VERSION
  */
 
 #ifndef VMEM_H
@@ -35,15 +31,21 @@
 #define PDP_SHIFT           30
 #define PD_SHIFT            21
 #define PT_SHIFT            12
+#define PT_ADDR_MASK        0x000FFFFFFFFFF000ULL
+
+// CRITICAL FIX: Use consistent virtual address layout
+#define KERNEL_VIRTUAL_OFFSET 0xFFFFFFFF80000000ULL
+#define KERNEL_VIRTUAL_BASE   KERNEL_VIRTUAL_OFFSET  // Make them the same!
 
 // Virtual address space layout
-#define KERNEL_VIRTUAL_BASE 0xFFFF800000000000ULL
-#define VIRT_ADDR_SPACE_START 0xFFFF800000000000ULL
-#define VIRT_ADDR_SPACE_END   0xFFFFFFFFFFFFFFFFULL
+#define VIRT_ADDR_SPACE_START 0xFFFF800000000000ULL  // Start heap below kernel
+#define VIRT_ADDR_SPACE_END   KERNEL_VIRTUAL_BASE    // End at kernel start
+#define KERNEL_SPACE_START    KERNEL_VIRTUAL_BASE    // Kernel starts here
+#define KERNEL_SPACE_END      0xFFFFFFFFFFFFFFFFULL  // Kernel ends at top
 
 // Address conversion macros
-#define PHYS_TO_VIRT(paddr) ((void*)((uint64_t)(paddr) + KERNEL_VIRTUAL_BASE))
-#define VIRT_TO_PHYS(vaddr) ((uint64_t)(vaddr) - KERNEL_VIRTUAL_BASE)
+#define PHYS_TO_VIRT(paddr) ((void*)((uint64_t)(paddr) + KERNEL_VIRTUAL_OFFSET))
+#define VIRT_TO_PHYS(vaddr) ((uint64_t)(vaddr) - KERNEL_VIRTUAL_OFFSET)
 
 // Page alignment macros
 #define PAGE_ALIGN_DOWN(addr) ((addr) & ~PAGE_MASK)
@@ -52,9 +54,6 @@
 
 /**
  * @brief Virtual address space structure
- *
- * Represents a virtual address space with its page table root
- * and allocation tracking.
  */
 typedef struct {
     uint64_t* pml4;          /**< Physical address of PML4 table */
@@ -65,8 +64,6 @@ typedef struct {
 
 /**
  * @brief Memory mapping flags
- *
- * Flags used when mapping memory pages
  */
 typedef enum {
     VMEM_READ       = PAGE_PRESENT,
@@ -88,8 +85,7 @@ typedef enum {
     VMEM_ERROR_NOT_MAPPED = -4,
     VMEM_ERROR_ALIGN = -5
 } VMem_Result;
-#define KERNEL_VIRTUAL_OFFSET 0xFFFFFFFF80000000ULL
-#define PT_ADDR_MASK        0x000FFFFFFFFFF000ULL
+
 // Core virtual memory functions
 void VMemInit(void);
 void* VMemAlloc(uint64_t size);
@@ -97,6 +93,7 @@ void VMemFree(void* vaddr, uint64_t size);
 int VMemMap(uint64_t vaddr, uint64_t paddr, uint64_t flags);
 int VMemUnmap(uint64_t vaddr, uint64_t size);
 void VMemMapKernel(uint64_t kernel_phys_start, uint64_t kernel_phys_end);
+
 // Page table management functions
 uint64_t* VMemGetPageTable(uint64_t* pml4, uint64_t vaddr, int level, int create);
 int VMemSetPageFlags(uint64_t vaddr, uint64_t flags);
@@ -113,7 +110,9 @@ void VMemFlushTLB(void);
 void VMemFlushTLBSingle(uint64_t vaddr);
 void VMemGetStats(uint64_t* used_pages, uint64_t* total_mapped);
 uint64_t VMemGetPML4PhysAddr(void);
+
 // Debug functions
 void VMemDumpPageTable(uint64_t vaddr);
 void VMemValidatePageTable(uint64_t* pml4);
+
 #endif // VMEM_H

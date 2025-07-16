@@ -402,7 +402,6 @@ void KernelMain(uint32_t magic, uint32_t info) {
     PrintKernelSuccess("[SYSTEM] Bootstrap: Mapping new kernel stack...\n");
     uint64_t stack_phys_start = (uint64_t)kernel_stack;
     for (uint64_t paddr = stack_phys_start; paddr < stack_phys_start + KERNEL_STACK_SIZE; paddr += PAGE_SIZE) {
-        // The virtual address of the stack will be its physical address + offset
         BootstrapMapPage(pml4_phys, paddr + KERNEL_VIRTUAL_OFFSET, paddr, PAGE_WRITABLE);
     }
     PrintKernelSuccess("[SYSTEM] Bootstrap: Identity mapping low memory...\n");
@@ -411,7 +410,6 @@ void KernelMain(uint32_t magic, uint32_t info) {
     }
 
     PrintKernelSuccess("[SYSTEM] Page tables prepared. Switching to virtual addressing...\n");
-
     uint64_t new_stack_top = ((uint64_t)kernel_stack + KERNEL_VIRTUAL_OFFSET) + KERNEL_STACK_SIZE;
     uint64_t higher_half_entry = (uint64_t)&KernelMainHigherHalf + KERNEL_VIRTUAL_OFFSET;
     EnablePagingAndJump(pml4_phys, higher_half_entry, new_stack_top);
@@ -433,6 +431,7 @@ void KernelMainHigherHalf(void) {
     PrintKernelSuccess("[SYSTEM] Kernel initialization complete\n");
     PrintKernelSuccess("[SYSTEM] Transferring control to SecureKernelIntegritySubsystem...\n");
     PrintKernelSuccess("[SYSTEM] Initializing interrupts...\n\n");
+    KernelMemoryAlloc(32);
     asm volatile("sti");
     while (1) {
         if (ShouldSchedule()) {
