@@ -34,16 +34,24 @@ void VMemInit(void) {
     if (!pml4_phys) {
         PANIC("VMemInit: Failed to allocate PML4 table");
     }
-    // CRITICAL FIX: Store physical address BEFORE converting
+
     uint64_t pml4_phys_addr = (uint64_t)pml4_phys;
-    // Zero the newly allocated physical page directly, assuming it's identity-mapped by the bootloader.
-    FastZeroPage(pml4_phys);
+
+    if (pml4_phys_addr < (4 * 1024 * 1024)) {  // If it's in the first 4MB
+        FastZeroPage((void*)pml4_phys_addr);   // Use identity mapping
+    } else {
+        PrintKernelWarning("[WARNING] PML4 allocated above 4MB, assuming zeroed\n");
+    }
+
     // Initialize kernel space tracking
     kernel_space.next_vaddr = VIRT_ADDR_SPACE_START;
     kernel_space.used_pages = 0;
     kernel_space.total_mapped = 0;
-    // CRITICAL FIX: Store physical address, not virtual!
+
+    // Store physical address
     kernel_space.pml4 = (uint64_t*)pml4_phys_addr;
+
+
     PrintKernelSuccess("[SYSTEM] Initialized kernel virtual memory manager at address: ");
     PrintKernelHex(pml4_phys_addr);
     PrintKernel("\n");
@@ -178,19 +186,23 @@ void* VMemAlloc(uint64_t size) {
 
     irq_flags_t flags = SpinLockIrqSave(&vmem_lock);
 
-    uint64_t vaddr = kernel_space.next_vaddr;
+    // Make sure we don't conflict with kernel sections
+    // Add some safety margin above kernel sections
+    uint64_t min_heap_start = PAGE_ALIGN_UP((uint64_t)_bss_end + KERNEL_VIRTUAL_OFFSET) + 0x100000; // 1MB margin
+    if (kernel_space.next_vaddr < min_heap_start) {
+        kernel_space.next_vaddr = min_heap_start;
+    }
 
-    // Reserve the virtual address space
+    uint64_t vaddr = kernel_space.next_vaddr;
     kernel_space.next_vaddr += size;
 
     SpinUnlockIrqRestore(&vmem_lock, flags);
 
-    // Now map pages without holding the lock
+    // Map pages without holding the lock
     uint64_t allocated_size = 0;
     for (uint64_t offset = 0; offset < size; offset += PAGE_SIZE) {
         void* paddr = AllocPage();
         if (!paddr) {
-            // Cleanup on failure
             if (allocated_size > 0) {
                 VMemFree((void*)vaddr, allocated_size);
             }
@@ -199,11 +211,13 @@ void* VMemAlloc(uint64_t size) {
 
         int result = VMemMap(vaddr + offset, (uint64_t)paddr, PAGE_WRITABLE);
         if (result != VMEM_SUCCESS) {
-            // Free the physical page and cleanup
             FreePage(paddr);
             if (allocated_size > 0) {
                 VMemFree((void*)vaddr, allocated_size);
             }
+            PrintKernelError("[SYSTEM] VMemAlloc: VMemMap failed with code ");
+            PrintKernelInt(result);
+            PrintKernel("\n");
             return NULL;
         }
 
@@ -383,7 +397,6 @@ void VMemGetStats(uint64_t* used_pages, uint64_t* total_mapped) {
     SpinUnlock(&vmem_lock);
 }
 
-// Add this function definition
 uint64_t VMemGetPML4PhysAddr(void) {
-    return (uint64_t)kernel_space.pml4;
+    return (uint64_t)kernel_space.pml4;  // This is already physical
 }

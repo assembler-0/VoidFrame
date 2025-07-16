@@ -36,7 +36,7 @@ void* KernelMemoryAlloc(size_t size) {
     void* allocated_ptr = VMemAlloc(total_alloc_size);
 
     if (allocated_ptr == NULL) {
-        PrintKernelError("[ERROR] KernelMemoryAlloc: Failed to allocate ");
+        PrintKernelError("[SYSTEM] KernelMemoryAlloc: Failed to allocate ");
         PrintKernelInt(size);
         PrintKernel(" bytes.\n");
         SpinUnlockIrqRestore(&kheap_lock, flags);
@@ -73,25 +73,22 @@ void* KernelRealLocation(void* ptr, size_t size) {
     }
 
     irq_flags_t flags = SpinLockIrqSave(&kheap_lock);
-
-    // Get the original header and size
     HeapBlockHeader* old_header = (HeapBlockHeader*)((uint8_t*)ptr - sizeof(HeapBlockHeader));
     size_t old_size = old_header->size;
+    SpinUnlockIrqRestore(&kheap_lock, flags);
 
-    // Allocate new memory
     void* new_ptr = KernelMemoryAlloc(size);
-    if (new_ptr) {
-        // Copy data from old to new, up to the minimum of old_size and new_size
-        FastMemcpy(new_ptr, ptr, (old_size < size) ? old_size : size);
-        // Free the old memory block
-        KernelFree(ptr);
-    } else {
-        PrintKernelError("[ERROR] KernelRealLocation: Failed to reallocate ");
+    if (!new_ptr) {
+        PrintKernelError("[SYSTEM] KernelRealLocation: Failed to reallocate ");
         PrintKernelInt(size);
         PrintKernel(" bytes.\n");
+        return NULL;
     }
 
-    SpinUnlockIrqRestore(&kheap_lock, flags);
+    FastMemcpy(new_ptr, ptr, (old_size < size) ? old_size : size);
+
+    KernelFree(ptr);
+
     return new_ptr;
 }
 
