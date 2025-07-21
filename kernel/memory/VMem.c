@@ -64,7 +64,8 @@ static uint64_t VMemGetPageTablePhys(uint64_t pml4_phys, uint64_t vaddr, int lev
     }
 
     // Convert physical address to virtual for access
-    uint64_t* pml4_virt = (uint64_t*)PHYS_TO_VIRT(pml4_phys);
+    // NOTE: During early boot, we rely on identity mapping for page tables.
+    uint64_t* pml4_virt = (uint64_t*)pml4_phys;
 
     // Calculate index based on level
     int shift = 39 - (level * 9);
@@ -148,7 +149,7 @@ int VMemMap(uint64_t vaddr, uint64_t paddr, uint64_t flags) {
     }
 
     // Set the final page table entry
-    uint64_t* pt_virt = (uint64_t*)PHYS_TO_VIRT(pt_phys);
+    uint64_t* pt_virt = (uint64_t*)pt_phys;
     int pt_index = (vaddr >> PT_SHIFT) & PT_INDEX_MASK;
 
     // Check if already mapped
@@ -185,13 +186,6 @@ void* VMemAlloc(uint64_t size) {
     size = PAGE_ALIGN_UP(size);
 
     irq_flags_t flags = SpinLockIrqSave(&vmem_lock);
-
-    // Make sure we don't conflict with kernel sections
-    // Add some safety margin above kernel sections
-    uint64_t min_heap_start = PAGE_ALIGN_UP((uint64_t)_bss_end + KERNEL_VIRTUAL_OFFSET) + 0x100000; // 1MB margin
-    if (kernel_space.next_vaddr < min_heap_start) {
-        kernel_space.next_vaddr = min_heap_start;
-    }
 
     uint64_t vaddr = kernel_space.next_vaddr;
     kernel_space.next_vaddr += size;

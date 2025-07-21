@@ -6,7 +6,6 @@
 #include "Idt.h"
 #include "Pic.h"
 #include "Kernel.h"
-#include "Memory.h"
 #include "Process.h"
 #include "Syscall.h"
 #include "Gdt.h"
@@ -16,9 +15,11 @@
 #include "AsmHelpers.h"
 #include "KernelHeap.h"
 #include "MemOps.h"
-#include "VMem.h"
 #include "Spinlock.h"
 #include "Splash.h"
+#include "RustKernelHeap.h"
+#include "KernelConstants.h"
+#include "PhysicalMemoryManager.h"
 
 void KernelMainHigherHalf(void);
 #define KERNEL_STACK_SIZE (16 * 1024) // 16KB stack
@@ -111,7 +112,7 @@ static void ConsoleScroll(void) {
 }
 
 // Optimized character output with bounds checking
-static void ConsolePutchar(char c) {
+void ConsolePutchar(char c) {
     if (c == '\n') {
         console.line++;
         console.column = 0;
@@ -139,7 +140,6 @@ static void ConsolePutchar(char c) {
     }
 }
 
-// Modern string output with length checking
 void PrintKernel(const char* str) {
     if (!str) return;
     SpinLock(&lock);
@@ -276,7 +276,7 @@ void ParseMultibootInfo(uint32_t info) {
             PrintKernel("\n");
 
             for (uint32_t i = 0; i < (mmap_tag->size - sizeof(struct MultibootTagMmap)) / mmap_tag->entry_size; i++) {
-                struct MultibootMmapEntry* entry = (struct MultibootMmapEntry*)((uint8_t*)mmap_tag + sizeof(struct MultibootTagMmap) + (i * mmap_tag->entry_size));
+                const struct MultibootMmapEntry* entry = (struct MultibootMmapEntry*)((uint8_t*)mmap_tag + sizeof(struct MultibootTagMmap) + (i * mmap_tag->entry_size));
                 PrintKernel("      Addr: ");
                 PrintKernelHex(entry->addr);
                 PrintKernel(", Len: ");
@@ -292,52 +292,7 @@ void ParseMultibootInfo(uint32_t info) {
     PrintKernelSuccess("[SYSTEM] Multiboot2 info parsed.\n");
 }
 
-void BootstrapMapPage(uint64_t pml4_phys, uint64_t vaddr, uint64_t paddr, uint64_t flags) {
-    uint64_t* pml4 = (uint64_t*)pml4_phys;
 
-    // 1. Get/Create PDPT
-    int pml4_idx = (vaddr >> 39) & 0x1FF;
-    uint64_t pdpt_phys;
-    if (!(pml4[pml4_idx] & PAGE_PRESENT)) {
-        pdpt_phys = (uint64_t)AllocPage();
-        if (!pdpt_phys) PANIC("BootstrapMapPage: Out of memory for PDPT");
-        FastZeroPage((void*)pdpt_phys);
-        pml4[pml4_idx] = pdpt_phys | PAGE_PRESENT | PAGE_WRITABLE;
-    } else {
-        pdpt_phys = pml4[pml4_idx] & PT_ADDR_MASK;
-    }
-
-    // 2. Get/Create PD
-    uint64_t* pdpt = (uint64_t*)pdpt_phys;
-    int pdpt_idx = (vaddr >> 30) & 0x1FF;
-    uint64_t pd_phys;
-    if (!(pdpt[pdpt_idx] & PAGE_PRESENT)) {
-        pd_phys = (uint64_t)AllocPage();
-        if (!pd_phys) PANIC("BootstrapMapPage: Out of memory for PD");
-        FastZeroPage((void*)pd_phys);
-        pdpt[pdpt_idx] = pd_phys | PAGE_PRESENT | PAGE_WRITABLE;
-    } else {
-        pd_phys = pdpt[pdpt_idx] & PT_ADDR_MASK;
-    }
-
-    // 3. Get/Create PT
-    uint64_t* pd = (uint64_t*)pd_phys;
-    int pd_idx = (vaddr >> 21) & 0x1FF;
-    uint64_t pt_phys;
-    if (!(pd[pd_idx] & PAGE_PRESENT)) {
-        pt_phys = (uint64_t)AllocPage();
-        if (!pt_phys) PANIC("BootstrapMapPage: Out of memory for PT");
-        FastZeroPage((void*)pt_phys);
-        pd[pd_idx] = pt_phys | PAGE_PRESENT | PAGE_WRITABLE;
-    } else {
-        pt_phys = pd[pd_idx] & PT_ADDR_MASK;
-    }
-
-    // 4. Set the final PTE
-    uint64_t* pt = (uint64_t*)pt_phys;
-    int pt_idx = (vaddr >> 12) & 0x1FF;
-    pt[pt_idx] = paddr | flags | PAGE_PRESENT;
-}
 
 static InitResultT CoreInit(void) {
     // Initialize GDT
@@ -389,29 +344,29 @@ void KernelMain(uint32_t magic, uint32_t info) {
     PrintKernelHex(info);
     PrintKernel("\n\n");
     ParseMultibootInfo(info);
-    MemoryInit(g_multiboot_info_addr);
-    VMemInit();
+    PhysicalMemoryManagerInit(g_multiboot_info_addr);
+    RustVMemInit();
     KernelHeapInit();
-    uint64_t pml4_phys = VMemGetPML4PhysAddr();
+    uint64_t pml4_phys = RustVMemGetPML4PhysAddr();
     PrintKernelSuccess("[SYSTEM] Bootstrap: Mapping kernel...\n");
     uint64_t kernel_start = (uint64_t)_kernel_phys_start;
     uint64_t kernel_end = (uint64_t)_kernel_phys_end;
     for (uint64_t paddr = kernel_start; paddr < kernel_end; paddr += PAGE_SIZE) {
-        BootstrapMapPage(pml4_phys, paddr + KERNEL_VIRTUAL_OFFSET, paddr, PAGE_WRITABLE);
+        RustVMemMap(paddr + KERNEL_VIRTUAL_OFFSET, paddr, PAGE_WRITABLE);
     }
     PrintKernelSuccess("[SYSTEM] Bootstrap: Mapping new kernel stack...\n");
     uint64_t stack_phys_start = (uint64_t)kernel_stack;
     for (uint64_t paddr = stack_phys_start; paddr < stack_phys_start + KERNEL_STACK_SIZE; paddr += PAGE_SIZE) {
-        BootstrapMapPage(pml4_phys, paddr + KERNEL_VIRTUAL_OFFSET, paddr, PAGE_WRITABLE);
+        RustVMemMap(paddr + KERNEL_VIRTUAL_OFFSET, paddr, PAGE_WRITABLE);
     }
     PrintKernelSuccess("[SYSTEM] Bootstrap: Identity mapping low memory...\n");
     for (uint64_t paddr = 0; paddr < 4 * 1024 * 1024; paddr += PAGE_SIZE) {
-        BootstrapMapPage(pml4_phys, paddr, paddr, PAGE_WRITABLE);
+        RustVMemMap(paddr, paddr, PAGE_WRITABLE);
     }
 
     PrintKernelSuccess("[SYSTEM] Page tables prepared. Switching to virtual addressing...\n");
-    uint64_t new_stack_top = ((uint64_t)kernel_stack + KERNEL_VIRTUAL_OFFSET) + KERNEL_STACK_SIZE;
-    uint64_t higher_half_entry = (uint64_t)&KernelMainHigherHalf + KERNEL_VIRTUAL_OFFSET;
+    const uint64_t new_stack_top = ((uint64_t)kernel_stack + KERNEL_VIRTUAL_OFFSET) + KERNEL_STACK_SIZE;
+    const uint64_t higher_half_entry = (uint64_t)&KernelMainHigherHalf + KERNEL_VIRTUAL_OFFSET;
     EnablePagingAndJump(pml4_phys, higher_half_entry, new_stack_top);
 }
 

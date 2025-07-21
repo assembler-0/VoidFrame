@@ -64,10 +64,9 @@ asm_sources = [
 c_sources = [
   src_root + '/kernel/core/Kernel.c',
   src_root + '/kernel/core/Panic.c',
-  src_root + '/kernel/memory/Memory.c',
   src_root + '/kernel/memory/MemOps.c',
+  src_root + '/kernel/memory/PhysicalMemoryManager.c',
   src_root + '/kernel/memory/KernelHeap.c',
-  src_root + '/kernel/memory/VMem.c',
   src_root + '/kernel/process/Process.c',
   src_root + '/kernel/process/UserMode.c',
   arch_root + '/idt/Idt.c',
@@ -115,7 +114,13 @@ endforeach
 kernel = custom_target('voidframe.krnl',
   input : asm_objects + c_objects,
   output : 'voidframe.krnl',
-  command : ['ld', '-T', meson.current_source_dir() + '/linker.ld', '-melf_x86_64', '--no-warn-rwx-segments', '-o', '@OUTPUT@'] + ['@INPUT@'],
+  command : ['ld', '-T', meson.current_source_dir() + '/linker.ld', '-melf_x86_64',  '-o', '@OUTPUT@'] + ['@INPUT@'] + [meson.current_build_dir() + '/rust_core/x86_64-unknown-none/release/librust_core.a'],
+  depends : custom_target('rust_core',
+    input : src_root + '/rust_core/src/lib.rs',
+    output : 'librust_core.a',
+    command : ['cargo', 'build', '--release', '--manifest-path', meson.current_source_dir() + '/rust_core/Cargo.toml', '--target-dir', meson.current_build_dir() + '/rust_core'],
+    build_by_default : true
+  ),
   build_by_default : true
 )
 

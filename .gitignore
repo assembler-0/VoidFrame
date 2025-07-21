@@ -6,3 +6,5 @@ isodir
 Meson-Build
 Makefile
 CMakeLists.txt
+*build*
+target

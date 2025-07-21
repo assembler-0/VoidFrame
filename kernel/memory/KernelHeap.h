@@ -7,7 +7,7 @@
 void KernelHeapInit();
 void* KernelMemoryAlloc(size_t size);
 void* KernelCallLocation(size_t num, size_t size);
-void* KernelRealLocation(void* ptr, size_t size);
+void* KernelRealLocation(void* ptr, size_t new_size);
 void KernelFree(void* ptr);
 
 #endif // KHEAP_H
