@@ -1,9 +1,10 @@
-#include "stdint.h"
-#include "Kernel.h"
+#include "Console.h"
 #include "Io.h"
+#include "Kernel.h"
 #include "Panic.h"
 #include "Process.h"
 #include "VMem.h"
+#include "stdint.h"
 
 #define likely(x)   __builtin_expect(!!(x), 1)
 #define unlikely(x) __builtin_expect(!!(x), 0)

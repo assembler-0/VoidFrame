@@ -1,12 +1,12 @@
 #include "Process.h"
-#include "Kernel.h"
+#include "Atomics.h"
+#include "Console.h"
+#include "Cpu.h"
+#include "Io.h"
+#include "Ipc.h"
+#include "MemOps.h"
 #include "Memory.h"
 #include "Panic.h"
-#include "Cpu.h"
-#include "MemOps.h"
-#include "Ipc.h"
-#include "Atomics.h"
-#include "Io.h"
 #include "Spinlock.h"
 
 #define offsetof(type, member) ((uint64_t)&(((type*)0)->member))
@@ -57,16 +57,16 @@ static volatile uint32_t term_queue_count = 0;
 static uint64_t context_switches = 0;
 static uint64_t scheduler_calls = 0;
 
-static inline int FastFFS(uint64_t value) {
+static int FastFFS(const uint64_t value) {
     return __builtin_ctzll(value);
 }
 
-static inline int FastCLZ(uint64_t value) {
+static int FastCLZ(const uint64_t value) {
     return __builtin_clzll(value);
 }
 
-static uint64_t SecureHash(const void* data, uint64_t len, uint64_t salt) {
-    const uint8_t* bytes = (const uint8_t*)data;
+static uint64_t SecureHash(const void* data, const uint64_t len, uint64_t salt) {
+    const uint8_t* bytes = data;
     uint64_t hash = salt;
 
     for (uint64_t i = 0; i < len; i++) {
@@ -167,8 +167,9 @@ void TerminateProcess(uint32_t pid, TerminationReason reason, uint32_t exit_code
     }
 
     Process* caller = GetCurrentProcess();
+
     uint32_t slot = proc - processes;
-    
+
     if (UNLIKELY(slot >= MAX_PROCESSES)) {
         SpinUnlockIrqRestore(&scheduler_lock, flags);
         return;
@@ -855,7 +856,6 @@ void SystemTracer(void) {
 
 void SecureKernelIntegritySubsystem(void) {
     PrintKernelSuccess("[SYSTEM] SecureKernelIntegritySubsystem() initializing...\n");
-
     Process* current = GetCurrentProcess();
 
     // Make SKIS immune and critical
@@ -884,8 +884,7 @@ void SecureKernelIntegritySubsystem(void) {
     uint64_t last_check = 0;
 
     while (1) {
-        uint64_t current_tick = GetSystemTicks();
-
+         const uint64_t current_tick = GetSystemTicks();
         // Throttled security checking to reduce overhead
         if (current_tick - last_check >= 100) { // Check every 100 ticks
             last_check = current_tick;
@@ -894,10 +893,10 @@ void SecureKernelIntegritySubsystem(void) {
             uint64_t active_bitmap = active_process_bitmap;
 
             while (active_bitmap) {
-                int slot = FastFFS(active_bitmap);
+                const int slot = FastFFS(active_bitmap);
                 active_bitmap &= ~(1ULL << slot);
 
-                Process* proc = &processes[slot];
+                const Process * proc = &processes[slot];
 
                 if (proc->state == PROC_READY || proc->state == PROC_RUNNING) {
                     if (UNLIKELY(!ValidateToken(&proc->token, proc->pid))) {
@@ -910,7 +909,6 @@ void SecureKernelIntegritySubsystem(void) {
                 }
             }
         }
-
         // Cleanup and yield
         CleanupTerminatedProcesses();
         Yield();
@@ -948,7 +946,7 @@ void ListProcesses(void) {
     for (int i = 0; i < MAX_PROCESSES; i++) {
         // --- CHANGE HERE: The condition now correctly includes the Idle Process (i == 0) ---
         if (i == 0 || processes[i].pid != 0) {
-            Process* p = &processes[i];
+            const Process * p = &processes[i];
 
             PrintKernelInt(p->pid);
             PrintKernel("\t");

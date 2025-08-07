@@ -3,7 +3,7 @@
 #include "Panic.h"
 #include "MemOps.h"
 
-void IpcSendMessage(uint32_t target_pid, IpcMessage* msg) {
+void IpcSendMessage(uint32_t target_pid, const IpcMessage * msg) {
     ASSERT(msg != NULL);
 
     Process* target = GetProcessByPid(target_pid);

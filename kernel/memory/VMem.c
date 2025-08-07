@@ -2,16 +2,19 @@
 // Created by Atheria on 7/15/25.
 //
 #include "VMem.h"
-#include "Memory.h"
-#include "MemOps.h"
-#include "Kernel.h"
+
+#include "Console.h"
 #include "Interrupts.h"
+#include "Kernel.h"
+#include "MemOps.h"
+#include "Memory.h"
 #include "Panic.h"
 #include "Spinlock.h"
 static VirtAddrSpace kernel_space;
-
 static volatile int vmem_lock = 0;
-
+static uint64_t vmem_allocations = 0;
+static uint64_t vmem_frees = 0;
+static uint64_t tlb_flushes = 0;
 
 extern uint64_t total_pages;
 
@@ -84,11 +87,6 @@ static uint64_t VMemGetPageTablePhys(uint64_t pml4_phys, uint64_t vaddr, int lev
     return table_virt[index] & PT_ADDR_MASK;
 }
 
-/**
- * @brief Maps a physical address to a virtual address
- *
- * CRITICAL FIX: Proper error handling and lock management
- */
 int VMemMap(uint64_t vaddr, uint64_t paddr, uint64_t flags) {
     // Validate alignment
     if (!IS_PAGE_ALIGNED(vaddr) || !IS_PAGE_ALIGNED(paddr)) {
@@ -135,7 +133,7 @@ int VMemMap(uint64_t vaddr, uint64_t paddr, uint64_t flags) {
     } else {
         pt_virt = (uint64_t*)PHYS_TO_VIRT(pt_phys);
     }
-    
+
     int pt_index = (vaddr >> PT_SHIFT) & PT_INDEX_MASK;
 
     // Check if already mapped
@@ -154,18 +152,6 @@ int VMemMap(uint64_t vaddr, uint64_t paddr, uint64_t flags) {
     return VMEM_SUCCESS;
 }
 
-/**
- * @brief Unmaps a virtual address
- *
- * CRITICAL FIX: Proper spinlock usage (don't call VMemMap from inside lock!)
- */
-
-
-/**
- * @brief Allocates contiguous virtual memory
- *
- * CRITICAL FIX: Don't call VMemMap while holding the lock (causes deadlock)
- */
 void* VMemAlloc(uint64_t size) {
     if (size == 0) return NULL;
 
@@ -177,7 +163,7 @@ void* VMemAlloc(uint64_t size) {
     if (kernel_space.next_vaddr < VIRT_ADDR_SPACE_START) {
         kernel_space.next_vaddr = VIRT_ADDR_SPACE_START;
     }
-    
+
     // Check if we have enough space
     if (kernel_space.next_vaddr + size > VIRT_ADDR_SPACE_END) {
         SpinUnlockIrqRestore(&vmem_lock, flags);
@@ -363,16 +349,10 @@ void VMemMapKernel(uint64_t kernel_phys_start, uint64_t kernel_phys_end) {
     PrintKernelSuccess("[SYSTEM] VMem: Kernel section mapping complete.\n");
 }
 
-/**
- * @brief Checks if a virtual address is mapped
- */
 int VMemIsPageMapped(uint64_t vaddr) {
     return VMemGetPhysAddr(vaddr) != 0;
 }
 
-/**
- * @brief Flushes the entire TLB
- */
 void VMemFlushTLB(void) {
     asm volatile(
         "mov %%cr3, %%rax\n"
@@ -381,11 +361,50 @@ void VMemFlushTLB(void) {
     );
 }
 
-/**
- * @brief Flushes a single TLB entry
- */
 void VMemFlushTLBSingle(uint64_t vaddr) {
     asm volatile("invlpg (%0)" :: "r"(vaddr) : "memory");
+    tlb_flushes++;
+}
+
+int VMemUnmap(uint64_t vaddr, uint64_t size) {
+    if (size == 0) return VMEM_SUCCESS;
+    
+    size = PAGE_ALIGN_UP(size);
+    uint64_t num_pages = size / PAGE_SIZE;
+    
+    for (uint64_t i = 0; i < num_pages; i++) {
+        uint64_t current_vaddr = vaddr + (i * PAGE_SIZE);
+        
+        irq_flags_t flags = SpinLockIrqSave(&vmem_lock);
+        
+        uint64_t pdp_phys = VMemGetPageTablePhys((uint64_t)kernel_space.pml4, current_vaddr, 0, 0);
+        if (!pdp_phys) { SpinUnlockIrqRestore(&vmem_lock, flags); continue; }
+
+        uint64_t pd_phys = VMemGetPageTablePhys(pdp_phys, current_vaddr, 1, 0);
+        if (!pd_phys) { SpinUnlockIrqRestore(&vmem_lock, flags); continue; }
+
+        uint64_t pt_phys = VMemGetPageTablePhys(pd_phys, current_vaddr, 2, 0);
+        if (!pt_phys) { SpinUnlockIrqRestore(&vmem_lock, flags); continue; }
+
+        uint64_t* pt_virt;
+        if (pt_phys < IDENTITY_MAP_SIZE) {
+            pt_virt = (uint64_t*)pt_phys;
+        } else {
+            pt_virt = (uint64_t*)PHYS_TO_VIRT(pt_phys);
+        }
+        int pt_index = (current_vaddr >> PT_SHIFT) & PT_INDEX_MASK;
+
+        if (pt_virt[pt_index] & PAGE_PRESENT) {
+            pt_virt[pt_index] = 0;
+            kernel_space.used_pages--;
+            kernel_space.total_mapped -= PAGE_SIZE;
+        }
+        
+        SpinUnlockIrqRestore(&vmem_lock, flags);
+        VMemFlushTLBSingle(current_vaddr);
+    }
+    
+    return VMEM_SUCCESS;
 }
 
 /**
@@ -396,6 +415,22 @@ void VMemGetStats(uint64_t* used_pages, uint64_t* total_mapped) {
     if (used_pages) *used_pages = kernel_space.used_pages;
     if (total_mapped) *total_mapped = kernel_space.total_mapped;
     SpinUnlock(&vmem_lock);
+}
+
+void PrintVMemStats(void) {
+    irq_flags_t flags = SpinLockIrqSave(&vmem_lock);
+    uint64_t used = kernel_space.used_pages;
+    uint64_t mapped = kernel_space.total_mapped;
+    uint64_t allocs = vmem_allocations;
+    uint64_t frees = vmem_frees;
+    uint64_t flushes = tlb_flushes;
+    SpinUnlockIrqRestore(&vmem_lock, flags);
+    
+    PrintKernel("[VMEM] Stats:\n");
+    PrintKernel("  Used pages: "); PrintKernelInt(used); PrintKernel("\n");
+    PrintKernel("  Mapped: "); PrintKernelInt(mapped / (1024 * 1024)); PrintKernel("MB\n");
+    PrintKernel("  Allocs: "); PrintKernelInt(allocs); PrintKernel(", Frees: "); PrintKernelInt(frees); PrintKernel("\n");
+    PrintKernel("  TLB flushes: "); PrintKernelInt(flushes); PrintKernel("\n");
 }
 
 uint64_t VMemGetPML4PhysAddr(void) {

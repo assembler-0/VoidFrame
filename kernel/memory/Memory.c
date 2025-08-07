@@ -1,51 +1,76 @@
 #include "Memory.h"
-#include "MemOps.h"
-#include "Panic.h"
+
+#include "Console.h"
 #include "Kernel.h"
+#include "MemOps.h"
 #include "Multiboot2.h"
+#include "Panic.h"
 #include "Spinlock.h"
 #include "VMem.h"
 
 // Max 4GB memory for now (1M pages)
 #define MAX_PAGES (4ULL * 1024 * 1024 * 1024 / PAGE_SIZE)
 #define MAX_BITMAP_SIZE (MAX_PAGES / 8)
+#define BITMAP_WORD_SIZE 64
+#define BITMAP_WORDS (MAX_BITMAP_SIZE / 8)
+
 extern uint8_t _kernel_phys_start[];
 extern uint8_t _kernel_phys_end[];
 
-static uint8_t page_bitmap[MAX_BITMAP_SIZE];
+// Use 64-bit words for faster bitmap operations
+static uint64_t page_bitmap[BITMAP_WORDS];
 uint64_t total_pages = 0;
 static uint64_t used_pages = 0;
 static volatile int memory_lock = 0;
-static uint64_t next_free_hint = 0x100000 / PAGE_SIZE; // Start after 1MB
+static uint64_t next_free_hint = 0x100000 / PAGE_SIZE;
+static uint64_t low_memory_watermark = 0;
+static uint64_t allocation_failures = 0;
 
-// Helper to mark a page as used
-static void MarkPageUsed(uint64_t page_idx) {
-    if (page_idx >= total_pages) {
-        return;
-    }
-    uint64_t byte_idx = page_idx / 8;
-    uint8_t bit_idx = page_idx % 8;
-    if (!(page_bitmap[byte_idx] & (1 << bit_idx))) {
-        page_bitmap[byte_idx] |= (1 << bit_idx);
+// Fast bitmap operations using 64-bit words
+static inline void MarkPageUsed(uint64_t page_idx) {
+    if (page_idx >= total_pages) return;
+    
+    uint64_t word_idx = page_idx / 64;
+    uint64_t bit_idx = page_idx % 64;
+    uint64_t mask = 1ULL << bit_idx;
+    
+    if (!(page_bitmap[word_idx] & mask)) {
+        page_bitmap[word_idx] |= mask;
         used_pages++;
     }
 }
 
-// Helper to mark a page as free
-static void MarkPageFree(uint64_t page_idx) {
-    if (page_idx >= total_pages) {
-        return;
-    }
-    uint64_t byte_idx = page_idx / 8;
-    uint8_t bit_idx = page_idx % 8;
-    if (page_bitmap[byte_idx] & (1 << bit_idx)) {
-        page_bitmap[byte_idx] &= ~(1 << bit_idx);
+static inline void MarkPageFree(uint64_t page_idx) {
+    if (page_idx >= total_pages) return;
+    
+    uint64_t word_idx = page_idx / 64;
+    uint64_t bit_idx = page_idx % 64;
+    uint64_t mask = 1ULL << bit_idx;
+    
+    if (page_bitmap[word_idx] & mask) {
+        page_bitmap[word_idx] &= ~mask;
         used_pages--;
     }
 }
 
+static inline int IsPageFree(uint64_t page_idx) {
+    if (page_idx >= total_pages) return 0;
+    
+    uint64_t word_idx = page_idx / 64;
+    uint64_t bit_idx = page_idx % 64;
+    return !(page_bitmap[word_idx] & (1ULL << bit_idx));
+}
+
+// Find first free page in a 64-bit word
+static inline int FindFirstFreeBit(uint64_t word) {
+    if (word == ~0ULL) return -1; // All bits set
+    return __builtin_ctzll(~word); // Count trailing zeros in inverted word
+}
+
 int MemoryInit(uint32_t multiboot_info_addr) {
-    FastMemset(page_bitmap, 0, MAX_BITMAP_SIZE);
+    FastMemset(page_bitmap, 0, sizeof(page_bitmap));
+    used_pages = 0;
+    allocation_failures = 0;
 
     uint32_t total_multiboot_size = *(uint32_t*)multiboot_info_addr;
     struct MultibootTag* tag = (struct MultibootTag*)(multiboot_info_addr + 8);
@@ -87,7 +112,7 @@ int MemoryInit(uint32_t multiboot_info_addr) {
         if (tag->type == MULTIBOOT2_TAG_TYPE_MMAP) {
             struct MultibootTagMmap* mmap_tag = (struct MultibootTagMmap*)tag;
             for (uint32_t i = 0; i < (mmap_tag->size - sizeof(struct MultibootTagMmap)) / mmap_tag->entry_size; i++) {
-                struct MultibootMmapEntry* entry = (struct MultibootMmapEntry*)((uint8_t*)mmap_tag + sizeof(struct MultibootTagMmap) + (i * mmap_tag->entry_size));
+                 const struct MultibootMmapEntry* entry = (struct MultibootMmapEntry*)((uint8_t*)mmap_tag + sizeof(struct MultibootTagMmap) + (i * mmap_tag->entry_size));
 
                 uint64_t start_page = entry->addr / PAGE_SIZE;
                 uint64_t end_page = (entry->addr + entry->len - 1) / PAGE_SIZE;
@@ -149,55 +174,91 @@ int MemoryInit(uint32_t multiboot_info_addr) {
 void* AllocPage(void) {
     irq_flags_t flags = SpinLockIrqSave(&memory_lock);
     
-    // Start search from hint for better performance
-    for (uint64_t i = next_free_hint; i < total_pages; i++) {
-        uint64_t byte_idx = i / 8;
-        uint8_t bit_idx = i % 8;
-        if (!(page_bitmap[byte_idx] & (1 << bit_idx))) {
-            MarkPageUsed(i);
-            next_free_hint = i + 1;
-            void* page = (void*)(i * PAGE_SIZE);
-            SpinUnlockIrqRestore(&memory_lock, flags);
-            return page;
+    // Check low memory condition
+    if (used_pages > (total_pages * 9) / 10) { // 90% used
+        if (low_memory_watermark == 0) {
+            low_memory_watermark = used_pages;
+            PrintKernelWarning("[MEMORY] Low memory warning: ");
+            PrintKernelInt((total_pages - used_pages) * PAGE_SIZE / (1024 * 1024));
+            PrintKernel("MB remaining\n");
         }
     }
     
-    // If no page found from hint, search from beginning
-    for (uint64_t i = 0x100000 / PAGE_SIZE; i < next_free_hint; i++) {
-        uint64_t byte_idx = i / 8;
-        uint8_t bit_idx = i % 8;
-        if (!(page_bitmap[byte_idx] & (1 << bit_idx))) {
-            MarkPageUsed(i);
-            next_free_hint = i + 1;
-            void* page = (void*)(i * PAGE_SIZE);
-            SpinUnlockIrqRestore(&memory_lock, flags);
-            return page;
+    // Fast word-based search from hint
+    uint64_t start_word = next_free_hint / 64;
+    uint64_t total_words = (total_pages + 63) / 64;
+    
+    // Search from hint word onwards
+    for (uint64_t word_idx = start_word; word_idx < total_words; word_idx++) {
+        if (page_bitmap[word_idx] != ~0ULL) { // Not all bits set
+            int bit_pos = FindFirstFreeBit(page_bitmap[word_idx]);
+            if (bit_pos >= 0) {
+                uint64_t page_idx = word_idx * 64 + bit_pos;
+                if (page_idx >= total_pages) break;
+                if (page_idx < 0x100000 / PAGE_SIZE) continue; // Skip low memory
+                
+                MarkPageUsed(page_idx);
+                next_free_hint = page_idx + 1;
+                void* page = (void*)(page_idx * PAGE_SIZE);
+                SpinUnlockIrqRestore(&memory_lock, flags);
+                return page;
+            }
         }
     }
     
+    // Search from beginning to hint
+    uint64_t min_word = (0x100000 / PAGE_SIZE) / 64;
+    for (uint64_t word_idx = min_word; word_idx < start_word; word_idx++) {
+        if (page_bitmap[word_idx] != ~0ULL) {
+            int bit_pos = FindFirstFreeBit(page_bitmap[word_idx]);
+            if (bit_pos >= 0) {
+                uint64_t page_idx = word_idx * 64 + bit_pos;
+                if (page_idx < 0x100000 / PAGE_SIZE) continue;
+                
+                MarkPageUsed(page_idx);
+                next_free_hint = page_idx + 1;
+                void* page = (void*)(page_idx * PAGE_SIZE);
+                SpinUnlockIrqRestore(&memory_lock, flags);
+                return page;
+            }
+        }
+    }
+    
+    allocation_failures++;
     SpinUnlockIrqRestore(&memory_lock, flags);
     return NULL; // Out of memory
 }
 
 void FreePage(void* page) {
-    irq_flags_t flags = SpinLockIrqSave(&memory_lock);
     if (!page) {
-        SpinUnlockIrqRestore(&memory_lock, flags);
-        Panic("FreePage: NULL pointer");
+        PrintKernelError("[MEMORY] FreePage: NULL pointer\n");
+        return;
     }
 
     uint64_t addr = (uint64_t)page;
     if (addr % PAGE_SIZE != 0) {
-        SpinUnlockIrqRestore(&memory_lock, flags);
-        Panic("FreePage: Address not page aligned");
+        PrintKernelError("[MEMORY] FreePage: Unaligned address ");
+        PrintKernelHex(addr); PrintKernel("\n");
+        return;
     }
 
     uint64_t page_idx = addr / PAGE_SIZE;
     if (page_idx >= total_pages) {
-        SpinUnlockIrqRestore(&memory_lock, flags);
-        Panic("FreePage: Page index out of bounds");
+        PrintKernelError("[MEMORY] FreePage: Page index out of bounds: ");
+        PrintKernelInt(page_idx); PrintKernel("\n");
+        return;
     }
 
+    irq_flags_t flags = SpinLockIrqSave(&memory_lock);
+    
+    // Check for double free
+    if (IsPageFree(page_idx)) {
+        SpinUnlockIrqRestore(&memory_lock, flags);
+        PrintKernelError("[MEMORY] Double free of page ");
+        PrintKernelHex(addr); PrintKernel("\n");
+        return;
+    }
+    
     MarkPageFree(page_idx);
     
     // Update hint if this page is before current hint
@@ -213,12 +274,20 @@ uint64_t GetFreeMemory(void) {
 }
 
 void PrintMemoryStats(void) {
-    PrintKernel("[MEMORY] Physical Memory Stats:\n");
-    PrintKernel("  Total pages: "); PrintKernelInt(total_pages); PrintKernel("\n");
-    PrintKernel("  Used pages: "); PrintKernelInt(used_pages); PrintKernel("\n");
-    PrintKernel("  Free pages: "); PrintKernelInt(total_pages - used_pages); PrintKernel("\n");
-    PrintKernel("  Free memory: "); PrintKernelInt(GetFreeMemory() / (1024 * 1024)); PrintKernel("MB\n");
+    uint64_t free_pages = total_pages - used_pages;
+    uint64_t usage_percent = (used_pages * 100) / total_pages;
     
+    PrintKernel("[MEMORY] Physical Memory Stats:\n");
+    PrintKernel("  Total: "); PrintKernelInt(total_pages * PAGE_SIZE / (1024 * 1024)); PrintKernel("MB\n");
+    PrintKernel("  Used: "); PrintKernelInt(used_pages * PAGE_SIZE / (1024 * 1024)); 
+    PrintKernel("MB ("); PrintKernelInt(usage_percent); PrintKernel("%)\n");
+    PrintKernel("  Free: "); PrintKernelInt(free_pages * PAGE_SIZE / (1024 * 1024)); PrintKernel("MB\n");
+    PrintKernel("  Allocation failures: "); PrintKernelInt(allocation_failures); PrintKernel("\n");
+    
+    if (low_memory_watermark > 0) {
+        PrintKernelWarning("  Low memory watermark hit\n");
+    }
+
     uint64_t vmem_used, vmem_total;
     VMemGetStats(&vmem_used, &vmem_total);
     PrintKernel("[MEMORY] Virtual Memory Stats:\n");

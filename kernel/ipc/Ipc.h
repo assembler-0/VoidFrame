@@ -29,7 +29,7 @@ typedef struct {
     uint32_t count;
 } MessageQueue;
 
-void IpcSendMessage(uint32_t target_pid, IpcMessage* msg);
+void IpcSendMessage(uint32_t target_pid, const IpcMessage * msg);
 int IpcReceiveMessage(IpcMessage* msg_buffer);
 
 #endif

@@ -9,5 +9,6 @@ void* KernelMemoryAlloc(size_t size);
 void* KernelCallocate(size_t num, size_t size);
 void* KernelReallocate(void* ptr, size_t size);
 void KernelFree(void* ptr);
+void PrintHeapStats(void);
 
 #endif // KHEAP_H

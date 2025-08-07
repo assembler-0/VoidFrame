@@ -1,48 +1,88 @@
 /*
- * Simple linker script for our kernel.
+ * VoidFrame Kernel Linker Script
+ * Optimized for x86_64 with proper alignment and memory layout
  */
 
-ENTRY(start) /* The entry point of our kernel is the 'start' label */
+ENTRY(start)
+
+/* Define constants */
+PAGE_SIZE = 4K;
+KERNEL_BASE = 1M;
 
 SECTIONS
 {
-    . = 1M;
+    . = KERNEL_BASE;
     _kernel_phys_start = .;
-    .boot :
+
+    /* Multiboot header - must be early in file */
+    .boot ALIGN(PAGE_SIZE) :
     {
-        *(.multiboot)
+        *(.multiboot*)
+        . = ALIGN(PAGE_SIZE);
     }
 
-    /* Then, put the executable code. */
-    .text ALIGN(4K) :
+    /* Executable code - read-only, executable */
+    .text ALIGN(PAGE_SIZE) :
     {
         _text_start = .;
-        *(.text)
+        *(.text.boot)     /* Boot code first */
+        *(.text.hot)      /* Hot/frequently used code */
+        *(.text)          /* Regular code */
+        *(.text.*)        /* Other text sections */
+        . = ALIGN(PAGE_SIZE);
         _text_end = .;
     }
 
-    /* Then, read-only data. */
-    .rodata ALIGN(4K) :
+    /* Read-only data - read-only, non-executable */
+    .rodata ALIGN(PAGE_SIZE) :
     {
         _rodata_start = .;
-        *(.rodata)
+        *(.rodata.str*)   /* String literals first */
+        *(.rodata)        /* Regular rodata */
+        *(.rodata.*)
+        . = ALIGN(PAGE_SIZE);
         _rodata_end = .;
     }
 
-    /* Then, initialized data. */
-    .data ALIGN(4K) :
+    /* Initialized data - read-write */
+    .data ALIGN(PAGE_SIZE) :
     {
         _data_start = .;
         *(.data)
+        *(.data.*)
+        . = ALIGN(PAGE_SIZE);
         _data_end = .;
     }
 
-    /* Finally, the uninitialized data (BSS). */
-    .bss ALIGN(4K) :
+    /* Uninitialized data - read-write, zero-initialized */
+    .bss ALIGN(PAGE_SIZE) :
     {
         _bss_start = .;
         *(.bss)
+        *(.bss.*)
+        *(COMMON)         /* Common symbols */
+        . = ALIGN(PAGE_SIZE);
         _bss_end = .;
     }
+
+    /* Kernel end marker */
+    . = ALIGN(PAGE_SIZE);
     _kernel_phys_end = .;
+    _kernel_size = _kernel_phys_end - _kernel_phys_start;
+
+    /* Discard unnecessary sections */
+    /DISCARD/ :
+    {
+        *(.comment)
+        *(.note*)
+        *(.eh_frame*)
+        *(.debug*)
+    }
 }
+
+/* Sanity checks */
+ASSERT(_kernel_size < 16M, "Kernel too large (>16MB)")
+ASSERT(_text_start >= _kernel_phys_start, "Text section misaligned")
+ASSERT(_rodata_start >= _text_end, "Rodata section misaligned")
+ASSERT(_data_start >= _rodata_end, "Data section misaligned")
+ASSERT(_bss_start >= _data_end, "BSS section misaligned")

@@ -41,6 +41,7 @@ inc_dirs = [
     src_root + '/kernel/memory',
     src_root + '/kernel/process',
     src_root + '/kernel/etc',
+    src_root + '/kernel/graphics',
     src_root + '/drivers',
     arch_root + '/cpu',
     arch_root + '/gdt',
@@ -68,6 +69,7 @@ c_sources = [
     src_root + '/kernel/memory/MemOps.c',
     src_root + '/kernel/memory/KernelHeap.c',
     src_root + '/kernel/memory/VMem.c',
+#    src_root + '/kernel/graphics/VGA.c',
     src_root + '/kernel/process/Process.c',
     src_root + '/kernel/process/UserMode.c',
     arch_root + '/idt/Idt.c',
@@ -78,7 +80,7 @@ c_sources = [
     arch_root + '/cpu/Cpu.c',
     src_root + '/kernel/atomic/Atomics.c',
     src_root + '/kernel/ipc/Ipc.c',
-    src_root + '/kernel/etc/Splash.c'
+    src_root + '/kernel/etc/Console.c'
 ]
 
 # Build include flags
