@@ -12,6 +12,7 @@
 #define PAGE_SIZE           4096
 #define PAGE_SHIFT          12
 #define PAGE_MASK           0xFFF
+#define IDENTITY_MAP_SIZE   (4 * 1024 * 1024)  // 4MB
 
 // Page table entry flags
 #define PAGE_PRESENT        0x001
@@ -33,13 +34,13 @@
 #define PT_SHIFT            12
 #define PT_ADDR_MASK        0x000FFFFFFFFFF000ULL
 
-// CRITICAL FIX: Use consistent virtual address layout
+// Virtual address space layout - FIXED
 #define KERNEL_VIRTUAL_OFFSET 0xFFFFFFFF80000000ULL
-#define KERNEL_VIRTUAL_BASE   KERNEL_VIRTUAL_OFFSET  // Make them the same!
+#define KERNEL_VIRTUAL_BASE   KERNEL_VIRTUAL_OFFSET
 
-// Virtual address space layout
-#define VIRT_ADDR_SPACE_START 0xFFFF800000000000ULL  // Start heap below kernel
-#define VIRT_ADDR_SPACE_END   KERNEL_VIRTUAL_BASE    // End at kernel start
+// Heap space layout
+#define VIRT_ADDR_SPACE_START 0xFFFF800000000000ULL  // Heap start
+#define VIRT_ADDR_SPACE_END   0xFFFFFFFF7FFFFFFFULL  // Heap end (before kernel)
 #define KERNEL_SPACE_START    KERNEL_VIRTUAL_BASE    // Kernel starts here
 #define KERNEL_SPACE_END      0xFFFFFFFFFFFFFFFFULL  // Kernel ends at top
 
@@ -51,6 +52,7 @@
 #define PAGE_ALIGN_DOWN(addr) ((addr) & ~PAGE_MASK)
 #define PAGE_ALIGN_UP(addr)   (((addr) + PAGE_MASK) & ~PAGE_MASK)
 #define IS_PAGE_ALIGNED(addr) (((addr) & PAGE_MASK) == 0)
+#define VALIDATE_PTR(ptr) do { if (!(ptr)) return NULL; } while(0)
 
 /**
  * @brief Virtual address space structure

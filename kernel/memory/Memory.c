@@ -4,6 +4,7 @@
 #include "Kernel.h"
 #include "Multiboot2.h"
 #include "Spinlock.h"
+#include "VMem.h"
 
 // Max 4GB memory for now (1M pages)
 #define MAX_PAGES (4ULL * 1024 * 1024 * 1024 / PAGE_SIZE)
@@ -15,7 +16,7 @@ static uint8_t page_bitmap[MAX_BITMAP_SIZE];
 uint64_t total_pages = 0;
 static uint64_t used_pages = 0;
 static volatile int memory_lock = 0;
-static uint64_t memory_start = 0x100000; // Start after 1MB
+static uint64_t next_free_hint = 0x100000 / PAGE_SIZE; // Start after 1MB
 
 // Helper to mark a page as used
 static void MarkPageUsed(uint64_t page_idx) {
@@ -147,16 +148,33 @@ int MemoryInit(uint32_t multiboot_info_addr) {
 
 void* AllocPage(void) {
     irq_flags_t flags = SpinLockIrqSave(&memory_lock);
-    for (uint64_t i = 0; i < total_pages; i++) {
+    
+    // Start search from hint for better performance
+    for (uint64_t i = next_free_hint; i < total_pages; i++) {
         uint64_t byte_idx = i / 8;
         uint8_t bit_idx = i % 8;
         if (!(page_bitmap[byte_idx] & (1 << bit_idx))) {
             MarkPageUsed(i);
+            next_free_hint = i + 1;
             void* page = (void*)(i * PAGE_SIZE);
             SpinUnlockIrqRestore(&memory_lock, flags);
             return page;
         }
     }
+    
+    // If no page found from hint, search from beginning
+    for (uint64_t i = 0x100000 / PAGE_SIZE; i < next_free_hint; i++) {
+        uint64_t byte_idx = i / 8;
+        uint8_t bit_idx = i % 8;
+        if (!(page_bitmap[byte_idx] & (1 << bit_idx))) {
+            MarkPageUsed(i);
+            next_free_hint = i + 1;
+            void* page = (void*)(i * PAGE_SIZE);
+            SpinUnlockIrqRestore(&memory_lock, flags);
+            return page;
+        }
+    }
+    
     SpinUnlockIrqRestore(&memory_lock, flags);
     return NULL; // Out of memory
 }
@@ -181,9 +199,29 @@ void FreePage(void* page) {
     }
 
     MarkPageFree(page_idx);
+    
+    // Update hint if this page is before current hint
+    if (page_idx < next_free_hint) {
+        next_free_hint = page_idx;
+    }
+    
     SpinUnlockIrqRestore(&memory_lock, flags);
 }
 
 uint64_t GetFreeMemory(void) {
     return (total_pages - used_pages) * PAGE_SIZE;
+}
+
+void PrintMemoryStats(void) {
+    PrintKernel("[MEMORY] Physical Memory Stats:\n");
+    PrintKernel("  Total pages: "); PrintKernelInt(total_pages); PrintKernel("\n");
+    PrintKernel("  Used pages: "); PrintKernelInt(used_pages); PrintKernel("\n");
+    PrintKernel("  Free pages: "); PrintKernelInt(total_pages - used_pages); PrintKernel("\n");
+    PrintKernel("  Free memory: "); PrintKernelInt(GetFreeMemory() / (1024 * 1024)); PrintKernel("MB\n");
+    
+    uint64_t vmem_used, vmem_total;
+    VMemGetStats(&vmem_used, &vmem_total);
+    PrintKernel("[MEMORY] Virtual Memory Stats:\n");
+    PrintKernel("  Used pages: "); PrintKernelInt(vmem_used); PrintKernel("\n");
+    PrintKernel("  Total mapped: "); PrintKernelInt(vmem_total / (1024 * 1024)); PrintKernel("MB\n");
 }

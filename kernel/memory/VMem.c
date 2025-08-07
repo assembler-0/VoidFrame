@@ -29,78 +29,59 @@ static inline int is_valid_phys_addr(uint64_t paddr) {
 }
 
 void VMemInit(void) {
-    // Allocate physical page for PML4
-    void* pml4_phys = AllocPage();
-    if (!pml4_phys) {
-        PANIC("VMemInit: Failed to allocate PML4 table");
-    }
-
-    uint64_t pml4_phys_addr = (uint64_t)pml4_phys;
-
-    if (pml4_phys_addr < (4 * 1024 * 1024)) {  // If it's in the first 4MB
-        FastZeroPage((void*)pml4_phys_addr);   // Use identity mapping
-    } else {
-        PrintKernelWarning("[WARNING] PML4 allocated above 4MB, assuming zeroed\n");
-    }
+    // Get current PML4 from CR3 (set by bootstrap)
+    uint64_t pml4_phys_addr;
+    asm volatile("mov %%cr3, %0" : "=r"(pml4_phys_addr));
+    pml4_phys_addr &= ~0xFFF; // Clear flags
 
     // Initialize kernel space tracking
     kernel_space.next_vaddr = VIRT_ADDR_SPACE_START;
     kernel_space.used_pages = 0;
     kernel_space.total_mapped = 0;
-
-    // Store physical address
     kernel_space.pml4 = (uint64_t*)pml4_phys_addr;
 
-
-    PrintKernelSuccess("[SYSTEM] Initialized kernel virtual memory manager at address: ");
+    PrintKernelSuccess("[SYSTEM] VMem initialized using existing PML4: ");
     PrintKernelHex(pml4_phys_addr);
     PrintKernel("\n");
 }
 
 static uint64_t VMemGetPageTablePhys(uint64_t pml4_phys, uint64_t vaddr, int level, int create) {
-    // Validate physical address
-    if (!is_valid_phys_addr(pml4_phys)) {
-        return 0;
+    if (!is_valid_phys_addr(pml4_phys)) return 0;
+
+    // Access page table through identity mapping
+    uint64_t* table_virt;
+    if (pml4_phys < IDENTITY_MAP_SIZE) {
+        table_virt = (uint64_t*)pml4_phys;
+    } else {
+        table_virt = (uint64_t*)PHYS_TO_VIRT(pml4_phys);
     }
 
-    // Convert physical address to virtual for access
-    uint64_t* pml4_virt = (uint64_t*)PHYS_TO_VIRT(pml4_phys);
-
-    // Calculate index based on level
     int shift = 39 - (level * 9);
     int index = (vaddr >> shift) & PT_INDEX_MASK;
+    if (index >= 512) return 0;
 
-    // Bounds check
-    if (index >= 512) {
-        return 0;
-    }
-
-    // Check if entry exists
-    if (!(pml4_virt[index] & PAGE_PRESENT)) {
+    if (!(table_virt[index] & PAGE_PRESENT)) {
         if (!create) return 0;
 
-        // Allocate new page table
         void* new_table_phys = AllocPage();
         if (!new_table_phys) return 0;
-
-        // Validate new allocation
         if (!is_valid_phys_addr((uint64_t)new_table_phys)) {
             FreePage(new_table_phys);
             return 0;
         }
 
-        // Zero the new table
-        uint64_t* new_table_virt = (uint64_t*)PHYS_TO_VIRT(new_table_phys);
-        FastZeroPage(new_table_virt);
+        // Zero the new table using identity mapping if possible
+        if ((uint64_t)new_table_phys < IDENTITY_MAP_SIZE) {
+            FastZeroPage(new_table_phys);
+        } else {
+            FastZeroPage(PHYS_TO_VIRT(new_table_phys));
+        }
 
-        // Set the entry with physical address
-        pml4_virt[index] = (uint64_t)new_table_phys | PAGE_PRESENT | PAGE_WRITABLE;
-
+        table_virt[index] = (uint64_t)new_table_phys | PAGE_PRESENT | PAGE_WRITABLE;
         return (uint64_t)new_table_phys;
     }
 
-    // CRITICAL FIX: Use proper address mask, not PAGE_MASK
-    return pml4_virt[index] & PT_ADDR_MASK;
+    return table_virt[index] & PT_ADDR_MASK;
 }
 
 /**
@@ -147,8 +128,14 @@ int VMemMap(uint64_t vaddr, uint64_t paddr, uint64_t flags) {
         return VMEM_ERROR_NOMEM;
     }
 
-    // Set the final page table entry
-    uint64_t* pt_virt = (uint64_t*)PHYS_TO_VIRT(pt_phys);
+    // Access PT through identity mapping if possible
+    uint64_t* pt_virt;
+    if (pt_phys < (4 * 1024 * 1024)) {
+        pt_virt = (uint64_t*)pt_phys;
+    } else {
+        pt_virt = (uint64_t*)PHYS_TO_VIRT(pt_phys);
+    }
+    
     int pt_index = (vaddr >> PT_SHIFT) & PT_INDEX_MASK;
 
     // Check if already mapped
@@ -186,11 +173,15 @@ void* VMemAlloc(uint64_t size) {
 
     irq_flags_t flags = SpinLockIrqSave(&vmem_lock);
 
-    // Make sure we don't conflict with kernel sections
-    // Add some safety margin above kernel sections
-    uint64_t min_heap_start = PAGE_ALIGN_UP((uint64_t)_bss_end + KERNEL_VIRTUAL_OFFSET) + 0x100000; // 1MB margin
-    if (kernel_space.next_vaddr < min_heap_start) {
-        kernel_space.next_vaddr = min_heap_start;
+    // Ensure heap starts in proper virtual address space
+    if (kernel_space.next_vaddr < VIRT_ADDR_SPACE_START) {
+        kernel_space.next_vaddr = VIRT_ADDR_SPACE_START;
+    }
+    
+    // Check if we have enough space
+    if (kernel_space.next_vaddr + size > VIRT_ADDR_SPACE_END) {
+        SpinUnlockIrqRestore(&vmem_lock, flags);
+        return NULL; // Out of virtual address space
     }
 
     uint64_t vaddr = kernel_space.next_vaddr;
@@ -262,8 +253,13 @@ void VMemFree(void* vaddr, uint64_t size) {
         uint64_t pt_phys = VMemGetPageTablePhys(pd_phys, current_vaddr, 2, 0);
         if (!pt_phys) { SpinUnlockIrqRestore(&vmem_lock, flags); continue; }
 
-        // Get virtual address of the page table to modify it
-        uint64_t* pt_virt = (uint64_t*)PHYS_TO_VIRT(pt_phys);
+        // Access PT through identity mapping if possible
+        uint64_t* pt_virt;
+        if (pt_phys < (4 * 1024 * 1024)) {
+            pt_virt = (uint64_t*)pt_phys;
+        } else {
+            pt_virt = (uint64_t*)PHYS_TO_VIRT(pt_phys);
+        }
         int pt_index = (current_vaddr >> PT_SHIFT) & PT_INDEX_MASK;
 
         // Check if it's actually mapped before proceeding
@@ -296,12 +292,17 @@ uint64_t VMemGetPhysAddr(uint64_t vaddr) {
     uint64_t pt_phys = VMemGetPageTablePhys(pd_phys, vaddr, 2, 0);
     if (!pt_phys) return 0;
 
-    uint64_t* pt_virt = (uint64_t*)PHYS_TO_VIRT(pt_phys);
+    // Access PT through identity mapping if possible
+    uint64_t* pt_virt;
+    if (pt_phys < (4 * 1024 * 1024)) {
+        pt_virt = (uint64_t*)pt_phys;
+    } else {
+        pt_virt = (uint64_t*)PHYS_TO_VIRT(pt_phys);
+    }
     int pt_index = (vaddr >> PT_SHIFT) & PT_INDEX_MASK;
 
     if (!(pt_virt[pt_index] & PAGE_PRESENT)) return 0;
 
-    // CRITICAL FIX: Use proper address mask
     return (pt_virt[pt_index] & PT_ADDR_MASK) | (vaddr & PAGE_MASK);
 }
 

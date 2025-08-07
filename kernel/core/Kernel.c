@@ -322,7 +322,7 @@ void BootstrapMapPage(uint64_t pml4_phys, uint64_t vaddr, uint64_t paddr, uint64
 
     // 3. Get/Create PT
     uint64_t* pd = (uint64_t*)pd_phys;
-    int pd_idx = (vaddr >> 21) & 0x1FF;
+    const int pd_idx = (vaddr >> 21) & 0x1FF;
     uint64_t pt_phys;
     if (!(pd[pd_idx] & PAGE_PRESENT)) {
         pt_phys = (uint64_t)AllocPage();
@@ -335,12 +335,16 @@ void BootstrapMapPage(uint64_t pml4_phys, uint64_t vaddr, uint64_t paddr, uint64
 
     // 4. Set the final PTE
     uint64_t* pt = (uint64_t*)pt_phys;
-    int pt_idx = (vaddr >> 12) & 0x1FF;
+    const int pt_idx = (vaddr >> 12) & 0x1FF;
     pt[pt_idx] = paddr | flags | PAGE_PRESENT;
 }
 
 static InitResultT CoreInit(void) {
-    // Initialize GDT
+    // Initialize virtual memory manager (uses existing PML4 from CR3)
+    VMemInit();
+    // Initialize kernel heap
+    KernelHeapInit();
+
     PrintKernel("[INFO] Initializing GDT...\n");
     GdtInit();  // void function - assume success
     PrintKernelSuccess("[SYSTEM] GDT initialized\n");
@@ -389,49 +393,59 @@ void KernelMain(uint32_t magic, uint32_t info) {
     PrintKernelHex(info);
     PrintKernel("\n\n");
     ParseMultibootInfo(info);
+    
+    // Initialize physical memory manager first
     MemoryInit(g_multiboot_info_addr);
-    VMemInit();
-    KernelHeapInit();
-    uint64_t pml4_phys = VMemGetPML4PhysAddr();
+    
+    // Create new PML4 for proper virtual memory setup
+    void* pml4_phys = AllocPage();
+    if (!pml4_phys) PANIC("Failed to allocate PML4");
+    FastZeroPage(pml4_phys);
+    uint64_t pml4_addr = (uint64_t)pml4_phys;
+    
+    PrintKernelSuccess("[SYSTEM] Bootstrap: Identity mapping low memory...\n");
+    for (uint64_t paddr = 0; paddr < IDENTITY_MAP_SIZE; paddr += PAGE_SIZE) {
+        BootstrapMapPage(pml4_addr, paddr, paddr, PAGE_WRITABLE);
+    }
+    
     PrintKernelSuccess("[SYSTEM] Bootstrap: Mapping kernel...\n");
     uint64_t kernel_start = (uint64_t)_kernel_phys_start;
     uint64_t kernel_end = (uint64_t)_kernel_phys_end;
     for (uint64_t paddr = kernel_start; paddr < kernel_end; paddr += PAGE_SIZE) {
-        BootstrapMapPage(pml4_phys, paddr + KERNEL_VIRTUAL_OFFSET, paddr, PAGE_WRITABLE);
+        BootstrapMapPage(pml4_addr, paddr + KERNEL_VIRTUAL_OFFSET, paddr, PAGE_WRITABLE);
     }
-    PrintKernelSuccess("[SYSTEM] Bootstrap: Mapping new kernel stack...\n");
+    
+    PrintKernelSuccess("[SYSTEM] Bootstrap: Mapping kernel stack...\n");
     uint64_t stack_phys_start = (uint64_t)kernel_stack;
     for (uint64_t paddr = stack_phys_start; paddr < stack_phys_start + KERNEL_STACK_SIZE; paddr += PAGE_SIZE) {
-        BootstrapMapPage(pml4_phys, paddr + KERNEL_VIRTUAL_OFFSET, paddr, PAGE_WRITABLE);
-    }
-    PrintKernelSuccess("[SYSTEM] Bootstrap: Identity mapping low memory...\n");
-    for (uint64_t paddr = 0; paddr < 4 * 1024 * 1024; paddr += PAGE_SIZE) {
-        BootstrapMapPage(pml4_phys, paddr, paddr, PAGE_WRITABLE);
+        BootstrapMapPage(pml4_addr, paddr + KERNEL_VIRTUAL_OFFSET, paddr, PAGE_WRITABLE);
     }
 
     PrintKernelSuccess("[SYSTEM] Page tables prepared. Switching to virtual addressing...\n");
     uint64_t new_stack_top = ((uint64_t)kernel_stack + KERNEL_VIRTUAL_OFFSET) + KERNEL_STACK_SIZE;
     uint64_t higher_half_entry = (uint64_t)&KernelMainHigherHalf + KERNEL_VIRTUAL_OFFSET;
-    EnablePagingAndJump(pml4_phys, higher_half_entry, new_stack_top);
+    EnablePagingAndJump(pml4_addr, higher_half_entry, new_stack_top);
 }
 
 void KernelMainHigherHalf(void) {
-    CoreInit();
     PrintKernelSuccess("[SYSTEM] Successfully jumped to higher half. Virtual memory is active.\n");
+    
+    // Initialize core systems
+    CoreInit();
+    
     PrintKernel("[INFO] Creating security manager process...\n");
     uint64_t security_pid = CreateSecureProcess(SecureKernelIntegritySubsystem, PROC_PRIV_SYSTEM);
     if (!security_pid) {
         PrintKernelError("[FATAL] Cannot create SecureKernelIntegritySubsystem\n");
-        PANIC("Critical security 1failure - cannot create security manager");
+        PANIC("Critical security failure - cannot create security manager");
     }
     PrintKernelSuccess("[SYSTEM] Security manager created with PID: ");
     PrintKernelInt(security_pid);
     PrintKernel("\n");
-    PrintKernelSuccess("[SYSTEM] Core system modules loaded\n");
+
+    
     PrintKernelSuccess("[SYSTEM] Kernel initialization complete\n");
-    PrintKernelSuccess("[SYSTEM] Transferring control to SecureKernelIntegritySubsystem...\n");
     PrintKernelSuccess("[SYSTEM] Initializing interrupts...\n\n");
-    KernelMemoryAlloc(32);
     asm volatile("sti");
     while (1) {
         if (ShouldSchedule()) {
