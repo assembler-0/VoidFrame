@@ -1,7 +1,3 @@
-/*
- * Kernel.c - VoidFrame Kernel Main Module
- * Modern C implementation with optimizations
- */
 #include "stdint.h"
 #include "Idt.h"
 #include "Pic.h"
