@@ -8,6 +8,7 @@
 #include "Memory.h"
 #include "Panic.h"
 #include "Spinlock.h"
+#include "stdbool.h"
 
 #define offsetof(type, member) ((uint64_t)&(((type*)0)->member))
 
@@ -56,6 +57,17 @@ static volatile uint32_t term_queue_count = 0;
 // Performance counters
 static uint64_t context_switches = 0;
 static uint64_t scheduler_calls = 0;
+
+// Add missing PrintKernelHex function if not available
+#ifndef PrintKernelHex
+#define PrintKernelHex(x) do { \
+    PrintKernel("0x"); \
+    for (int _i = 7; _i >= 0; _i--) { \
+        uint8_t _nibble = ((x) >> (_i * 4)) & 0xF; \
+        PrintKernel(_nibble < 10 ? (char*)('0' + _nibble) : (char*)('A' + _nibble - 10)); \
+    } \
+} while(0)
+#endif
 
 static int FastFFS(const uint64_t value) {
     return __builtin_ctzll(value);
@@ -240,6 +252,11 @@ void TerminateProcess(uint32_t pid, TerminationReason reason, uint32_t exit_code
 
     AddToTerminationQueueAtomic(slot);
     proc->state = PROC_ZOMBIE;
+    
+    // Update scheduler statistics
+    if (MLFQscheduler.total_processes > 0) {
+        MLFQscheduler.total_processes--;
+    }
 
     // Self-termination handling
     if (UNLIKELY(pid == caller->pid)) {
@@ -250,21 +267,61 @@ void TerminateProcess(uint32_t pid, TerminationReason reason, uint32_t exit_code
 }
 
 
+// SIVA's deadly termination function - bypasses all protections
+static void SivaTerminate(uint32_t pid, const char* reason) {
+    irq_flags_t flags = SpinLockIrqSave(&scheduler_lock);
+    Process* proc = GetProcessByPid(pid);
+    
+    if (!proc || proc->state == PROC_TERMINATED) {
+        SpinUnlockIrqRestore(&scheduler_lock, flags);
+        return;
+    }
+    
+    PrintKernelError("[SIVA] EXECUTING: PID ");
+    PrintKernelInt(pid);
+    PrintKernelError(" - ");
+    PrintKernelError(reason);
+    PrintKernelError("\n");
+    
+    // SIVA overrides ALL protections - even immune and critical
+    uint32_t slot = proc - processes;
+    proc->state = PROC_DYING;
+    proc->term_reason = TERM_SECURITY;
+    proc->exit_code = 666; // SIVA signature
+    proc->termination_time = GetSystemTicks();
+    
+    RemoveFromScheduler(slot);
+    ready_process_bitmap &= ~(1ULL << slot);
+    
+    if (slot == MLFQscheduler.current_running) {
+        MLFQscheduler.quantum_remaining = 0;
+        RequestSchedule();
+    }
+    
+    AddToTerminationQueueAtomic(slot);
+    proc->state = PROC_ZOMBIE;
+    
+    if (MLFQscheduler.total_processes > 0) {
+        MLFQscheduler.total_processes--;
+    }
+    
+    SpinUnlockIrqRestore(&scheduler_lock, flags);
+}
+
 static void SecurityViolationHandler(uint32_t violator_pid, const char* reason) {
     AtomicInc(&security_violation_count);
 
-    PrintKernelError("[SYSTEM] Violation by PID ");
+    PrintKernelError("[SIVA] Security breach by PID ");
     PrintKernelInt(violator_pid);
     PrintKernelError(": ");
     PrintKernelError(reason);
     PrintKernelError("\n");
 
     if (UNLIKELY(security_violation_count > MAX_SECURITY_VIOLATIONS)) {
-        PANIC("Too many security violations - system compromised");
+        PANIC("SIVA: Too many security violations - system compromised");
     }
 
-    // Immediate termination with security flag
-    TerminateProcess(violator_pid, TERM_SECURITY, 1);
+    SivaTerminate(violator_pid, reason);
 }
 
 
@@ -356,44 +413,84 @@ static inline int QueueEmpty(PriorityQueue* q) {
 void InitScheduler(void) {
     FastMemset(&MLFQscheduler, 0, sizeof(Scheduler));
 
-    // Initialize with exponential time quantum decay
+    // Initialize with smart quantum allocation
     for (int i = 0; i < MAX_PRIORITY_LEVELS; i++) {
-        MLFQscheduler.queues[i].quantum = QUANTUM_BASE >> i; // Exponential decay
+        if (i < RT_PRIORITY_THRESHOLD) {
+            // Real-time queues get larger quantums
+            MLFQscheduler.queues[i].quantum = QUANTUM_BASE << (RT_PRIORITY_THRESHOLD - i);
+            MLFQscheduler.rt_bitmap |= (1U << i);
+        } else {
+            // Regular queues use exponential decay
+            MLFQscheduler.queues[i].quantum = QUANTUM_BASE >> ((i - RT_PRIORITY_THRESHOLD) * QUANTUM_DECAY_SHIFT);
+        }
         MLFQscheduler.queues[i].head = NULL;
         MLFQscheduler.queues[i].tail = NULL;
         MLFQscheduler.queues[i].count = 0;
+        MLFQscheduler.queues[i].total_wait_time = 0;
+        MLFQscheduler.queues[i].avg_cpu_burst = QUANTUM_BASE;
     }
 
     MLFQscheduler.current_running = 0;
     MLFQscheduler.quantum_remaining = 0;
     MLFQscheduler.active_bitmap = 0;
     MLFQscheduler.last_boost_tick = 0;
-    MLFQscheduler.tick_counter = 1; // Start at 1 for security
+    MLFQscheduler.tick_counter = 1;
+    MLFQscheduler.total_processes = 0;
+    MLFQscheduler.load_average = 0;
+    MLFQscheduler.context_switch_overhead = 5; // Initial estimate
 }
 
-// Add process to scheduler
+// Smart process classification and priority assignment
+static uint32_t ClassifyProcess(Process* proc) {
+    // Real-time system processes get highest priority
+    if (proc->privilege_level == PROC_PRIV_SYSTEM && 
+        (proc->token.flags & PROC_FLAG_CRITICAL)) {
+        return 0;
+    }
+    
+    // I/O bound processes get priority boost
+    if (proc->io_operations > IO_BOOST_THRESHOLD) {
+        return 1;
+    }
+    
+    // Calculate average CPU burst
+    uint32_t avg_burst = 0;
+    for (int i = 0; i < CPU_BURST_HISTORY; i++) {
+        avg_burst += proc->cpu_burst_history[i];
+    }
+    avg_burst /= CPU_BURST_HISTORY;
+    
+    // Short CPU bursts = interactive process = higher priority
+    if (avg_burst < QUANTUM_BASE / 2) {
+        return 2;
+    } else if (avg_burst < QUANTUM_BASE) {
+        return 3;
+    } else {
+        // CPU intensive processes go to lower priorities
+        return MAX_PRIORITY_LEVELS - 1;
+    }
+}
+
 void AddToScheduler(uint32_t slot) {
-    if (slot == 0) return;  // Don't schedule idle process
+    if (slot == 0) return;
 
     Process* proc = &processes[slot];
     if (proc->state != PROC_READY) return;
 
-    // Determine initial priority based on privilege level
-    uint32_t priority = 0;
-    if (proc->privilege_level == PROC_PRIV_SYSTEM) {
-        priority = 0;  // Highest priority for system processes
-    } else {
-        priority = 1;  // Start user processes at level 1
-    }
-
+    uint32_t priority = ClassifyProcess(proc);
+    
     // Clamp priority
     if (priority >= MAX_PRIORITY_LEVELS) {
         priority = MAX_PRIORITY_LEVELS - 1;
     }
 
     proc->priority = priority;
+    proc->base_priority = priority; // Remember original
+    proc->last_scheduled_tick = MLFQscheduler.tick_counter;
+    
     EnQueue(&MLFQscheduler.queues[priority], slot);
     MLFQscheduler.active_bitmap |= (1U << priority);
+    MLFQscheduler.total_processes++;
 }
 
 // Remove process from scheduler
@@ -401,9 +498,8 @@ void RemoveFromScheduler(uint32_t slot) {
     if (slot == 0 || slot >= MAX_PROCESSES) return;
 
     SchedulerNode* node = processes[slot].scheduler_node;
-    if (!node) return;  // Process not in any queue
+    if (!node) return;
 
-    // Find which queue this node belongs to by checking the process priority
     uint32_t priority = processes[slot].priority;
     if (priority >= MAX_PRIORITY_LEVELS) return;
 
@@ -413,161 +509,254 @@ void RemoveFromScheduler(uint32_t slot) {
     if (node->prev) {
         node->prev->next = node->next;
     } else {
-        // This was the head
         q->head = node->next;
     }
 
     if (node->next) {
         node->next->prev = node->prev;
     } else {
-        // This was the tail
         q->tail = node->prev;
     }
 
     q->count--;
+    MLFQscheduler.total_processes--;
 
     // Update bitmap if queue became empty
     if (q->count == 0) {
         MLFQscheduler.active_bitmap &= ~(1U << priority);
     }
 
-    // Clear process reference and free node
     processes[slot].scheduler_node = NULL;
     FreeSchedulerNode(node);
 }
 
-static inline int FindHighestPriorityQueue(void) {
+// Smart queue selection with load balancing
+static inline int FindBestQueue(void) {
     if (MLFQscheduler.active_bitmap == 0) return -1;
 
-    // Find first set bit (lowest index = highest priority)
-    for (int i = 0; i < MAX_PRIORITY_LEVELS; i++) {
-        if (MLFQscheduler.active_bitmap & (1U << i)) {
+    // Real-time queues always have absolute priority
+    uint32_t rt_active = MLFQscheduler.active_bitmap & MLFQscheduler.rt_bitmap;
+    if (rt_active) {
+        return FastFFS(rt_active);
+    }
+    
+    // For non-RT queues, consider load balancing
+    uint32_t regular_active = MLFQscheduler.active_bitmap & ~MLFQscheduler.rt_bitmap;
+    if (!regular_active) return -1;
+    
+    // Find highest priority with reasonable load
+    for (int i = RT_PRIORITY_THRESHOLD; i < MAX_PRIORITY_LEVELS; i++) {
+        if (regular_active & (1U << i)) {
+            PriorityQueue* queue = &MLFQscheduler.queues[i];
+            
+            // Avoid overloaded queues if alternatives exist
+            if (queue->count > LOAD_BALANCE_THRESHOLD && 
+                (regular_active & ~(1U << i))) {
+                continue;
+            }
+            
             return i;
         }
     }
-    return -1;
+    
+    // Fallback to first available
+    return FastFFS(regular_active);
 }
 
-// Boost all processes to prevent starvation
-static void BoostAllProcesses(void) {
-    // Move all processes to highest priority queue
-    for (int level = 1; level < MAX_PRIORITY_LEVELS; level++) {
-        PriorityQueue* src = &MLFQscheduler.queues[level];
-        PriorityQueue* dst = &MLFQscheduler.queues[0];
-
-        // Move all nodes from src to dst
-        while (src->head) {
-            SchedulerNode* node = src->head;
+// Smart aging algorithm with selective boosting
+static void SmartAging(void) {
+    uint64_t current_tick = MLFQscheduler.tick_counter;
+    
+    // Calculate system load for adaptive aging
+    uint32_t total_waiting = 0;
+    for (int i = 0; i < MAX_PRIORITY_LEVELS; i++) {
+        total_waiting += MLFQscheduler.queues[i].total_wait_time;
+    }
+    
+    // Adaptive aging threshold based on system load
+    uint32_t aging_threshold = AGING_THRESHOLD_BASE;
+    if (total_waiting > MLFQscheduler.total_processes * 50) {
+        aging_threshold /= 2; // More aggressive aging under high load
+    }
+    
+    // Selective process boosting
+    for (int level = RT_PRIORITY_THRESHOLD; level < MAX_PRIORITY_LEVELS; level++) {
+        PriorityQueue* queue = &MLFQscheduler.queues[level];
+        SchedulerNode* node = queue->head;
+        
+        while (node) {
+            SchedulerNode* next = node->next;
             uint32_t slot = node->slot;
-
-            // Remove from source queue
-            src->head = node->next;
-            if (src->head) {
-                src->head->prev = NULL;
-            } else {
-                src->tail = NULL;
+            Process* proc = &processes[slot];
+            
+            uint64_t wait_time = current_tick - proc->last_scheduled_tick;
+            
+            // Boost processes that have waited too long
+            if (wait_time > aging_threshold) {
+                // Remove from current queue
+                if (node->prev) {
+                    node->prev->next = node->next;
+                } else {
+                    queue->head = node->next;
+                }
+                
+                if (node->next) {
+                    node->next->prev = node->prev;
+                } else {
+                    queue->tail = node->prev;
+                }
+                
+                queue->count--;
+                
+                // Boost to higher priority (but not above RT threshold for user processes)
+                uint32_t new_priority = (proc->privilege_level == PROC_PRIV_SYSTEM) ? 0 : RT_PRIORITY_THRESHOLD;
+                proc->priority = new_priority;
+                proc->last_scheduled_tick = current_tick;
+                
+                // Add to higher priority queue
+                PriorityQueue* dst = &MLFQscheduler.queues[new_priority];
+                node->next = NULL;
+                node->prev = dst->tail;
+                
+                if (dst->tail) {
+                    dst->tail->next = node;
+                    dst->tail = node;
+                } else {
+                    dst->head = dst->tail = node;
+                }
+                dst->count++;
+                MLFQscheduler.active_bitmap |= (1U << new_priority);
             }
-            src->count--;
-
-            // Update process priority
-            processes[slot].priority = 0;
-
-            // Add to destination queue
-            node->next = NULL;
-            node->prev = dst->tail;
-
-            if (dst->tail) {
-                dst->tail->next = node;
-                dst->tail = node;
-            } else {
-                dst->head = dst->tail = node;
-            }
-            dst->count++;
+            
+            node = next;
         }
-
-        MLFQscheduler.active_bitmap &= ~(1U << level);
-    }
-
-    if (MLFQscheduler.queues[0].count > 0) {
-        MLFQscheduler.active_bitmap |= 1U;
+        
+        // Update bitmap if queue became empty
+        if (queue->count == 0) {
+            MLFQscheduler.active_bitmap &= ~(1U << level);
+        }
     }
 }
 
-// Main scheduler - called from timer interrupt
-// Main scheduler - called from timer interrupt
+// Enhanced scheduler with smart preemption and load balancing
 void FastSchedule(struct Registers* regs) {
     irq_flags_t flags = SpinLockIrqSave(&scheduler_lock);
+    uint64_t schedule_start = MLFQscheduler.tick_counter;
 
     AtomicInc(&scheduler_calls);
     AtomicInc(&MLFQscheduler.tick_counter);
 
-    // Periodic starvation prevention
+    // Fairness boosting - more frequent than aging
+    if (UNLIKELY(MLFQscheduler.tick_counter % FAIRNESS_BOOST_INTERVAL == 0)) {
+        // Boost processes that haven't run recently
+        for (int i = 1; i < MAX_PROCESSES; i++) {
+            if (processes[i].pid != 0 && processes[i].state == PROC_READY) {
+                uint64_t wait_time = MLFQscheduler.tick_counter - processes[i].last_scheduled_tick;
+                if (wait_time > FAIRNESS_BOOST_INTERVAL * 2 && processes[i].priority > 0) {
+                    processes[i].priority = 0; // Boost to highest priority
+                }
+            }
+        }
+    }
+    
+    // Smart aging for long-term fairness
     if (UNLIKELY(MLFQscheduler.tick_counter - MLFQscheduler.last_boost_tick >= BOOST_INTERVAL)) {
-        BoostAllProcesses();
+        SmartAging();
         MLFQscheduler.last_boost_tick = MLFQscheduler.tick_counter;
     }
 
     uint32_t old_slot = MLFQscheduler.current_running;
     Process* old_proc = &processes[old_slot];
+    uint32_t cpu_burst = 0;
 
     // Handle currently running process
     if (LIKELY(old_slot != 0)) {
         ProcessState state = old_proc->state;
 
-        // Fast path for dead processes
         if (UNLIKELY(state == PROC_DYING || state == PROC_ZOMBIE || state == PROC_TERMINATED)) {
-            // Process is dead, don't save context
             goto select_next;
         }
 
-        // Save context efficiently
+        // Calculate CPU burst for this process
+        cpu_burst = MLFQscheduler.queues[old_proc->priority].quantum - MLFQscheduler.quantum_remaining;
+        
+        // Update CPU burst history
+        for (int i = CPU_BURST_HISTORY - 1; i > 0; i--) {
+            old_proc->cpu_burst_history[i] = old_proc->cpu_burst_history[i-1];
+        }
+        old_proc->cpu_burst_history[0] = cpu_burst;
+        old_proc->cpu_time_accumulated += cpu_burst;
+
         FastMemcpy(&old_proc->context, regs, sizeof(struct Registers));
 
-        // Quantum management
         if (LIKELY(MLFQscheduler.quantum_remaining > 0)) {
             MLFQscheduler.quantum_remaining--;
         }
 
-        // Preemption check
-        int highest_priority = FindHighestPriorityQueue();
-
-        // Continue if quantum remains and no higher priority process
-        if (LIKELY(MLFQscheduler.quantum_remaining > 0 &&
-                  (highest_priority == -1 || highest_priority > (int)old_proc->priority))) {
+        // Smart preemption logic
+        int best_priority = FindBestQueue();
+        bool should_preempt = false;
+        
+        // Real-time processes can always preempt with bias
+        if (best_priority != -1 && best_priority < RT_PRIORITY_THRESHOLD && 
+            best_priority + PREEMPTION_BIAS < (int)old_proc->priority) {
+            should_preempt = true;
+        }
+        // Regular preemption on quantum expiry or higher priority
+        else if (MLFQscheduler.quantum_remaining == 0 || 
+                (best_priority != -1 && best_priority < (int)old_proc->priority)) {
+            should_preempt = true;
+        }
+        
+        if (!should_preempt) {
             SpinUnlockIrqRestore(&scheduler_lock, flags);
-            return; // No context switch needed
+            return;
         }
 
-        // Context switch needed - prepare old process
+        // Prepare for context switch
         old_proc->state = PROC_READY;
         ready_process_bitmap |= (1ULL << old_slot);
+        old_proc->preemption_count++;
 
-        // Adaptive priority adjustment
-        if (LIKELY(old_proc->priority < MAX_PRIORITY_LEVELS - 1)) {
-            old_proc->priority++;
+        // Fair priority adjustment - protect system processes from demotion
+        if (old_proc->privilege_level != PROC_PRIV_SYSTEM) {
+            if (cpu_burst < MLFQscheduler.queues[old_proc->priority].quantum / 4) {
+                // Interactive user process, boost
+                if (old_proc->priority > RT_PRIORITY_THRESHOLD) {
+                    old_proc->priority--;
+                }
+            } else if (cpu_burst >= MLFQscheduler.queues[old_proc->priority].quantum) {
+                // CPU intensive user process, demote gradually
+                if (old_proc->priority < MAX_PRIORITY_LEVELS - 1) {
+                    old_proc->priority++;
+                }
+            }
+        } else {
+            // System processes get fairness boost if they've been demoted
+            if (old_proc->priority > old_proc->base_priority) {
+                old_proc->priority = old_proc->base_priority;
+            }
         }
 
         AddToScheduler(old_slot);
     }
 
 select_next:;
-    // Find next process to run
-    int next_priority = FindHighestPriorityQueue();
+    int next_priority = FindBestQueue();
     uint32_t next_slot;
 
     if (UNLIKELY(next_priority == -1)) {
-        next_slot = 0; // Run idle process
+        next_slot = 0;
     } else {
         next_slot = DeQueue(&MLFQscheduler.queues[next_priority]);
 
-        // Validate next process
         if (UNLIKELY(next_slot >= MAX_PROCESSES ||
                     processes[next_slot].state != PROC_READY)) {
-            next_slot = 0; // Fall back to idle
+            next_slot = 0;
         }
     }
 
-    // Context switch
+    // Context switch with performance tracking
     MLFQscheduler.current_running = next_slot;
     current_process = next_slot;
 
@@ -575,31 +764,78 @@ select_next:;
         Process* new_proc = &processes[next_slot];
         new_proc->state = PROC_RUNNING;
         ready_process_bitmap &= ~(1ULL << next_slot);
+        
+        // Dynamic quantum adjustment
+        uint32_t base_quantum = MLFQscheduler.queues[new_proc->priority].quantum;
+        
+        // Boost quantum for I/O bound processes
+        if (new_proc->io_operations >= IO_BOOST_THRESHOLD) {
+            base_quantum = (base_quantum * 3) / 2;
+        }
+        
+        // Reduce quantum for CPU hogs
+        uint32_t avg_burst = 0;
+        for (int i = 0; i < CPU_BURST_HISTORY; i++) {
+            avg_burst += new_proc->cpu_burst_history[i];
+        }
+        avg_burst /= CPU_BURST_HISTORY;
+        
+        if (avg_burst > base_quantum) {
+            base_quantum = (base_quantum * 3) / 4;
+        }
+        
+        MLFQscheduler.quantum_remaining = base_quantum;
+        new_proc->last_scheduled_tick = MLFQscheduler.tick_counter;
 
-        // Set quantum for new process
-        MLFQscheduler.quantum_remaining = MLFQscheduler.queues[new_proc->priority].quantum;
-
-        // Restore context
         FastMemcpy(regs, &new_proc->context, sizeof(struct Registers));
         AtomicInc(&context_switches);
+        
+        // Update context switch overhead measurement
+        uint32_t overhead = MLFQscheduler.tick_counter - schedule_start;
+        MLFQscheduler.context_switch_overhead = (MLFQscheduler.context_switch_overhead * 7 + overhead) / 8;
     } else {
         MLFQscheduler.quantum_remaining = 0;
     }
+    
     SpinUnlockIrqRestore(&scheduler_lock, flags);
 }
 
-// Called when process blocks (I/O, IPC, etc.)
+// Enhanced I/O and blocking handling
 void ProcessBlocked(uint32_t slot) {
+    Process* proc = &processes[slot];
+    
+    // Track I/O operations for classification
+    proc->io_operations++;
+    
     if (slot == MLFQscheduler.current_running) {
-        // Current process blocked, trigger immediate reschedule
+        // Calculate partial CPU burst
+        uint32_t partial_burst = MLFQscheduler.queues[proc->priority].quantum - MLFQscheduler.quantum_remaining;
+        
+        // Update burst history with partial burst
+        for (int i = CPU_BURST_HISTORY - 1; i > 0; i--) {
+            proc->cpu_burst_history[i] = proc->cpu_burst_history[i-1];
+        }
+        proc->cpu_burst_history[0] = partial_burst;
+        
         MLFQscheduler.quantum_remaining = 0;
         RequestSchedule();
     }
 
-    // When process unblocks, it goes to higher priority (I/O bound processes get priority)
-    Process* proc = &processes[slot];
-    if (proc->state == PROC_READY && proc->priority > 0) {
-        proc->priority--;  // Boost priority
+    // Smart priority boost for I/O bound processes
+    if (proc->state == PROC_READY) {
+        // Calculate average CPU burst
+        uint32_t avg_burst = 0;
+        for (int i = 0; i < CPU_BURST_HISTORY; i++) {
+            avg_burst += proc->cpu_burst_history[i];
+        }
+        avg_burst /= CPU_BURST_HISTORY;
+        
+        // I/O bound processes (short CPU bursts) get priority boost
+        if (avg_burst < QUANTUM_BASE / 2 && proc->priority > RT_PRIORITY_THRESHOLD) {
+            proc->priority = RT_PRIORITY_THRESHOLD; // Boost to interactive level
+        } else if (proc->priority > 0 && proc->io_operations > IO_BOOST_THRESHOLD) {
+            proc->priority--; // Regular boost for I/O processes
+        }
     }
 }
 
@@ -624,41 +860,6 @@ void Yield() {
     __asm__ __volatile__("hlt");
 }
 
-int ProcessInit(void) {
-    FastMemset(processes, 0, sizeof(Process) * MAX_PROCESSES);
-
-    // Initialize scheduler first to get a valid tick counter
-    InitScheduler();
-
-    // Initialize idle process
-    Process* idle_proc = &processes[0];
-    idle_proc->pid = 0;
-    idle_proc->state = PROC_RUNNING;
-    idle_proc->privilege_level = PROC_PRIV_SYSTEM;
-    idle_proc->scheduler_node = NULL;
-    idle_proc->creation_time = GetSystemTicks(); // Use the official tick getter
-
-    // Securely initialize the token for the Idle Process
-    SecurityToken* token = &idle_proc->token;
-    token->magic = SECURITY_MAGIC;
-    token->creator_pid = 0; // Itself
-    token->privilege = PROC_PRIV_SYSTEM;
-    token->flags = PROC_FLAG_IMMUNE | PROC_FLAG_CRITICAL; // The idle process is both
-    token->creation_tick = idle_proc->creation_time;
-
-    // Calculate the one, true checksum
-    token->checksum = 0; // Must be zero for calculation
-    token->checksum = CalculateSecureChecksum(token, 0);
-
-    process_count = 1;
-    active_process_bitmap |= 1ULL; // Mark slot 0 as active
-
-    return 0;
-}
-
-uint32_t CreateProcess(void (*entry_point)(void)) {
-    return CreateSecureProcess(entry_point, PROC_PRIV_USER);
-}
 
 void ProcessExitStub() {
     Process* current = GetCurrentProcess();
@@ -675,7 +876,7 @@ void ProcessExitStub() {
     }
 }
 
-uint32_t CreateSecureProcess(void (*entry_point)(void), uint8_t privilege) {
+static uint32_t CreateSecureProcess(void (*entry_point)(void), uint8_t privilege) {
     irq_flags_t flags = SpinLockIrqSave(&scheduler_lock);
     if (UNLIKELY(!entry_point)) {
         SpinUnlockIrqRestore(&scheduler_lock, flags);
@@ -725,15 +926,26 @@ uint32_t CreateSecureProcess(void (*entry_point)(void), uint8_t privilege) {
         PANIC("CreateSecureProcess: Failed to allocate stack");
     }
 
-    // Initialize process with enhanced security
+    // Initialize process with enhanced security and scheduling data
     processes[slot].pid = new_pid;
     processes[slot].state = PROC_READY;
     processes[slot].stack = stack;
     processes[slot].privilege_level = privilege;
-    processes[slot].priority = (privilege == PROC_PRIV_SYSTEM) ? 0 : 1;
+    processes[slot].priority = (privilege == PROC_PRIV_SYSTEM) ? 0 : RT_PRIORITY_THRESHOLD;
+    processes[slot].base_priority = processes[slot].priority;
     processes[slot].is_user_mode = (privilege != PROC_PRIV_SYSTEM);
     processes[slot].scheduler_node = NULL;
     processes[slot].creation_time = GetSystemTicks();
+    processes[slot].last_scheduled_tick = GetSystemTicks();
+    processes[slot].cpu_time_accumulated = 0;
+    processes[slot].io_operations = 0;
+    processes[slot].preemption_count = 0;
+    processes[slot].wait_time = 0;
+    
+    // Initialize CPU burst history with reasonable defaults
+    for (int i = 0; i < CPU_BURST_HISTORY; i++) {
+        processes[slot].cpu_burst_history[i] = QUANTUM_BASE / 2;
+    }
 
     // Enhanced token initialization
     SecurityToken* token = &processes[slot].token;
@@ -770,9 +982,15 @@ uint32_t CreateSecureProcess(void (*entry_point)(void), uint8_t privilege) {
     return new_pid;
 }
 
-void ScheduleFromInterrupt(struct Registers* regs) {
+uint32_t CreateProcess(void (*entry_point)(void)) {
+    return CreateSecureProcess(entry_point, PROC_PRIV_USER);
+}
+
+
+void ScheduleFromInterrupt(Registers* regs) {
     FastSchedule(regs);
 }
+
 void CleanupTerminatedProcesses(void) {
     irq_flags_t flags = SpinLockIrqSave(&scheduler_lock);
     // Process a limited number per call to avoid long interrupt delays
@@ -854,11 +1072,11 @@ void SystemTracer(void) {
     }
 }
 
-void SecureKernelIntegritySubsystem(void) {
-    PrintKernelSuccess("[SYSTEM] SecureKernelIntegritySubsystem() initializing...\n");
+void SystemIntegrityVerificationAgent(void) {
+    PrintKernelSuccess("[SIVA] SystemIntegrityVerificationAgent initializing...\n");
     Process* current = GetCurrentProcess();
 
-    // Make SKIS immune and critical
+    // Make SIVA immune, critical and supervisor - ultimate authority
     current->token.flags |= (PROC_FLAG_IMMUNE | PROC_FLAG_CRITICAL | PROC_FLAG_SUPERVISOR);
 
     // FIX: The checksum field must be zeroed before recalculating the hash.
@@ -879,41 +1097,171 @@ void SecureKernelIntegritySubsystem(void) {
         }
     }
 
-    PrintKernelSuccess("[SYSTEM] SecureKernelIntegritySubsystem() active\n");
+    PrintKernelSuccess("[SIVA] Advanced threat detection active\n");
 
     uint64_t last_check = 0;
 
+    uint64_t last_integrity_scan = 0;
+    uint64_t last_behavior_analysis = 0;
+    uint64_t last_memory_scan = 0;
+    uint32_t threat_level = 0;
+    uint32_t suspicious_activity_count = 0;
+    
+    // Dynamic intensity control
+    uint32_t base_scan_interval = 100;
+    uint32_t current_scan_interval = base_scan_interval;
+
     while (1) {
-         const uint64_t current_tick = GetSystemTicks();
-        // Throttled security checking to reduce overhead
-        if (current_tick - last_check >= 100) { // Check every 100 ticks
-            last_check = current_tick;
+        // Adaptive intensity based on system load
+        uint32_t system_load = MLFQscheduler.total_processes;
+        if (system_load > 5) {
+            current_scan_interval = base_scan_interval * 3; // Much less intensive when busy
+        } else if (system_load < 3) {
+            current_scan_interval = base_scan_interval; // Normal when idle
+        } else {
+            current_scan_interval = base_scan_interval * 2; // Moderate when normal
+        }
 
-            // Fast security scan using bitmaps
+        const uint64_t current_tick = GetSystemTicks();
+        
+        // 1. Token integrity verification
+        if (current_tick - last_integrity_scan >= 50) {
+            last_integrity_scan = current_tick;
             uint64_t active_bitmap = active_process_bitmap;
-
-            while (active_bitmap) {
+            int scanned = 0;
+            
+            while (active_bitmap && scanned < 3) {
                 const int slot = FastFFS(active_bitmap);
                 active_bitmap &= ~(1ULL << slot);
+                scanned++;
 
-                const Process * proc = &processes[slot];
-
+                const Process* proc = &processes[slot];
                 if (proc->state == PROC_READY || proc->state == PROC_RUNNING) {
                     if (UNLIKELY(!ValidateToken(&proc->token, proc->pid))) {
-                        PrintKernelError("[SYSTEM] Token corruption detected for PID ");
+                        PrintKernelError("[SIVA] CRITICAL: Token corruption PID ");
                         PrintKernelInt(proc->pid);
                         PrintKernelError("\n");
-
+                        threat_level += 10;
                         SecurityViolationHandler(proc->pid, "Token corruption");
                     }
                 }
             }
         }
-        // Cleanup and yield
+        
+        // 2. Behavioral analysis
+        if (current_tick - last_behavior_analysis >= 100) {
+            last_behavior_analysis = current_tick;
+            
+            for (int i = 1; i < MAX_PROCESSES; i++) {
+                if (processes[i].pid != 0 && processes[i].state != PROC_TERMINATED) {
+                    const Process* proc = &processes[i];
+                    
+                    // Detect privilege escalation - KILL IMMEDIATELY
+                    if (proc->privilege_level != proc->token.privilege) {
+                        PrintKernelError("[SIVA] TERMINATING: Privilege escalation PID ");
+                        PrintKernelInt(proc->pid);
+                        PrintKernelError("\n");
+                        SivaTerminate(proc->pid, "Privilege escalation");
+                        threat_level += 15;
+                    }
+                    
+                    // Detect abnormal preemption patterns - KILL
+                    if (proc->preemption_count > 500) {
+                        PrintKernelError("[SIVA] TERMINATING: Suspicious activity PID ");
+                        PrintKernelInt(proc->pid);
+                        PrintKernelError("\n");
+                        SivaTerminate(proc->pid, "Abnormal behavior");
+                        suspicious_activity_count++;
+                    }
+                }
+            }
+        }
+        
+        // 3. Memory integrity checks
+        if (current_tick - last_memory_scan >= 300) {
+            last_memory_scan = current_tick;
+            
+            if (MLFQscheduler.current_running >= MAX_PROCESSES) {
+                PrintKernelError("[SIVA] CRITICAL: Scheduler corruption detected\n");
+                threat_level += 30;
+                PANIC("SIVA: Critical scheduler corruption - system compromised");
+            }
+            
+            uint32_t actual_count = __builtin_popcountll(active_process_bitmap);
+            if (actual_count != process_count) {
+                PrintKernelError("[SIVA] CRITICAL: Process count corruption\n");
+                threat_level += 10;
+                suspicious_activity_count++;
+            }
+        }
+        
+        // Aggressive threat management
+        if (threat_level > 30) {
+            PrintKernelError("[SIVA] DEFCON 1: System under attack - threat level ");
+            PrintKernelInt(threat_level);
+            PrintKernelError(" - LOCKDOWN MODE\n");
+            // Kill all non-critical processes
+            for (int i = 1; i < MAX_PROCESSES; i++) {
+                if (processes[i].pid != 0 && processes[i].state != PROC_TERMINATED &&
+                    !(processes[i].token.flags & PROC_FLAG_CRITICAL) &&
+                    processes[i].pid != security_manager_pid) {
+                    SivaTerminate(processes[i].pid, "Emergency lockdown");
+                }
+            }
+        } else if (threat_level > 15) {
+            PrintKernelError("[SIVA] DEFCON 2: Elevated threat - scanning intensified\n");
+            last_integrity_scan = current_tick - 40; // More frequent scans
+        }
+        
+        if (current_tick % 500 == 0 && threat_level > 0) {
+            threat_level--;
+        }
+        
         CleanupTerminatedProcesses();
         Yield();
     }
 }
+
+int ProcessInit(void) {
+    FastMemset(processes, 0, sizeof(Process) * MAX_PROCESSES);
+
+    // Initialize scheduler first to get a valid tick counter
+    InitScheduler();
+
+    // Initialize idle process
+    Process* idle_proc = &processes[0];
+    idle_proc->pid = 0;
+    idle_proc->state = PROC_RUNNING;
+    idle_proc->privilege_level = PROC_PRIV_SYSTEM;
+    idle_proc->scheduler_node = NULL;
+    idle_proc->creation_time = GetSystemTicks();
+
+    // Securely initialize the token for the Idle Process
+    SecurityToken* token = &idle_proc->token;
+    token->magic = SECURITY_MAGIC;
+    token->creator_pid = 0;
+    token->privilege = PROC_PRIV_SYSTEM;
+    token->flags = PROC_FLAG_IMMUNE | PROC_FLAG_CRITICAL;
+    token->creation_tick = idle_proc->creation_time;
+    token->checksum = 0;
+    token->checksum = CalculateSecureChecksum(token, 0);
+
+    process_count = 1;
+    active_process_bitmap |= 1ULL;
+
+    // Create SIVA internally during init - no external access
+    PrintKernel("[SYSTEM] Creating SIVA (SystemIntegrityVerificationAgent)...\n");
+    uint32_t siva_pid = CreateSecureProcess(SystemIntegrityVerificationAgent, PROC_PRIV_SYSTEM);
+    if (!siva_pid) {
+        PANIC("CRITICAL: Failed to create SIVA - system compromised");
+    }
+    PrintKernelSuccess("[SYSTEM] SIVA created with PID: ");
+    PrintKernelInt(siva_pid);
+    PrintKernel("\n");
+
+    return 0;
+}
+
 
 void DumpPerformanceStats(void) {
     PrintKernel("[PERF] Context switches: ");
@@ -924,7 +1272,24 @@ void DumpPerformanceStats(void) {
     PrintKernelInt(security_violation_count);
     PrintKernel("\n[PERF] Active processes: ");
     PrintKernelInt(__builtin_popcountll(active_process_bitmap));
-    PrintKernel("\n");
+    PrintKernel("\n[PERF] Avg context switch overhead: ");
+    PrintKernelInt(MLFQscheduler.context_switch_overhead);
+    PrintKernel(" ticks\n[PERF] System load: ");
+    PrintKernelInt(MLFQscheduler.total_processes);
+    PrintKernel(" processes\n");
+    
+    // Show per-priority statistics
+    for (int i = 0; i < MAX_PRIORITY_LEVELS; i++) {
+        if (MLFQscheduler.queues[i].count > 0) {
+            PrintKernel("[PERF] Priority ");
+            PrintKernelInt(i);
+            PrintKernel(": ");
+            PrintKernelInt(MLFQscheduler.queues[i].count);
+            PrintKernel(" procs, avg burst: ");
+            PrintKernelInt(MLFQscheduler.queues[i].avg_cpu_burst);
+            PrintKernel("\n");
+        }
+    }
 }
 
 static const char* GetStateString(ProcessState state) {
@@ -940,25 +1305,40 @@ static const char* GetStateString(ProcessState state) {
 }
 
 void ListProcesses(void) {
-    PrintKernel("--- Process List ---\n");
-    PrintKernel("PID\tState     \tPriv  \tImmune\n");
-    PrintKernel("-------------------------------------\n");
+    PrintKernel("--- Enhanced Process List ---\n");
+    PrintKernel("PID\tState     \tPrio\tCPU%%\tI/O\tPreempt\n");
+    PrintKernel("-----------------------------------------------\n");
+    
+    uint64_t total_cpu_time = 1; // Avoid division by zero
     for (int i = 0; i < MAX_PROCESSES; i++) {
-        // --- CHANGE HERE: The condition now correctly includes the Idle Process (i == 0) ---
         if (i == 0 || processes[i].pid != 0) {
-            const Process * p = &processes[i];
+            total_cpu_time += processes[i].cpu_time_accumulated;
+        }
+    }
+    
+    for (int i = 0; i < MAX_PROCESSES; i++) {
+        if (i == 0 || processes[i].pid != 0) {
+            const Process* p = &processes[i];
+            uint32_t cpu_percent = (uint32_t)((p->cpu_time_accumulated * 100) / total_cpu_time);
 
             PrintKernelInt(p->pid);
             PrintKernel("\t");
             PrintKernel(GetStateString(p->state));
             PrintKernel("\t");
-            PrintKernel(p->privilege_level == PROC_PRIV_SYSTEM ? "SYSTEM" : "USER  ");
+            PrintKernelInt(p->priority);
             PrintKernel("\t");
-            PrintKernel(p->token.flags & PROC_FLAG_IMMUNE ? "YES" : "NO");
+            PrintKernelInt(cpu_percent);
+            PrintKernel("%\t");
+            PrintKernelInt(p->io_operations);
+            PrintKernel("\t");
+            PrintKernelInt(p->preemption_count);
             PrintKernel("\n");
         }
     }
-    PrintKernel("-------------------------------------\n");
+    PrintKernel("-----------------------------------------------\n");
+    PrintKernel("Total CPU time: ");
+    PrintKernelInt((uint32_t)total_cpu_time);
+    PrintKernel(" ticks\n");
 }
 
 void DumpSchedulerState(void) {
@@ -966,19 +1346,73 @@ void DumpSchedulerState(void) {
     PrintKernelInt(MLFQscheduler.current_running);
     PrintKernel(" Quantum: ");
     PrintKernelInt(MLFQscheduler.quantum_remaining);
-    PrintKernel(" Bitmap: ");
-    PrintKernelInt(MLFQscheduler.active_bitmap);
+    PrintKernel(" Load: ");
+    PrintKernelInt(MLFQscheduler.total_processes);
+    PrintKernel("\n[SCHED] Active: 0x");
+    PrintKernelHex(MLFQscheduler.active_bitmap);
+    PrintKernel(" RT: 0x");
+    PrintKernelHex(MLFQscheduler.rt_bitmap);
+    PrintKernel(" Overhead: ");
+    PrintKernelInt(MLFQscheduler.context_switch_overhead);
     PrintKernel("\n");
 
     for (int i = 0; i < MAX_PRIORITY_LEVELS; i++) {
         if (MLFQscheduler.queues[i].count > 0) {
-            PrintKernel("  Priority ");
+            PrintKernel("  L");
             PrintKernelInt(i);
+            PrintKernel(i < RT_PRIORITY_THRESHOLD ? "(RT)" : "(RG)");
             PrintKernel(": ");
             PrintKernelInt(MLFQscheduler.queues[i].count);
-            PrintKernel(" processes, quantum: ");
+            PrintKernel(" procs, Q:");
             PrintKernelInt(MLFQscheduler.queues[i].quantum);
+            PrintKernel(" AvgBurst:");
+            PrintKernelInt(MLFQscheduler.queues[i].avg_cpu_burst);
             PrintKernel("\n");
         }
     }
+}
+
+// Get detailed process scheduling information
+void GetProcessStats(uint32_t pid, uint32_t* cpu_time, uint32_t* io_ops, uint32_t* preemptions) {
+    Process* proc = GetProcessByPid(pid);
+    if (!proc) {
+        if (cpu_time) *cpu_time = 0;
+        if (io_ops) *io_ops = 0;
+        if (preemptions) *preemptions = 0;
+        return;
+    }
+    
+    if (cpu_time) *cpu_time = (uint32_t)proc->cpu_time_accumulated;
+    if (io_ops) *io_ops = proc->io_operations;
+    if (preemptions) *preemptions = proc->preemption_count;
+}
+
+// Force priority boost for a specific process (for testing/debugging)
+void BoostProcessPriority(uint32_t pid) {
+    irq_flags_t flags = SpinLockIrqSave(&scheduler_lock);
+    
+    Process* proc = GetProcessByPid(pid);
+    if (!proc || proc->state == PROC_TERMINATED) {
+        SpinUnlockIrqRestore(&scheduler_lock, flags);
+        return;
+    }
+    
+    // Remove from current queue if scheduled
+    if (proc->scheduler_node) {
+        RemoveFromScheduler(proc - processes);
+    }
+    
+    // Boost to highest non-RT priority for user processes
+    if (proc->privilege_level == PROC_PRIV_SYSTEM) {
+        proc->priority = 0;
+    } else {
+        proc->priority = RT_PRIORITY_THRESHOLD;
+    }
+    
+    // Re-add to scheduler if ready
+    if (proc->state == PROC_READY) {
+        AddToScheduler(proc - processes);
+    }
+    
+    SpinUnlockIrqRestore(&scheduler_lock, flags);
 }

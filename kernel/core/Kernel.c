@@ -190,18 +190,10 @@ void KernelMainHigherHalf(void) {
     
     // Initialize core systems
     CoreInit();
-    PrintKernel("[INFO] Creating security manager process...\n");
-    uint64_t security_pid = CreateSecureProcess(SecureKernelIntegritySubsystem, PROC_PRIV_SYSTEM);
-    if (!security_pid) {
-        PrintKernelError("[FATAL] Cannot create SecureKernelIntegritySubsystem\n");
-        PANIC("Critical security failure - cannot create security manager");
-    }
-    PrintKernelSuccess("[SYSTEM] Security manager created with PID: ");
-    PrintKernelInt(security_pid);
-    PrintKernel("\n");
 
     PrintKernelSuccess("[SYSTEM] Kernel initialization complete\n");
     PrintKernelSuccess("[SYSTEM] Initializing interrupts...\n\n");
+
     asm volatile("sti");
     while (1) {
         if (ShouldSchedule()) {
