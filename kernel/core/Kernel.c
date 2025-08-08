@@ -142,13 +142,15 @@ static void SetupMemoryProtection(void) {
         protection_enabled = true;
     }
 
-    // Enable NX bit if supported
+    // enable NX
     __asm__ volatile("cpuid" : "=a"(eax), "=d"(edx) : "a"(0x80000001) : "ebx", "ecx");
-    if (edx & (1 << 20)) {
-        uint64_t efer;
-        __asm__ volatile("rdmsr" : "=a"(efer) : "c"(0xC0000080));
-        efer |= (1ULL << 11);  // EFER.NXE
-        __asm__ volatile("wrmsr" :: "a"(efer), "c"(0xC0000080));
+    if (edx & (1u << 20)) {                // CPUID.80000001H:EDX.NX[20]
+        uint32_t efer_lo, efer_hi;
+        // Read EFER (MSR 0xC0000080) into EDX:EAX
+        __asm__ volatile("rdmsr" : "=a"(efer_lo), "=d"(efer_hi) : "c"(0xC0000080));
+        efer_lo |= (1u << 11);             // EFER.NXE is bit 11 (low 32 bits)
+        // Write back both halves to EFER
+        __asm__ volatile("wrmsr" :: "c"(0xC0000080), "a"(efer_lo), "d"(efer_hi));
         PrintKernel("[SYSTEM] NX bit enabled\n");
         protection_enabled = true;
     }

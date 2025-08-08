@@ -25,7 +25,7 @@ c_flags = [
     '-nostdinc',
     '-fno-builtin',
     '-ffreestanding',
-    '-fno-stack-protector',
+    '-fstack-protector-strong',
     '-ffast-math'
 ]
 
