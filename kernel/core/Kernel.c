@@ -3,7 +3,6 @@
 #include "Console.h"
 #include "Gdt.h"
 #include "Idt.h"
-#include "Io.h"
 #include "KernelHeap.h"
 #include "Keyboard.h"
 #include "MemOps.h"
@@ -14,7 +13,7 @@
 #include "Process.h"
 #include "Serial.h"
 #include "Shell.h"
-#include "Spinlock.h"
+#include "StackGuard.h"
 #include "Syscall.h"
 #include "VMem.h"
 #include "stdbool.h"
@@ -143,6 +142,27 @@ static void SetupMemoryProtection(void) {
         protection_enabled = true;
     }
 
+    // enable NX
+    __asm__ volatile("cpuid" : "=a"(eax), "=d"(edx) : "a"(0x80000001) : "ebx", "ecx");
+    if (edx & (1u << 20)) {                // CPUID.80000001H:EDX.NX[20]
+        uint32_t efer_lo, efer_hi;
+        // Read EFER (MSR 0xC0000080) into EDX:EAX
+        __asm__ volatile("rdmsr" : "=a"(efer_lo), "=d"(efer_hi) : "c"(0xC0000080));
+        efer_lo |= (1u << 11);             // EFER.NXE is bit 11 (low 32 bits)
+        // Write back both halves to EFER
+        __asm__ volatile("wrmsr" :: "c"(0xC0000080), "a"(efer_lo), "d"(efer_hi));
+        PrintKernel("[SYSTEM] NX bit enabled\n");
+        protection_enabled = true;
+    }
+
+    // Enable PCID for faster context switches
+    __asm__ volatile("cpuid" : "=a"(eax), "=c"(ecx) : "a"(1) : "ebx", "edx");
+    if (ecx & (1 << 17)) {
+        cr4 |= (1ULL << 17);  // CR4.PCIDE
+        PrintKernel("[SYSTEM] PCID enabled\n");
+        protection_enabled = true;
+    }
+
     // Write back the modified CR4
     if (protection_enabled) {
         __asm__ volatile("mov %0, %%cr4" :: "r"(cr4) : "memory");
@@ -211,7 +231,10 @@ static InitResultT CoreInit(void) {
     PrintKernelSuccess("[SYSTEM] Serial driver initialized\n");
 
     // Setup memory protection LAST - after all systems are ready
+    StackGuardInit();
     SetupMemoryProtection();
+
+    
     return INIT_SUCCESS;
 }
 
@@ -325,7 +348,7 @@ void KernelMainHigherHalf(void) {
     
     // Initialize core systems
     CoreInit();
-
+    KernelMemoryAlloc(1234123412354978);
     PrintKernelSuccess("[SYSTEM] Kernel initialization complete\n");
     PrintKernelSuccess("[SYSTEM] Initializing interrupts...\n\n");
 

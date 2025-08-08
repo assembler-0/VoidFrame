@@ -25,7 +25,7 @@ c_flags = [
     '-nostdinc',
     '-fno-builtin',
     '-ffreestanding',
-    '-fno-stack-protector',
+    '-fstack-protector-strong',
     '-ffast-math'
 ]
 
@@ -69,6 +69,7 @@ c_sources = [
     src_root + '/kernel/memory/MemOps.c',
     src_root + '/kernel/memory/KernelHeap.c',
     src_root + '/kernel/memory/VMem.c',
+    src_root + '/kernel/memory/StackGuard.c',
     src_root + '/kernel/process/Process.c',
     src_root + '/kernel/process/UserMode.c',
     src_root + '/kernel/etc/Shell.c',
