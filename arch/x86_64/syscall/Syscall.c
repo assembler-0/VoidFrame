@@ -4,8 +4,7 @@
 #include "Gdt.h"
 #include "Idt.h"
 #include "Ipc.h"
-#include "Kernel.h"
-#include "MemOps.h" // For FastMemcpy
+#include "MemOps.h"
 #include "Panic.h"
 #include "Process.h"
 #define likely(x)   __builtin_expect(!!(x), 1)
