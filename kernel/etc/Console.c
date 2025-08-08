@@ -1,7 +1,9 @@
 #include "Console.h"
+
+#include "Serial.h"
 #include "Spinlock.h"
-#include "stdint.h"
 #include "stdbool.h"
+#include "stdint.h"
 
 static volatile int lock = 0;
 // Inline functions for better performance
@@ -95,6 +97,7 @@ void PrintKernel(const char* str) {
     }
 
     console.color = original_color;
+    SerialWrite(str);
     SpinUnlock(&lock);
 }
 
@@ -141,6 +144,7 @@ void PrintKernelHex(uint64_t num) {
     }
 
     PrintKernel(&buffer[pos + 1]);
+    SerialWrite(&buffer[pos + 1]);
 }
 
 // Optimized integer printing with proper sign handling
@@ -168,6 +172,7 @@ void PrintKernelInt(int64_t num) {
     }
 
     PrintKernel(&buffer[pos + 1]);
+    SerialWrite(&buffer[pos + 1]);
 }
 
 // Safe positioned printing

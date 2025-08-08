@@ -1,6 +1,6 @@
 #include "Panic.h"
-#include "Kernel.h"
-#include "Io.h"
+
+#include "Serial.h"
 #include "stdint.h"
 
 #define likely(x)   __builtin_expect(!!(x), 1)
@@ -195,6 +195,7 @@ void KernelPanicHandler(const char* message, uint64_t error_code, PanicContext* 
 
     PanicPrintCentered(23, "SYSTEM HALTED", COLOR_BRIGHT_WHITE_ON_RED);
 
+    SerialWrite("\n[FATAl] - [KERNEL PANIC] -- [not syncing - General Protection Fault] -- EXPERIMENTAL\n");
     // Standard practice is to halt indefinitely, allowing the user to read the screen.
     // Forcing a reboot might lose valuable diagnostic info.
     while (1) {
