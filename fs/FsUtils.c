@@ -21,13 +21,23 @@ int FsCat(const char* path) {
 }
 
 int FsLs(const char* path) {
-    FsNode* children = FsReaddir(path);
-    if (!children) {
-        PrintKernel("ls: cannot access directory\n");
+    FsNode* dir = FsFind(path);
+    if (!dir) {
+        PrintKernel("ls: directory not found\n");
         return -1;
     }
     
-    FsNode* current = children;
+    if (dir->type != FS_DIRECTORY) {
+        PrintKernel("ls: not a directory\n");
+        return -1;
+    }
+    
+    FsNode* current = dir->children;
+    if (!current) {
+        PrintKernel("(empty directory)\n");
+        return 0;
+    }
+    
     while (current) {
         if (current->type == FS_DIRECTORY) {
             PrintKernel("[DIR]  ");

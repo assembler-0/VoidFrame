@@ -55,7 +55,14 @@ int FsInit(void) {
     FastMemcpy(root_node->name, "/", 2);
     root_node->type = FS_DIRECTORY;
     root_node->parent = NULL;
-
+    
+    // Create standard directories
+    FsCreateNode("System", FS_DIRECTORY, root_node);
+    FsCreateNode("Core", FS_DIRECTORY, root_node);
+    FsCreateNode("Tmp", FS_DIRECTORY, root_node);
+    FsCreateNode("Home", FS_DIRECTORY, root_node);
+    
+    PrintKernelSuccess("[SYSTEM] Created standard directories\n");
     return 0;
 }
 
@@ -234,6 +241,42 @@ int FsMkdir(const char* path) {
     
     FsNode* new_dir = FsCreateNode(dirname, FS_DIRECTORY, parent);
     return new_dir ? 0 : -1;
+}
+
+int FsDelete(const char* path) {
+    if (!path) return -1;
+    
+    FsNode* node = FsFind(path);
+    if (!node) return -1;
+    
+    // Can't delete root
+    if (!node->parent) return -1;
+    
+    // Can't delete non-empty directories
+    if (node->type == FS_DIRECTORY && node->children) return -1;
+    
+    // Remove from parent's children list
+    FsNode* parent = node->parent;
+    if (parent->children == node) {
+        parent->children = node->next_sibling;
+    } else {
+        FsNode* sibling = parent->children;
+        while (sibling && sibling->next_sibling != node) {
+            sibling = sibling->next_sibling;
+        }
+        if (sibling) {
+            sibling->next_sibling = node->next_sibling;
+        }
+    }
+    
+    // Free file data if it exists
+    if (node->data) {
+        KernelFree(node->data);
+    }
+    
+    // Free the node
+    FreeNode(node);
+    return 0;
 }
 
 FsNode* FsReaddir(const char* path) {
