@@ -36,7 +36,6 @@ void InterruptHandler(Registers* regs) {
     }
 
     // Handle CPU exceptions (0-31)
-    PrintKernelError("\n!! CPU EXCEPTION !!\n");
 
     switch (regs->interrupt_number) {
         case 6: // Invalid Opcode
@@ -53,8 +52,7 @@ void InterruptHandler(Registers* regs) {
             PrintKernelHex(regs->rip);
             PrintKernelError("\n  Error Code: ");
             PrintKernelHex(regs->error_code);
-            PrintKernelError(" (often segment related)\n");
-            PANIC_CODE("General Protection Fault", regs->error_code);
+            PANIC_CODE(" General Protection Fault\n", regs->error_code);
             break;
 
         case 14: // Page Fault

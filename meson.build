@@ -72,16 +72,17 @@ c_sources = [
     src_root + '/kernel/process/Process.c',
     src_root + '/kernel/process/UserMode.c',
     src_root + '/kernel/etc/Shell.c',
+    src_root + '/kernel/etc/Console.c',
     arch_root + '/idt/Idt.c',
     arch_root + '/gdt/Gdt.c',
     arch_root + '/syscall/Syscall.c',
     arch_root + '/interrupts/Interrupts.c',
     src_root + '/drivers/Pic.c',
+    src_root + '/drivers/Serial.c',
     src_root + '/drivers/Keyboard.c',
     arch_root + '/cpu/Cpu.c',
     src_root + '/kernel/atomic/Atomics.c',
-    src_root + '/kernel/ipc/Ipc.c',
-    src_root + '/kernel/etc/Console.c'
+    src_root + '/kernel/ipc/Ipc.c'
 ]
 
 # Build include flags

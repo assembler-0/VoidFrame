@@ -3,6 +3,7 @@
 #include "Console.h"
 #include "Gdt.h"
 #include "Idt.h"
+#include "Io.h"
 #include "KernelHeap.h"
 #include "Keyboard.h"
 #include "MemOps.h"
@@ -11,7 +12,9 @@
 #include "Panic.h"
 #include "Pic.h"
 #include "Process.h"
+#include "Serial.h"
 #include "Shell.h"
+#include "Spinlock.h"
 #include "Syscall.h"
 #include "VMem.h"
 #include "stdbool.h"
@@ -203,6 +206,10 @@ static InitResultT CoreInit(void) {
     ProcessInit();  // void function - assume success
     PrintKernelSuccess("[SYSTEM] Process management initialized\n");
 
+    PrintKernel("[INFO] Initializing serial driver management...\n");
+    SerialInit();
+    PrintKernelSuccess("[SYSTEM] Serial driver initialized\n");
+
     // Setup memory protection LAST - after all systems are ready
     SetupMemoryProtection();
     return INIT_SUCCESS;
@@ -217,6 +224,7 @@ void KernelMain(const uint32_t magic, const uint32_t info) {
     }
 
     console.buffer = (volatile uint16_t*)VGA_BUFFER_ADDR;
+    
     ClearScreen();
     PrintKernelSuccess("[SYSTEM] VoidFrame Kernel - Version 0.0.1-beta loaded\n");
     PrintKernel("Magic: ");
@@ -228,7 +236,7 @@ void KernelMain(const uint32_t magic, const uint32_t info) {
     
     // Initialize physical memory manager first
     MemoryInit(g_multiboot_info_addr);
-    
+
     // Create new PML4 with memory validation
     void* pml4_phys = AllocPage();
     if (!pml4_phys) PANIC("Failed to allocate PML4");
@@ -267,15 +275,12 @@ void KernelMain(const uint32_t magic, const uint32_t info) {
     PrintKernelSuccess("[SYSTEM] Bootstrap: Mapping kernel stack with guard pages...\n");
     uint64_t stack_phys_start = (uint64_t)kernel_stack & ~0xFFF;
     uint64_t stack_phys_end = ((uint64_t)kernel_stack + KERNEL_STACK_SIZE + 0xFFF) & ~0xFFF;
-    
-    // Create guard page BEFORE stack (unmapped)
-    PrintKernel("[GUARD] Stack guard page before stack (unmapped)\n");
-    
+
     // Map actual stack
     for (uint64_t paddr = stack_phys_start; paddr < stack_phys_end; paddr += PAGE_SIZE) {
         BootstrapMapPage(pml4_addr, paddr + KERNEL_VIRTUAL_OFFSET, paddr, PAGE_WRITABLE);
     }
-    
+
     // Create guard page AFTER stack (unmapped)
     PrintKernel("[GUARD] Stack guard page after stack (unmapped)\n");
 
@@ -323,7 +328,7 @@ void KernelMainHigherHalf(void) {
 
     PrintKernelSuccess("[SYSTEM] Kernel initialization complete\n");
     PrintKernelSuccess("[SYSTEM] Initializing interrupts...\n\n");
-    
+
     asm volatile("sti");
     while (1) {
         if (ShouldSchedule()) {
