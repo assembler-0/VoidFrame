@@ -69,6 +69,16 @@ static void ConsolePutchar(char c) {
             console.line++;
             console.column = 0;
         }
+    } else if (c == '\b') {
+        if (console.column > 0) {
+            console.column--;
+            ConsolePutcharAt(' ' , console.column, console.line, console.color);
+        } else if (console.line > 0) {
+            console.line--;
+            console.column = VGA_WIDTH - 1;
+            ConsolePutcharAt(' ', console.column, console.line, console.color);
+        }
+        // Do not scroll on backspace
     } else if (c >= 32) { // Printable characters only
         ConsolePutcharAt(c, console.column, console.line, console.color);
         console.column++;
@@ -97,8 +107,8 @@ void PrintKernel(const char* str) {
     }
 
     console.color = original_color;
-    SerialWrite(str);
     SpinUnlock(&lock);
+    SerialWrite(str);
 }
 
 // Colored output variants
@@ -144,7 +154,6 @@ void PrintKernelHex(uint64_t num) {
     }
 
     PrintKernel(&buffer[pos + 1]);
-    SerialWrite(&buffer[pos + 1]);
 }
 
 // Optimized integer printing with proper sign handling
@@ -172,7 +181,6 @@ void PrintKernelInt(int64_t num) {
     }
 
     PrintKernel(&buffer[pos + 1]);
-    SerialWrite(&buffer[pos + 1]);
 }
 
 // Safe positioned printing

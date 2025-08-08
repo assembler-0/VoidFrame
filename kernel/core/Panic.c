@@ -195,7 +195,9 @@ void KernelPanicHandler(const char* message, uint64_t error_code, PanicContext* 
 
     PanicPrintCentered(23, "SYSTEM HALTED", COLOR_BRIGHT_WHITE_ON_RED);
 
-    SerialWrite("\n[FATAl] - [KERNEL PANIC] -- [not syncing - General Protection Fault] -- EXPERIMENTAL\n");
+    SerialWrite("\n[FATAL] - [KERNEL PANIC] -- ");
+    if (message) SerialWrite(message);
+    SerialWrite("\n");
     // Standard practice is to halt indefinitely, allowing the user to read the screen.
     // Forcing a reboot might lose valuable diagnostic info.
     while (1) {

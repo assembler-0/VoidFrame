@@ -21,8 +21,8 @@
 
 - [x] Physical memory manager (free list or bitmap)
 - [x] Page table setup (paging enabled)
-- [ ] Virtual memory mapping API (`vmem_map()`, etc.)
-- [ ] Kernel heap (virtual, malloc/free)
+- [x] Virtual memory mapping API (`vmem_map()`, etc.)
+- [x] Kernel heap (virtual, malloc/free)
 - [ ] Per-process page tables
 - [ ] User-mode memory protection
 
@@ -42,7 +42,7 @@
 
 ---
 
-## 🔐 Ring 3 Support (Userspace) (unmaintained)
+## 🔐 Ring 3 Support (Userspace) (uhhh)
 
 - [ ] User-mode process flag
 - [ ] IRETQ from syscall/interrupt
@@ -56,7 +56,7 @@
 ## 🧩 Module System
 
 - [x] Multiboot2 module loading
-- [ ] Basic kernel extensions (`vmod`)
+- [ ] Basic kernel extensions
 - [ ] Signature/token validation
 - [ ] Hot module unloading (optional)
 - [ ] Module registration system
@@ -76,16 +76,15 @@
 
 ## 🧠 Init System
 
-- [x] Boot SKIS (SecureKernelIntegritySubsystem)
 - [ ] Create `init` process from `vmod` or ELF
-- [x] Init spawns userland shell or TUI
+- [x] Init spawns shell or TUI
 
 ---
 
 ## 💬 IPC / Syscalls
 
 - [x] Syscall dispatch system
-- [ ] Basic message passing (pipe, queue, or buffer)
+- [x] Basic message passing (pipe, queue, or buffer)
 - [ ] Shared memory region
 - [ ] Signals or async delivery
 - [ ] Named channels or sockets
@@ -115,7 +114,7 @@
 ## 🔧 Debug & Developer Features
 
 - [x] Print kernel logs to VGA
-- [ ] Serial logging
+- [x] Serial logging
 - [x] `dmesg`-style kernel log buffer
 - [ ] Stack backtrace / panic debug dump
 - [ ] Memory usage counters
