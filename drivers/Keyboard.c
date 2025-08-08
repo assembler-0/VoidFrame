@@ -5,10 +5,10 @@
 #define KEYBOARD_DATA_PORT 0x60
 #define KEYBOARD_STATUS_PORT 0x64
 
-static char input_buffer[256];
-static int buffer_head = 0;
-static int buffer_tail = 0;
-static int buffer_count = 0;
+static volatile char input_buffer[256];
+static volatile int buffer_head = 0;
+static volatile int buffer_tail = 0;
+static volatile int buffer_count = 0;
 
 static char scancode_to_ascii[] = {
     0, 0, '1', '2', '3', '4', '5', '6', '7', '8', '9', '0', '-', '=', '\b',
@@ -33,7 +33,7 @@ void KeyboardHandler(void) {
     if (scancode >= sizeof(scancode_to_ascii)) return; // Invalid scancode
     
     char c = scancode_to_ascii[scancode];
-    if (c && buffer_count < 255) {
+    if (c && buffer_count < 256) {
         input_buffer[buffer_tail] = c;
         buffer_tail = (buffer_tail + 1) % 256;
         buffer_count++;

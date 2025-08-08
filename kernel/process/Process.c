@@ -27,7 +27,7 @@
 
 static const uint64_t SECURITY_MAGIC = 0x5EC0DE4D41474943ULL;
 static const uint64_t SECURITY_SALT = 0xDEADBEEFCAFEBABEULL;
-static const uint32_t MAX_SECURITY_VIOLATIONS = 5;
+static const uint32_t MAX_SECURITY_VIOLATIONS = SECURITY_VIOLATION_LIMIT;
 
 static Process processes[MAX_PROCESSES] ALIGNED_CACHE;
 static volatile uint32_t next_pid = 1;

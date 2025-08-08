@@ -3,8 +3,8 @@
 #include "Console.h"
 #include "Gdt.h"
 #include "Idt.h"
-#include "Keyboard.h"
 #include "KernelHeap.h"
+#include "Keyboard.h"
 #include "MemOps.h"
 #include "Memory.h"
 #include "Multiboot2.h"
@@ -14,6 +14,7 @@
 #include "Shell.h"
 #include "Syscall.h"
 #include "VMem.h"
+#include "stdbool.h"
 #include "stdint.h"
 
 void KernelMainHigherHalf(void);
@@ -114,14 +115,39 @@ void BootstrapMapPage(uint64_t pml4_phys, uint64_t vaddr, uint64_t paddr, uint64
 static void SetupMemoryProtection(void) {
     PrintKernel("[SYSTEM] Setting up memory protection...\n");
 
-    // Enable SMEP/SMAP if available
+    // Check CPUID for SMEP/SMAP support
+    uint32_t eax, ebx, ecx, edx;
+    __asm__ volatile("cpuid"
+                     : "=a"(eax), "=b"(ebx), "=c"(ecx), "=d"(edx)
+                     : "a"(7), "c"(0));
+
     uint64_t cr4;
     __asm__ volatile("mov %%cr4, %0" : "=r"(cr4));
 
-    PrintKernel("[SYSTEM] CR4 features enabled\n");
-    PrintKernelSuccess("[SYSTEM] Memory protection configured\n");
-}
+    bool protection_enabled = false;
 
+    // Enable SMEP if supported (bit 7 in EBX from CPUID leaf 7)
+    if (ebx & (1 << 7)) {
+        cr4 |= (1ULL << 20);  // CR4.SMEP
+        PrintKernel("[SYSTEM] SMEP enabled\n");
+        protection_enabled = true;
+    }
+
+    // Enable SMAP if supported (bit 20 in EBX from CPUID leaf 7)
+    if (ebx & (1 << 20)) {
+        cr4 |= (1ULL << 21);  // CR4.SMAP
+        PrintKernel("[SYSTEM] SMAP enabled\n");
+        protection_enabled = true;
+    }
+
+    // Write back the modified CR4
+    if (protection_enabled) {
+        __asm__ volatile("mov %0, %%cr4" :: "r"(cr4) : "memory");
+        PrintKernelSuccess("[SYSTEM] Memory protection configured\n");
+    } else {
+        PrintKernel("[SYSTEM] No memory protection features available\n");
+    }
+}
 
 static InitResultT CoreInit(void) {
     // Initialize virtual memory manager with validation
