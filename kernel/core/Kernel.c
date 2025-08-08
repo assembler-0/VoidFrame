@@ -3,7 +3,6 @@
 #include "Console.h"
 #include "Gdt.h"
 #include "Idt.h"
-#include "Io.h"
 #include "KernelHeap.h"
 #include "Keyboard.h"
 #include "MemOps.h"
@@ -14,7 +13,7 @@
 #include "Process.h"
 #include "Serial.h"
 #include "Shell.h"
-#include "Spinlock.h"
+#include "StackGuard.h"
 #include "Syscall.h"
 #include "VMem.h"
 #include "stdbool.h"
@@ -143,6 +142,25 @@ static void SetupMemoryProtection(void) {
         protection_enabled = true;
     }
 
+    // Enable NX bit if supported
+    __asm__ volatile("cpuid" : "=a"(eax), "=d"(edx) : "a"(0x80000001) : "ebx", "ecx");
+    if (edx & (1 << 20)) {
+        uint64_t efer;
+        __asm__ volatile("rdmsr" : "=a"(efer) : "c"(0xC0000080));
+        efer |= (1ULL << 11);  // EFER.NXE
+        __asm__ volatile("wrmsr" :: "a"(efer), "c"(0xC0000080));
+        PrintKernel("[SYSTEM] NX bit enabled\n");
+        protection_enabled = true;
+    }
+
+    // Enable PCID for faster context switches
+    __asm__ volatile("cpuid" : "=a"(eax), "=c"(ecx) : "a"(1) : "ebx", "edx");
+    if (ecx & (1 << 17)) {
+        cr4 |= (1ULL << 17);  // CR4.PCIDE
+        PrintKernel("[SYSTEM] PCID enabled\n");
+        protection_enabled = true;
+    }
+
     // Write back the modified CR4
     if (protection_enabled) {
         __asm__ volatile("mov %0, %%cr4" :: "r"(cr4) : "memory");
@@ -211,7 +229,10 @@ static InitResultT CoreInit(void) {
     PrintKernelSuccess("[SYSTEM] Serial driver initialized\n");
 
     // Setup memory protection LAST - after all systems are ready
+    StackGuardInit();
     SetupMemoryProtection();
+
+    
     return INIT_SUCCESS;
 }
 
@@ -325,7 +346,7 @@ void KernelMainHigherHalf(void) {
     
     // Initialize core systems
     CoreInit();
-
+    KernelMemoryAlloc(1234123412354978);
     PrintKernelSuccess("[SYSTEM] Kernel initialization complete\n");
     PrintKernelSuccess("[SYSTEM] Initializing interrupts...\n\n");
 

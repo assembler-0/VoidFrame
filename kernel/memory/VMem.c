@@ -170,8 +170,7 @@ void* VMemAlloc(uint64_t size) {
         return NULL; // Out of virtual address space
     }
 
-    uint64_t vaddr = kernel_space.next_vaddr;
-    kernel_space.next_vaddr += size;
+    const uint64_t vaddr = kernel_space.next_vaddr;
 
     SpinUnlockIrqRestore(&vmem_lock, flags);
 
@@ -203,6 +202,7 @@ void* VMemAlloc(uint64_t size) {
 
     // Update tracking
     flags = SpinLockIrqSave(&vmem_lock);
+    kernel_space.next_vaddr = vaddr + size;
     kernel_space.used_pages += size / PAGE_SIZE;
     kernel_space.total_mapped += size;
     SpinUnlockIrqRestore(&vmem_lock, flags);
@@ -221,14 +221,15 @@ void VMemFree(void* vaddr, uint64_t size) {
 
     for (uint64_t i = 0; i < num_pages; i++) {
         uint64_t current_vaddr = start_vaddr + (i * PAGE_SIZE);
+        // acquire lock for modification
+        const irq_flags_t flags = SpinLockIrqSave(&vmem_lock);
 
         // Get physical address first (this has its own locking internally)
         uint64_t paddr = VMemGetPhysAddr(current_vaddr);
-
-        if (paddr == 0) continue; // Not mapped
-
-        // Now acquire lock for modification
-        irq_flags_t flags = SpinLockIrqSave(&vmem_lock);
+        if (paddr == 0) {
+            SpinUnlockIrqRestore(&vmem_lock, flags);
+            continue;
+        }
         // Navigate to the Page Table Entry (PTE)
         uint64_t pdp_phys = VMemGetPageTablePhys((uint64_t)kernel_space.pml4, current_vaddr, 0, 0);
         if (!pdp_phys) { SpinUnlockIrqRestore(&vmem_lock, flags); continue; }
