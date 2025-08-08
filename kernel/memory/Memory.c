@@ -144,11 +144,11 @@ int MemoryInit(uint32_t multiboot_info_addr) {
     }
 
     // 2. Reserve the physical memory used by the kernel itself.
-    uint64_t kernel_start_addr = (uint64_t)_kernel_phys_start;
-    uint64_t kernel_end_addr = (uint64_t)_kernel_phys_end;
+    const uint64_t kernel_start_addr = (uint64_t)_kernel_phys_start;
+    const uint64_t kernel_end_addr = (uint64_t)_kernel_phys_end;
 
-    uint64_t kernel_start_page = kernel_start_addr / PAGE_SIZE;
-    uint64_t kernel_end_page = (kernel_end_addr + PAGE_SIZE - 1) / PAGE_SIZE;
+    const uint64_t kernel_start_page = kernel_start_addr / PAGE_SIZE;
+    const uint64_t kernel_end_page = (kernel_end_addr + PAGE_SIZE - 1) / PAGE_SIZE;
 
     PrintKernel("[INFO] Reserving kernel memory from page ");
     PrintKernelInt(kernel_start_page);
@@ -160,9 +160,10 @@ int MemoryInit(uint32_t multiboot_info_addr) {
         MarkPageUsed(i);
     }
 
-    // 3. (Optional but good) Reserve the memory used by the multiboot info itself
-    uint64_t mb_info_start_page = multiboot_info_addr / PAGE_SIZE;
-    uint64_t mb_info_end_page = (multiboot_info_addr + total_multiboot_size + PAGE_SIZE - 1) / PAGE_SIZE;
+    // 3. (Optional but good) Reserve the memory used by the multiboot info
+    // itself
+    const uint64_t mb_info_start_page = multiboot_info_addr / PAGE_SIZE;
+    const uint64_t mb_info_end_page = (multiboot_info_addr + total_multiboot_size + PAGE_SIZE - 1) / PAGE_SIZE;
     for (uint64_t i = mb_info_start_page; i < mb_info_end_page; i++) {
         MarkPageUsed(i);
     }
