@@ -1,6 +1,8 @@
 #include "Kernel.h"
 #include "AsmHelpers.h"
 #include "Console.h"
+#include "Fs.h"
+#include "FsUtils.h"
 #include "Gdt.h"
 #include "Idt.h"
 #include "KernelHeap.h"
@@ -230,10 +232,14 @@ static InitResultT CoreInit(void) {
     SerialInit();
     PrintKernelSuccess("[SYSTEM] Serial driver initialized\n");
 
+    // Initialize filesystem
+    PrintKernel("[INFO] Initializing filesystem...\n");
+    FsInit();
+    PrintKernelSuccess("[SYSTEM] VFRFS (VoidFrame RamFS) initialized\n");
+
     // Setup memory protection LAST - after all systems are ready
     StackGuardInit();
     SetupMemoryProtection();
-
     
     return INIT_SUCCESS;
 }
