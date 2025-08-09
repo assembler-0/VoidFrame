@@ -33,6 +33,13 @@
 #define PD_SHIFT            21
 #define PT_SHIFT            12
 #define PT_ADDR_MASK        0x000FFFFFFFFFF000ULL
+// Pages but BIGG
+#define HUGE_PAGE_SIZE      (2 * 1024 * 1024)  // 2MB
+#define HUGE_PAGE_SHIFT     21
+#define HUGE_PAGE_MASK      (HUGE_PAGE_SIZE - 1)
+#define HUGE_PAGE_ALIGN_UP(addr)   (((addr) + HUGE_PAGE_MASK) & ~HUGE_PAGE_MASK)
+#define HUGE_PAGE_ALIGN_DOWN(addr) ((addr) & ~HUGE_PAGE_MASK)
+#define IS_HUGE_PAGE_ALIGNED(addr) (((addr) & HUGE_PAGE_MASK) == 0)
 
 // Virtual address space layout - FIXED
 #define KERNEL_VIRTUAL_OFFSET 0xFFFFFFFF80000000ULL
@@ -53,6 +60,9 @@
 #define PAGE_ALIGN_UP(addr)   (((addr) + PAGE_MASK) & ~PAGE_MASK)
 #define IS_PAGE_ALIGNED(addr) (((addr) & PAGE_MASK) == 0)
 #define VALIDATE_PTR(ptr) do { if (!(ptr)) return NULL; } while(0)
+
+#define VMEM_GUARD_PAGES    1  // Add guard pages around allocations
+#define GUARD_PAGE_PATTERN  0xDEADBEEFDEADBEEFULL
 
 /**
  * @brief Virtual address space structure
@@ -96,6 +106,9 @@ int VMemMap(uint64_t vaddr, uint64_t paddr, uint64_t flags);
 int VMemUnmap(uint64_t vaddr, uint64_t size);
 void PrintVMemStats(void);
 void VMemMapKernel(uint64_t kernel_phys_start, uint64_t kernel_phys_end);
+
+void* VMemAllocWithGuards(uint64_t size);
+void VMemFreeWithGuards(void* ptr, uint64_t size);
 
 // Page table management functions
 uint64_t* VMemGetPageTable(uint64_t* pml4, uint64_t vaddr, int level, int create);

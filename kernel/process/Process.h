@@ -11,55 +11,55 @@
 // =============================================================================
 
 // Core Queue Configuration
-#define MAX_PRIORITY_LEVELS 6           // Total priority levels (0=highest)
-#define RT_PRIORITY_THRESHOLD 1         // Levels 0 to RT_PRIORITY_THRESHOLD-1 are RT
-#define MAX_PROCESSES 64                // Maximum concurrent processes
+#define MAX_PRIORITY_LEVELS 5           // Reduced from 6 - fewer levels = better cache locality
+#define RT_PRIORITY_THRESHOLD 2         // Increased RT levels for better interactive response
+#define MAX_PROCESSES 64                // Keep as is
 
-// Quantum Management
-#define QUANTUM_BASE 5                  // Base time quantum (ticks)
-#define QUANTUM_DECAY_SHIFT 0           // Quantum reduction per level (0 = no decay)
-#define QUANTUM_MIN 1                   // Minimum quantum allowed
-#define QUANTUM_MAX 32                  // Maximum quantum allowed
+// Quantum Management - EXPONENTIAL GROWTH for better differentiation
+#define QUANTUM_BASE 4                  // Slightly reduced base for better interactivity
+#define QUANTUM_DECAY_SHIFT 1           // Enable quantum growth: L0=4, L1=8, L2=16, L3=32, L4=64
+#define QUANTUM_MIN 2                   // Increased minimum to reduce overhead
+#define QUANTUM_MAX 64                  // Increased max for CPU-bound processes
 
-// Dynamic Quantum Adjustments
-#define IO_QUANTUM_BOOST_FACTOR 5       // Boost factor for I/O processes (n/4)
-#define IO_QUANTUM_BOOST_DIVISOR 4
-#define CPU_QUANTUM_PENALTY_FACTOR 7    // Penalty factor for CPU hogs (n/8)
-#define CPU_QUANTUM_PENALTY_DIVISOR 8
-#define CPU_INTENSIVE_MULTIPLIER 2      // Threshold multiplier for CPU intensive
+// Dynamic Quantum Adjustments - MORE AGGRESSIVE
+#define IO_QUANTUM_BOOST_FACTOR 3       // Stronger I/O boost (3/2 = 1.5x)
+#define IO_QUANTUM_BOOST_DIVISOR 2
+#define CPU_QUANTUM_PENALTY_FACTOR 3    // Stronger CPU penalty (3/4 = 0.75x)
+#define CPU_QUANTUM_PENALTY_DIVISOR 4
+#define CPU_INTENSIVE_MULTIPLIER 3      // More sensitive detection
 
-// Preemption Control
-#define PREEMPTION_BIAS 4               // Priority difference needed to preempt (higher = less preemption)
-#define CRITICAL_PREEMPTION_LEVEL 0     // Only this level can preempt aggressively
-#define PREEMPTION_MIN_PRIORITY_GAP 2   // Minimum gap for regular preemption
+// Preemption Control - MORE RESPONSIVE
+#define PREEMPTION_BIAS 2               // Reduced - allow more preemption
+#define CRITICAL_PREEMPTION_LEVEL 1     // Both levels 0 and 1 can preempt aggressively
+#define PREEMPTION_MIN_PRIORITY_GAP 1   // Smaller gap = more responsive
 
-// Fairness and Aging
-#define AGING_THRESHOLD_BASE 15         // Base ticks before aging kicks in
-#define BOOST_INTERVAL 40               // Global aging interval (ticks)
-#define FAIRNESS_BOOST_INTERVAL 20      // Local fairness boost interval
-#define FAIRNESS_BOOST_MULTIPLIER 4     // Multiplier for boost interval (boost every 20*4=80 ticks)
-#define FAIRNESS_WAIT_THRESHOLD 50      // Wait time before fairness boost (ticks)
-#define STARVATION_THRESHOLD 100        // Critical starvation prevention (ticks)
+// Fairness and Aging - MUCH MORE AGGRESSIVE
+#define AGING_THRESHOLD_BASE 8          // Faster aging trigger (was 15)
+#define BOOST_INTERVAL 15               // Much faster global aging (was 40)
+#define FAIRNESS_BOOST_INTERVAL 8       // Faster local fairness (was 20)
+#define FAIRNESS_BOOST_MULTIPLIER 2     // Reduced multiplier (8*2=16 vs 20*4=80)
+#define FAIRNESS_WAIT_THRESHOLD 20      // Faster help for waiting processes (was 50)
+#define STARVATION_THRESHOLD 50         // Faster starvation prevention (was 100)
 
-// Load Balancing
-#define LOAD_BALANCE_THRESHOLD 2        // Queue size before load balancing
-#define LOAD_BALANCE_MULTIPLIER 3       // Actual threshold = LOAD_BALANCE_THRESHOLD * MULTIPLIER
-#define HIGH_LOAD_PROCESS_COUNT 5       // System considered "high load" above this
-#define AGING_ACCELERATION_FACTOR 2     // Speed up aging under high load
+// Load Balancing - MORE ACTIVE
+#define LOAD_BALANCE_THRESHOLD 1        // Start balancing earlier
+#define LOAD_BALANCE_MULTIPLIER 2       // Threshold = 1*2 = 2 processes
+#define HIGH_LOAD_PROCESS_COUNT 4       // Lower threshold for "high load"
+#define AGING_ACCELERATION_FACTOR 3     // Faster aging under load
 
-// Process Classification
-#define IO_BOOST_THRESHOLD 1            // I/O operations before considering I/O bound
-#define IO_BOOST_CONSERVATIVE_MULTIPLIER 2  // Conservative I/O boost (threshold * 2)
-#define IO_BOOST_AGGRESSIVE_MULTIPLIER 3    // Aggressive I/O boost (threshold * 3)
-#define CPU_BURST_HISTORY 3             // Number of CPU bursts to track
-#define INTERACTIVE_BURST_DIVISOR 2     // CPU burst < QUANTUM_BASE/4 = interactive
-#define INTERACTIVE_AGGRESSIVE_DIVISOR 8 // CPU burst < QUANTUM_BASE/8 = very interactive
+// Process Classification - MORE SENSITIVE
+#define IO_BOOST_THRESHOLD 1            // Keep immediate I/O detection
+#define IO_BOOST_CONSERVATIVE_MULTIPLIER 1  // More aggressive I/O detection
+#define IO_BOOST_AGGRESSIVE_MULTIPLIER 2
+#define CPU_BURST_HISTORY 4             // Track more history for better decisions
+#define INTERACTIVE_BURST_DIVISOR 3     // More sensitive interactive detection (QUANTUM_BASE/3)
+#define INTERACTIVE_AGGRESSIVE_DIVISOR 6 // Very interactive = QUANTUM_BASE/6
 
 // Priority Adjustment Thresholds
-#define SINGLE_DEMOTION_ONLY 1          // Only demote one level at a time
-#define CPU_INTENSIVE_HISTORY_COUNT 2   // Require N consecutive CPU intensive bursts
-#define PRIORITY_RESTORE_SYSTEM 1       // Always restore system processes to base
-#define USER_RT_BOOST_THRESHOLD 4       // User processes boost to RT_PRIORITY_THRESHOLD
+#define SINGLE_DEMOTION_ONLY 1          // Keep gradual demotion
+#define CPU_INTENSIVE_HISTORY_COUNT 2   // Keep current sensitivity
+#define PRIORITY_RESTORE_SYSTEM 1       // Keep system process protection
+#define USER_RT_BOOST_THRESHOLD 2       // Easier RT promotion for responsive processes
 
 // Performance and Statistics
 #define CONTEXT_SWITCH_OVERHEAD_SAMPLES 8   // Running average sample count (powers of 2)

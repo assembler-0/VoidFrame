@@ -4,12 +4,11 @@
 #include "VMem.h"
 
 #include "Console.h"
-#include "Interrupts.h"
-#include "Kernel.h"
 #include "MemOps.h"
 #include "Memory.h"
 #include "Panic.h"
 #include "Spinlock.h"
+
 static VirtAddrSpace kernel_space;
 static volatile int vmem_lock = 0;
 static uint64_t vmem_allocations = 0;
@@ -17,7 +16,8 @@ static uint64_t vmem_frees = 0;
 static uint64_t tlb_flushes = 0;
 
 extern uint64_t total_pages;
-
+extern uint8_t _kernel_phys_start[];
+extern uint8_t _kernel_phys_end[];
 extern uint8_t _text_start[];
 extern uint8_t _text_end[];
 extern uint8_t _rodata_start[];
@@ -41,9 +41,10 @@ void VMemInit(void) {
     // Initialize kernel space tracking
     kernel_space.next_vaddr = VIRT_ADDR_SPACE_START;
     kernel_space.used_pages = 0;
-    kernel_space.total_mapped = 0;
+    kernel_space.total_mapped = IDENTITY_MAP_SIZE;
     kernel_space.pml4 = (uint64_t*)pml4_phys_addr;
-    
+    uint64_t kernel_size = (uint64_t)_kernel_phys_end - (uint64_t)_kernel_phys_start;
+    kernel_space.total_mapped += PAGE_ALIGN_UP(kernel_size);
     // Now test identity mapping
     if (VMemGetPhysAddr(0x100000) != 0x100000) {
         PANIC("Bootstrap identity mapping failed - VALIDATION FAILED");
@@ -169,6 +170,52 @@ int VMemMap(uint64_t vaddr, uint64_t paddr, uint64_t flags) {
     return VMEM_SUCCESS;
 }
 
+// Map huge page in VMem.c
+int VMemMapHuge(uint64_t vaddr, uint64_t paddr, uint64_t flags) {
+    if (!IS_HUGE_PAGE_ALIGNED(vaddr) || !IS_HUGE_PAGE_ALIGNED(paddr)) {
+        return VMEM_ERROR_ALIGN;
+    }
+
+    irq_flags_t irq_flags = SpinLockIrqSave(&vmem_lock);
+
+    if (!is_valid_phys_addr(paddr)) {
+        SpinUnlockIrqRestore(&vmem_lock, irq_flags);
+        return VMEM_ERROR_INVALID_ADDR;
+    }
+    // Get PDP table
+    uint64_t pdp_phys = VMemGetPageTablePhys((uint64_t)kernel_space.pml4, vaddr, 0, 1);
+    if (!pdp_phys) {
+        SpinUnlockIrqRestore(&vmem_lock, irq_flags);
+        return VMEM_ERROR_NOMEM;
+    }
+
+    // Get PD table
+    uint64_t pd_phys = VMemGetPageTablePhys(pdp_phys, vaddr, 1, 1);
+    if (!pd_phys) {
+        SpinUnlockIrqRestore(&vmem_lock, irq_flags);
+        return VMEM_ERROR_NOMEM;
+    }
+
+    // Access PD through identity mapping
+    uint64_t* pd_virt = (pd_phys < IDENTITY_MAP_SIZE) ?
+                        (uint64_t*)pd_phys : (uint64_t*)PHYS_TO_VIRT(pd_phys);
+
+    int pd_index = (vaddr >> PD_SHIFT) & PT_INDEX_MASK;
+
+    // Check if already mapped
+    if (pd_virt[pd_index] & PAGE_PRESENT) {
+        SpinUnlockIrqRestore(&vmem_lock, irq_flags);
+        return VMEM_ERROR_ALREADY_MAPPED;
+    }
+
+    // Set huge page mapping (PS bit = 1 for 2MB pages)
+    pd_virt[pd_index] = paddr | flags | PAGE_PRESENT | PAGE_LARGE;
+
+    VMemFlushTLBSingle(vaddr);
+    SpinUnlockIrqRestore(&vmem_lock, irq_flags);
+    return VMEM_SUCCESS;
+}
+
 void* VMemAlloc(uint64_t size) {
     if (size == 0) return NULL;
 
@@ -284,6 +331,46 @@ void VMemFree(void* vaddr, uint64_t size) {
         // Free physical page outside the lock
         FreePage((void*)paddr);
     }
+}
+
+void* VMemAllocWithGuards(uint64_t size) {
+    if (size == 0) return NULL;
+
+    // Add space for guard pages (one before, one after)
+    uint64_t total_size = size + (2 * PAGE_SIZE);
+    void* base = VMemAlloc(total_size);
+    if (!base) return NULL;
+
+    uint64_t base_addr = (uint64_t)base;
+
+    // Map guard pages with no permissions (just present bit)
+    VMemMap(base_addr, VMemGetPhysAddr(base_addr), PAGE_PRESENT);  // First guard
+    VMemMap(base_addr + PAGE_SIZE + size,
+            VMemGetPhysAddr(base_addr + PAGE_SIZE + size), PAGE_PRESENT);  // Last guard
+
+    // Fill guard pages with pattern
+    *(uint64_t*)base_addr = GUARD_PAGE_PATTERN;
+    *(uint64_t*)(base_addr + PAGE_SIZE + size) = GUARD_PAGE_PATTERN;
+
+    return (void*)(base_addr + PAGE_SIZE);  // Return user-accessible area
+}
+
+void VMemFreeWithGuards(void* ptr, uint64_t size) {
+    if (!ptr) return;
+
+    uint64_t base_addr = (uint64_t)ptr - PAGE_SIZE;
+
+    // Check guard pages for corruption
+    if (*(uint64_t*)base_addr != GUARD_PAGE_PATTERN) {
+        PrintKernelError("[VMEM] Guard page corruption detected at start!\n");
+        PANIC("Guard page corruption detected at start");
+    }
+    if (*(uint64_t*)(base_addr + PAGE_SIZE + size) != GUARD_PAGE_PATTERN) {
+        PrintKernelError("[VMEM] Guard page corruption detected at end!\n");
+        PANIC("Guard page corruption detected at end");
+    }
+
+    VMemFree((void*)base_addr, size + (2 * PAGE_SIZE));
 }
 
 uint64_t VMemGetPhysAddr(uint64_t vaddr) {

@@ -9,6 +9,7 @@
 #include "Panic.h"
 #include "Shell.h"
 #include "Spinlock.h"
+#include "VMem.h"
 #include "stdbool.h"
 
 #define offsetof(type, member) ((uint64_t)&(((type*)0)->member))
@@ -936,7 +937,7 @@ uint32_t CreateSecureProcess(void (*entry_point)(void), uint8_t privilege) {
     FastMemset(&processes[slot], 0, sizeof(Process));
 
     // Allocate aligned stack
-    void* stack = AllocPage();
+    void* stack = VMemAllocWithGuards(STACK_SIZE);
     if (UNLIKELY(!stack)) {
         FreeSlotFast(slot);
         SpinUnlockIrqRestore(&scheduler_lock, flags);
