@@ -327,10 +327,10 @@ void KernelMain(const uint32_t magic, const uint32_t info) {
     
     PrintKernelSuccess("[SYSTEM] Bootstrap: Identity mapping...\n");
     
-    for (uint64_t paddr = 0; paddr < (1024ULL * 1024 * 1024); paddr += PAGE_SIZE) {
+    for (uint64_t paddr = 0; paddr < IDENTITY_MAP_SIZE; paddr += PAGE_SIZE) {
         BootstrapMapPage(pml4_addr, paddr, paddr, PAGE_WRITABLE);
         
-        if ((paddr / PAGE_SIZE) % 1024 == 0) {
+        if (paddr / PAGE_SIZE % 32768 == 0) {
             PrintKernel(".");
         }
     }

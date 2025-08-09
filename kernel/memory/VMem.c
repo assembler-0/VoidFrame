@@ -48,7 +48,10 @@ void VMemInit(void) {
     if (VMemGetPhysAddr(0x100000) != 0x100000) {
         PANIC("Bootstrap identity mapping failed - VALIDATION FAILED");
     }
-
+    const uint64_t probe = IDENTITY_MAP_SIZE - PAGE_SIZE;
+    if (VMemGetPhysAddr(probe) != probe) {
+        PANIC("Bootstrap identity mapping failed at IDENTITY_MAP_SIZE boundary");
+    }
     PrintKernelSuccess("[SYSTEM] VMem initialized using existing PML4: ");
     PrintKernelHex(pml4_phys_addr);
     PrintKernel("\n");
