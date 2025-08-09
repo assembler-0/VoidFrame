@@ -77,7 +77,7 @@ start:
     ; Setup page tables
     ; Zero out the tables first
     mov edi, pml4_table
-    mov ecx, 4096 * 3 ; 3 pages to clear (PML4, PDP, PD)
+    mov ecx, 4096 * 6 ; 6 pages to clear (PML4, PDP, PD1, PD2, PD3, PD4)
     xor eax, eax
     rep stosb
 
@@ -87,25 +87,49 @@ start:
     mov cr3, eax
     debug_print '4' ; CR3 Loaded
 
-    ; Map the first 16MB of memory
+    ; Map the first 4GB of memory
     ; PML4[0] -> PDP Table
     mov edi, pml4_table
     lea eax, [pdp_table + 3] ; Address of PDP table + Present, R/W flags
     mov [edi], eax
 
-    ; PDP[0] -> PD Table
+    ; PDP[0] -> PD Table 1 (0-1GB)
     mov edi, pdp_table
     lea eax, [pd_table + 3] ; Address of PD table + Present, R/W flags
     mov [edi], eax
+    
+    ; PDP[1] -> PD Table 2 (1-2GB)
+    lea eax, [pd_table2 + 3]
+    mov [edi + 8], eax
+    
+    ; PDP[2] -> PD Table 3 (2-3GB)
+    lea eax, [pd_table3 + 3]
+    mov [edi + 16], eax
+    
+    ; PDP[3] -> PD Table 4 (3-4GB)
+    lea eax, [pd_table4 + 3]
+    mov [edi + 24], eax
 
-    ; Map 8 * 2MB pages = 16MB in the Page Directory
+    ; Map 4GB total (4 * 512 * 2MB pages)
     mov edi, pd_table
-    mov ecx, 8
-    mov eax, 0x83 ; Present, R/W, 2MB page size
+    mov ecx, 2048  ; 4 * 512 = 2048 entries for 4GB
+    mov eax, 0x83  ; Present, R/W, 2MB page size
 .map_loop:
     mov [edi], eax
     add edi, 8
     add eax, 0x200000 ; Next 2MB physical frame
+    
+    ; Check if we need to move to next PD table
+    cmp edi, pd_table2
+    jl .continue_loop
+    cmp edi, pd_table3
+    jl .continue_loop
+    cmp edi, pd_table4
+    jl .continue_loop
+    cmp edi, pd_table4 + 4096
+    jl .continue_loop
+    
+.continue_loop:
     loop .map_loop
     debug_print '5' ; Memory Mapped
 
@@ -247,6 +271,9 @@ align 4096
 pml4_table: resb 4096
 pdp_table:  resb 4096
 pd_table:   resb 4096
+pd_table2:  resb 4096
+pd_table3:  resb 4096
+pd_table4:  resb 4096
 
 align 16
 stack_bottom: resb 8192  ; 8KB stack

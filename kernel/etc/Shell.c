@@ -6,6 +6,7 @@
 #include "Keyboard.h"
 #include "MemOps.h"
 #include "Process.h"
+#include "StringOps.h"
 
 static char command_buffer[256];
 static int cmd_pos = 0;
@@ -110,7 +111,7 @@ static void ExecuteCommand(const char* cmd) {
         char* dir = GetArg(cmd, 1);
         if (!dir) {
             FastMemcpy(current_dir, "/", 2);
-            PrintKernel("Changed to root directory\n");
+            PrintKernel("[VFRFS] DIRECTORY SWITCHED TO /\n");
         } else {
             char new_path[256];
             if (dir[0] == '/') {
@@ -144,7 +145,7 @@ static void ExecuteCommand(const char* cmd) {
                 PrintKernel("cd: not a directory\n");
             } else {
                 FastMemcpy(current_dir, new_path, 256);
-                PrintKernel("Changed to ");
+                PrintKernel("[VFRFS] DIRECTORY SWITCHED TO ");
                 PrintKernel(current_dir);
                 PrintKernel("\n");
             }
@@ -262,6 +263,8 @@ void ShellInit(void) {
 
 void ShellProcess(void) {
     PrintKernelSuccess("VoidFrame Shell v0.0.1-beta\n");
+    ClearScreen();
+    PrintKernelSuccess("VoidFrame Shell. Press ENTER to start shell\n");
     while (1) {
         if (HasInput()) {
             char c = GetChar();

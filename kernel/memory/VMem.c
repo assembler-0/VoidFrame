@@ -128,7 +128,7 @@ int VMemMap(uint64_t vaddr, uint64_t paddr, uint64_t flags) {
 
     // Access PT through identity mapping if possible
     uint64_t* pt_virt;
-    if (pt_phys < (4 * 1024 * 1024)) {
+    if (pt_phys < IDENTITY_MAP_SIZE) {
         pt_virt = (uint64_t*)pt_phys;
     } else {
         pt_virt = (uint64_t*)PHYS_TO_VIRT(pt_phys);
@@ -242,7 +242,7 @@ void VMemFree(void* vaddr, uint64_t size) {
 
         // Access PT through identity mapping if possible
         uint64_t* pt_virt;
-        if (pt_phys < (4 * 1024 * 1024)) {
+        if (pt_phys < IDENTITY_MAP_SIZE) {
             pt_virt = (uint64_t*)pt_phys;
         } else {
             pt_virt = (uint64_t*)PHYS_TO_VIRT(pt_phys);
@@ -281,7 +281,7 @@ uint64_t VMemGetPhysAddr(uint64_t vaddr) {
 
     // Access PT through identity mapping if possible
     uint64_t* pt_virt;
-    if (pt_phys < (4 * 1024 * 1024)) {
+    if (pt_phys < IDENTITY_MAP_SIZE) {
         pt_virt = (uint64_t*)pt_phys;
     } else {
         pt_virt = (uint64_t*)PHYS_TO_VIRT(pt_phys);

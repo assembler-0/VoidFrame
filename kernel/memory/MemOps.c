@@ -86,15 +86,3 @@ int FastMemcmp(const void* ptr1, const void* ptr2, uint64_t size) {
     }
     return 0;
 }
-
-int FastStrCmp(const char* str1, const char* str2) {
-    if (!str1 || !str2) return (str1 == str2) ? 0 : (str1 ? 1 : -1);
-    
-    // Simple byte-by-byte comparison to avoid alignment issues
-    while (*str1 && *str1 == *str2) {
-        str1++;
-        str2++;
-    }
-    
-    return (unsigned char)*str1 - (unsigned char)*str2;
-}

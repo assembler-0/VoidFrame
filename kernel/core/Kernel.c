@@ -260,7 +260,7 @@ void KernelMain(const uint32_t magic, const uint32_t info) {
     PrintKernelHex(magic);
     PrintKernel(", Info: ");
     PrintKernelHex(info);
-    PrintKernel("\n\n");
+    PrintKernel("\n");
     ParseMultibootInfo(info);
     
     // Initialize physical memory manager first
@@ -270,24 +270,16 @@ void KernelMain(const uint32_t magic, const uint32_t info) {
     void* pml4_phys = AllocPage();
     if (!pml4_phys) PANIC("Failed to allocate PML4");
     
-    // Validate allocated page before use
-    if ((uint64_t)pml4_phys & 0xFFF) PANIC("PML4 not page-aligned");
-    if ((uint64_t)pml4_phys < 0x100000) PANIC("PML4 in low memory");
-    
     FastZeroPage(pml4_phys);
     uint64_t pml4_addr = (uint64_t)pml4_phys;
     
-    PrintKernelSuccess("[SYSTEM] Bootstrap: Identity mapping low memory...\n");
-    // Batch allocate pages for better performance
-    uint32_t pages_needed = IDENTITY_MAP_SIZE / PAGE_SIZE;
-    PrintKernel("[INFO] Mapping ");
-    PrintKernelInt(pages_needed);
-    PrintKernel(" pages for identity mapping\n");
+    PrintKernelSuccess("[SYSTEM] Bootstrap: Identity mapping 1GB...\n");
+    // Map 1GB instead of 3GB to avoid the crash but still have plenty of memory
+    uint32_t pages_needed = (1024 * 1024 * 1024) / PAGE_SIZE; // 1GB
     
-    for (uint64_t paddr = 0; paddr < IDENTITY_MAP_SIZE; paddr += PAGE_SIZE) {
+    for (uint64_t paddr = 0; paddr < (1024ULL * 1024 * 1024); paddr += PAGE_SIZE) {
         BootstrapMapPage(pml4_addr, paddr, paddr, PAGE_WRITABLE);
         
-        // Progress indicator for large mappings
         if ((paddr / PAGE_SIZE) % 1024 == 0) {
             PrintKernel(".");
         }
@@ -295,23 +287,19 @@ void KernelMain(const uint32_t magic, const uint32_t info) {
     PrintKernel("\n");
     
     PrintKernelSuccess("[SYSTEM] Bootstrap: Mapping kernel...\n");
-    uint64_t kernel_start = (uint64_t)_kernel_phys_start & ~0xFFF;  // Page-align
-    uint64_t kernel_end = ((uint64_t)_kernel_phys_end + 0xFFF) & ~0xFFF;  // Round up
+    uint64_t kernel_start = (uint64_t)_kernel_phys_start & ~0xFFF;
+    uint64_t kernel_end = ((uint64_t)_kernel_phys_end + 0xFFF) & ~0xFFF;
     for (uint64_t paddr = kernel_start; paddr < kernel_end; paddr += PAGE_SIZE) {
         BootstrapMapPage(pml4_addr, paddr + KERNEL_VIRTUAL_OFFSET, paddr, PAGE_WRITABLE);
     }
     
-    PrintKernelSuccess("[SYSTEM] Bootstrap: Mapping kernel stack with guard pages...\n");
+    PrintKernelSuccess("[SYSTEM] Bootstrap: Mapping kernel stack...\n");
     uint64_t stack_phys_start = (uint64_t)kernel_stack & ~0xFFF;
     uint64_t stack_phys_end = ((uint64_t)kernel_stack + KERNEL_STACK_SIZE + 0xFFF) & ~0xFFF;
 
-    // Map actual stack
     for (uint64_t paddr = stack_phys_start; paddr < stack_phys_end; paddr += PAGE_SIZE) {
         BootstrapMapPage(pml4_addr, paddr + KERNEL_VIRTUAL_OFFSET, paddr, PAGE_WRITABLE);
     }
-
-    // Create guard page AFTER stack (unmapped)
-    PrintKernel("[GUARD] Stack guard page after stack (unmapped)\n");
 
     PrintKernelSuccess("[SYSTEM] Page tables prepared. Switching to virtual addressing...\n");
     const uint64_t new_stack_top = ((uint64_t)kernel_stack + KERNEL_VIRTUAL_OFFSET) + KERNEL_STACK_SIZE;

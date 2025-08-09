@@ -1,9 +1,17 @@
 #include "Console.h"
-
+#include "Io.h"
 #include "Serial.h"
 #include "Spinlock.h"
 #include "stdbool.h"
 #include "stdint.h"
+
+static void UpdateCursor(void) {
+    uint16_t pos = console.line * VGA_WIDTH + console.column;
+    outb(0x3D4, 0x0F);
+    outb(0x3D5, (uint8_t)(pos & 0xFF));
+    outb(0x3D4, 0x0E);
+    outb(0x3D5, (uint8_t)((pos >> 8) & 0xFF));
+}
 
 static volatile int lock = 0;
 // Inline functions for better performance
@@ -37,6 +45,7 @@ void ClearScreen(void) {
 
     console.line = 0;
     console.column = 0;
+    UpdateCursor();
     SpinUnlock(&lock);;
 }
 
@@ -93,6 +102,8 @@ static void ConsolePutchar(char c) {
         ConsoleScroll();
         console.line = VGA_HEIGHT - 1;
     }
+    
+    UpdateCursor();
 }
 
 // Modern string output with length checking

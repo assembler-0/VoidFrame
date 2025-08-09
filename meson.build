@@ -76,6 +76,7 @@ c_sources = [
     src_root + '/kernel/etc/Shell.c',
     src_root + '/kernel/etc/Console.c',
     src_root + '/kernel/etc/Editor.c',
+    src_root + '/kernel/etc/StringOps.c',
     src_root + '/fs/Fs.c',
     src_root + '/fs/FsUtils.c',
     arch_root + '/idt/Idt.c',
