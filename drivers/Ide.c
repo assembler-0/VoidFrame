@@ -9,32 +9,35 @@ static volatile int ide_lock = 0;
 
 // Wait for drive to be ready (not busy)
 static int IdeWaitReady(uint16_t base_port) {
-    uint32_t timeout = 100000;  // ~100ms timeout
+    uint32_t timeout = 500000;  // Increased timeout for QEMU
     
     while (timeout--) {
         uint8_t status = inb(base_port + IDE_REG_STATUS);
         if (!(status & IDE_STATUS_BSY)) {
-            if (status & IDE_STATUS_ERR) {
+            if (status & IDE_STATUS_ERR)
                 return IDE_ERROR_IO;
-            }
-            return IDE_OK;
+            return IDE_OK;  // Don't require RDY bit
         }
+        // Small delay
+        for (volatile int i = 0; i < 100; i++);
     }
     return IDE_ERROR_TIMEOUT;
 }
 
 // Wait for data ready
 static int IdeWaitData(uint16_t base_port) {
-    uint32_t timeout = 100000;
+    uint32_t timeout = 500000;  // Increased timeout
     
     while (timeout--) {
         uint8_t status = inb(base_port + IDE_REG_STATUS);
-        if (status & IDE_STATUS_DRQ) {
+        if (!(status & IDE_STATUS_BSY) && (status & IDE_STATUS_DRQ)) {
             return IDE_OK;
         }
         if (status & IDE_STATUS_ERR) {
             return IDE_ERROR_IO;
         }
+        // Small delay
+        for (volatile int i = 0; i < 100; i++);
     }
     return IDE_ERROR_TIMEOUT;
 }
@@ -65,9 +68,12 @@ static int IdeIdentifyDrive(uint16_t base_port, uint8_t drive, uint16_t* buffer)
     // Send IDENTIFY command
     outb(base_port + IDE_REG_COMMAND, IDE_CMD_IDENTIFY);
     
-    // Check if drive exists
+    // Wait a bit after command
+    for (volatile int i = 0; i < 1000; i++);
+    
+    // Check if drive exists - be more lenient
     uint8_t status = inb(base_port + IDE_REG_STATUS);
-    if (status == 0) return IDE_ERROR_NO_DRIVE;
+    if (status == 0 || status == 0xFF) return IDE_ERROR_NO_DRIVE;
     
     result = IdeWaitData(base_port);
     if (result != IDE_OK) return result;
@@ -146,15 +152,15 @@ int IdeReadSector(uint8_t drive, uint32_t lba, void* buffer) {
         return IDE_ERROR_NO_DRIVE;
     }
     
-    irq_flags_t flags = SpinLockIrqSave(&ide_lock);
-    
+    // Protect access to shared channels structure only
+    SpinLock(&ide_lock);
     uint16_t base_port = channels[channel].base_port;
+    SpinUnlock(&ide_lock);
     int result;
     
     // Select drive and set LBA
     result = IdeSelectDrive(base_port, drive_num, lba);
     if (result != IDE_OK) {
-        SpinUnlockIrqRestore(&ide_lock, flags);
         return result;
     }
     
@@ -170,7 +176,6 @@ int IdeReadSector(uint8_t drive, uint32_t lba, void* buffer) {
     // Wait for data ready
     result = IdeWaitData(base_port);
     if (result != IDE_OK) {
-        SpinUnlockIrqRestore(&ide_lock, flags);
         return result;
     }
     
@@ -180,7 +185,6 @@ int IdeReadSector(uint8_t drive, uint32_t lba, void* buffer) {
         buf16[i] = inw(base_port + IDE_REG_DATA);
     }
     
-    SpinUnlockIrqRestore(&ide_lock, flags);
     return IDE_OK;
 }
 
@@ -194,15 +198,15 @@ int IdeWriteSector(uint8_t drive, uint32_t lba, const void* buffer) {
         return IDE_ERROR_NO_DRIVE;
     }
     
-    irq_flags_t flags = SpinLockIrqSave(&ide_lock);
-    
+    // Protect access to shared channels structure only
+    SpinLock(&ide_lock);
     uint16_t base_port = channels[channel].base_port;
+    SpinUnlock(&ide_lock);
     int result;
     
     // Select drive and set LBA
     result = IdeSelectDrive(base_port, drive_num, lba);
     if (result != IDE_OK) {
-        SpinUnlockIrqRestore(&ide_lock, flags);
         return result;
     }
     
@@ -218,7 +222,6 @@ int IdeWriteSector(uint8_t drive, uint32_t lba, const void* buffer) {
     // Wait for data ready
     result = IdeWaitData(base_port);
     if (result != IDE_OK) {
-        SpinUnlockIrqRestore(&ide_lock, flags);
         return result;
     }
     
@@ -230,7 +233,6 @@ int IdeWriteSector(uint8_t drive, uint32_t lba, const void* buffer) {
     
     // Wait for write completion
     result = IdeWaitReady(base_port);
-    SpinUnlockIrqRestore(&ide_lock, flags);
     return result;
 }
 

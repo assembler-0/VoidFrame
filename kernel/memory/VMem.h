@@ -38,9 +38,9 @@
 #define KERNEL_VIRTUAL_OFFSET 0xFFFFFFFF80000000ULL
 #define KERNEL_VIRTUAL_BASE   KERNEL_VIRTUAL_OFFSET
 
-// Heap space layout
-#define VIRT_ADDR_SPACE_START 0xFFFF800000000000ULL  // Heap start
-#define VIRT_ADDR_SPACE_END   0xFFFFFFFF7FFFFFFFULL  // Heap end (before kernel)
+// Heap space layout - Non-overlapping canonical addresses
+#define VIRT_ADDR_SPACE_START 0xFFFF800000000000ULL  // Heap start (canonical)
+#define VIRT_ADDR_SPACE_END   0xFFFFFFFF7FFFFFFFULL  // End before kernel space
 #define KERNEL_SPACE_START    KERNEL_VIRTUAL_BASE    // Kernel starts here
 #define KERNEL_SPACE_END      0xFFFFFFFFFFFFFFFFULL  // Kernel ends at top
 

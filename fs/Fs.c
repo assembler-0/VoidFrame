@@ -3,6 +3,8 @@
 #include "KernelHeap.h"
 #include "MemOps.h"
 #include "Process.h"
+#include "StringOps.h"
+#include "Serial.h"
 
 static FsNode* root_node = NULL;
 static FileHandle file_handles[MAX_OPEN_FILES];
@@ -72,7 +74,12 @@ FsNode* FsCreateNode(const char* name, FsNodeType type, FsNode* parent) {
     FsNode* node = AllocNode();
     if (!node) return NULL;
     
-    FastMemcpy(node->name, name, MAX_FILENAME);
+    int len = 0;
+    while (name[len] && len < MAX_FILENAME - 1) {
+        node->name[len] = name[len];
+        len++;
+    }
+    node->name[len] = '\0';
     node->type = type;
     node->parent = parent;
     node->size = 0;
@@ -93,9 +100,21 @@ FsNode* FsCreateNode(const char* name, FsNodeType type, FsNode* parent) {
 }
 
 FsNode* FsFind(const char* path) {
-    if (!path || !root_node) return NULL;
+    SerialWrite("[FS] FsFind called with path: ");
+    if (!path) {
+        SerialWrite("NULL\n");
+        return NULL;
+    }
+    SerialWrite(path);
+    SerialWrite("\n");
+    
+    if (!root_node) {
+        SerialWrite("[FS] root_node is NULL!\n");
+        return NULL;
+    }
     
     if (path[0] == '/' && path[1] == '\0') {
+        SerialWrite("[FS] Returning root node\n");
         return root_node;
     }
     
@@ -112,9 +131,24 @@ FsNode* FsFind(const char* path) {
             
             if (name_idx == 0) continue;
             
+            SerialWrite("[FS] Looking for child: ");
+            SerialWrite(name_buf);
+            SerialWrite("\n");
+            
             FsNode* child = current->children;
             while (child) {
-                if (FastMemcmp(child->name, name_buf, name_idx + 1) == 0) {
+                SerialWrite("[FS] Checking child at: 0x");
+                SerialWriteHex((uint64_t)child);
+                SerialWrite(" name: ");
+                if (child->name) {
+                    SerialWrite(child->name);
+                } else {
+                    SerialWrite("NULL");
+                }
+                SerialWrite("\n");
+                
+                if (FastStrCmp(child->name, name_buf) == 0) {
+                    SerialWrite("[FS] Found match!\n");
                     current = child;
                     break;
                 }
@@ -150,9 +184,18 @@ int FsOpen(const char* path, FsOpenFlags flags) {
         
         if (last_slash == -1) return -1;
         
-        FastMemcpy(parent_path, path, last_slash + 1);
+        for (int i = 0; i <= last_slash; i++) {
+            parent_path[i] = path[i];
+        }
         parent_path[last_slash + 1] = '\0';
-        FastMemcpy(filename, path + last_slash + 1, MAX_FILENAME);
+        
+        int fn_len = 0;
+        const char* fn_start = path + last_slash + 1;
+        while (fn_start[fn_len] && fn_len < MAX_FILENAME - 1) {
+            filename[fn_len] = fn_start[fn_len];
+            fn_len++;
+        }
+        filename[fn_len] = '\0';
         
         FsNode* parent = FsFind(parent_path);
         if (!parent || parent->type != FS_DIRECTORY) return -1;
@@ -338,7 +381,7 @@ int FsCreateDir(const char* path) {
     return FsMkdir(path);
 }
 
-int FsWriteFile(const char* path, const void* buffer, uint32_t size) {
+int FsWriteFile(const char* path, const void* buffer, size_t size) {
     int fd = FsOpen(path, FS_WRITE);
     if (fd < 0) return -1;
     int result = FsWrite(fd, buffer, size);

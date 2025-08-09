@@ -33,3 +33,15 @@ void SerialWrite(const char* str) {
         SerialWriteChar(str[i]);
     }
 }
+
+void SerialWriteHex(uint64_t value) {
+    const char hex[] = "0123456789ABCDEF";
+    char buffer[17];
+    buffer[16] = '\0';
+    
+    for (int i = 15; i >= 0; i--) {
+        buffer[15-i] = hex[(value >> (i * 4)) & 0xF];
+    }
+    
+    SerialWrite(buffer);
+}

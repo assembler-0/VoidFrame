@@ -51,13 +51,10 @@ void VMemInit(void) {
 static uint64_t VMemGetPageTablePhys(uint64_t pml4_phys, uint64_t vaddr, int level, int create) {
     if (!is_valid_phys_addr(pml4_phys)) return 0;
 
-    // Access page table through identity mapping
-    uint64_t* table_virt;
-    if (pml4_phys < IDENTITY_MAP_SIZE) {
-        table_virt = (uint64_t*)pml4_phys;
-    } else {
-        table_virt = (uint64_t*)PHYS_TO_VIRT(pml4_phys);
-    }
+    // Access the table via identity map when available, otherwise via higher-half mapping
+    uint64_t* table_virt = (pml4_phys < IDENTITY_MAP_SIZE)
+        ? (uint64_t*)pml4_phys
+        : (uint64_t*)PHYS_TO_VIRT(pml4_phys);
 
     int shift = 39 - (level * 9);
     int index = (vaddr >> shift) & PT_INDEX_MASK;
@@ -66,14 +63,25 @@ static uint64_t VMemGetPageTablePhys(uint64_t pml4_phys, uint64_t vaddr, int lev
     if (!(table_virt[index] & PAGE_PRESENT)) {
         if (!create) return 0;
 
-        void* new_table_phys = AllocPage();
+        // Allocate page-table memory from identity-mapped low memory to ensure accessibility
+        void* new_table_phys = NULL;
+        for (int attempt = 0; attempt < 32; attempt++) {
+            void* candidate = AllocPage();
+            if (!candidate) break;
+            if ((uint64_t)candidate < IDENTITY_MAP_SIZE) {
+                new_table_phys = candidate;
+                break;
+            }
+            // Not identity-mapped; return it to the pool and try again
+            FreePage(candidate);
+        }
         if (!new_table_phys) return 0;
         if (!is_valid_phys_addr((uint64_t)new_table_phys)) {
             FreePage(new_table_phys);
             return 0;
         }
 
-        // Zero the new table using identity mapping if possible
+        // Zero the new table using an address we can access
         if ((uint64_t)new_table_phys < IDENTITY_MAP_SIZE) {
             FastZeroPage(new_table_phys);
         } else {

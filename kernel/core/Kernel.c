@@ -75,7 +75,14 @@ void BootstrapMapPage(uint64_t pml4_phys, uint64_t vaddr, uint64_t paddr, uint64
     int pml4_idx = (vaddr >> 39) & 0x1FF;
     uint64_t pdpt_phys;
     if (!(pml4[pml4_idx] & PAGE_PRESENT)) {
-        pdpt_phys = (uint64_t)AllocPage();
+        // allocate PDPT in identity-mapped region
+        pdpt_phys = 0;
+        for (int attempt = 0; attempt < 32; attempt++) {
+            void* candidate = AllocPage();
+            if (!candidate) break;
+            if ((uint64_t)candidate < IDENTITY_MAP_SIZE) { pdpt_phys = (uint64_t)candidate; break; }
+            FreePage(candidate);
+        }
         if (!pdpt_phys) PANIC("BootstrapMapPage: Out of memory for PDPT");
         if (pdpt_phys & 0xFFF) PANIC("PDPT not aligned");
         FastZeroPage((void*)pdpt_phys);
@@ -90,7 +97,14 @@ void BootstrapMapPage(uint64_t pml4_phys, uint64_t vaddr, uint64_t paddr, uint64
     int pdpt_idx = (vaddr >> 30) & 0x1FF;
     uint64_t pd_phys;
     if (!(pdpt[pdpt_idx] & PAGE_PRESENT)) {
-        pd_phys = (uint64_t)AllocPage();
+        // allocate PD in identity-mapped region
+        pd_phys = 0;
+        for (int attempt = 0; attempt < 32; attempt++) {
+            void* candidate = AllocPage();
+            if (!candidate) break;
+            if ((uint64_t)candidate < IDENTITY_MAP_SIZE) { pd_phys = (uint64_t)candidate; break; }
+            FreePage(candidate);
+        }
         if (!pd_phys) PANIC("BootstrapMapPage: Out of memory for PD");
         FastZeroPage((void*)pd_phys);
         pdpt[pdpt_idx] = pd_phys | PAGE_PRESENT | PAGE_WRITABLE;
@@ -103,7 +117,14 @@ void BootstrapMapPage(uint64_t pml4_phys, uint64_t vaddr, uint64_t paddr, uint64
     const int pd_idx = (vaddr >> 21) & 0x1FF;
     uint64_t pt_phys;
     if (!(pd[pd_idx] & PAGE_PRESENT)) {
-        pt_phys = (uint64_t)AllocPage();
+        // allocate PT in identity-mapped region
+        pt_phys = 0;
+        for (int attempt = 0; attempt < 32; attempt++) {
+            void* candidate = AllocPage();
+            if (!candidate) break;
+            if ((uint64_t)candidate < IDENTITY_MAP_SIZE) { pt_phys = (uint64_t)candidate; break; }
+            FreePage(candidate);
+        }
         if (!pt_phys) PANIC("BootstrapMapPage: Out of memory for PT");
         FastZeroPage((void*)pt_phys);
         pd[pd_idx] = pt_phys | PAGE_PRESENT | PAGE_WRITABLE;
@@ -236,15 +257,20 @@ static InitResultT CoreInit(void) {
 
     // Initialize IDE driver
     PrintKernel("[INFO] Initializing IDE driver...\n");
-    IdeInit();
-    PrintKernelSuccess("[SYSTEM] IDE driver initialized\n");
-
-    // Explicitly initialize FAT12 before VFS (explicit > auto-detect)
-    PrintKernel("[INFO] Initializing FAT12...\n");
-    if (Fat12Init(0) == 0) {
-        PrintKernelSuccess("[SYSTEM] FAT12 Driver initialized\n");
+    int ide_result = IdeInit();
+    if (ide_result == IDE_OK) {
+        PrintKernelSuccess("[SYSTEM] IDE driver initialized\n");
+        
+        // Explicitly initialize FAT12 before VFS (explicit > auto-detect)
+        PrintKernel("[INFO] Initializing FAT12...\n");
+        if (Fat12Init(0) == 0) {
+            PrintKernelSuccess("[SYSTEM] FAT12 Driver initialized\n");
+        } else {
+            PrintKernelWarning("[WARN] FAT12 initialization failed\n");
+        }
     } else {
-        PrintKernelWarning("[WARN] FAT12 initialization failed\n");
+        PrintKernelWarning("[WARN] IDE initialization failed - no drives detected\n");
+        PrintKernelWarning("[WARN] Skipping FAT12 initialization\n");
     }
 
     // Initialize ram filesystem
@@ -286,9 +312,15 @@ void KernelMain(const uint32_t magic, const uint32_t info) {
     // Initialize physical memory manager first
     MemoryInit(g_multiboot_info_addr);
 
-    // Create new PML4 with memory validation
-    void* pml4_phys = AllocPage();
-    if (!pml4_phys) PANIC("Failed to allocate PML4");
+    // Create new PML4 with memory validation (ensure identity-mapped physical page)
+    void* pml4_phys = NULL;
+    for (int attempt = 0; attempt < 64; attempt++) {
+        void* candidate = AllocPage();
+        if (!candidate) break;
+        if ((uint64_t)candidate < IDENTITY_MAP_SIZE) { pml4_phys = candidate; break; }
+        FreePage(candidate);
+    }
+    if (!pml4_phys) PANIC("Failed to allocate PML4 in identity-mapped memory");
     
     FastZeroPage(pml4_phys);
     uint64_t pml4_addr = (uint64_t)pml4_phys;

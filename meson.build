@@ -10,6 +10,8 @@ project('voidframe', 'c',
 
 nasm = find_program('nasm')
 grub_mkrescue = find_program('grub-mkrescue')
+qemu_img  = find_program('qemu-img', required : true)
+mkfs_fat  = find_program('mkfs.fat', required : true)
 
 # Source root
 src_root = './'
@@ -150,7 +152,7 @@ iso = custom_target('VoidFrame.iso',
 
 # Run target
 run_target('run',
-           command : ['qemu-system-x86_64', '-cdrom', 'VoidFrame.iso',  '-debugcon', 'stdio' , '-no-reboot','-no-shutdown','-m', '1G', '-drive', 'file=VoidFrameDisk.img,format=raw,if=ide', '-boot', 'd']
+           command : ['qemu-system-x86_64', '-cdrom', 'VoidFrame.iso',  '-serial', 'stdio' , '-no-reboot','-no-shutdown','-m', '1G', '-drive', 'file=VoidFrameDisk.img,format=raw,if=ide', '-boot', 'd']
 )
 
 run_target('img',

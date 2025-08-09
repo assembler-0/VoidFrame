@@ -5,7 +5,7 @@
 #include "Keyboard.h"
 #include "Panic.h"
 #include "Process.h"
-
+#include "Serial.h"
 // The C-level interrupt handler, called from the assembly stub
 void InterruptHandler(Registers* regs) {
     ASSERT(regs != NULL);
@@ -72,9 +72,22 @@ void InterruptHandler(Registers* regs) {
             uint64_t cr2;
             asm volatile("mov %%cr2, %0" : "=r"(cr2));
 
+            // Serial logging for debugging
+            SerialWrite("\n[PAGEFAULT] CR2: 0x");
+            SerialWriteHex(cr2);
+            SerialWrite(" RIP: 0x");
+            SerialWriteHex(regs->rip);
+            SerialWrite(" RSP: 0x");
+            SerialWriteHex(regs->rsp);
+            SerialWrite(" Error: 0x");
+            SerialWriteHex(regs->error_code);
+            SerialWrite("\n");
+
             PrintKernelError("  TYPE: Page Fault (PF)\n");
             PrintKernelError("  Faulting Address: ");
             PrintKernelHex(cr2);
+            PrintKernelError("\n  RIP: ");
+            PrintKernelHex(regs->rip);
             PrintKernelError("\n  Error Code: ");
             PrintKernelHex(regs->error_code);
             PrintKernelError("\n  Details:\n");
