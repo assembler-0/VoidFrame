@@ -1,10 +1,8 @@
 #include "Memory.h"
 
 #include "Console.h"
-#include "Kernel.h"
 #include "MemOps.h"
 #include "Multiboot2.h"
-#include "Panic.h"
 #include "Spinlock.h"
 #include "VMem.h"
 
@@ -16,6 +14,10 @@
 
 extern uint8_t _kernel_phys_start[];
 extern uint8_t _kernel_phys_end[];
+
+static uint64_t allocation_count = 0;
+static uint64_t free_count = 0;
+static uint64_t huge_pages_allocated = 0;
 
 // Use 64-bit words for faster bitmap operations
 static uint64_t page_bitmap[BITMAP_WORDS];
@@ -53,7 +55,7 @@ static inline void MarkPageFree(uint64_t page_idx) {
     }
 }
 
-static inline int IsPageFree(uint64_t page_idx) {
+int IsPageFree(uint64_t page_idx) {
     if (page_idx >= total_pages) return 0;
     
     uint64_t word_idx = page_idx / 64;
@@ -230,6 +232,44 @@ void* AllocPage(void) {
     return NULL; // Out of memory
 }
 
+void* AllocHugePages(uint64_t num_pages) {
+    irq_flags_t flags = SpinLockIrqSave(&memory_lock);
+
+    // Find contiguous 2MB-aligned region (512 pages)
+    uint64_t pages_per_huge = HUGE_PAGE_SIZE / PAGE_SIZE;  // 512
+    uint64_t total_needed = num_pages * pages_per_huge;
+
+    // Search for aligned contiguous region
+    for (uint64_t start = HUGE_PAGE_ALIGN_UP(0x100000) / PAGE_SIZE;
+         start + total_needed <= total_pages;
+         start += pages_per_huge) {
+
+        // Check if all pages in this region are free
+        int all_free = 1;
+        for (uint64_t i = 0; i < total_needed; i++) {
+            if (!IsPageFree(start + i)) {
+                all_free = 0;
+                break;
+            }
+        }
+
+        if (all_free) {
+            // Mark all pages as used
+            for (uint64_t i = 0; i < total_needed; i++) {
+                MarkPageUsed(start + i);
+            }
+
+            void* huge_page = (void*)(start * PAGE_SIZE);
+            SpinUnlockIrqRestore(&memory_lock, flags);
+            return huge_page;
+        }
+         }
+
+    SpinUnlockIrqRestore(&memory_lock, flags);
+    return NULL;  // No contiguous region found
+}
+
+
 void FreePage(void* page) {
     if (!page) {
         PrintKernelError("[MEMORY] FreePage: NULL pointer\n");
@@ -274,24 +314,55 @@ uint64_t GetFreeMemory(void) {
     return (total_pages - used_pages) * PAGE_SIZE;
 }
 
-void PrintMemoryStats(void) {
-    uint64_t free_pages = total_pages - used_pages;
-    uint64_t usage_percent = (used_pages * 100) / total_pages;
-    
-    PrintKernel("[MEMORY] Physical Memory Stats:\n");
-    PrintKernel("  Total: "); PrintKernelInt(total_pages * PAGE_SIZE / (1024 * 1024)); PrintKernel("MB\n");
-    PrintKernel("  Used: "); PrintKernelInt(used_pages * PAGE_SIZE / (1024 * 1024)); 
-    PrintKernel("MB ("); PrintKernelInt(usage_percent); PrintKernel("%)\n");
-    PrintKernel("  Free: "); PrintKernelInt(free_pages * PAGE_SIZE / (1024 * 1024)); PrintKernel("MB\n");
-    PrintKernel("  Allocation failures: "); PrintKernelInt(allocation_failures); PrintKernel("\n");
-    
-    if (low_memory_watermark > 0) {
-        PrintKernelWarning("  Low memory watermark hit\n");
+void GetDetailedMemoryStats(MemoryStats* stats) {
+    irq_flags_t flags = SpinLockIrqSave(&memory_lock);
+
+    stats->total_physical_bytes = total_pages * PAGE_SIZE;
+    stats->used_physical_bytes = used_pages * PAGE_SIZE;
+    stats->free_physical_bytes = (total_pages - used_pages) * PAGE_SIZE;
+    stats->allocation_count = allocation_count;
+    stats->free_count = free_count;
+    stats->allocation_failures = allocation_failures;
+    stats->huge_pages_allocated = huge_pages_allocated;
+
+    // Calculate fragmentation score and largest free block
+    uint64_t free_fragments = 0;
+    uint64_t current_fragment = 0;
+    uint64_t largest_fragment = 0;
+
+    for (uint64_t i = 0x100000 / PAGE_SIZE; i < total_pages; i++) {
+        if (IsPageFree(i)) {
+            current_fragment++;
+        } else {
+            if (current_fragment > 0) {
+                free_fragments++;
+                if (current_fragment > largest_fragment) {
+                    largest_fragment = current_fragment;
+                }
+                current_fragment = 0;
+            }
+        }
     }
 
-    uint64_t vmem_used, vmem_total;
-    VMemGetStats(&vmem_used, &vmem_total);
-    PrintKernel("[MEMORY] Virtual Memory Stats:\n");
-    PrintKernel("  Used pages: "); PrintKernelInt(vmem_used); PrintKernel("\n");
-    PrintKernel("  Total mapped: "); PrintKernelInt(vmem_total / (1024 * 1024)); PrintKernel("MB\n");
+    // Handle case where last pages are free
+    if (current_fragment > 0) {
+        free_fragments++;
+        if (current_fragment > largest_fragment) {
+            largest_fragment = current_fragment;
+        }
+    }
+
+    stats->largest_free_block = largest_fragment * PAGE_SIZE;
+
+    // Fragmentation score: more fragments = higher score
+    uint64_t total_free_pages = total_pages - used_pages;
+    if (total_free_pages > 0) {
+        stats->fragmentation_score = (free_fragments * 100) / (total_free_pages / 10 + 1);
+        if (stats->fragmentation_score > 100) stats->fragmentation_score = 100;
+    } else {
+        stats->fragmentation_score = 0;
+    }
+
+    SpinUnlockIrqRestore(&memory_lock, flags);
 }
+

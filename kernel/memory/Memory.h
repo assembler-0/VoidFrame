@@ -2,40 +2,33 @@
 #define MEMORY_H
 
 #include "stdint.h"
-#include "Multiboot2.h"
+
+typedef struct MemoryStats {
+    uint64_t total_physical_bytes;
+    uint64_t used_physical_bytes;
+    uint64_t free_physical_bytes;
+    uint64_t allocation_count;
+    uint64_t free_count;
+    uint64_t allocation_failures;
+    uint64_t huge_pages_allocated;
+    uint64_t fragmentation_score;  // 0-100, higher = more fragmented
+    uint64_t largest_free_block;   // Size of largest contiguous free block
+} MemoryStats;
+
 
 #define PAGE_SIZE 4096
+extern uint64_t total_pages;
 
-/**
- * @brief Initialize the physical memory manager
- * @param multiboot_info_addr Address of multiboot2 info structure
- * @return 0 on success, negative on error
- */
 int MemoryInit(uint32_t multiboot_info_addr);
 
-/**
- * @brief Allocate a single physical page
- * @return Physical address of allocated page, or NULL if out of memory
- */
 void* AllocPage(void);
-
-/**
- * @brief Free a physical page
- * @param page Physical address of page to free (must be page-aligned)
- */
 void FreePage(void* page);
+void* AllocHugePages(uint64_t num_pages);  // Allocate contiguous 2MB pages
+void FreeHugePages(void* pages, uint64_t num_pages);
 
-/**
- * @brief Get amount of free physical memory
- * @return Number of free bytes
- */
+// Misc.
+void GetDetailedMemoryStats(MemoryStats* stats);
+int IsPageFree(uint64_t page_idx);
 uint64_t GetFreeMemory(void);
-
-/**
- * @brief Print detailed memory statistics
- */
-void PrintMemoryStats(void);
-
-extern uint64_t total_pages;
 
 #endif

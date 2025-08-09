@@ -54,7 +54,7 @@ int VfsInit(void) {
     if (result != 0) {
         SerialWrite("[VFS] Failed to mount root\n");
     }
-    SerialWrite("[VFS] Root mounted");
+    SerialWrite("[VFS] Root mounted\n");
 
     // Only mount FAT12 if it was successfully initialized
     extern int fat12_initialized;

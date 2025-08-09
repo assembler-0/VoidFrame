@@ -72,6 +72,7 @@ c_sources = [
     src_root + '/kernel/memory/KernelHeap.c',
     src_root + '/kernel/memory/VMem.c',
     src_root + '/kernel/memory/StackGuard.c',
+    src_root + '/kernel/memory/MemPool.c',
     src_root + '/kernel/process/Process.c',
     src_root + '/kernel/process/UserMode.c',
     src_root + '/kernel/etc/Shell.c',
