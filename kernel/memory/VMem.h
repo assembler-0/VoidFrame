@@ -12,7 +12,7 @@
 #define PAGE_SIZE           4096
 #define PAGE_SHIFT          12
 #define PAGE_MASK           0xFFF
-#define IDENTITY_MAP_SIZE   (4 * 1024 * 1024)  // 4MB
+#define IDENTITY_MAP_SIZE   (1024 * 1024 * 1024)  // 1GB
 
 // Page table entry flags
 #define PAGE_PRESENT        0x001

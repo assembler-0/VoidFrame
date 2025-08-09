@@ -167,7 +167,7 @@ int MemoryInit(uint32_t multiboot_info_addr) {
     for (uint64_t i = mb_info_start_page; i < mb_info_end_page; i++) {
         MarkPageUsed(i);
     }
-    PrintKernelSuccess("[SYSTEM] Physical memory manager initialized");
+    PrintKernelSuccess("[SYSTEM] Physical memory manager initialized\n");
     return 0;
 }
 
