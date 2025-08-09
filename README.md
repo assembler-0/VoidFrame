@@ -95,8 +95,8 @@
 
 - [ ] Initrd loading
 - [ ] Basic filesystem parsing (e.g., tarfs or ext2-lite)
-- [ ] Read/write file API (`fs_open()`, etc.)
-- [ ] VFS layer (optional)
+- [x] Read/write file API (`fs_open()`, etc.)
+- [x] VFS layer (optional)
 - [ ] Device files (`/dev/null`, `/dev/tty0`, etc.)
 
 ---
@@ -104,10 +104,10 @@
 ## 🧑‍💻 Userland Development
 
 - [ ] Userspace C runtime (libc-lite)
-- [ ] Shell (`sh.vmod` or `sh.elf`)
-- [ ] Basic CLI utilities (`cat`, `ls`, `echo`, etc.)
-- [ ] Keyboard driver routed to userland
-- [ ] VGA console or terminal emulator
+- [x] Shell (`sh.vmod` or `sh.elf`)
+- [x] Basic CLI utilities (`cat`, `ls`, `echo`, etc.)
+- [x] Keyboard driver
+- [x] VGA console or terminal emulator
 
 ---
 
@@ -116,14 +116,14 @@
 - [x] Print kernel logs to VGA
 - [x] Serial logging
 - [x] `dmesg`-style kernel log buffer
-- [ ] Stack backtrace / panic debug dump
-- [ ] Memory usage counters
+- [x] Stack backtrace / panic debug dump
+- [x] Memory usage counters
 
 ---
 
 ## 🌈 Extra Spice (optional but cool)
 
-- [ ] Framebuffer graphics support (UEFI mode)
+- [x] Framebuffer graphics support
 - [ ] Loadable GUI modules
 - [ ] Virtual terminal switching (`tty0`, `tty1`)
 - [ ] Profiling support (ticks per process)
