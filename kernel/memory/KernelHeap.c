@@ -1,7 +1,5 @@
 #include "KernelHeap.h"
-
 #include "Console.h"
-#include "Kernel.h"
 #include "MemOps.h"
 #include "Spinlock.h"
 #include "VMem.h"
@@ -224,7 +222,7 @@ void* KernelMemoryAlloc(size_t size) {
     return BlockToUser(block);
 }
 
-void* KernelCallocate(size_t num, size_t size) {
+void* KernelAllocate(size_t num, size_t size) {
     // Check for overflow
     if (num && size > MAX_ALLOC_SIZE / num) {
         return NULL;

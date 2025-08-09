@@ -61,6 +61,6 @@ FsNode* FsReaddir(const char* path);
 int FsListDir(const char* path);
 int FsCreateFile(const char* path);
 int FsCreateDir(const char* path);
-int FsWriteFile(const char* path, const void* buffer, uint32_t size);
+int FsWriteFile(const char* path, const void* buffer, size_t size);
 
 #endif

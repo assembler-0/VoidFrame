@@ -6,7 +6,7 @@
 
 static Fat12Volume volume;
 static uint8_t* sector_buffer = NULL;
-static int fat12_initialized = 0;
+int fat12_initialized = 0;  // Make global for VFS
 
 int Fat12Init(uint8_t drive) {
     if (fat12_initialized) {
@@ -44,6 +44,8 @@ int Fat12Init(uint8_t drive) {
     uint32_t fat_size = volume.boot.sectors_per_fat * 512;
     volume.fat_table = KernelMemoryAlloc(fat_size);
     if (!volume.fat_table) {
+        KernelFree(sector_buffer);
+        sector_buffer = NULL;
         return -1;
     }
     
@@ -51,6 +53,9 @@ int Fat12Init(uint8_t drive) {
     for (int i = 0; i < volume.boot.sectors_per_fat; i++) {
         if (IdeReadSector(drive, volume.fat_sector + i, volume.fat_table + (i * 512)) != IDE_OK) {
             KernelFree(volume.fat_table);
+            volume.fat_table = NULL;
+            KernelFree(sector_buffer);
+            sector_buffer = NULL;
             return -1;
         }
     }
@@ -76,7 +81,7 @@ static uint16_t Fat12GetNextCluster(uint16_t cluster) {
 }
 
 int Fat12GetCluster(uint16_t cluster, uint8_t* buffer) {
-    if (cluster < 2 || cluster >= 0xFF8) return -1;
+    if (volume.boot.sectors_per_cluster == 0 || volume.boot.sectors_per_cluster > 8) return -1;
     
     uint32_t sector = volume.data_sector + ((cluster - 2) * volume.boot.sectors_per_cluster);
     
@@ -90,13 +95,13 @@ int Fat12GetCluster(uint16_t cluster, uint8_t* buffer) {
 }
 
 int Fat12ListRoot(void) {
-    PrintKernel("[FAT12] Root directory contents:\n");
+    PrintKernel("[SYSTEM] Root directory contents:\n");
     
     uint32_t root_sectors = (volume.boot.root_entries * 32 + 511) / 512;
     
     for (uint32_t sector = 0; sector < root_sectors; sector++) {
         if (IdeReadSector(volume.drive, volume.root_sector + sector, sector_buffer) != IDE_OK) {
-            PrintKernelError("[FAT12] Failed to read root directory\n");
+            PrintKernelError("[SYSTEM] Failed to read root directory\n");
             return -1;
         }
         
@@ -179,22 +184,39 @@ int Fat12ReadFile(const char* filename, void* buffer, uint32_t max_size) {
                 // Found file, read it
                 uint16_t cluster = entry->cluster_low;
                 uint32_t bytes_read = 0;
+                uint32_t file_size = entry->file_size;
                 uint8_t* buf_ptr = (uint8_t*)buffer;
-                
-                while (cluster < 0xFF8 && bytes_read < max_size) {
-                    uint8_t cluster_buffer[512 * 8]; // Max cluster size
+                if (file_size == 0) {
+                    return 0;
+                }
+                // Safety bound: max clusters we should traverse
+                uint32_t cluster_bytes = volume.boot.sectors_per_cluster * 512;
+                if (cluster_bytes == 0) return -1;
+                uint32_t max_clusters = (file_size + cluster_bytes - 1) / cluster_bytes;
+                uint32_t visited = 0;
+
+                while (cluster < 0xFF8 && bytes_read < max_size && visited < max_clusters) {
+                    uint8_t* cluster_buffer = KernelMemoryAlloc(cluster_bytes);
+                    if (!cluster_buffer) return -1;
+                    
                     if (Fat12GetCluster(cluster, cluster_buffer) != 0) {
+                        KernelFree(cluster_buffer);
                         return -1;
                     }
                     
-                    uint32_t cluster_size = volume.boot.sectors_per_cluster * 512;
-                    uint32_t copy_size = (bytes_read + cluster_size > max_size) ? 
-                                        (max_size - bytes_read) : cluster_size;
-                    
+
+                    uint32_t cluster_size = cluster_bytes;
+                    uint32_t remaining_in_file = (file_size > bytes_read) ? (file_size - bytes_read) : 0;
+                    uint32_t copy_size = cluster_size;
+                    if (copy_size > remaining_in_file) copy_size = remaining_in_file;
+                    if (copy_size > (max_size - bytes_read)) copy_size = (max_size - bytes_read);
+                    if (copy_size == 0) break;
+
                     FastMemcpy(buf_ptr + bytes_read, cluster_buffer, copy_size);
                     bytes_read += copy_size;
-                    
+                    ++visited;
                     cluster = Fat12GetNextCluster(cluster);
+                    KernelFree(cluster_buffer);
                 }
                 
                 return bytes_read;

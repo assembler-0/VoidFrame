@@ -61,7 +61,3 @@ int IdeGetDriveInfo(uint8_t drive, char* model_out);
 void IDEPrimaryIRQH(void);
 void IDESecondaryIRQH(void);
 
-// Internal Functions
-static int IdeWaitReady(uint16_t base_port);
-static int IdeSelectDrive(uint16_t base_port, uint8_t drive, uint32_t lba);
-static int IdeIdentifyDrive(uint16_t base_port, uint8_t drive, uint16_t* buffer);

@@ -3,6 +3,7 @@
 #include "Editor.h"
 #include "FAT12.h"
 #include "Ide.h"
+#include "KernelHeap.h"
 #include "Keyboard.h"
 #include "MemOps.h"
 #include "Process.h"
@@ -29,7 +30,11 @@ static char* GetArg(const char* cmd, int arg_num) {
         if (cmd[pos] == ' ') {
             if (word == arg_num) {
                 arg_buf[buf_pos] = '\0';
-                return buf_pos > 0 ? arg_buf : NULL;
+                if (buf_pos == 0) return NULL;
+                char* copy = KernelMemoryAlloc(buf_pos + 1);
+                if (!copy) return NULL;
+                FastMemcpy(copy, arg_buf, buf_pos + 1);
+                return copy;
             }
             // Skip multiple spaces
             while (cmd[pos] == ' ') pos++;
@@ -46,7 +51,10 @@ static char* GetArg(const char* cmd, int arg_num) {
     // Handle last argument
     if (word == arg_num && buf_pos > 0) {
         arg_buf[buf_pos] = '\0';
-        return arg_buf;
+        char* copy = KernelMemoryAlloc(buf_pos + 1);
+        if (!copy) return NULL;
+        FastMemcpy(copy, arg_buf, buf_pos + 1);
+        return copy;
     }
     return NULL;
 }
@@ -122,8 +130,6 @@ static void ExecuteCommand(const char* cmd) {
             char new_path[256];
             ResolvePath(dir, new_path, 256);
 
-            // Normalize: handle "." and ".." segments on RAMFS side using VFS existence check
-            // Simple check via VfsIsDir; if not a directory, do not change current_dir
             if (VfsIsDir(new_path)) {
                 FastMemcpy(current_dir, new_path, 256);
                 PrintKernel("[VFS] DIRECTORY SWITCHED TO ");
@@ -134,6 +140,7 @@ static void ExecuteCommand(const char* cmd) {
                 PrintKernel(new_path);
                 PrintKernel("\n");
             }
+            KernelFree(dir);
         }
     } else if (FastStrCmp(cmd_name, "pwd") == 0) {
         PrintKernel(current_dir);
@@ -146,22 +153,32 @@ static void ExecuteCommand(const char* cmd) {
             char full_path[256];
             ResolvePath(path, full_path, 256);
             VfsListDir(full_path);
+            KernelFree(path);
         }
     } else if (FastStrCmp(cmd_name, "cat") == 0) {
         char* file = GetArg(cmd, 1);
-        if (file) {
+            if (file) {
             char full_path[256];
             ResolvePath(file, full_path, 256);
             
-            static uint8_t file_buffer[4096];
-            int bytes = VfsReadFile(full_path, file_buffer, 4095);
-            if (bytes > 0) {
-                file_buffer[bytes] = 0;
-                PrintKernel((char*)file_buffer);
-                PrintKernel("\n");
+            uint8_t* file_buffer = KernelMemoryAlloc(4096);
+            if (file_buffer) {
+                int bytes = VfsReadFile(full_path, file_buffer, 4095);
+                if (bytes >= 0) {
+                    // Null-terminate and print if non-empty
+                    file_buffer[(bytes < 4095) ? bytes : 4095] = 0;
+                    if (bytes > 0) {
+                        PrintKernel((char*)file_buffer);
+                    }
+                    PrintKernel("\n");
+                } else {
+                    PrintKernel("cat: file not found or read error\n");
+                }
+                KernelFree(file_buffer);
             } else {
-                PrintKernel("cat: file not found or read error\n");
+                PrintKernel("cat: out of memory\n");
             }
+            KernelFree(file);
         } else {
             PrintKernel("Usage: cat <filename>\n");
         }
@@ -175,6 +192,7 @@ static void ExecuteCommand(const char* cmd) {
             } else {
                 PrintKernel("Failed to create directory\n");
             }
+            KernelFree(name);
         } else {
             PrintKernel("Usage: mkdir <dirname>\n");
         }
@@ -188,6 +206,7 @@ static void ExecuteCommand(const char* cmd) {
             } else {
                 PrintKernel("Failed to create file\n");
             }
+            KernelFree(name);
         } else {
             PrintKernel("Usage: touch <filename>\n");
         }
@@ -201,6 +220,7 @@ static void ExecuteCommand(const char* cmd) {
             } else {
                 PrintKernel("Failed to remove (file not found or directory not empty)\n");
             }
+            KernelFree(name);
         } else {
             PrintKernel("Usage: rm <filename>\n");
         }
@@ -217,8 +237,12 @@ static void ExecuteCommand(const char* cmd) {
             } else {
                 PrintKernel("Failed to write to file\n");
             }
+            KernelFree(text);
+            KernelFree(file);
         } else {
             PrintKernel("Usage: echo <text> <filename>\n");
+            if (text) KernelFree(text);
+            if (file) KernelFree(file);
         }
     } else if (FastStrCmp(cmd_name, "edit") == 0) {
         char* file = GetArg(cmd, 1);
@@ -226,6 +250,7 @@ static void ExecuteCommand(const char* cmd) {
             char full_path[256];
             ResolvePath(file, full_path, 256);
             EditorOpen(full_path);
+            KernelFree(file);
         } else {
             PrintKernel("Usage: edit <filename>\n");
         }
@@ -250,11 +275,14 @@ static void ExecuteCommand(const char* cmd) {
         VfsListDir("/test");
         
         PrintKernel("[VFS] Contents of /test/hello.txt:\n");
-        static uint8_t file_buffer[256];
-        int bytes = VfsReadFile("/test/hello.txt", file_buffer, 255);
-        if (bytes > 0) {
-            file_buffer[bytes] = 0;
-            PrintKernel((char*)file_buffer);
+        uint8_t* file_buffer = KernelMemoryAlloc(256);
+        if (file_buffer) {
+            int bytes = VfsReadFile("/test/hello.txt", file_buffer, 255);
+            if (bytes > 0) {
+                file_buffer[bytes] = 0;
+                PrintKernel((char*)file_buffer);
+            }
+            KernelFree(file_buffer);
         }
         
         PrintKernel("[VFS] Filesystem tests completed\n");
@@ -263,6 +291,8 @@ static void ExecuteCommand(const char* cmd) {
         PrintKernel(cmd_name);
         PrintKernel("\nType 'help' for commands\n");
     }
+    
+    KernelFree(cmd_name);
 }
 
 void ShellInit(void) {
@@ -271,7 +301,6 @@ void ShellInit(void) {
 
 void ShellProcess(void) {
     PrintKernelSuccess("VoidFrame Shell v0.0.1-beta\n");
-    PrintKernelSuccess("VoidFrame Shell. Press ENTER to start shell\n"); // actually start already but on start the /> isnt there so yeah
     while (1) {
         if (HasInput()) {
             char c = GetChar();
