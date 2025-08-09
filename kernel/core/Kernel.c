@@ -76,7 +76,7 @@ uint64_t AllocPageTable(const char* table_name) {
         FreePage(candidate);
     }
     if (!table_phys) {
-        PANIC("Bootstrap: Failed to allocate %s in identity-mapped memory");
+        PANIC("Bootstrap: Failed to allocate in identity-mapped memory");
     }
     if (table_phys & 0xFFF) PANIC("Page table not aligned");
     FastZeroPage((void*)table_phys);

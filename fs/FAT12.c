@@ -3,6 +3,7 @@
 #include "Ide.h"
 #include "KernelHeap.h"
 #include "MemOps.h"
+#include "MemPool.h"
 
 static Fat12Volume volume;
 static uint8_t* sector_buffer = NULL;
@@ -29,7 +30,7 @@ int Fat12Init(uint8_t drive) {
     }
     
     // Allocate sector buffer
-    sector_buffer = KernelMemoryAlloc(512);
+    sector_buffer = FastAlloc(POOL_SIZE_512);
     if (!sector_buffer) {
         return -1;
     }

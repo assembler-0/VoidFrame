@@ -1,6 +1,7 @@
 #include "KernelHeap.h"
 #include "Console.h"
 #include "MemOps.h"
+#include "MemPool.h"
 #include "Spinlock.h"
 #include "VMem.h"
 
@@ -183,6 +184,7 @@ void KernelHeapInit() {
 
 void* KernelMemoryAlloc(size_t size) {
     // Input validation
+
     if (size == 0 || size > MAX_ALLOC_SIZE) {
         return NULL;
     }

@@ -261,11 +261,13 @@ void* AllocHugePages(uint64_t num_pages) {
 
             void* huge_page = (void*)(start * PAGE_SIZE);
             SpinUnlockIrqRestore(&memory_lock, flags);
+            ++huge_pages_allocated;
             return huge_page;
         }
-         }
+    }
 
     SpinUnlockIrqRestore(&memory_lock, flags);
+    ++allocation_failures;
     return NULL;  // No contiguous region found
 }
 

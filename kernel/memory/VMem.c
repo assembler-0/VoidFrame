@@ -178,6 +178,10 @@ int VMemMapHuge(uint64_t vaddr, uint64_t paddr, uint64_t flags) {
 
     irq_flags_t irq_flags = SpinLockIrqSave(&vmem_lock);
 
+    if (!is_valid_phys_addr(paddr)) {
+        SpinUnlockIrqRestore(&vmem_lock, irq_flags);
+        return VMEM_ERROR_INVALID_ADDR;
+    }
     // Get PDP table
     uint64_t pdp_phys = VMemGetPageTablePhys((uint64_t)kernel_space.pml4, vaddr, 0, 1);
     if (!pdp_phys) {
@@ -359,9 +363,11 @@ void VMemFreeWithGuards(void* ptr, uint64_t size) {
     // Check guard pages for corruption
     if (*(uint64_t*)base_addr != GUARD_PAGE_PATTERN) {
         PrintKernelError("[VMEM] Guard page corruption detected at start!\n");
+        PANIC("Guard page corruption detected at start");
     }
     if (*(uint64_t*)(base_addr + PAGE_SIZE + size) != GUARD_PAGE_PATTERN) {
         PrintKernelError("[VMEM] Guard page corruption detected at end!\n");
+        PANIC("Guard page corruption detected at end");
     }
 
     VMemFree((void*)base_addr, size + (2 * PAGE_SIZE));
