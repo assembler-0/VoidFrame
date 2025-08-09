@@ -98,6 +98,17 @@ c_sources = [
     arch_root + '/cpu/Cpu.c'
 ]
 
+obj_sources = [
+	src_root + '/kernel/etc/splash1.o',
+	src_root + '/kernel/etc/splash2.o',
+	src_root + '/kernel/etc/splash3.o',
+	src_root + '/kernel/etc/splash4.o',
+	src_root + '/kernel/etc/splash5.o',
+	src_root + '/kernel/etc/splash6.o',
+	src_root + '/kernel/etc/splash7.o',
+	src_root + '/kernel/etc/splash8.o'
+]
+
 # Build include flags
 inc_flags = []
 foreach inc : inc_dirs
@@ -130,7 +141,7 @@ endforeach
 
 # Link kernel
 kernel = custom_target('voidframe.krnl',
-                       input : asm_objects + c_objects,
+                       input : asm_objects + c_objects + obj_sources,
                        output : 'voidframe.krnl',
                        command : ['ld', '-T', meson.current_source_dir() + '/linker.ld', '-melf_x86_64', '--no-warn-rwx-segments', '-o', '@OUTPUT@'] + ['@INPUT@'],
                        build_by_default : true

@@ -64,12 +64,10 @@ void ConsoleInit(void) {
     if (VBEIsInitialized()) {
         use_vbe = 1;
         VBEConsoleInit();
-        SerialWrite("Console: VBE Graphics Mode Active (800x600)\n");
     } else {
         use_vbe = 0;
         console.buffer = (volatile uint16_t*)VGA_BUFFER_ADDR;
         ClearScreen();
-        SerialWrite("Console: VGA Text Mode Active (80x25)\n");
     }
 }
 

@@ -1,11 +1,32 @@
 #include "VesaBIOSExtension.h"
-
 #include "Io.h"
 #include "Serial.h"
 #include "stdint.h"
 #include "stdlib.h"
 #include "Font.h"
 
+extern const uint32_t _binary_splash1_32_raw_start[];
+extern const uint32_t _binary_splash2_32_raw_start[];
+extern const uint32_t _binary_splash3_32_raw_start[];
+extern const uint32_t _binary_splash4_32_raw_start[];
+extern const uint32_t _binary_splash5_32_raw_start[];
+extern const uint32_t _binary_splash6_32_raw_start[];
+extern const uint32_t _binary_splash7_32_raw_start[];
+extern const uint32_t _binary_splash8_32_raw_start[];
+
+// Update your array of pointers
+const uint32_t* splash_images[] = {
+    _binary_splash1_32_raw_start,
+    _binary_splash2_32_raw_start,
+    _binary_splash3_32_raw_start,
+    _binary_splash4_32_raw_start,
+    _binary_splash5_32_raw_start,
+    _binary_splash6_32_raw_start,
+    _binary_splash7_32_raw_start,
+    _binary_splash8_32_raw_start,
+};
+
+const unsigned int num_splash_images = sizeof(splash_images) / sizeof(uint32_t*);
 // Multiboot2 tag types
 #define MULTIBOOT_TAG_FRAMEBUFFER 8
 #define MULTIBOOT_TAG_VBE         7
@@ -23,56 +44,109 @@ typedef struct {
     uint32_t framebuffer_height;
     uint8_t  framebuffer_bpp;
     uint8_t  framebuffer_type;
-    uint8_t  reserved;
-    // Color info follows...
+    uint16_t  reserved;
+    uint8_t  framebuffer_red_field_position;
+    uint8_t  framebuffer_red_mask_size;
+    uint8_t  framebuffer_green_field_position;
+    uint8_t  framebuffer_green_mask_size;
+    uint8_t  framebuffer_blue_field_position;
+    uint8_t  framebuffer_blue_mask_size;
 } multiboot_tag_framebuffer_t;
 
 static vbe_info_t vbe_info = {0};
 static int vbe_initialized = 0;
 
+void delay(uint32_t count) {
+    while (count--) {
+        __asm__ volatile("nop");
+    }
+}
+
+// In VesaBIOSExtension.c
+
 int VBEInit(uint32_t multiboot_info_addr) {
     SerialWrite("VBE: Parsing Multiboot2 info...\n");
-
-    // Skip the total size field (first 8 bytes)
     uint8_t *tag_ptr = (uint8_t*)(multiboot_info_addr + 8);
 
     while (1) {
         multiboot_tag_t *tag = (multiboot_tag_t*)tag_ptr;
-
         if (tag->type == 0) break; // End tag
 
         if (tag->type == MULTIBOOT_TAG_FRAMEBUFFER) {
             multiboot_tag_framebuffer_t *fb_tag = (multiboot_tag_framebuffer_t*)tag;
 
-            vbe_info.framebuffer = (uint32_t*)fb_tag->framebuffer_addr;
+            // --- Store all the info ---
+            vbe_info.framebuffer = (volatile uint32_t*)(uintptr_t)fb_tag->framebuffer_addr;
             vbe_info.width = fb_tag->framebuffer_width;
             vbe_info.height = fb_tag->framebuffer_height;
             vbe_info.bpp = fb_tag->framebuffer_bpp;
             vbe_info.pitch = fb_tag->framebuffer_pitch;
 
-            SerialWrite("VBE: Found framebuffer!\n");
-            SerialWrite("  Address: 0x");
-            SerialWriteHex(fb_tag->framebuffer_addr);
-            SerialWrite("\n  Resolution: ");
-            SerialWriteDec(vbe_info.width);
-            SerialWrite("x");
-            SerialWriteDec(vbe_info.height);
-            SerialWrite("x");
-            SerialWriteDec(vbe_info.bpp);
-            SerialWrite("\n  Pitch: ");
-            SerialWriteDec(vbe_info.pitch);
-            SerialWrite("\n");
+            // NEW: Store the color info
+            if (fb_tag->framebuffer_type == 1) { // RGB
+                vbe_info.red_mask_size = fb_tag->framebuffer_red_mask_size;
+                vbe_info.red_field_position = fb_tag->framebuffer_red_field_position;
+                vbe_info.green_mask_size = fb_tag->framebuffer_green_mask_size;
+                vbe_info.green_field_position = fb_tag->framebuffer_green_field_position;
+                vbe_info.blue_mask_size = fb_tag->framebuffer_blue_mask_size;
+                vbe_info.blue_field_position = fb_tag->framebuffer_blue_field_position;
+            } else {
+                SerialWrite("ERROR: Unsupported framebuffer type (expected RGB)\n");
+                vbe_initialized = 0;
+                return -1;
+            }
+
+            // --- Add detailed logging ---
+            SerialWrite("VBE: Framebuffer Found!\n");
+            SerialWrite("  Resolution: ");
+            SerialWriteDec(vbe_info.width); SerialWrite("x");
+            SerialWriteDec(vbe_info.height); SerialWrite("x");
+            SerialWriteDec(vbe_info.bpp); SerialWrite("\n");
+            SerialWrite("  Red Mask: size="); SerialWriteDec(vbe_info.red_mask_size);
+            SerialWrite(", pos="); SerialWriteDec(vbe_info.red_field_position); SerialWrite("\n");
+            SerialWrite("  Green Mask: size="); SerialWriteDec(vbe_info.green_mask_size);
+            SerialWrite(", pos="); SerialWriteDec(vbe_info.green_field_position); SerialWrite("\n");
+            SerialWrite("  Blue Mask: size="); SerialWriteDec(vbe_info.blue_mask_size);
+            SerialWrite(", pos="); SerialWriteDec(vbe_info.blue_field_position); SerialWrite("\n");
+
+
+            // Important check!
+            if (vbe_info.bpp != 32) {
+                SerialWrite("ERROR: Unsupported BPP, this code only handles 32-bpp!\n");
+                vbe_initialized = 0; // Mark as not initialized
+                return -1;
+            }
 
             vbe_initialized = 1;
             return 0;
         }
-
-        // Move to next tag (align to 8 bytes)
         tag_ptr += ((tag->size + 7) & ~7);
     }
-
-    SerialWrite("VBE: No framebuffer found in Multiboot info\n");
+    SerialWrite("VBE: No framebuffer tag found in Multiboot info\n");
     return -1;
+}
+
+static uint32_t VBEMapColor(uint32_t hex_color) {
+    // Extract the R, G, B components from the standard 0xRRGGBB format
+    uint8_t r8 = (hex_color >> 16) & 0xFF;
+    uint8_t g8 = (hex_color >> 8) & 0xFF;
+    uint8_t b8 = hex_color & 0xFF;
+
+    // Scale down to mask sizes (assumes mask_size in [1..8])
+    uint32_t r = (vbe_info.red_mask_size   >= 8) ? r8 : (r8 >> (8 - vbe_info.red_mask_size));
+    uint32_t g = (vbe_info.green_mask_size >= 8) ? g8 : (g8 >> (8 - vbe_info.green_mask_size));
+    uint32_t b = (vbe_info.blue_mask_size  >= 8) ? b8 : (b8 >> (8 - vbe_info.blue_mask_size));
+
+    // Mask to exact width and shift into place
+    uint32_t rmask = (vbe_info.red_mask_size   >= 32) ? 0xFFFFFFFFu : ((1u << vbe_info.red_mask_size)   - 1u);
+    uint32_t gmask = (vbe_info.green_mask_size >= 32) ? 0xFFFFFFFFu : ((1u << vbe_info.green_mask_size) - 1u);
+    uint32_t bmask = (vbe_info.blue_mask_size  >= 32) ? 0xFFFFFFFFu : ((1u << vbe_info.blue_mask_size)  - 1u);
+
+    uint32_t mapped_color = ((r & rmask) << vbe_info.red_field_position)   |
+    ((g & gmask) << vbe_info.green_field_position) |
+    ((b & bmask) << vbe_info.blue_field_position);
+
+    return mapped_color;
 }
 
 void VBEPutPixel(uint32_t x, uint32_t y, uint32_t color) {
@@ -80,8 +154,11 @@ void VBEPutPixel(uint32_t x, uint32_t y, uint32_t color) {
         return;
     }
 
+    // Convert the standard color to the hardware-specific format
+    uint32_t mapped_color = VBEMapColor(color);
+
     uint32_t offset = y * (vbe_info.pitch / 4) + x;
-    vbe_info.framebuffer[offset] = color;
+    vbe_info.framebuffer[offset] = mapped_color;
 }
 
 uint32_t VBEGetPixel(uint32_t x, uint32_t y) {
@@ -183,12 +260,21 @@ void VBEDrawString(uint32_t x, uint32_t y, const char* str, uint32_t fg_color, u
 void VBEShowSplash(void) {
     if (!vbe_initialized) return;
 
-    // Black background
-    VBEFillScreen(VBE_COLOR_BLACK);
+    for (unsigned int i = 0; i < num_splash_images * 10; i++) { // Loop
+        const uint32_t* image_data = (const uint32_t*)splash_images[i % num_splash_images];
 
+        for (uint32_t y = 0; y < vbe_info.height; y++) {
+            for (uint32_t x = 0; x < vbe_info.width; x++) {
+                VBEPutPixel(x, y, image_data[y * vbe_info.width + x]);
+            }
+        }
+        delay(25082012); // Adjust this value to change the delay
+    }
+
+    // After the splash screen, you can clear the screen or draw something else
+    VBEFillScreen(VBE_COLOR_BLACK);
     VBEDrawString(100, 20, "VoidFrame Kernel - Graphics Mode Active!",
                   VBE_COLOR_WHITE, VBE_COLOR_BLACK);
-
 }
 
 vbe_info_t* VBEGetInfo(void) {

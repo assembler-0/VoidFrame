@@ -354,10 +354,6 @@ static InitResultT CoreInit(void) {
     return INIT_SUCCESS;
 }
 
-void Setup(void) {
-    VBEShowSplash();
-}
-
 void EarlyInit(const uint32_t info) {
     int sret = SerialInit();
 
@@ -375,8 +371,8 @@ void EarlyInit(const uint32_t info) {
     if (VBEInit(info) != 0) {
         PrintKernelError("[SYSTEM] Failed to initialize VBE and graphical environment");
     }
-    ConsoleInit();
 
+    ConsoleInit();
 }
 
 void KernelMain(const uint32_t magic, const uint32_t info) {
@@ -388,6 +384,8 @@ void KernelMain(const uint32_t magic, const uint32_t info) {
     }
 
     EarlyInit(info);
+
+    VBEShowSplash();
 
     console.buffer = (volatile uint16_t*)VGA_BUFFER_ADDR;
     
@@ -527,7 +525,7 @@ void KernelMainHigherHalf(void) {
 
     // Initialize core systems
     CoreInit();
-    CreateProcess(Setup);
+
     PrintKernelSuccess("[SYSTEM] Kernel initialization complete\n");
     PrintKernelSuccess("[SYSTEM] Initializing interrupts...\n\n");
 
