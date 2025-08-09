@@ -4,6 +4,7 @@
 #include "Serial.h"
 #include "stdint.h"
 #include "stdlib.h"
+#include "Font.h"
 
 // Multiboot2 tag types
 #define MULTIBOOT_TAG_FRAMEBUFFER 8
@@ -141,12 +142,22 @@ void VBEDrawLine(uint32_t x0, uint32_t y0, uint32_t x1, uint32_t y1, uint32_t co
 void VBEDrawChar(uint32_t x, uint32_t y, char c, uint32_t fg_color, uint32_t bg_color) {
     if (!vbe_initialized) return;
 
-    // Simple 8x8 bitmap font (you'd need to implement this)
-    // For now, just draw a rectangle as placeholder
-    if (c != ' ') {
-        VBEDrawRect(x, y, 8, 8, fg_color);
-    } else {
-        VBEDrawRect(x, y, 8, 8, bg_color);
+    if ((unsigned char)c >= 128) {
+        return; // Character out of bounds
+    }
+
+    const unsigned char* glyph = font8x8_basic[(unsigned char)c];
+
+    for (int i = 0; i < 8; i++) {
+        for (int j = 0; j < 8; j++) {
+            if ((glyph[i] >> j) & 1) {
+                VBEPutPixel(x + j, y + i, fg_color);
+            } else {
+                // ALWAYS draw background, even if it's black
+                // This ensures old characters are properly erased
+                VBEPutPixel(x + j, y + i, bg_color);
+            }
+        }
     }
 }
 
@@ -172,25 +183,12 @@ void VBEDrawString(uint32_t x, uint32_t y, const char* str, uint32_t fg_color, u
 void VBEShowSplash(void) {
     if (!vbe_initialized) return;
 
-    SerialWrite("VBE: Drawing splash screen...\n");
-
     // Black background
     VBEFillScreen(VBE_COLOR_BLACK);
 
-    // Draw some colored rectangles
-    VBEDrawRect(50, 50, 200, 100, VBE_COLOR_BLUE);
-    VBEDrawRect(300, 200, 150, 80, VBE_COLOR_RED);
-    VBEDrawRect(500, 100, 100, 200, VBE_COLOR_GREEN);
-
-    // Draw some lines
-    VBEDrawLine(0, 0, vbe_info.width-1, vbe_info.height-1, VBE_COLOR_WHITE);
-    VBEDrawLine(vbe_info.width-1, 0, 0, vbe_info.height-1, VBE_COLOR_YELLOW);
-
-    // Draw title
-    VBEDrawString(50, 10, "VoidFrame Kernel - Graphics Mode Active!",
+    VBEDrawString(100, 20, "VoidFrame Kernel - Graphics Mode Active!",
                   VBE_COLOR_WHITE, VBE_COLOR_BLACK);
 
-    SerialWrite("VBE: Splash screen complete!\n");
 }
 
 vbe_info_t* VBEGetInfo(void) {
