@@ -102,7 +102,11 @@ obj_sources = [
 	src_root + '/kernel/etc/splash1.o',
 	src_root + '/kernel/etc/splash2.o',
 	src_root + '/kernel/etc/splash3.o',
-	src_root + '/kernel/etc/splash4.o'
+	src_root + '/kernel/etc/splash4.o',
+	src_root + '/kernel/etc/splash5.o',
+	src_root + '/kernel/etc/splash6.o',
+	src_root + '/kernel/etc/splash7.o',
+	src_root + '/kernel/etc/splash8.o'
 ]
 
 # Build include flags

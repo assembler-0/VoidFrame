@@ -5,17 +5,25 @@
 #include "stdlib.h"
 #include "Font.h"
 
-extern const uint32_t _binary_splash1_raw_start[];
-extern const uint32_t _binary_splash2_raw_start[];
-extern const uint32_t _binary_splash3_raw_start[];
-extern const uint32_t _binary_splash4_raw_start[];
+extern const uint32_t _binary_splash1_32_raw_start[];
+extern const uint32_t _binary_splash2_32_raw_start[];
+extern const uint32_t _binary_splash3_32_raw_start[];
+extern const uint32_t _binary_splash4_32_raw_start[];
+extern const uint32_t _binary_splash5_32_raw_start[];
+extern const uint32_t _binary_splash6_32_raw_start[];
+extern const uint32_t _binary_splash7_32_raw_start[];
+extern const uint32_t _binary_splash8_32_raw_start[];
 
 // Update your array of pointers
 const uint32_t* splash_images[] = {
-    _binary_splash1_raw_start,
-    _binary_splash2_raw_start,
-    _binary_splash3_raw_start,
-    _binary_splash4_raw_start
+    _binary_splash1_32_raw_start,
+    _binary_splash2_32_raw_start,
+    _binary_splash3_32_raw_start,
+    _binary_splash4_32_raw_start,
+    _binary_splash5_32_raw_start,
+    _binary_splash6_32_raw_start,
+    _binary_splash7_32_raw_start,
+    _binary_splash8_32_raw_start,
 };
 
 const unsigned int num_splash_images = sizeof(splash_images) / sizeof(uint32_t*);
@@ -36,7 +44,7 @@ typedef struct {
     uint32_t framebuffer_height;
     uint8_t  framebuffer_bpp;
     uint8_t  framebuffer_type;
-    uint8_t  reserved;
+    uint16_t  reserved;
     uint8_t  framebuffer_red_field_position;
     uint8_t  framebuffer_red_mask_size;
     uint8_t  framebuffer_green_field_position;
@@ -68,19 +76,25 @@ int VBEInit(uint32_t multiboot_info_addr) {
             multiboot_tag_framebuffer_t *fb_tag = (multiboot_tag_framebuffer_t*)tag;
 
             // --- Store all the info ---
-            vbe_info.framebuffer = (uint32_t*)fb_tag->framebuffer_addr;
+            vbe_info.framebuffer = (volatile uint32_t*)(uintptr_t)fb_tag->framebuffer_addr;
             vbe_info.width = fb_tag->framebuffer_width;
             vbe_info.height = fb_tag->framebuffer_height;
             vbe_info.bpp = fb_tag->framebuffer_bpp;
             vbe_info.pitch = fb_tag->framebuffer_pitch;
 
             // NEW: Store the color info
-            vbe_info.red_mask_size = fb_tag->framebuffer_red_mask_size;
-            vbe_info.red_field_position = fb_tag->framebuffer_red_field_position;
-            vbe_info.green_mask_size = fb_tag->framebuffer_green_mask_size;
-            vbe_info.green_field_position = fb_tag->framebuffer_green_field_position;
-            vbe_info.blue_mask_size = fb_tag->framebuffer_blue_mask_size;
-            vbe_info.blue_field_position = fb_tag->framebuffer_blue_field_position;
+            if (fb_tag->framebuffer_type == 1) { // RGB
+                vbe_info.red_mask_size = fb_tag->framebuffer_red_mask_size;
+                vbe_info.red_field_position = fb_tag->framebuffer_red_field_position;
+                vbe_info.green_mask_size = fb_tag->framebuffer_green_mask_size;
+                vbe_info.green_field_position = fb_tag->framebuffer_green_field_position;
+                vbe_info.blue_mask_size = fb_tag->framebuffer_blue_mask_size;
+                vbe_info.blue_field_position = fb_tag->framebuffer_blue_field_position;
+            } else {
+                SerialWrite("ERROR: Unsupported framebuffer type (expected RGB)\n");
+                vbe_initialized = 0;
+                return -1;
+            }
 
             // --- Add detailed logging ---
             SerialWrite("VBE: Framebuffer Found!\n");
@@ -114,14 +128,23 @@ int VBEInit(uint32_t multiboot_info_addr) {
 
 static uint32_t VBEMapColor(uint32_t hex_color) {
     // Extract the R, G, B components from the standard 0xRRGGBB format
-    uint8_t r = (hex_color >> 16) & 0xFF;
-    uint8_t g = (hex_color >> 8) & 0xFF;
-    uint8_t b = hex_color & 0xFF;
+    uint8_t r8 = (hex_color >> 16) & 0xFF;
+    uint8_t g8 = (hex_color >> 8) & 0xFF;
+    uint8_t b8 = hex_color & 0xFF;
 
-    // Shift each component into its correct position as specified by the VBE info
-    uint32_t mapped_color = (r << vbe_info.red_field_position) |
-                            (g << vbe_info.green_field_position) |
-                            (b << vbe_info.blue_field_position);
+    // Scale down to mask sizes (assumes mask_size in [1..8])
+    uint32_t r = (vbe_info.red_mask_size   >= 8) ? r8 : (r8 >> (8 - vbe_info.red_mask_size));
+    uint32_t g = (vbe_info.green_mask_size >= 8) ? g8 : (g8 >> (8 - vbe_info.green_mask_size));
+    uint32_t b = (vbe_info.blue_mask_size  >= 8) ? b8 : (b8 >> (8 - vbe_info.blue_mask_size));
+
+    // Mask to exact width and shift into place
+    uint32_t rmask = (vbe_info.red_mask_size   >= 32) ? 0xFFFFFFFFu : ((1u << vbe_info.red_mask_size)   - 1u);
+    uint32_t gmask = (vbe_info.green_mask_size >= 32) ? 0xFFFFFFFFu : ((1u << vbe_info.green_mask_size) - 1u);
+    uint32_t bmask = (vbe_info.blue_mask_size  >= 32) ? 0xFFFFFFFFu : ((1u << vbe_info.blue_mask_size)  - 1u);
+
+    uint32_t mapped_color = ((r & rmask) << vbe_info.red_field_position)   |
+    ((g & gmask) << vbe_info.green_field_position) |
+    ((b & bmask) << vbe_info.blue_field_position);
 
     return mapped_color;
 }
@@ -237,7 +260,7 @@ void VBEDrawString(uint32_t x, uint32_t y, const char* str, uint32_t fg_color, u
 void VBEShowSplash(void) {
     if (!vbe_initialized) return;
 
-    for (unsigned int i = 0; i < num_splash_images * 2; i++) { // Loop through the images twice
+    for (unsigned int i = 0; i < num_splash_images * 10; i++) { // Loop
         const uint32_t* image_data = (const uint32_t*)splash_images[i % num_splash_images];
 
         for (uint32_t y = 0; y < vbe_info.height; y++) {
@@ -245,7 +268,7 @@ void VBEShowSplash(void) {
                 VBEPutPixel(x, y, image_data[y * vbe_info.width + x]);
             }
         }
-        delay(100000000); // Adjust this value to change the delay
+        delay(25082012); // Adjust this value to change the delay
     }
 
     // After the splash screen, you can clear the screen or draw something else
