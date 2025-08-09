@@ -152,7 +152,9 @@ void VBEDrawChar(uint32_t x, uint32_t y, char c, uint32_t fg_color, uint32_t bg_
         for (int j = 0; j < 8; j++) {
             if ((glyph[i] >> j) & 1) {
                 VBEPutPixel(x + j, y + i, fg_color);
-            } else if (bg_color != 0) { // Allows for transparent background
+            } else {
+                // ALWAYS draw background, even if it's black
+                // This ensures old characters are properly erased
                 VBEPutPixel(x + j, y + i, bg_color);
             }
         }

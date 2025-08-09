@@ -356,19 +356,11 @@ static InitResultT CoreInit(void) {
 
 void Setup(void) {
     VBEShowSplash();
-    for (volatile int i = 0; i < 100000000; i++);
 }
 
-void KernelMain(const uint32_t magic, const uint32_t info) {
-    if (magic != MULTIBOOT2_BOOTLOADER_MAGIC) {
-        ClearScreen();
-        PrintKernelError("Magic: ");
-        PrintKernelHex(magic);
-        PANIC("Unrecognized Multiboot2 magic.");
-    }
-
-    PrintKernel("[INFO] Initializing serial driver management...\n");
+void EarlyInit(const uint32_t info) {
     int sret = SerialInit();
+
     if (sret != 0) {
         PrintKernelWarning("[WARN] COM1 failed, probing other COM ports...\n");
         if (SerialInitPort(COM2) != 0 && SerialInitPort(COM3) != 0 &&SerialInitPort(COM4) != 0) {
@@ -381,8 +373,21 @@ void KernelMain(const uint32_t magic, const uint32_t info) {
     }
 
     if (VBEInit(info) != 0) {
-        PANIC("Failed to initialize VBE");
+        PrintKernelError("[SYSTEM] Failed to initialize VBE and graphical environment");
     }
+    ConsoleInit();
+
+}
+
+void KernelMain(const uint32_t magic, const uint32_t info) {
+    if (magic != MULTIBOOT2_BOOTLOADER_MAGIC) {
+        ClearScreen();
+        PrintKernelError("Magic: ");
+        PrintKernelHex(magic);
+        PANIC("Unrecognized Multiboot2 magic.");
+    }
+
+    EarlyInit(info);
 
     console.buffer = (volatile uint16_t*)VGA_BUFFER_ADDR;
     

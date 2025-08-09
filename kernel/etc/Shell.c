@@ -300,7 +300,7 @@ void ShellInit(void) {
 }
 
 void ShellProcess(void) {
-    PrintKernelSuccess("VoidFrame Shell v0.0.1-beta\n");
+    PrintKernelSuccess("[SYSTEM] VoidFrame Shell v0.0.1-beta\n");
     while (1) {
         if (HasInput()) {
             char c = GetChar();

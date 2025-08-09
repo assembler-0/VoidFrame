@@ -40,5 +40,6 @@ void PrintKernelInt(int64_t num);
 void PrintKernelAt(const char* str, uint32_t line, uint32_t col);
 void PrintKernelN(const char* str, uint32_t n);
 void ClearScreen();
+void ConsoleInit(void);
 
 #endif // VOIDFRAME_CONSOLE_H

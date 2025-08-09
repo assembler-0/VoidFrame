@@ -12,8 +12,8 @@ framebuffer_tag_start:
     dw 5        ; type = framebuffer
     dw 0        ; flags
     dd 24 ; size
-    dd 1024     ; width
-    dd 768      ; height
+    dd 800     ; width
+    dd 600      ; height
     dd 32       ; depth (bits per pixel)
 framebuffer_tag_end:
 
