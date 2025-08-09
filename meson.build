@@ -79,21 +79,22 @@ c_sources = [
     src_root + '/kernel/etc/Console.c',
     src_root + '/kernel/etc/Editor.c',
     src_root + '/kernel/etc/StringOps.c',
+    src_root + '/kernel/atomic/Atomics.c',
+    src_root + '/kernel/ipc/Ipc.c',
     src_root + '/fs/Fs.c',
     src_root + '/fs/FsUtils.c',
     src_root + '/fs/FAT12.c',
     src_root + '/fs/VFS.c',
-    arch_root + '/idt/Idt.c',
-    arch_root + '/gdt/Gdt.c',
-    arch_root + '/syscall/Syscall.c',
-    arch_root + '/interrupts/Interrupts.c',
     src_root + '/drivers/Pic.c',
     src_root + '/drivers/Serial.c',
     src_root + '/drivers/Keyboard.c',
     src_root + '/drivers/Ide.c',
-    arch_root + '/cpu/Cpu.c',
-    src_root + '/kernel/atomic/Atomics.c',
-    src_root + '/kernel/ipc/Ipc.c'
+    src_root + '/drivers/VesaBIOSExtension.c',
+    arch_root + '/idt/Idt.c',
+    arch_root + '/gdt/Gdt.c',
+    arch_root + '/syscall/Syscall.c',
+    arch_root + '/interrupts/Interrupts.c',
+    arch_root + '/cpu/Cpu.c'
 ]
 
 # Build include flags

@@ -23,6 +23,7 @@
 #include "stdint.h"
 #include "FAT12.h"
 #include "MemPool.h"
+#include "VesaBIOSExtension.h"
 
 void KernelMainHigherHalf(void);
 #define KERNEL_STACK_SIZE (16 * 1024) // 16KB stack
@@ -305,10 +306,6 @@ static InitResultT CoreInit(void) {
     ProcessInit();
     PrintKernelSuccess("[SYSTEM] Process management initialized\n");
 
-    PrintKernel("[INFO] Initializing serial driver management...\n");
-    SerialInit();
-    PrintKernelSuccess("[SYSTEM] Serial driver initialized\n");
-
     // Initialize IDE driver
     PrintKernel("[INFO] Initializing IDE driver...\n");
     int ide_result = IdeInit();
@@ -357,12 +354,34 @@ static InitResultT CoreInit(void) {
     return INIT_SUCCESS;
 }
 
+void Setup(void) {
+    VBEShowSplash();
+    for (volatile int i = 0; i < 100000000; i++);
+}
+
 void KernelMain(const uint32_t magic, const uint32_t info) {
     if (magic != MULTIBOOT2_BOOTLOADER_MAGIC) {
         ClearScreen();
         PrintKernelError("Magic: ");
         PrintKernelHex(magic);
         PANIC("Unrecognized Multiboot2 magic.");
+    }
+
+    PrintKernel("[INFO] Initializing serial driver management...\n");
+    int sret = SerialInit();
+    if (sret != 0) {
+        PrintKernelWarning("[WARN] COM1 failed, probing other COM ports...\n");
+        if (SerialInitPort(COM2) != 0 && SerialInitPort(COM3) != 0 &&SerialInitPort(COM4) != 0) {
+            PrintKernelWarning("[WARN] No serial ports initialized. Continuing without serial.\n");
+        } else {
+            PrintKernelSuccess("[SYSTEM] Serial driver initialized on fallback port\n");
+        }
+    } else {
+        PrintKernelSuccess("[SYSTEM] Serial driver initialized on COM1\n");
+    }
+
+    if (VBEInit(info) != 0) {
+        PANIC("Failed to initialize VBE");
     }
 
     console.buffer = (volatile uint16_t*)VGA_BUFFER_ADDR;
@@ -503,7 +522,7 @@ void KernelMainHigherHalf(void) {
 
     // Initialize core systems
     CoreInit();
-
+    CreateProcess(Setup);
     PrintKernelSuccess("[SYSTEM] Kernel initialization complete\n");
     PrintKernelSuccess("[SYSTEM] Initializing interrupts...\n\n");
 
