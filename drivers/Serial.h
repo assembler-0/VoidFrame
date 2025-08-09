@@ -3,6 +3,11 @@
 
 #include <stdint.h>
 
+#define COM1 0x3f8   // COM1
+#define COM2 0x2f8   // COM2
+#define COM3 0x3e8   // COM3
+#define COM4 0x2e8   // COM4
+
 // Serial port addresses
 #define SERIAL_COM1 0x3F8
 #define SERIAL_COM2 0x2F8

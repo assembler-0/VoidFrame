@@ -945,6 +945,7 @@ uint32_t CreateSecureProcess(void (*entry_point)(void), uint8_t privilege) {
     }
 
     // Initialize process with enhanced security and scheduling data
+
     processes[slot].pid = new_pid;
     processes[slot].state = PROC_READY;
     processes[slot].stack = stack;
@@ -977,6 +978,10 @@ uint32_t CreateSecureProcess(void (*entry_point)(void), uint8_t privilege) {
     // Set up secure initial context
     uint64_t rsp = (uint64_t)stack + STACK_SIZE;
     rsp &= ~0xF; // 16-byte alignment
+
+    // Push ProcessExitStub as return address
+    rsp -= 8;
+    *(uint64_t*)rsp = (uint64_t)ProcessExitStub;
 
     processes[slot].context.rsp = rsp;
     processes[slot].context.rip = (uint64_t)entry_point;
@@ -1037,7 +1042,7 @@ void CleanupTerminatedProcesses(void) {
 
         // Cleanup resources
         if (proc->stack) {
-            FreePage(proc->stack);
+            VMemFreeWithGuards(proc->stack, STACK_SIZE);
             proc->stack = NULL;
         }
 

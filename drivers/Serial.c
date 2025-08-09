@@ -1,11 +1,6 @@
 #include "Serial.h"
 #include "Io.h"
 
-#define COM1 0x3f8   // COM1
-#define COM2 0x2f8   // COM2
-#define COM3 0x3e8   // COM3
-#define COM4 0x2e8   // COM4
-
 // Serial port register offsets
 #define SERIAL_DATA_REG     0  // Data register (DLAB=0)
 #define SERIAL_IER_REG      1  // Interrupt Enable Register (DLAB=0)

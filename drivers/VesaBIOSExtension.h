@@ -17,7 +17,7 @@
 
 // VBE info structure
 typedef struct {
-    uint32_t *framebuffer;  // Pointer to framebuffer
+    volatile uint32_t *framebuffer;  // Pointer to framebuffer
     uint32_t width;         // Screen width
     uint32_t height;        // Screen height
     uint32_t pitch;         // Bytes per scanline
@@ -37,6 +37,5 @@ void VBEShowSplash(void);
 // Utility functions
 vbe_info_t* VBEGetInfo(void);
 int VBEIsInitialized(void);
-void VBESwitchToTextMode(void);
 
 #endif // VOIDFRAME_VESABIOSEXTENSION_H

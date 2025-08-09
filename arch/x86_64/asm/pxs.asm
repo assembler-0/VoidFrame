@@ -11,7 +11,7 @@ header_start:
 framebuffer_tag_start:
     dw 5        ; type = framebuffer
     dw 0        ; flags
-    dd framebuffer_tag_end - framebuffer_tag_start ; size
+    dd 24 ; size
     dd 1024     ; width
     dd 768      ; height
     dd 32       ; depth (bits per pixel)
@@ -31,6 +31,21 @@ vbe_tag_end:
     dw 0    ; flags
     dd 8    ; size
 header_end:
+
+;section .multiboot
+;header_start:
+;    dd 0xE85250D6                ; Multiboot2 magic number
+;    dd 0                         ; Architecture 0 (protected mode i386)
+;    dd header_end - header_start ; header length
+;    ; checksum = -(magic + arch + length)
+;    dd -(0xE85250D6 + 0 + (header_end - header_start))
+;
+;    ; End tag - required
+;    dw 0    ; type
+;    dw 0    ; flags
+;    dd 8    ; size
+;header_end:
+; fallback
 
 bits 32
 

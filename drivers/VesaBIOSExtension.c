@@ -167,44 +167,6 @@ void VBEDrawString(uint32_t x, uint32_t y, const char* str, uint32_t fg_color, u
     }
 }
 
-void VBESwitchToTextMode(void) {
-    if (!vbe_initialized) return;
-
-    SerialWrite("VBE: Switching to text mode...\n");
-
-    // Set VGA text mode 3 (80x25 color text)
-    // This is a bit of a hack - we're writing directly to VGA registers
-    // Port 0x3C4 is VGA Sequencer Address Register
-    // Port 0x3C5 is VGA Sequencer Data Register
-    // Port 0x3D4 is VGA CRT Controller Address Register
-    // Port 0x3D5 is VGA CRT Controller Data Register
-
-    // Reset to standard VGA text mode
-    outb(0x3C4, 0x00); outb(0x3C5, 0x01); // Synchronous reset
-    outb(0x3C4, 0x01); outb(0x3C5, 0x00); // Clocking mode
-    outb(0x3C4, 0x02); outb(0x3C5, 0x03); // Plane/map mask
-    outb(0x3C4, 0x03); outb(0x3C5, 0x00); // Character font select
-    outb(0x3C4, 0x04); outb(0x3C5, 0x02); // Memory mode
-
-    // Set text mode parameters
-    outb(0x3D4, 0x11); outb(0x3D5, 0x0E); // Vertical retrace end
-    outb(0x3D4, 0x06); outb(0x3D5, 0xBF); // Vertical total
-    outb(0x3D4, 0x07); outb(0x3D5, 0x1F); // Overflow register
-    outb(0x3D4, 0x09); outb(0x3D5, 0x4F); // Maximum scan line
-    outb(0x3D4, 0x0C); outb(0x3D5, 0x00); // Start address high
-    outb(0x3D4, 0x0D); outb(0x3D5, 0x00); // Start address low
-
-    // Clear the screen
-    uint16_t* text_buffer = (uint16_t*)0xB8000;
-    for (int i = 0; i < 80 * 25; i++) {
-        text_buffer[i] = 0x0700; // Black background, light gray text, space character
-    }
-
-    vbe_initialized = 0; // Mark VBE as no longer active
-    SerialWrite("VBE: Text mode active, 0xB8000 ready!\n");
-}
-
-
 
 // Create a simple splash screen
 void VBEShowSplash(void) {
