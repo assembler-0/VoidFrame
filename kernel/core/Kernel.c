@@ -325,14 +325,12 @@ void KernelMain(const uint32_t magic, const uint32_t info) {
     FastZeroPage(pml4_phys);
     uint64_t pml4_addr = (uint64_t)pml4_phys;
     
-    PrintKernelSuccess("[SYSTEM] Bootstrap: Identity mapping 1GB...\n");
-    // Map 1GB instead of 3GB to avoid the crash but still have plenty of memory
-    uint32_t pages_needed = (1024 * 1024 * 1024) / PAGE_SIZE; // 1GB
+    PrintKernelSuccess("[SYSTEM] Bootstrap: Identity mapping...\n");
     
-    for (uint64_t paddr = 0; paddr < (1024ULL * 1024 * 1024); paddr += PAGE_SIZE) {
+    for (uint64_t paddr = 0; paddr < IDENTITY_MAP_SIZE; paddr += PAGE_SIZE) {
         BootstrapMapPage(pml4_addr, paddr, paddr, PAGE_WRITABLE);
         
-        if ((paddr / PAGE_SIZE) % 1024 == 0) {
+        if (paddr / PAGE_SIZE % 32768 == 0) {
             PrintKernel(".");
         }
     }

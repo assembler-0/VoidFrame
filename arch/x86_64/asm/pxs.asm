@@ -110,27 +110,39 @@ start:
     lea eax, [pd_table4 + 3]
     mov [edi + 24], eax
 
-    ; Map 4GB total (4 * 512 * 2MB pages)
+    ; Map 4GB using separate loops for each PD table
     mov edi, pd_table
-    mov ecx, 2048  ; 4 * 512 = 2048 entries for 4GB
+    mov ecx, 512
     mov eax, 0x83  ; Present, R/W, 2MB page size
-.map_loop:
+.map_pd1:
     mov [edi], eax
     add edi, 8
-    add eax, 0x200000 ; Next 2MB physical frame
-    
-    ; Check if we need to move to next PD table
-    cmp edi, pd_table2
-    jl .continue_loop
-    cmp edi, pd_table3
-    jl .continue_loop
-    cmp edi, pd_table4
-    jl .continue_loop
-    cmp edi, pd_table4 + 4096
-    jl .continue_loop
-    
-.continue_loop:
-    loop .map_loop
+    add eax, 0x200000
+    loop .map_pd1
+
+    mov edi, pd_table2
+    mov ecx, 512
+.map_pd2:
+    mov [edi], eax
+    add edi, 8
+    add eax, 0x200000
+    loop .map_pd2
+
+    mov edi, pd_table3
+    mov ecx, 512
+.map_pd3:
+    mov [edi], eax
+    add edi, 8
+    add eax, 0x200000
+    loop .map_pd3
+
+    mov edi, pd_table4
+    mov ecx, 512
+.map_pd4:
+    mov [edi], eax
+    add edi, 8
+    add eax, 0x200000
+    loop .map_pd4
     debug_print '5' ; Memory Mapped
 
     ; Enable Long Mode in EFER MSR

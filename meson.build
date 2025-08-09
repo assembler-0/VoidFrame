@@ -59,7 +59,6 @@ asm_sources = [
     arch_root + '/idt/IdtLoad.asm',
     arch_root + '/gdt/GdtTssFlush.asm',
     arch_root + '/syscall/SyscallEntry.asm',
-    arch_root + '/asm/Switch.asm',
     arch_root + '/interrupts/Interrupts.asm',
     src_root + '/include/Paging.asm'
 ]

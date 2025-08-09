@@ -26,6 +26,7 @@ extern uint8_t _data_start[];
 extern uint8_t _data_end[];
 extern uint8_t _bss_start[];
 extern uint8_t _bss_end[];
+
 static inline int is_valid_phys_addr(uint64_t paddr) {
     // Basic sanity check - adjust limits based on your system
     return (paddr != 0 && paddr < (total_pages * PAGE_SIZE));
@@ -42,7 +43,15 @@ void VMemInit(void) {
     kernel_space.used_pages = 0;
     kernel_space.total_mapped = 0;
     kernel_space.pml4 = (uint64_t*)pml4_phys_addr;
-
+    
+    // Now test identity mapping
+    if (VMemGetPhysAddr(0x100000) != 0x100000) {
+        PANIC("Bootstrap identity mapping failed - VALIDATION FAILED");
+    }
+    const uint64_t probe = IDENTITY_MAP_SIZE - PAGE_SIZE;
+    if (VMemGetPhysAddr(probe) != probe) {
+        PANIC("Bootstrap identity mapping failed at IDENTITY_MAP_SIZE boundary");
+    }
     PrintKernelSuccess("[SYSTEM] VMem initialized using existing PML4: ");
     PrintKernelHex(pml4_phys_addr);
     PrintKernel("\n");
