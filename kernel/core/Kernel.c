@@ -23,6 +23,7 @@
 #include "stdint.h"
 #include "FAT12.h"
 #include "MemPool.h"
+#include "VesaBIOSExtension.h"
 
 void KernelMainHigherHalf(void);
 #define KERNEL_STACK_SIZE (16 * 1024) // 16KB stack
@@ -305,10 +306,6 @@ static InitResultT CoreInit(void) {
     ProcessInit();
     PrintKernelSuccess("[SYSTEM] Process management initialized\n");
 
-    PrintKernel("[INFO] Initializing serial driver management...\n");
-    SerialInit();
-    PrintKernelSuccess("[SYSTEM] Serial driver initialized\n");
-
     // Initialize IDE driver
     PrintKernel("[INFO] Initializing IDE driver...\n");
     int ide_result = IdeInit();
@@ -363,6 +360,18 @@ void KernelMain(const uint32_t magic, const uint32_t info) {
         PrintKernelError("Magic: ");
         PrintKernelHex(magic);
         PANIC("Unrecognized Multiboot2 magic.");
+    }
+
+    PrintKernel("[INFO] Initializing serial driver management...\n");
+    SerialInit();
+    PrintKernelSuccess("[SYSTEM] Serial driver initialized\n");
+
+    if (VBEInit(info) == 0) {
+        VBEShowSplash();
+        for (volatile int i = 0; i < 100000000; i++);
+        VBESwitchToTextMode();
+    } else {
+        SerialWrite("Graphics not available, continuing in text mode\n");
     }
 
     console.buffer = (volatile uint16_t*)VGA_BUFFER_ADDR;

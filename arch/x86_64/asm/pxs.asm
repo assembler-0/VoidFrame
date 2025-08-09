@@ -6,7 +6,27 @@ header_start:
     ; checksum = -(magic + arch + length)
     dd -(0xE85250D6 + 0 + (header_end - header_start))
 
+    ; Framebuffer tag - request specific graphics mode
+    align 8
+framebuffer_tag_start:
+    dw 5        ; type = framebuffer
+    dw 0        ; flags
+    dd framebuffer_tag_end - framebuffer_tag_start ; size
+    dd 1024     ; width
+    dd 768      ; height
+    dd 32       ; depth (bits per pixel)
+framebuffer_tag_end:
+
+    ; VBE tag - request VBE info
+    align 8
+vbe_tag_start:
+    dw 7        ; type = VBE
+    dw 0        ; flags
+    dd vbe_tag_end - vbe_tag_start ; size
+vbe_tag_end:
+
     ; End tag - required
+    align 8
     dw 0    ; type
     dw 0    ; flags
     dd 8    ; size

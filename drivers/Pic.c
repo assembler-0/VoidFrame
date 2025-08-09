@@ -12,12 +12,11 @@
 
 void PitInstall() {
     uint16_t divisor = 1193180 / PIT_FREQUENCY_HZ;
-    
+
     outb(0x43, 0x36);  // Command byte: channel 0, lobyte/hibyte, rate generator
     outb(0x40, divisor & 0xFF);        // Low byte
     outb(0x40, (divisor >> 8) & 0xFF); // High byte
 }
-
 
 
 void PicInstall() {
@@ -38,8 +37,6 @@ void PicInstall() {
     outb(PIC1_DATA, ICW4_8086);
     outb(PIC2_DATA, ICW4_8086);
 
-    outb(PIC2_DATA, ICW4_8086);
-
     // Mask all interrupts initially
     outb(PIC1_DATA, 0xFF); // Mask all on master PIC
     outb(PIC2_DATA, 0xFF); // Mask all on slave PIC
@@ -53,7 +50,7 @@ void PicInstall() {
     // Read current mask, clear bit 0, write back
     uint8_t pic1_mask = inb(PIC1_DATA);
     outb(PIC1_DATA, pic1_mask & ~0x01); // Clear bit 0 (IRQ0)
-    
+
     // Initialize PIT after PIC
     PitInstall();
 }
