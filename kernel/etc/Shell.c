@@ -1,12 +1,13 @@
 #include "Shell.h"
 #include "Console.h"
 #include "Editor.h"
-#include "Fs.h"
-#include "FsUtils.h"
+#include "FAT12.h"
+#include "Ide.h"
 #include "Keyboard.h"
 #include "MemOps.h"
 #include "Process.h"
 #include "StringOps.h"
+#include "VFS.h"
 
 static char command_buffer[256];
 static int cmd_pos = 0;
@@ -21,12 +22,16 @@ static char* GetArg(const char* cmd, int arg_num) {
     static char arg_buf[64];
     int word = 0, pos = 0, buf_pos = 0;
     
-    while (cmd[pos] && word <= arg_num) {
+    // Skip leading spaces
+    while (cmd[pos] == ' ') pos++;
+    
+    while (cmd[pos]) {
         if (cmd[pos] == ' ') {
-            if (word == arg_num && buf_pos > 0) {
-                arg_buf[buf_pos] = 0;
-                return arg_buf;
+            if (word == arg_num) {
+                arg_buf[buf_pos] = '\0';
+                return buf_pos > 0 ? arg_buf : NULL;
             }
+            // Skip multiple spaces
             while (cmd[pos] == ' ') pos++;
             word++;
             buf_pos = 0;
@@ -38,8 +43,9 @@ static char* GetArg(const char* cmd, int arg_num) {
         }
     }
     
+    // Handle last argument
     if (word == arg_num && buf_pos > 0) {
-        arg_buf[buf_pos] = 0;
+        arg_buf[buf_pos] = '\0';
         return arg_buf;
     }
     return NULL;
@@ -114,39 +120,18 @@ static void ExecuteCommand(const char* cmd) {
             PrintKernel("[VFRFS] DIRECTORY SWITCHED TO /\n");
         } else {
             char new_path[256];
-            if (dir[0] == '/') {
-                // Absolute path
-                int len = 0;
-                while (dir[len] && len < 255) len++;
-                FastMemcpy(new_path, dir, len);
-                new_path[len] = '\0';
-            } else {
-                // Relative path
-                int curr_len = 0;
-                while (current_dir[curr_len]) curr_len++;
-                
-                FastMemcpy(new_path, current_dir, curr_len);
-                if (current_dir[curr_len - 1] != '/') {
-                    new_path[curr_len++] = '/';
-                }
-                
-                int dir_len = 0;
-                while (dir[dir_len] && curr_len + dir_len < 255) {
-                    new_path[curr_len + dir_len] = dir[dir_len];
-                    dir_len++;
-                }
-                new_path[curr_len + dir_len] = '\0';
-            }
-            
-            FsNode* target = FsFind(new_path);
-            if (!target) {
-                PrintKernel("cd: directory not found\n");
-            } else if (target->type != FS_DIRECTORY) {
-                PrintKernel("cd: not a directory\n");
-            } else {
+            ResolvePath(dir, new_path, 256);
+
+            // Normalize: handle "." and ".." segments on RAMFS side using VFS existence check
+            // Simple check via VfsIsDir; if not a directory, do not change current_dir
+            if (VfsIsDir(new_path)) {
                 FastMemcpy(current_dir, new_path, 256);
-                PrintKernel("[VFRFS] DIRECTORY SWITCHED TO ");
+                PrintKernel("[VFS] DIRECTORY SWITCHED TO ");
                 PrintKernel(current_dir);
+                PrintKernel("\n");
+            } else {
+                PrintKernel("cd: no such directory: ");
+                PrintKernel(new_path);
                 PrintKernel("\n");
             }
         }
@@ -156,33 +141,27 @@ static void ExecuteCommand(const char* cmd) {
     } else if (FastStrCmp(cmd_name, "ls") == 0) {
         char* path = GetArg(cmd, 1);
         if (!path) {
-            FsLs(current_dir);
-        } else if (path[0] == '/') {
-            FsLs(path);
+            VfsListDir(current_dir);
         } else {
             char full_path[256];
-            int curr_len = 0;
-            while (current_dir[curr_len]) curr_len++;
-            
-            FastMemcpy(full_path, current_dir, curr_len);
-            if (current_dir[curr_len - 1] != '/') {
-                full_path[curr_len++] = '/';
-            }
-            
-            int path_len = 0;
-            while (path[path_len] && curr_len + path_len < 255) {
-                full_path[curr_len + path_len] = path[path_len];
-                path_len++;
-            }
-            full_path[curr_len + path_len] = '\0';
-            FsLs(full_path);
+            ResolvePath(path, full_path, 256);
+            VfsListDir(full_path);
         }
     } else if (FastStrCmp(cmd_name, "cat") == 0) {
         char* file = GetArg(cmd, 1);
         if (file) {
             char full_path[256];
             ResolvePath(file, full_path, 256);
-            FsCat(full_path);
+            
+            static uint8_t file_buffer[4096];
+            int bytes = VfsReadFile(full_path, file_buffer, 4095);
+            if (bytes > 0) {
+                file_buffer[bytes] = 0;
+                PrintKernel((char*)file_buffer);
+                PrintKernel("\n");
+            } else {
+                PrintKernel("cat: file not found or read error\n");
+            }
         } else {
             PrintKernel("Usage: cat <filename>\n");
         }
@@ -191,7 +170,7 @@ static void ExecuteCommand(const char* cmd) {
         if (name) {
             char full_path[256];
             ResolvePath(name, full_path, 256);
-            if (FsMkdir(full_path) == 0) {
+            if (VfsCreateDir(full_path) == 0) {
                 PrintKernel("Directory created\n");
             } else {
                 PrintKernel("Failed to create directory\n");
@@ -204,7 +183,7 @@ static void ExecuteCommand(const char* cmd) {
         if (name) {
             char full_path[256];
             ResolvePath(name, full_path, 256);
-            if (FsTouch(full_path) == 0) {
+            if (VfsCreateFile(full_path) == 0) {
                 PrintKernel("File created\n");
             } else {
                 PrintKernel("Failed to create file\n");
@@ -217,7 +196,7 @@ static void ExecuteCommand(const char* cmd) {
         if (name) {
             char full_path[256];
             ResolvePath(name, full_path, 256);
-            if (FsDelete(full_path) == 0) {
+            if (VfsDelete(full_path) == 0) {
                 PrintKernel("Removed\n");
             } else {
                 PrintKernel("Failed to remove (file not found or directory not empty)\n");
@@ -231,7 +210,9 @@ static void ExecuteCommand(const char* cmd) {
         if (text && file) {
             char full_path[256];
             ResolvePath(file, full_path, 256);
-            if (FsEcho(text, full_path) == 0) {
+            int len = 0;
+            while (text[len]) len++;
+            if (VfsWriteFile(full_path, text, len) >= 0) {
                 PrintKernel("Text written to file\n");
             } else {
                 PrintKernel("Failed to write to file\n");
@@ -249,7 +230,34 @@ static void ExecuteCommand(const char* cmd) {
             PrintKernel("Usage: edit <filename>\n");
         }
     } else if (FastStrCmp(cmd_name, "fstest") == 0) {
-        FsTest();
+        PrintKernel("[VFS] Running filesystem tests...\n");
+        
+        if (VfsCreateDir("/test") == 0) {
+            PrintKernel("[VFS] Created /test directory\n");
+        }
+        
+        char* test_text = "Hello VoidFrame!\n";
+        int len = 0;
+        while (test_text[len]) len++;
+        if (VfsWriteFile("/test/hello.txt", test_text, len) >= 0) {
+            PrintKernel("[VFS] Created /test/hello.txt\n");
+        }
+        
+        PrintKernel("[VFS] Root directory contents:\n");
+        VfsListDir("/");
+        
+        PrintKernel("[VFS] Test directory contents:\n");
+        VfsListDir("/test");
+        
+        PrintKernel("[VFS] Contents of /test/hello.txt:\n");
+        static uint8_t file_buffer[256];
+        int bytes = VfsReadFile("/test/hello.txt", file_buffer, 255);
+        if (bytes > 0) {
+            file_buffer[bytes] = 0;
+            PrintKernel((char*)file_buffer);
+        }
+        
+        PrintKernel("[VFS] Filesystem tests completed\n");
     } else {
         PrintKernel("Unknown command: ");
         PrintKernel(cmd_name);
@@ -263,8 +271,7 @@ void ShellInit(void) {
 
 void ShellProcess(void) {
     PrintKernelSuccess("VoidFrame Shell v0.0.1-beta\n");
-    ClearScreen();
-    PrintKernelSuccess("VoidFrame Shell. Press ENTER to start shell\n");
+    PrintKernelSuccess("VoidFrame Shell. Press ENTER to start shell\n"); // actually start already but on start the /> isnt there so yeah
     while (1) {
         if (HasInput()) {
             char c = GetChar();

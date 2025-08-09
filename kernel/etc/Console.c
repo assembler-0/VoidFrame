@@ -13,6 +13,13 @@ static void UpdateCursor(void) {
     outb(0x3D5, (uint8_t)((pos >> 8) & 0xFF));
 }
 
+ConsoleT console = {
+    .line = 0,
+    .column = 0,
+    .buffer = (volatile uint16_t*)VGA_BUFFER_ADDR,
+    .color = VGA_COLOR_DEFAULT
+};
+
 static volatile int lock = 0;
 // Inline functions for better performance
 static void ConsoleSetColor(uint8_t color) {
@@ -120,6 +127,17 @@ void PrintKernel(const char* str) {
     console.color = original_color;
     SpinUnlock(&lock);
     SerialWrite(str);
+}
+
+void PrintKernelN(const char* str, uint32_t n) {
+    if (!str) return;
+    SpinLock(&lock);
+    const uint8_t original_color = console.color;
+    for (uint32_t i = 0; i < n && str[i]; i++) {
+        ConsolePutchar(str[i]);
+    }
+    console.color = original_color;
+    SpinUnlock(&lock);
 }
 
 // Colored output variants

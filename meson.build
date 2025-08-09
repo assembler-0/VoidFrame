@@ -30,7 +30,7 @@ c_flags = [
 ]
 
 # Assembly flags
-asm_flags = ['-f', 'elf64', '-O2']
+asm_flags = ['-f', 'elf64']
 
 # Include directories
 inc_dirs = [
@@ -59,7 +59,7 @@ asm_sources = [
     arch_root + '/syscall/SyscallEntry.asm',
     arch_root + '/asm/Switch.asm',
     arch_root + '/interrupts/Interrupts.asm',
-    src_root + '/kernel/memory/AsmHelpers.asm',
+    src_root + '/include/Paging.asm'
 ]
 
 # C sources (organized)
@@ -79,6 +79,8 @@ c_sources = [
     src_root + '/kernel/etc/StringOps.c',
     src_root + '/fs/Fs.c',
     src_root + '/fs/FsUtils.c',
+    src_root + '/fs/FAT12.c',
+    src_root + '/fs/VFS.c',
     arch_root + '/idt/Idt.c',
     arch_root + '/gdt/Gdt.c',
     arch_root + '/syscall/Syscall.c',
@@ -86,6 +88,7 @@ c_sources = [
     src_root + '/drivers/Pic.c',
     src_root + '/drivers/Serial.c',
     src_root + '/drivers/Keyboard.c',
+    src_root + '/drivers/Ide.c',
     arch_root + '/cpu/Cpu.c',
     src_root + '/kernel/atomic/Atomics.c',
     src_root + '/kernel/ipc/Ipc.c'
@@ -147,5 +150,13 @@ iso = custom_target('VoidFrame.iso',
 
 # Run target
 run_target('run',
-           command : ['qemu-system-x86_64', '-cdrom', 'VoidFrame.iso',  '-debugcon', 'stdio' , '-no-reboot','-no-shutdown','-m', '1G']
+           command : ['qemu-system-x86_64', '-cdrom', 'VoidFrame.iso',  '-debugcon', 'stdio' , '-no-reboot','-no-shutdown','-m', '1G', '-drive', 'file=VoidFrameDisk.img,format=raw,if=ide', '-boot', 'd']
+)
+
+run_target('img',
+          command : ['qemu-img', 'create',  '-f', 'raw', 'VoidFrameDisk.img', '1440K']
+)
+
+run_target('mkfs',
+          command : ['mkfs.fat', '-F',  '12', 'VoidFrameDisk.img']
 )

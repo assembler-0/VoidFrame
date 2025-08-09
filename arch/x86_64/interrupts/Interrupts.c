@@ -1,5 +1,6 @@
 #include "Interrupts.h"
 #include "Console.h"
+#include "Ide.h"
 #include "Io.h"
 #include "Keyboard.h"
 #include "Panic.h"
@@ -21,8 +22,20 @@ void InterruptHandler(Registers* regs) {
             outb(0x20, 0x20); // EOI to master PIC
             return;
 
-        // Handle other hardware interrupts (34-47)
-        case 34 ... 47:
+        case 46: // IDE Primary (IRQ 14)
+            IDEPrimaryIRQH();
+            outb(0xA0, 0x20); // EOI to slave PIC
+            outb(0x20, 0x20); // EOI to master PIC
+            return;
+
+        case 47: // IDE Secondary (IRQ 15)
+            IDESecondaryIRQH();
+            outb(0xA0, 0x20); // EOI to slave PIC
+            outb(0x20, 0x20); // EOI to master PIC
+            return;
+
+        // Handle other hardware interrupts (34-45)
+        case 34 ... 45:
             PrintKernelWarning("[IRQ] Unhandled hardware interrupt: ");
             PrintKernelInt(regs->interrupt_number - 32);
             PrintKernelWarning("\n");

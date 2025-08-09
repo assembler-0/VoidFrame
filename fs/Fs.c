@@ -1,7 +1,7 @@
 #include "Fs.h"
+#include "Console.h"
 #include "KernelHeap.h"
 #include "MemOps.h"
-#include "Console.h"
 #include "Process.h"
 
 static FsNode* root_node = NULL;
@@ -232,9 +232,25 @@ int FsMkdir(const char* path) {
     
     if (last_slash == -1) return -1;
     
-    FastMemcpy(parent_path, path, last_slash + 1);
-    parent_path[last_slash + 1] = '\0';
-    FastMemcpy(dirname, path + last_slash + 1, MAX_FILENAME);
+    // Copy parent path
+    if (last_slash == 0) {
+        parent_path[0] = '/';
+        parent_path[1] = '\0';
+    } else {
+        FastMemcpy(parent_path, path, last_slash);
+        parent_path[last_slash] = '\0';
+    }
+    
+    // Copy directory name
+    int name_len = 0;
+    const char* name_start = path + last_slash + 1;
+    while (name_start[name_len] && name_len < MAX_FILENAME - 1) {
+        dirname[name_len] = name_start[name_len];
+        name_len++;
+    }
+    dirname[name_len] = '\0';
+    
+    if (name_len == 0) return -1;
     
     FsNode* parent = FsFind(parent_path);
     if (!parent || parent->type != FS_DIRECTORY) return -1;
@@ -283,4 +299,49 @@ FsNode* FsReaddir(const char* path) {
     FsNode* dir = FsFind(path);
     if (!dir || dir->type != FS_DIRECTORY) return NULL;
     return dir->children;
+}
+
+int FsListDir(const char* path) {
+    FsNode* dir = FsFind(path);
+    if (!dir || dir->type != FS_DIRECTORY) return -1;
+    
+    FsNode* current = dir->children;
+    if (!current) {
+        PrintKernel("(empty directory)\n");
+        return 0;
+    }
+    
+    while (current) {
+        if (current->type == FS_DIRECTORY) {
+            PrintKernel("[DIR]  ");
+        } else {
+            PrintKernel("[FILE] ");
+        }
+        PrintKernel(current->name);
+        PrintKernel(" (");
+        PrintKernelInt(current->size);
+        PrintKernel(" bytes)\n");
+        current = current->next_sibling;
+    }
+    
+    return 0;
+}
+
+int FsCreateFile(const char* path) {
+    int fd = FsOpen(path, FS_WRITE);
+    if (fd < 0) return -1;
+    FsClose(fd);
+    return 0;
+}
+
+int FsCreateDir(const char* path) {
+    return FsMkdir(path);
+}
+
+int FsWriteFile(const char* path, const void* buffer, uint32_t size) {
+    int fd = FsOpen(path, FS_WRITE);
+    if (fd < 0) return -1;
+    int result = FsWrite(fd, buffer, size);
+    FsClose(fd);
+    return result;
 }

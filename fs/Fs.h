@@ -58,5 +58,9 @@ int FsSeek(int fd, uint64_t position);
 int FsMkdir(const char* path);
 int FsRmdir(const char* path);
 FsNode* FsReaddir(const char* path);
+int FsListDir(const char* path);
+int FsCreateFile(const char* path);
+int FsCreateDir(const char* path);
+int FsWriteFile(const char* path, const void* buffer, uint32_t size);
 
 #endif

@@ -29,12 +29,7 @@ typedef enum {
   INIT_ERROR_SECURITY
 } InitResultT;
 
-static ConsoleT console = {
-  .line = 0,
-  .column = 0,
-  .buffer = (volatile uint16_t*)VGA_BUFFER_ADDR,
-  .color = VGA_COLOR_DEFAULT
-};
+extern ConsoleT console;
 
 void PrintKernelSuccess(const char* str);
 void PrintKernelError(const char* str);
@@ -43,6 +38,7 @@ void PrintKernelHex(uint64_t num);
 void PrintKernel(const char* str);
 void PrintKernelInt(int64_t num);
 void PrintKernelAt(const char* str, uint32_t line, uint32_t col);
+void PrintKernelN(const char* str, uint32_t n);
 void ClearScreen();
 
 #endif // VOIDFRAME_CONSOLE_H

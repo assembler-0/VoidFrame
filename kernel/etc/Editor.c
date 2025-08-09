@@ -1,10 +1,11 @@
 #include "Editor.h"
 #include "Console.h"
-#include "Fs.h"
+#include "VFS.h"
 #include "Keyboard.h"
 #include "MemOps.h"
 #include "Process.h"
 #include "StringOps.h"
+#include "KernelHeap.h"
 
 #define MAX_LINES 50
 #define MAX_LINE_LEN 80
@@ -20,15 +21,10 @@ static int goto_mode = 0; // Track if we're in goto line mode
 static char goto_buffer[10]; // Buffer for line number input
 static int goto_pos = 0; // Position in goto buffer
 
-// Helper function to get string length safely
-static int safe_strlen(const char* str, int max_len) {
-    return (int)FastStrlen(str, max_len);
-}
-
 // Helper function to get line length
 static int get_line_length(int line) {
     if (line < 0 || line >= MAX_LINES) return 0;
-    return safe_strlen(editor_buffer[line], MAX_LINE_LEN);
+    return FastStrlen(editor_buffer[line], MAX_LINE_LEN);
 }
 
 // Helper function to clamp cursor position
@@ -101,57 +97,49 @@ static void EditorRefresh(void) {
 }
 
 static int EditorSave(void) {
-    int fd = FsOpen(filename, FS_WRITE);
-    if (fd < 0) {
-        PrintKernel("\nError: Cannot save file - ");
-        PrintKernel(filename);
-        PrintKernel("\n");
+    // Compute total length
+    int total_len = 0;
+    for (int i = 0; i < total_lines && i < MAX_LINES; i++) {
+        total_len += get_line_length(i);
+        if (i < total_lines - 1) total_len += 1; // newline
+    }
+
+    char* buffer = (char*)KernelMemoryAlloc(total_len > 0 ? (size_t)total_len : 1);
+    if (!buffer) {
+        PrintKernel("\nError: Out of memory\n");
         return 0;
     }
 
+    int pos = 0;
     for (int i = 0; i < total_lines && i < MAX_LINES; i++) {
         int len = get_line_length(i);
         if (len > 0) {
-            int written = FsWrite(fd, editor_buffer[i], len);
-            if (written != len) {
-                FsClose(fd);
-                PrintKernel("\nError: Write failed\n");
-                return 0;
-            }
+            FastMemcpy(&buffer[pos], editor_buffer[i], len);
+            pos += len;
         }
         if (i < total_lines - 1) {
-            if (FsWrite(fd, "\n", 1) != 1) {
-                FsClose(fd);
-                PrintKernel("\nError: Write failed\n");
-                return 0;
-            }
+            buffer[pos++] = '\n';
         }
     }
 
-    FsClose(fd);
+    int written = VfsWriteFile(filename, buffer, (uint32_t)total_len);
+    KernelFree(buffer);
+
+    if (written < 0 || written != total_len) {
+        PrintKernel("\nError: Write failed\n");
+        return 0;
+    }
+
     dirty = 0;
     PrintKernel("\nFile saved successfully!\n");
     return 1;
 }
 
 static void EditorLoad(void) {
-    int fd = FsOpen(filename, FS_READ);
-    if (fd < 0) {
-        // New file - initialize empty buffer
-        FastMemset(editor_buffer, 0, sizeof(editor_buffer));
-        total_lines = 1;
-        current_line = 0;
-        current_col = 0;
-        dirty = 0;
-        return;
-    }
-
-    char buffer[2048]; // Larger read buffer
-    int bytes_read = FsRead(fd, buffer, sizeof(buffer) - 1);
-    FsClose(fd);
-
+    char buffer[4096];
+    int bytes_read = VfsReadFile(filename, buffer, sizeof(buffer) - 1);
     if (bytes_read <= 0) {
-        // Empty file
+        // New or empty file
         FastMemset(editor_buffer, 0, sizeof(editor_buffer));
         total_lines = 1;
         current_line = 0;
@@ -160,7 +148,7 @@ static void EditorLoad(void) {
         return;
     }
 
-    buffer[bytes_read] = '\0';
+    if (bytes_read < (int)sizeof(buffer)) buffer[bytes_read] = '\0'; else buffer[sizeof(buffer)-1] = '\0';
     FastMemset(editor_buffer, 0, sizeof(editor_buffer));
 
     int line = 0, col = 0;
@@ -171,10 +159,8 @@ static void EditorLoad(void) {
             line++;
             col = 0;
         } else if (ch == '\r') {
-            // Skip carriage returns
             continue;
         } else if (ch >= 32 && ch <= 126) {
-            // Only accept printable characters
             if (col < MAX_LINE_LEN - 1) {
                 editor_buffer[line][col++] = ch;
             }
@@ -243,7 +229,7 @@ static void handle_goto_mode(char c) {
     }
 }
 
-static void EditorInsertChar(char c) {
+static void EditorInsertChar(const char c) {
     if (current_col >= MAX_LINE_LEN - 1) return;
 
     // Shift characters right
@@ -253,6 +239,8 @@ static void EditorInsertChar(char c) {
 
     editor_buffer[current_line][current_col] = c;
     current_col++;
+    // Ensure line is always null-terminated
+    editor_buffer[current_line][MAX_LINE_LEN - 1] = '\0';
     dirty = 1;
 }
 
@@ -263,6 +251,8 @@ static void EditorDeleteChar(void) {
         for (int i = current_col; i < MAX_LINE_LEN - 1; i++) {
             editor_buffer[current_line][i] = editor_buffer[current_line][i + 1];
         }
+        // Ensure termination at end
+        editor_buffer[current_line][MAX_LINE_LEN - 1] = '\0';
         dirty = 1;
     } else if (current_line > 0) {
         // Join with previous line
@@ -302,10 +292,8 @@ static void EditorNewLine(void) {
     if (total_lines >= MAX_LINES) return;
 
     // Move lines down
-    for (int i = total_lines; i > current_line + 1; i--) {
-        if (i < MAX_LINES) {
-            FastMemcpy(editor_buffer[i], editor_buffer[i-1], MAX_LINE_LEN);
-        }
+    for (int i = (total_lines < MAX_LINES ? total_lines : MAX_LINES - 1); i > current_line + 1; i--) {
+        FastMemcpy(editor_buffer[i], editor_buffer[i-1], MAX_LINE_LEN);
     }
 
     // Split current line at cursor
@@ -315,21 +303,20 @@ static void EditorNewLine(void) {
         // Copy text after cursor to new line using FastMemcpy
         int curr_len = get_line_length(current_line);
         int copy_len = curr_len - current_col;
-        if (copy_len > 0 && copy_len < MAX_LINE_LEN - 1) {
+        if (copy_len > 0) {
+            if (copy_len > MAX_LINE_LEN - 1) copy_len = MAX_LINE_LEN - 1;
             FastMemcpy(editor_buffer[current_line + 1],
                       &editor_buffer[current_line][current_col], copy_len);
             editor_buffer[current_line + 1][copy_len] = '\0';
         }
 
         // Truncate current line at cursor
-        if (current_col < MAX_LINE_LEN) {
-            editor_buffer[current_line][current_col] = '\0';
-        }
+        editor_buffer[current_line][current_col] = '\0';
     }
 
     current_line++;
     current_col = 0;
-    total_lines++;
+    if (total_lines < MAX_LINES) total_lines++;
     dirty = 1;
     clamp_cursor();
 }

@@ -1,15 +1,15 @@
 #include "Kernel.h"
-#include "AsmHelpers.h"
 #include "Console.h"
 #include "Fs.h"
-#include "FsUtils.h"
 #include "Gdt.h"
+#include "Ide.h"
 #include "Idt.h"
 #include "KernelHeap.h"
 #include "Keyboard.h"
 #include "MemOps.h"
 #include "Memory.h"
 #include "Multiboot2.h"
+#include "Paging.h"
 #include "Panic.h"
 #include "Pic.h"
 #include "Process.h"
@@ -17,9 +17,11 @@
 #include "Shell.h"
 #include "StackGuard.h"
 #include "Syscall.h"
+#include "VFS.h"
 #include "VMem.h"
 #include "stdbool.h"
 #include "stdint.h"
+#include "FAT12.h"
 
 void KernelMainHigherHalf(void);
 #define KERNEL_STACK_SIZE (16 * 1024) // 16KB stack
@@ -232,10 +234,28 @@ static InitResultT CoreInit(void) {
     SerialInit();
     PrintKernelSuccess("[SYSTEM] Serial driver initialized\n");
 
-    // Initialize filesystem
-    PrintKernel("[INFO] Initializing filesystem...\n");
+    // Initialize IDE driver
+    PrintKernel("[INFO] Initializing IDE driver...\n");
+    IdeInit();
+    PrintKernelSuccess("[SYSTEM] IDE driver initialized\n");
+
+    // Explicitly initialize FAT12 before VFS (explicit > auto-detect)
+    PrintKernel("[INFO] Initializing FAT12...\n");
+    if (Fat12Init(0) == 0) {
+        PrintKernelSuccess("[SYSTEM] FAT12 Driver initialized\n");
+    } else {
+        PrintKernelWarning("[WARN] FAT12 initialization failed\n");
+    }
+
+    // Initialize ram filesystem
+    PrintKernel("[INFO] Initializing VFRFS...\n");
     FsInit();
     PrintKernelSuccess("[SYSTEM] VFRFS (VoidFrame RamFS) initialized\n");
+    
+    // Initialize VFS
+    PrintKernel("[INFO] Initializing VFS...\n");
+    VfsInit();
+    PrintKernelSuccess("[SYSTEM] VFS initialized\n");
 
     // Setup memory protection LAST - after all systems are ready
     StackGuardInit();
@@ -342,7 +362,7 @@ void KernelMainHigherHalf(void) {
     
     // Initialize core systems
     CoreInit();
-    KernelMemoryAlloc(1234123412354978);
+
     PrintKernelSuccess("[SYSTEM] Kernel initialization complete\n");
     PrintKernelSuccess("[SYSTEM] Initializing interrupts...\n\n");
 
