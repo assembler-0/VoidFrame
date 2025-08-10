@@ -2,12 +2,16 @@
 #include "Console.h"
 #include "Editor.h"
 #include "FAT12.h"
-#include "PS2.h"
 #include "KernelHeap.h"
 #include "MemOps.h"
+#include "Memory.h"
+#include "PS2.h"
 #include "Process.h"
 #include "StringOps.h"
 #include "VFS.h"
+#include "VMem.h"
+#include "VesaBIOSExtension.h"
+#include "stdlib.h"
 
 static char command_buffer[256];
 static int cmd_pos = 0;
@@ -16,6 +20,14 @@ static char current_dir[256] = "/";
 static void Version() {
     PrintKernelSuccess("VoidFrame v0.0.1-beta\n");
     PrintKernelSuccess("VoidFrame Shell v0.0.1-beta\n");
+}
+void info(void) {
+    if (!VBEIsInitialized()) return;
+    VBEShowInfo();
+    int count = 10000000;
+    while (--count) {
+        Yield();
+    }
 }
 
 static char* GetArg(const char* cmd, int arg_num) {
@@ -90,32 +102,80 @@ static void ResolvePath(const char* input, char* output, int max_len) {
     }
 }
 
+static void show_help() {
+    PrintKernelSuccess("VoidFrame Shell Commands:\n");
+    PrintKernel("  help           - Show this help\n");
+    PrintKernel("  ps             - List processes\n");
+    PrintKernel("  sched          - Show scheduler state\n");
+    PrintKernel("  perf           - Show performance stats\n");
+    PrintKernel("  memstat        - Show memory statistics\n");
+    PrintKernel("  clear          - Clear screen\n");
+    PrintKernel("  info           - A piece information about the kernel\n");
+    PrintKernel("  cd <dir>       - Change directory\n");
+    PrintKernel("  pwd            - Print working directory\n");
+    PrintKernel("  ls [path]      - List directory contents\n");
+    PrintKernel("  cat <file>     - Display file contents\n");
+    PrintKernel("  mkdir <name>   - Create directory\n");
+    PrintKernel("  touch <name>   - Create empty file\n");
+    PrintKernel("  alloc <size>   - Allocate <size> bytes\n");
+    PrintKernel("  kill <pic>     - Terminate process with pid <pid>\n");
+    PrintKernel("  rm <file>      - Remove file or empty directory\n");
+    PrintKernel("  echo <text> <file> - Write text to file\n");
+    PrintKernel("  fstest         - Run filesystem tests\n");
+}
+
 static void ExecuteCommand(const char* cmd) {
     char* cmd_name = GetArg(cmd, 0);
     if (!cmd_name) return;
     
     if (FastStrCmp(cmd_name, "help") == 0) {
-        PrintKernel("VoidFrame Shell Commands:\n");
-        PrintKernel("  help           - Show this help\n");
-        PrintKernel("  ps             - List processes\n");
-        PrintKernel("  sched          - Show scheduler state\n");
-        PrintKernel("  perf           - Show performance stats\n");
-        PrintKernel("  clear          - Clear screen\n");
-        PrintKernel("  cd <dir>       - Change directory\n");
-        PrintKernel("  pwd            - Show current directory\n");
-        PrintKernel("  ls [path]      - List directory contents\n");
-        PrintKernel("  cat <file>     - Display file contents\n");
-        PrintKernel("  mkdir <name>   - Create directory\n");
-        PrintKernel("  touch <name>   - Create empty file\n");
-        PrintKernel("  rm <file>      - Remove file or empty directory\n");
-        PrintKernel("  echo <text> <file> - Write text to file\n");
-        PrintKernel("  fstest         - Run filesystem tests\n");
+        show_help();
     } else if (FastStrCmp(cmd_name, "ps") == 0) {
         ListProcesses();
     } else if (FastStrCmp(cmd_name, "perf") == 0) {
         DumpPerformanceStats();
+    } else if (FastStrCmp(cmd_name, "memstat") == 0) {
+        MemoryStats stats;
+        GetDetailedMemoryStats(&stats);
+        PrintKernel("  Physical: ");
+        PrintKernelInt(stats.free_physical_bytes / (1024*1024));
+        PrintKernel("MB free, ");
+        PrintKernelInt(stats.fragmentation_score);
+        PrintKernel("% fragmented, Used: ");
+        PrintKernelInt(stats.used_physical_bytes / (1024*1024));
+        PrintKernel("MB\n");
+        PrintVMemStats();
+        PrintHeapStats();
+    } else if (FastStrCmp(cmd_name, "alloc") == 0) {
+        char* size_str = GetArg(cmd, 1);
+        if (!size_str) {
+            PrintKernel("Usage: alloc <size>\n");
+            return;
+        }
+        int size = atoi(size_str);
+        KernelFree(size_str);
+        if (size <= 0) {
+            PrintKernel("Usage: alloc <size>\n");
+            return;
+        }
+        KernelMemoryAlloc((uint32_t)size);
+    } else if (FastStrCmp(cmd_name, "kill") == 0) {
+        char* pid_str = GetArg(cmd, 1);
+        if (!pid_str) {
+            PrintKernel("Usage: kill <pid>\n");
+            return;
+            }
+        int pid = atoi(pid_str);
+        KernelFree(pid_str);
+        if (pid <= 0) {
+            PrintKernel("Usage: kill <pid>\n");
+            return;
+        }
+        KillProcess(pid);
     } else if (FastStrCmp(cmd_name, "ver") == 0) {
         Version();
+    } else if (FastStrCmp(cmd_name, "info") == 0) {
+        CreateProcess(info);
     } else if (FastStrCmp(cmd_name, "sched") == 0) {
         DumpSchedulerState();
     } else if (FastStrCmp(cmd_name, "clear") == 0) {
@@ -300,6 +360,7 @@ void ShellInit(void) {
 
 void ShellProcess(void) {
     PrintKernelSuccess("[SYSTEM] VoidFrame Shell v0.0.1-beta\n");
+    show_help();
     while (1) {
         if (HasInput()) {
             char c = GetChar();

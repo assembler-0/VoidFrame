@@ -99,17 +99,18 @@ c_sources = [
 ]
 
 obj_sources = [
-	src_root + '/kernel/etc/splash1.o',
-	src_root + '/kernel/etc/splash2.o',
-	src_root + '/kernel/etc/splash3.o',
-	src_root + '/kernel/etc/splash4.o',
-	src_root + '/kernel/etc/splash5.o',
-	src_root + '/kernel/etc/splash6.o',
-	src_root + '/kernel/etc/splash7.o',
-	src_root + '/kernel/etc/splash8.o',
-	src_root + '/kernel/etc/splash9.o',
-	src_root + '/kernel/etc/splash10.o',
-	src_root + '/kernel/etc/panic.o'
+	src_root + '/kernel/etc/objects/splash1.o',
+	src_root + '/kernel/etc/objects/splash2.o',
+	src_root + '/kernel/etc/objects/splash3.o',
+	src_root + '/kernel/etc/objects/splash4.o',
+	src_root + '/kernel/etc/objects/splash5.o',
+	src_root + '/kernel/etc/objects/splash6.o',
+	src_root + '/kernel/etc/objects/splash7.o',
+	src_root + '/kernel/etc/objects/splash8.o',
+	src_root + '/kernel/etc/objects/splash9.o',
+	src_root + '/kernel/etc/objects/splash10.o',
+	src_root + '/kernel/etc/objects/panic.o',
+	src_root + '/kernel/etc/objects/info.o'
 ]
 
 # Build include flags
