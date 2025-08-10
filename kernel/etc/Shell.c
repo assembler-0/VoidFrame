@@ -6,6 +6,7 @@
 #include "MemOps.h"
 #include "Memory.h"
 #include "PS2.h"
+#include "Panic.h"
 #include "Process.h"
 #include "StringOps.h"
 #include "VFS.h"
@@ -21,6 +22,7 @@ static void Version() {
     PrintKernelSuccess("VoidFrame v0.0.1-beta\n");
     PrintKernelSuccess("VoidFrame Shell v0.0.1-beta\n");
 }
+
 void info(void) {
     if (!VBEIsInitialized()) return;
     VBEShowInfo();
@@ -118,6 +120,7 @@ static void show_help() {
     PrintKernel("  mkdir <name>   - Create directory\n");
     PrintKernel("  touch <name>   - Create empty file\n");
     PrintKernel("  alloc <size>   - Allocate <size> bytes\n");
+    PrintKernel("  panic <message>- Panic with <message>\n");
     PrintKernel("  kill <pic>     - Terminate process with pid <pid>\n");
     PrintKernel("  rm <file>      - Remove file or empty directory\n");
     PrintKernel("  echo <text> <file> - Write text to file\n");
@@ -153,12 +156,18 @@ static void ExecuteCommand(const char* cmd) {
             return;
         }
         int size = atoi(size_str);
-        KernelFree(size_str);
         if (size <= 0) {
             PrintKernel("Usage: alloc <size>\n");
             return;
         }
         KernelMemoryAlloc((uint32_t)size);
+    } else if (FastStrCmp(cmd_name, "panic") == 0) {
+        char* str = GetArg(cmd, 1);
+        if (!str) {
+            PrintKernel("Usage: panic <message>\n");
+            return;
+        }
+        PANIC(str);
     } else if (FastStrCmp(cmd_name, "kill") == 0) {
         char* pid_str = GetArg(cmd, 1);
         if (!pid_str) {

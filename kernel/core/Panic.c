@@ -62,8 +62,10 @@ static void U32ToDecStr(uint32_t value, char* buffer) {
 
 void __attribute__((noreturn)) KernelPanicHandler(const char* message, uint64_t error_code, PanicContext* ctx) {
     asm volatile("cli");
+    ClearScreen();
+    ConsoleSetColor(VGA_COLOR_WHITE);
     PrintKernel("[FATAL] - [KERNEL PANIC] - COLLECTING RESOURCES....\n");
-    delay(2000000000);
+    delay(600000000);
 
     // Reentrancy guard to prevent recursive panics
     static volatile int in_panic = 0;
@@ -78,68 +80,78 @@ void __attribute__((noreturn)) KernelPanicHandler(const char* message, uint64_t 
         // Pure VBE graphics path - show panic image ONLY
         VBEShowPanic();
 
-        // Output to serial for debugging (no screen output)
-        SerialWrite("[FATAL] - [KERNEL PANIC] -- ");
-        if (message) SerialWrite(message);
-        SerialWrite("\n");
+        delay(600000000); // to give "real" look
+        PrintKernel("[FATAL] - [KERNEL PANIC] - ");
+        if (message) PrintKernel(message);
+        PrintKernel("\n");
         if (ctx) {
-            SerialWrite("RIP: ");
             char hex[20];
             char dec_buffer[12];
             char temp_buffer[128];
             temp_buffer[0] = '\0';
-            U64ToHexStr(ctx->rip, hex);
-            SerialWrite(hex);
-            SerialWrite("\n");
-            SerialWrite("- CPU CONTEXT -\n");
-            SerialWrite("----------------------\n");
+            PrintKernel("[CPU CONTEXT]\n");
+            PrintKernel("----------------------\n");
 
             U64ToHexStr(ctx->rip, hex);
             temp_buffer[0] = '\0'; strcat(temp_buffer, "RIP:  "); strcat(temp_buffer, hex);
-            SerialWrite(temp_buffer);
-            SerialWrite("\n");
+            PrintKernel(temp_buffer);
+            PrintKernel("\n");
 
             U64ToHexStr(ctx->rsp, hex);
             temp_buffer[0] = '\0'; strcat(temp_buffer, "RSP:  "); strcat(temp_buffer, hex);
-            SerialWrite(temp_buffer);
-            SerialWrite("\n");
+            PrintKernel(temp_buffer);
+            PrintKernel("\n");
 
             U64ToHexStr(ctx->rbp, hex);
             temp_buffer[0] = '\0'; strcat(temp_buffer, "RBP:  "); strcat(temp_buffer, hex);
-            SerialWrite(temp_buffer);
-            SerialWrite("\n");
+            PrintKernel(temp_buffer);
+            PrintKernel("\n");
 
             U64ToHexStr(error_code, hex);
             temp_buffer[0] = '\0'; strcat(temp_buffer, "CODE: "); strcat(temp_buffer, hex);
-            SerialWrite(temp_buffer);
-            SerialWrite("\n");
+            PrintKernel(temp_buffer);
+            PrintKernel("\n");
 
             // --- Source Location ---
-            SerialWrite("- SOURCE LOCATION -\n");
-            SerialWrite("----------------------\n");
+            PrintKernel("[SOURCE LOCATION]\n");
+            PrintKernel("----------------------\n");
 
             if (ctx->file && ctx->file[0] != '\0') {
                 temp_buffer[0] = '\0'; strcat(temp_buffer, "File: "); strcat(temp_buffer, ctx->file);
-                SerialWrite(temp_buffer);
-                SerialWrite("\n");
+                PrintKernel(temp_buffer);
+                PrintKernel("\n");
 
                 temp_buffer[0] = '\0'; strcat(temp_buffer, "Func: "); strcat(temp_buffer, ctx->function);
-                SerialWrite(temp_buffer);
-                SerialWrite("\n");
+                PrintKernel(temp_buffer);
+                PrintKernel("\n");
 
                 U32ToDecStr(ctx->line, dec_buffer);
                 temp_buffer[0] = '\0'; strcat(temp_buffer, "Line: "); strcat(temp_buffer, dec_buffer);
-                SerialWrite(temp_buffer);
-                SerialWrite("\n");
+                PrintKernel(temp_buffer);
+                PrintKernel("\n");
             } else {
-                SerialWrite("Unavailable\n");
+                PrintKernel("Unavailable\n");
             }
+            PrintKernel("[SYSTEM INFORMATION]\n");
+            PrintKernel("----------------------\n");
+            DumpSchedulerState();
+            DumpPerformanceStats();
+
+            MemoryStats stats;
+            GetDetailedMemoryStats(&stats);
+            PrintKernel("  Physical: ");
+            PrintKernelInt(stats.free_physical_bytes / (1024*1024));
+            PrintKernel("MB free, ");
+            PrintKernelInt(stats.fragmentation_score);
+            PrintKernel("% fragmented\n");
+            PrintVMemStats();
+            PrintHeapStats();
+
+            PrintKernelAt("SYSTEM HALTED.", 50, 45);
+            ConsoleSetColor(VGA_COLOR_DEFAULT);
         }
     } else {
         // Pure text mode path - no graphics
-        ClearScreen();  // Clear ONCE
-        ConsoleSetColor(VGA_COLOR_WHITE);
-
         const int margin = 2;
         int line = 2;
 

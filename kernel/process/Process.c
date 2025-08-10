@@ -1420,7 +1420,7 @@ static const char* GetStateString(ProcessState state) {
 
 void ListProcesses(void) {
     PrintKernel("\n--- Enhanced Process List ---\n");
-    PrintKernel("PID\tState     \tPrio\tCPU%%\tI/O\tPreempt\n");
+    PrintKernel("PID\tState     \tPrio\tCPU%\tI/O\tPreempt\n");
     PrintKernel("-----------------------------------------------\n");
     
     uint64_t total_cpu_time = 1; // Avoid division by zero
