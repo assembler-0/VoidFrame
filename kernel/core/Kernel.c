@@ -501,7 +501,7 @@ static void PrintBootstrapSummary(void) {
             if (addr < (uint64_t)_kernel_phys_start ||
                 addr >= (uint64_t)_kernel_phys_end) {
                 pt_pages++;
-                }
+            }
         }
     }
 
@@ -532,7 +532,7 @@ void KernelMainHigherHalf(void) {
 
     PrintKernelSuccess("[SYSTEM] Kernel initialization complete\n");
     PrintKernelSuccess("[SYSTEM] Initializing interrupts...\n\n");
-
+PANIC("TESTINg");
     asm volatile("sti");
     while (1) {
         if (ShouldSchedule()) {

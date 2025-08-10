@@ -42,6 +42,8 @@ void VBEDrawLine(uint32_t x0, uint32_t y0, uint32_t x1, uint32_t y1, uint32_t co
 void VBEDrawChar(uint32_t x, uint32_t y, char c, uint32_t fg_color, uint32_t bg_color);
 void VBEDrawString(uint32_t x, uint32_t y, const char* str, uint32_t fg_color, uint32_t bg_color);
 void VBEShowSplash(void);
+void VBEShowPanic(void);
+void delay(uint32_t ms);
 // Utility functions
 vbe_info_t* VBEGetInfo(void);
 int VBEIsInitialized(void);
