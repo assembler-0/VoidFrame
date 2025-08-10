@@ -11,7 +11,6 @@
 #include "MemPool.h"
 #include "Memory.h"
 #include "Multiboot2.h"
-#include "PS2.h"
 #include "Paging.h"
 #include "Panic.h"
 #include "Pic.h"
