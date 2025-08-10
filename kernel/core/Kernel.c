@@ -532,7 +532,7 @@ void KernelMainHigherHalf(void) {
 
     PrintKernelSuccess("[SYSTEM] Kernel initialization complete\n");
     PrintKernelSuccess("[SYSTEM] Initializing interrupts...\n\n");
-PANIC("TESTINg");
+
     asm volatile("sti");
     while (1) {
         if (ShouldSchedule()) {
