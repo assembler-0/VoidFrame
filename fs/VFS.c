@@ -60,10 +60,10 @@ int VfsInit(void) {
     extern int fat12_initialized;
     if (fat12_initialized) {
         PrintKernel("[VFS] Attempting FAT12 mount...\n");
-        int disk_result = VfsMount("/disk", VFS_FAT12, 0);
+        int disk_result = VfsMount("/Device", VFS_FAT12, 0);
 
         if (disk_result == 0) {
-            SerialWrite("[VFS] FAT12 mounted at /disk\n");
+            SerialWrite("[VFS] FAT12 mounted at /Device\n");
         } else {
             SerialWrite("[VFS] FAT12 mount failed\n");
         }
@@ -320,7 +320,7 @@ int VfsIsDir(const char* path) {
             return node && node->type == FS_DIRECTORY;
         }
         case VFS_FAT12: {
-            // Only root listing supported for FAT12 currently; treat "/disk" as a directory
+            // Only root listing supported for FAT12 currently; treat "/Device" as a directory
             return FastStrlen(local_path, 256) == 0;
         }
     }

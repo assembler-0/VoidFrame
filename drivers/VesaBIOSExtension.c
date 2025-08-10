@@ -1,5 +1,4 @@
 #include "VesaBIOSExtension.h"
-#include "Io.h"
 #include "Serial.h"
 #include "stdint.h"
 #include "stdlib.h"
@@ -13,6 +12,8 @@ extern const uint32_t _binary_splash5_32_raw_start[];
 extern const uint32_t _binary_splash6_32_raw_start[];
 extern const uint32_t _binary_splash7_32_raw_start[];
 extern const uint32_t _binary_splash8_32_raw_start[];
+extern const uint32_t _binary_splash9_32_raw_start[];
+extern const uint32_t _binary_splash10_32_raw_start[];
 
 // Update your array of pointers
 const uint32_t* splash_images[] = {
@@ -24,6 +25,8 @@ const uint32_t* splash_images[] = {
     _binary_splash6_32_raw_start,
     _binary_splash7_32_raw_start,
     _binary_splash8_32_raw_start,
+    _binary_splash9_32_raw_start,
+    _binary_splash10_32_raw_start,
 };
 
 const unsigned int num_splash_images = sizeof(splash_images) / sizeof(uint32_t*);
@@ -219,24 +222,32 @@ void VBEDrawLine(uint32_t x0, uint32_t y0, uint32_t x1, uint32_t y1, uint32_t co
 void VBEDrawChar(uint32_t x, uint32_t y, char c, uint32_t fg_color, uint32_t bg_color) {
     if (!vbe_initialized) return;
 
-    if ((unsigned char)c >= 128) {
+    if ((unsigned char)c >= 256) {
         return; // Character out of bounds
     }
 
-    const unsigned char* glyph = font8x8_basic[(unsigned char)c];
+    const unsigned char* glyph = console_font[(unsigned char)c];
 
-    for (int i = 0; i < 8; i++) {
-        for (int j = 0; j < 8; j++) {
-            if ((glyph[i] >> j) & 1) {
-                VBEPutPixel(x + j, y + i, fg_color);
+    // Use the font dimensions from font.h
+    for (int row = 0; row < FONT_HEIGHT; row++) {
+        // Calculate which byte contains this row's data
+        int byte_index = row * ((FONT_WIDTH + 7) / 8); // Number of bytes per row
+
+        for (int col = 0; col < FONT_WIDTH; col++) {
+            // For 8-bit wide fonts, we only need the first byte of each row
+            // For 16-bit wide fonts, we'd need to handle multiple bytes
+            int bit_position = 7 - (col % 8); // MSB first
+
+            if ((glyph[byte_index + (col / 8)] >> bit_position) & 1) {
+                VBEPutPixel(x + col, y + row, fg_color);
             } else {
-                // ALWAYS draw background, even if it's black
-                // This ensures old characters are properly erased
-                VBEPutPixel(x + j, y + i, bg_color);
+                // Always draw background to ensure proper clearing
+                VBEPutPixel(x + col, y + row, bg_color);
             }
         }
     }
 }
+
 
 void VBEDrawString(uint32_t x, uint32_t y, const char* str, uint32_t fg_color, uint32_t bg_color) {
     if (!vbe_initialized) return;
@@ -247,12 +258,69 @@ void VBEDrawString(uint32_t x, uint32_t y, const char* str, uint32_t fg_color, u
     for (int i = 0; str[i] != '\0'; i++) {
         if (str[i] == '\n') {
             current_x = x;
-            current_y += 8;
+            current_y += FONT_HEIGHT; // Use actual font height
+        } else if (str[i] == '\r') {
+            current_x = x;
+        } else if (str[i] == '\t') {
+            // Tab = 4 spaces
+            current_x += FONT_WIDTH * 4;
         } else {
-            VBEDrawChar(current_x, current_y, str[i], fg_color, bg_color);
-            current_x += 8;
+            // Check bounds before drawing
+            if (current_x + FONT_WIDTH <= vbe_info.width &&
+                current_y + FONT_HEIGHT <= vbe_info.height) {
+                VBEDrawChar(current_x, current_y, str[i], fg_color, bg_color);
+                }
+            current_x += FONT_WIDTH;
+        }
+
+        // Handle line wrapping
+        if (current_x + FONT_WIDTH > vbe_info.width) {
+            current_x = x;
+            current_y += FONT_HEIGHT;
         }
     }
+}
+
+void VBEGetTextDimensions(const char* str, uint32_t* width, uint32_t* height) {
+    if (!str || !width || !height) return;
+
+    uint32_t max_width = 0;
+    uint32_t current_width = 0;
+    uint32_t lines = 1;
+
+    for (int i = 0; str[i] != '\0'; i++) {
+        if (str[i] == '\n') {
+            if (current_width > max_width) {
+                max_width = current_width;
+            }
+            current_width = 0;
+            lines++;
+        } else if (str[i] == '\t') {
+            current_width += FONT_WIDTH * 4;
+        } else if (str[i] != '\r') {
+            current_width += FONT_WIDTH;
+        }
+    }
+
+    if (current_width > max_width) {
+        max_width = current_width;
+    }
+
+    *width = max_width;
+    *height = lines * FONT_HEIGHT;
+}
+
+void VBEDrawStringCentered(uint32_t center_x, uint32_t center_y, const char* str,
+                          uint32_t fg_color, uint32_t bg_color) {
+    if (!vbe_initialized || !str) return;
+
+    uint32_t text_width, text_height;
+    VBEGetTextDimensions(str, &text_width, &text_height);
+
+    uint32_t start_x = (center_x >= text_width / 2) ? center_x - text_width / 2 : 0;
+    uint32_t start_y = (center_y >= text_height / 2) ? center_y - text_height / 2 : 0;
+
+    VBEDrawString(start_x, start_y, str, fg_color, bg_color);
 }
 
 
@@ -268,13 +336,8 @@ void VBEShowSplash(void) {
                 VBEPutPixel(x, y, image_data[y * vbe_info.width + x]);
             }
         }
-        delay(25082012); // Adjust this value to change the delay
+        delay(15500000); // Adjust this value to change the delay
     }
-
-    // After the splash screen, you can clear the screen or draw something else
-    VBEFillScreen(VBE_COLOR_BLACK);
-    VBEDrawString(100, 20, "VoidFrame Kernel - Graphics Mode Active!",
-                  VBE_COLOR_WHITE, VBE_COLOR_BLACK);
 }
 
 vbe_info_t* VBEGetInfo(void) {

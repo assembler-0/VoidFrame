@@ -1,4 +1,3 @@
-// drivers/VBEConsole.c - Complete VBE Console Implementation
 #include "VBEConsole.h"
 #include "VesaBIOSExtension.h"
 #include "stdint.h"
@@ -7,7 +6,7 @@
 #define SCREEN_WIDTH   800
 #define SCREEN_HEIGHT  600
 #define CHAR_WIDTH     8
-#define CHAR_HEIGHT    8
+#define CHAR_HEIGHT    16
 #define CONSOLE_COLS   (SCREEN_WIDTH / CHAR_WIDTH)    // 100 columns
 #define CONSOLE_ROWS   (SCREEN_HEIGHT / CHAR_HEIGHT)  // 75 rows
 
