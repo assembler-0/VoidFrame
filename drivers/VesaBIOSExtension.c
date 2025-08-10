@@ -36,7 +36,7 @@ const uint32_t* panic_images[] = {
     _binary_panic_32_raw_start
 };
 
-const unsigned int num_panic_images = sizeof(splash_images) / sizeof(uint32_t*);
+const unsigned int num_panic_images = sizeof(panic_images) / sizeof(uint32_t*);
 // Multiboot2 tag types
 #define MULTIBOOT_TAG_FRAMEBUFFER 8
 #define MULTIBOOT_TAG_VBE         7
@@ -355,7 +355,6 @@ void VBEShowPanic(void) {
             VBEPutPixel(x, y, image_data[y * vbe_info.width + x]);
         }
     }
-    delay(1000000000); // Adjust this value to change the delay
 }
 
 vbe_info_t* VBEGetInfo(void) {

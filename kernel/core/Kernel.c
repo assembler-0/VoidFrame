@@ -531,13 +531,11 @@ void KernelMainHigherHalf(void) {
     SystemInitS2();
 
     PrintKernelSuccess("[SYSTEM] Kernel initialization complete\n");
-    PrintKernelSuccess("[SYSTEM] Initializing interrupts...\n\n");
+    PrintKernelSuccess("[SYSTEM] Initializing interrupts...\n");
 
     asm volatile("sti");
+
     while (1) {
-        if (ShouldSchedule()) {
-            RequestSchedule();
-        }
         asm volatile("hlt");
     }
 }

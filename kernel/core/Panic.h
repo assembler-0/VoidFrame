@@ -2,10 +2,10 @@
 #define PANIC_H
 
 #include "stdint.h"
-#include "Cpu.h"
+
 // Forward declare the Registers struct to avoid circular header dependencies.
 // The full definition is expected in a file like "Interrupts.h".
-
+struct Registers;
 // For __builtin_expect, if not globally available
 #define likely(x)   __builtin_expect(!!(x), 1)
 #define unlikely(x) __builtin_expect(!!(x), 0)
