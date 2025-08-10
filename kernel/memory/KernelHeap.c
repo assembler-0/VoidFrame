@@ -186,6 +186,8 @@ void* KernelMemoryAlloc(size_t size) {
     // Input validation
 
     if (size == 0 || size > MAX_ALLOC_SIZE) {
+        PrintKernelWarning("[HEAP] Ignoring invalid size: "); PrintKernelInt(size);
+        PrintKernel("\n");
         return NULL;
     }
 

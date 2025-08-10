@@ -15,6 +15,7 @@ extern const uint32_t _binary_splash8_32_raw_start[];
 extern const uint32_t _binary_splash9_32_raw_start[];
 extern const uint32_t _binary_splash10_32_raw_start[];
 extern const uint32_t _binary_panic_32_raw_start[];
+extern const uint32_t _binary_info_32_raw_start[];
 
 // Update your array of pointers
 const uint32_t* splash_images[] = {
@@ -37,6 +38,12 @@ const uint32_t* panic_images[] = {
 };
 
 const unsigned int num_panic_images = sizeof(panic_images) / sizeof(uint32_t*);
+
+const uint32_t* info_images[] = {
+    _binary_info_32_raw_start
+};
+
+const unsigned int num_info_images = sizeof(info_images) / sizeof(uint32_t*);
 // Multiboot2 tag types
 #define MULTIBOOT_TAG_FRAMEBUFFER 8
 #define MULTIBOOT_TAG_VBE         7
@@ -356,6 +363,18 @@ void VBEShowPanic(void) {
         }
     }
 }
+
+void VBEShowInfo(void) {
+    if (!vbe_initialized) return;
+    const uint32_t* image_data = (const uint32_t*)info_images[0];
+
+    for (uint32_t y = 0; y < vbe_info.height; y++) {
+        for (uint32_t x = 0; x < vbe_info.width; x++) {
+            VBEPutPixel(x, y, image_data[y * vbe_info.width + x]);
+        }
+    }
+}
+
 
 vbe_info_t* VBEGetInfo(void) {
     return vbe_initialized ? &vbe_info : NULL;

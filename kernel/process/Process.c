@@ -173,13 +173,13 @@ void TerminateProcess(uint32_t pid, TerminationReason reason, uint32_t exit_code
 
     uint32_t slot = proc - processes;
 
-    if (UNLIKELY(slot >= MAX_PROCESSES)) {
+    if (slot >= MAX_PROCESSES) {
         SpinUnlockIrqRestore(&scheduler_lock, flags);
         return;
     }
 
     // Enhanced security checks
-    if (LIKELY(reason != TERM_SECURITY)) {
+    if (reason != TERM_SECURITY) {
         // Cross-process termination security
         if (caller->pid != proc->pid) {
             // Only system processes can terminate other processes
@@ -1123,7 +1123,7 @@ void SystemIntegrityVerificationAgent(void) {
     security_manager_pid = current->pid;
 
     // Create system tracer with enhanced security
-    uint32_t tracer_pid = CreateSecureProcess(SystemTracer, PROC_PRIV_SYSTEM);
+    uint32_t tracer_pid = CreateProcess(SystemTracer); // demote, it hogs cpu
     if (tracer_pid) {
         Process* tracer = GetProcessByPid(tracer_pid);
         if (tracer) {
