@@ -24,7 +24,10 @@ static void Version() {
 void info(void) {
     if (!VBEIsInitialized()) return;
     VBEShowInfo();
-    delay(1000000000);
+    int count = 10000000;
+    while (--count) {
+        Yield();
+    }
 }
 
 static char* GetArg(const char* cmd, int arg_num) {
@@ -144,14 +147,30 @@ static void ExecuteCommand(const char* cmd) {
         PrintVMemStats();
         PrintHeapStats();
     } else if (FastStrCmp(cmd_name, "alloc") == 0) {
-        const int size = atoi(GetArg(cmd, 1));
-        if (!size) {
+        char* size_str = GetArg(cmd, 1);
+        if (!size_str) {
             PrintKernel("Usage: alloc <size>\n");
             return;
         }
-        KernelMemoryAlloc(size);
+        int size = atoi(size_str);
+        KernelFree(size_str);
+        if (size <= 0) {
+            PrintKernel("Usage: alloc <size>\n");
+            return;
+        }
+        KernelMemoryAlloc((uint32_t)size);
     } else if (FastStrCmp(cmd_name, "kill") == 0) {
-        const int pid = atoi(GetArg(cmd, 1));
+        char* pid_str = GetArg(cmd, 1);
+        if (!pid_str) {
+            PrintKernel("Usage: kill <pid>\n");
+            return;
+            }
+        int pid = atoi(pid_str);
+        KernelFree(pid_str);
+        if (pid <= 0) {
+            PrintKernel("Usage: kill <pid>\n");
+            return;
+        }
         KillProcess(pid);
     } else if (FastStrCmp(cmd_name, "ver") == 0) {
         Version();

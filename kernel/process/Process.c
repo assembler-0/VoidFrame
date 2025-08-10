@@ -32,6 +32,8 @@ static const uint32_t MAX_SECURITY_VIOLATIONS = SECURITY_VIOLATION_LIMIT;
 
 static Process processes[MAX_PROCESSES] ALIGNED_CACHE;
 static volatile uint32_t next_pid = 1;
+static uint64_t pid_bitmap[MAX_PROCESSES / 64 + 1] = {0};  // Track used PIDs
+static irq_flags_t pid_lock = 0;
 static volatile uint32_t current_process = 0;
 static volatile uint32_t process_count = 0;
 static volatile int need_schedule = 0;
@@ -183,10 +185,19 @@ void TerminateProcess(uint32_t pid, TerminationReason reason, uint32_t exit_code
         // Cross-process termination security
         if (caller->pid != proc->pid) {
             // Only system processes can terminate other processes
-            if (UNLIKELY(caller->privilege_level != PROC_PRIV_SYSTEM)) {
-                SpinUnlockIrqRestore(&scheduler_lock, flags);
-                TerminateProcess(caller->pid, TERM_SECURITY, 0);
-                return;
+            // Check privilege levels - can only kill equal or lower privilege
+            if (proc->privilege_level == PROC_PRIV_SYSTEM) {
+                // Only system processes can kill system processes
+                if (caller->privilege_level != PROC_PRIV_SYSTEM) {
+                    SpinUnlockIrqRestore(&scheduler_lock, flags);
+                    PrintKernelError("[SECURITY] Process ");
+                    PrintKernelInt(caller->pid);
+                    PrintKernel(" tried to kill system process ");
+                    PrintKernelInt(proc->pid);
+                    PrintKernel("\n");
+                    TerminateProcess(caller->pid, TERM_SECURITY, 0);
+                    return;
+                }
             }
 
             // Cannot terminate immune processes
@@ -243,7 +254,11 @@ void TerminateProcess(uint32_t pid, TerminationReason reason, uint32_t exit_code
 
     AddToTerminationQueueAtomic(slot);
     proc->state = PROC_ZOMBIE;
-
+    SpinLock(&pid_lock);
+    int idx = proc->pid / 64;
+    int bit = proc->pid % 64;
+    pid_bitmap[idx] &= ~(1ULL << bit);
+    SpinUnlock(&pid_lock);
     // Update scheduler statistics
     if (MLFQscheduler.total_processes > 0) {
         MLFQscheduler.total_processes--;
@@ -498,6 +513,8 @@ void AddToScheduler(uint32_t slot) {
 void RemoveFromScheduler(uint32_t slot) {
     if (slot == 0 || slot >= MAX_PROCESSES) return;
 
+    if (processes[slot].pid == 0) return;
+
     SchedulerNode* node = processes[slot].scheduler_node;
     if (!node) return;
 
@@ -505,6 +522,11 @@ void RemoveFromScheduler(uint32_t slot) {
     if (priority >= MAX_PRIORITY_LEVELS) return;
 
     PriorityQueue* q = &MLFQscheduler.queues[priority];
+
+    if (q->count == 0) {
+        processes[slot].scheduler_node = NULL;
+        return;
+    }
 
     // Remove node from doubly-linked list
     if (node->prev) {
@@ -519,12 +541,22 @@ void RemoveFromScheduler(uint32_t slot) {
         q->tail = node->prev;
     }
 
-    q->count--;
+    node->next = NULL;
+    node->prev = NULL;
+    node->slot = 0;
+
+    if (q->count > 0) {
+        q->count--;
+    }
     MLFQscheduler.total_processes--;
 
     // Update bitmap if queue became empty
     if (q->count == 0) {
-        MLFQscheduler.active_bitmap &= ~(1U << priority);
+        MLFQscheduler.active_bitmap &= ~(1ULL << priority);
+        if (priority < RT_PRIORITY_THRESHOLD) {
+            MLFQscheduler.rt_bitmap &= ~(1ULL << priority);
+        }
+        q->head = q->tail = NULL;
     }
 
     processes[slot].scheduler_node = NULL;
@@ -931,7 +963,24 @@ uint32_t CreateSecureProcess(void (*entry_point)(void), uint8_t privilege) {
         PANIC("CreateSecureProcess: No free process slots");
     }
 
-    uint32_t new_pid = __sync_fetch_and_add(&next_pid, 1);
+    uint32_t new_pid = 0;
+    SpinLock(&pid_lock);
+    for (int i = 1; i < MAX_PROCESSES; i++) {
+        int idx = i / 64;
+        int bit = i % 64;
+        if (!(pid_bitmap[idx] & (1ULL << bit))) {
+            pid_bitmap[idx] |= (1ULL << bit);
+            new_pid = i;
+            break;
+        }
+    }
+    SpinUnlock(&pid_lock);
+
+    if (new_pid == 0) {
+        FreeSlotFast(slot);
+        SpinUnlockIrqRestore(&scheduler_lock, flags);
+        PANIC("CreateSecureProcess: PID exhaustion");
+    }
 
     // Clear slot securely
     FastMemset(&processes[slot], 0, sizeof(Process));
