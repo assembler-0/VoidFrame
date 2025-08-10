@@ -30,15 +30,26 @@ static char scancode_to_ascii_shift[] = {
 };
 
 void PS2Init(void) {
-    outb(0x64, 0xAD);  // Disable keyboard
-    outb(0x64, 0xA7);  // Disable mouse
-    outb(0x64, 0xAE);  // Enable keyboard
-
-    while (inb(0x64) & 0x01) {  // While data available
-        inb(0x60);              // Read and discard
+    // Flush the keyboard controller's buffer
+    while (inb(KEYBOARD_STATUS_PORT) & 0x01) {
+        inb(KEYBOARD_DATA_PORT);  // Read and discard any pending data
     }
 
+    // Wait for controller to be ready
+    while (inb(KEYBOARD_STATUS_PORT) & 0x02);
+
+    // Send reset command to keyboard
+    outb(KEYBOARD_DATA_PORT, 0xFF);
+
+    // Wait for ACK (0xFA) and self-test passed (0xAA)
+    while (inb(KEYBOARD_STATUS_PORT) & 0x01) {
+        uint8_t response = inb(KEYBOARD_DATA_PORT);
+        if (response == 0xAA) break;  // Self-test passed
+    }
+
+    // Clear our software buffers
     buffer_head = buffer_tail = buffer_count = 0;
+    shift_pressed = ctrl_pressed = alt_pressed = 0;
 }
 
 void KeyboardHandler(void) {
