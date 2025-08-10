@@ -1,5 +1,5 @@
-#include "Keyboard.h"
 #include "Io.h"
+#include "PS2.h"
 
 #define KEYBOARD_DATA_PORT 0x60
 #define KEYBOARD_STATUS_PORT 0x64
@@ -29,7 +29,15 @@ static char scancode_to_ascii_shift[] = {
     '*', 0, ' '
 };
 
-void KeyboardInit(void) {
+void PS2Init(void) {
+    outb(0x64, 0xAD);  // Disable keyboard
+    outb(0x64, 0xA7);  // Disable mouse
+    outb(0x64, 0xAE);  // Enable keyboard
+
+    while (inb(0x64) & 0x01) {  // While data available
+        inb(0x60);              // Read and discard
+    }
+
     buffer_head = buffer_tail = buffer_count = 0;
 }
 

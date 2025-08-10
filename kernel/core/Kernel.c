@@ -1,14 +1,17 @@
 #include "Kernel.h"
 #include "Console.h"
+#include "FAT12.h"
 #include "Fs.h"
 #include "Gdt.h"
 #include "Ide.h"
 #include "Idt.h"
 #include "KernelHeap.h"
-#include "Keyboard.h"
+#include "PS2.h"
 #include "MemOps.h"
+#include "MemPool.h"
 #include "Memory.h"
 #include "Multiboot2.h"
+#include "PS2.h"
 #include "Paging.h"
 #include "Panic.h"
 #include "Pic.h"
@@ -19,11 +22,9 @@
 #include "Syscall.h"
 #include "VFS.h"
 #include "VMem.h"
+#include "VesaBIOSExtension.h"
 #include "stdbool.h"
 #include "stdint.h"
-#include "FAT12.h"
-#include "MemPool.h"
-#include "VesaBIOSExtension.h"
 
 void KernelMainHigherHalf(void);
 #define KERNEL_STACK_SIZE (16 * 1024) // 16KB stack
@@ -239,8 +240,40 @@ static bool CheckHugePageSupport(void) {
     return true;
 }
 
-// Enhanced CoreInit function with memory enhancements
-static InitResultT CoreInit(void) {
+void SystemInitS1(const uint32_t info) {
+    int sret = SerialInit();
+
+    if (sret != 0) {
+        PrintKernelWarning("[WARN] COM1 failed, probing other COM ports...\n");
+        if (SerialInitPort(COM2) != 0 && SerialInitPort(COM3) != 0 &&SerialInitPort(COM4) != 0) {
+            PrintKernelWarning("[WARN] No serial ports initialized. Continuing without serial.\n");
+        } else {
+            PrintKernelSuccess("[SYSTEM] Serial driver initialized on fallback port\n");
+        }
+    } else {
+        PrintKernelSuccess("[SYSTEM] Serial driver initialized on COM1\n");
+    }
+
+    if (VBEInit(info) != 0) {
+        PrintKernelError("[SYSTEM] Failed to initialize VBE and graphical environment");
+    }
+    PrintKernel("[SYSTEM] Starting Console...\n");
+    ConsoleInit();
+    PrintKernelSuccess("[SYSTEM] Console initialized\n");
+
+    VBEShowSplash();
+
+    PrintKernel("[SYSTEM] Parsing MULTIBOOT2 info...\n");
+    ParseMultibootInfo(info);
+    PrintKernelSuccess("[SYSTEM] MULTIBOOT2 info parsed\n");
+
+    PrintKernel("[SYSTEM] Initializing memory...\n");
+    MemoryInit(g_multiboot_info_addr);
+    PrintKernelSuccess("[SYSTEM] Memory initialized\n");
+}
+
+// Enhanced SystemInitS2 function with memory enhancements
+static InitResultT SystemInitS2(void) {
     // Initialize virtual memory manager with validation
     PrintKernel("[INFO] Initializing virtual memory manager...\n");
     VMemInit();
@@ -293,7 +326,7 @@ static InitResultT CoreInit(void) {
 
     // Initialize keyboard
     PrintKernel("[INFO] Initializing keyboard...\n");
-    KeyboardInit();
+    PS2Init();
     PrintKernelSuccess("[SYSTEM] Keyboard initialized\n");
 
     // Initialize shell
@@ -354,27 +387,6 @@ static InitResultT CoreInit(void) {
     return INIT_SUCCESS;
 }
 
-void EarlyInit(const uint32_t info) {
-    int sret = SerialInit();
-
-    if (sret != 0) {
-        PrintKernelWarning("[WARN] COM1 failed, probing other COM ports...\n");
-        if (SerialInitPort(COM2) != 0 && SerialInitPort(COM3) != 0 &&SerialInitPort(COM4) != 0) {
-            PrintKernelWarning("[WARN] No serial ports initialized. Continuing without serial.\n");
-        } else {
-            PrintKernelSuccess("[SYSTEM] Serial driver initialized on fallback port\n");
-        }
-    } else {
-        PrintKernelSuccess("[SYSTEM] Serial driver initialized on COM1\n");
-    }
-
-    if (VBEInit(info) != 0) {
-        PrintKernelError("[SYSTEM] Failed to initialize VBE and graphical environment");
-    }
-
-    ConsoleInit();
-}
-
 void KernelMain(const uint32_t magic, const uint32_t info) {
     if (magic != MULTIBOOT2_BOOTLOADER_MAGIC) {
         ClearScreen();
@@ -383,9 +395,7 @@ void KernelMain(const uint32_t magic, const uint32_t info) {
         PANIC("Unrecognized Multiboot2 magic.");
     }
 
-    EarlyInit(info);
-
-    VBEShowSplash();
+    SystemInitS1(info);
 
     console.buffer = (volatile uint16_t*)VGA_BUFFER_ADDR;
     
@@ -396,11 +406,6 @@ void KernelMain(const uint32_t magic, const uint32_t info) {
     PrintKernel(", Info: ");
     PrintKernelHex(info);
     PrintKernel("\n");
-    ParseMultibootInfo(info);
-    
-    // Initialize physical memory manager first
-    MemoryInit(g_multiboot_info_addr);
-
 
     // Create new PML4 with memory validation (ensure identity-mapped physical page)
     void* pml4_phys = NULL;
@@ -524,7 +529,7 @@ void KernelMainHigherHalf(void) {
     PrintBootstrapSummary();
 
     // Initialize core systems
-    CoreInit();
+    SystemInitS2();
 
     PrintKernelSuccess("[SYSTEM] Kernel initialization complete\n");
     PrintKernelSuccess("[SYSTEM] Initializing interrupts...\n\n");

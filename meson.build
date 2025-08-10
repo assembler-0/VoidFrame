@@ -88,7 +88,7 @@ c_sources = [
     src_root + '/fs/VFS.c',
     src_root + '/drivers/Pic.c',
     src_root + '/drivers/Serial.c',
-    src_root + '/drivers/Keyboard.c',
+    src_root + '/drivers/PS2.c',
     src_root + '/drivers/Ide.c',
     src_root + '/drivers/VesaBIOSExtension.c',
     arch_root + '/idt/Idt.c',

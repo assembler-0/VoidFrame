@@ -68,7 +68,7 @@ void delay(uint32_t count) {
 // In VesaBIOSExtension.c
 
 int VBEInit(uint32_t multiboot_info_addr) {
-    SerialWrite("VBE: Parsing Multiboot2 info...\n");
+    SerialWrite("[VESA]: Parsing Multiboot2 info...\n");
     uint8_t *tag_ptr = (uint8_t*)(multiboot_info_addr + 8);
 
     while (1) {
@@ -100,7 +100,7 @@ int VBEInit(uint32_t multiboot_info_addr) {
             }
 
             // --- Add detailed logging ---
-            SerialWrite("VBE: Framebuffer Found!\n");
+            SerialWrite("[VESA]: Framebuffer Found!\n");
             SerialWrite("  Resolution: ");
             SerialWriteDec(vbe_info.width); SerialWrite("x");
             SerialWriteDec(vbe_info.height); SerialWrite("x");
@@ -125,7 +125,7 @@ int VBEInit(uint32_t multiboot_info_addr) {
         }
         tag_ptr += ((tag->size + 7) & ~7);
     }
-    SerialWrite("VBE: No framebuffer tag found in Multiboot info\n");
+    SerialWrite("[VESA]: No framebuffer tag found in Multiboot info\n");
     return -1;
 }
 
