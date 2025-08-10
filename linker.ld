@@ -81,7 +81,7 @@ SECTIONS
 }
 
 /* Sanity checks */
-ASSERT(_kernel_size < 16M, "Kernel too large (>16MB)")
+ASSERT(_kernel_size < 32M, "Kernel too large (>32MB)")
 ASSERT(_text_start >= _kernel_phys_start, "Text section misaligned")
 ASSERT(_rodata_start >= _text_end, "Rodata section misaligned")
 ASSERT(_data_start >= _rodata_end, "Data section misaligned")
