@@ -26,3 +26,25 @@ int FastStrCmp(const char* str1, const char* str2) {
 
     return (unsigned char)*str1 - (unsigned char)*str2;
 }
+
+const char* FastStrChr(const char* str, int c) {
+    char target = (char)c;
+
+    // Loop until we hit the null terminator
+    while (*str != '\0') {
+        if (*str == target) {
+            // Found the character, return a pointer to it
+            return str;
+        }
+        str++;
+    }
+
+    // Special case: if the character we're looking for IS the null terminator,
+    // the standard says we should return a pointer to it.
+    if (target == '\0') {
+        return str;
+    }
+
+    // If we get here, the character wasn't found
+    return NULL;
+}

@@ -1,6 +1,7 @@
 #include "VBEConsole.h"
 
 #include "Console.h"
+#include "MemOps.h"
 #include "VesaBIOSExtension.h"
 #include "stdint.h"
 
@@ -53,8 +54,10 @@ void VBEConsoleClear(void) {
     VBEFillScreen(vbe_console.bg_color);
 }
 
+extern vbe_info_t vbe_info;
+
 static void VBEConsoleScroll(void) {
-    // Move all lines up
+    // Move text buffer (existing code is fine)
     for (int row = 0; row < CONSOLE_ROWS - 1; row++) {
         for (int col = 0; col < CONSOLE_COLS; col++) {
             vbe_console.buffer[row][col] = vbe_console.buffer[row + 1][col];
@@ -62,13 +65,26 @@ static void VBEConsoleScroll(void) {
         }
     }
 
-    // Clear last line
+    // Clear last line in buffer
     for (int col = 0; col < CONSOLE_COLS; col++) {
         vbe_console.buffer[CONSOLE_ROWS - 1][col] = ' ';
-        vbe_console.color_buffer[CONSOLE_ROWS - 1][col] = VBE_CONSOLE_DEFAULT_COLOR;  // Fixed!
+        vbe_console.color_buffer[CONSOLE_ROWS - 1][col] = VBE_CONSOLE_DEFAULT_COLOR;
     }
 
-    VBEConsoleRefresh();
+    // Optimized framebuffer scroll - copy memory instead of redrawing
+    uint32_t* fb = (uint32_t*)vbe_info.framebuffer;
+    uint32_t line_size = vbe_info.pitch / 4;  // pitch in dwords
+    uint32_t scroll_lines = CHAR_HEIGHT * line_size;
+    uint32_t total_lines = (CONSOLE_ROWS - 1) * CHAR_HEIGHT * line_size;
+
+    // Move framebuffer content up by one text line
+    FastMemcpy(fb, fb + scroll_lines, total_lines * 4);
+
+    // Clear only the last text line
+    uint32_t last_line_start = (CONSOLE_ROWS - 1) * CHAR_HEIGHT * line_size;
+    for (uint32_t i = 0; i < scroll_lines; i++) {
+        fb[last_line_start + i] = vbe_console.bg_color;
+    }
 }
 
 void VBEConsoleRefresh(void) {

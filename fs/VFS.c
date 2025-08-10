@@ -213,6 +213,7 @@ int VfsCreateFile(const char* path) {
         }
         case VFS_FAT12:
             // Bridge to the FAT12 driver
+            if (FastStrlen(local_path, 2) == 0) return -1;
             return Fat12CreateFile(local_path);
     }
 
@@ -230,7 +231,8 @@ int VfsCreateDir(const char* path) {
             if (FastStrlen(local_path, 2) == 0) return -1;
             return FsMkdir(local_path);
         case VFS_FAT12:
-            return -1; // Not implemented
+            if (FastStrlen(local_path, 2) == 0) return -1;
+            return Fat12CreateDir(local_path); // Not implemented
     }
 
     return -1;
@@ -248,6 +250,7 @@ int VfsDelete(const char* path) {
             return FsDelete(local_path);
         case VFS_FAT12:
             // Bridge to our new function!
+            if (FastStrlen(local_path, 2) == 0) return -1;
             return Fat12DeleteFile(local_path);
     }
 

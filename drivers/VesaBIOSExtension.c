@@ -71,7 +71,7 @@ typedef struct {
     uint8_t  framebuffer_blue_mask_size;
 } multiboot_tag_framebuffer_t;
 
-static vbe_info_t vbe_info = {0};
+vbe_info_t vbe_info = {0};
 static int vbe_initialized = 0;
 
 void delay(uint32_t count) {

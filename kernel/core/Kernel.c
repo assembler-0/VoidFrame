@@ -33,7 +33,6 @@ extern uint8_t _kernel_phys_end[];
 
 // Global variable to store the Multiboot2 info address
 static uint32_t g_multiboot_info_addr = 0;
-bool HAS_KERNEL_STARTED = false;
 
 void ParseMultibootInfo(uint32_t info) {
     g_multiboot_info_addr = info;
