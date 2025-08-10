@@ -64,8 +64,6 @@ void __attribute__((noreturn)) KernelPanicHandler(const char* message, uint64_t 
     asm volatile("cli");
     ClearScreen();
     ConsoleSetColor(VGA_COLOR_WHITE);
-    PrintKernel("[FATAL] - [KERNEL PANIC] - COLLECTING RESOURCES....\n");
-    delay(600000000);
 
     // Reentrancy guard to prevent recursive panics
     static volatile int in_panic = 0;
@@ -83,6 +81,7 @@ void __attribute__((noreturn)) KernelPanicHandler(const char* message, uint64_t 
         delay(600000000); // to give "real" look
         PrintKernel("[FATAL] - [KERNEL PANIC] - ");
         if (message) PrintKernel(message);
+        else PrintKernel("No message provided.");
         PrintKernel("\n");
         if (ctx) {
             char hex[20];

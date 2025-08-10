@@ -61,5 +61,8 @@ typedef struct {
 // Core Functions
 int Fat12Init(uint8_t drive);
 int Fat12ReadFile(const char* filename, void* buffer, uint32_t max_size);
+int Fat12WriteFile(const char* filename, const void* buffer, uint32_t size);
+int Fat12DeleteFile(const char* filename);
+int Fat12CreateFile(const char* filename);
 int Fat12ListRoot(void);
 int Fat12GetCluster(uint16_t cluster, uint8_t* buffer);

@@ -1,16 +1,16 @@
 // kernel/etc/Console.c - PATCHED VERSION WITH VBE SUPPORT
 #include "Console.h"
-#include "VBEConsole.h"
-#include "VesaBIOSExtension.h"
 #include "Io.h"
 #include "Serial.h"
 #include "Spinlock.h"
+#include "VBEConsole.h"
+#include "VesaBIOSExtension.h"
 #include "stdbool.h"
 #include "stdint.h"
 
 // VBE mode flag
 static uint8_t use_vbe = 0;
-
+extern bool HAS_KERNEL_STARTED;
 // Original VGA implementation preserved
 static void UpdateCursor(void) {
     if (use_vbe) return; // VBE handles cursor internally
@@ -263,6 +263,7 @@ void PrintKernelAt(const char* str, uint32_t line, uint32_t col) {
     if (!str) return;
     SerialWrite(str);
     SerialWrite("\n");
+
     if (use_vbe) {
         VBEConsoleSetCursor(col, line);
         VBEConsolePrint(str);

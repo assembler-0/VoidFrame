@@ -6,11 +6,11 @@
 #include "Ide.h"
 #include "Idt.h"
 #include "KernelHeap.h"
-#include "PS2.h"
 #include "MemOps.h"
 #include "MemPool.h"
 #include "Memory.h"
 #include "Multiboot2.h"
+#include "PS2.h"
 #include "Paging.h"
 #include "Panic.h"
 #include "Pic.h"
@@ -33,6 +33,7 @@ extern uint8_t _kernel_phys_end[];
 
 // Global variable to store the Multiboot2 info address
 static uint32_t g_multiboot_info_addr = 0;
+bool HAS_KERNEL_STARTED = false;
 
 void ParseMultibootInfo(uint32_t info) {
     g_multiboot_info_addr = info;
