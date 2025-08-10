@@ -5,7 +5,8 @@
 #include "PS2.h"
 #include "Panic.h"
 #include "Process.h"
-#include "Serial.h"
+#include "MemOps.h"
+
 // The C-level interrupt handler, called from the assembly stub
 void InterruptHandler(Registers* regs) {
     ASSERT(regs != NULL);
@@ -50,73 +51,59 @@ void InterruptHandler(Registers* regs) {
 
     // Handle CPU exceptions (0-31)
 
+    // Buffer for creating descriptive panic messages.
+    // Made static to reside in .bss rather than on a potentially corrupt stack.
+    static char panic_message[256];
+
     switch (regs->interrupt_number) {
         case 6: // Invalid Opcode
-            PrintKernelError("  TYPE: Invalid Opcode (UD)\n");
-            PrintKernelError("  RIP: ");
-            PrintKernelHex(regs->rip);
-            PrintKernelError("\n");
-            PANIC("Invalid Opcode");
+        {
+            char rip_str[20];
+            htoa(regs->rip, rip_str);
+            strcpy(panic_message, "Invalid Opcode at ");
+            strcat(panic_message, rip_str);
+            PanicFromInterrupt(panic_message, regs);
             break;
+        }
 
         case 13: // General Protection Fault
-            PrintKernelError("  TYPE: General Protection Fault (GPF)\n");
-            PrintKernelError("  RIP: ");
-            PrintKernelHex(regs->rip);
-            PrintKernelError("\n  Error Code: ");
-            PrintKernelHex(regs->error_code);
-            PANIC_CODE(" General Protection Fault\n", regs->error_code);
+        {
+            char ec_str[20];
+            htoa(regs->error_code, ec_str);
+            strcpy(panic_message, "General Protection Fault. Selector: ");
+            strcat(panic_message, ec_str);
+            PanicFromInterrupt(panic_message, regs);
             break;
+        }
 
         case 14: // Page Fault
+        {
             uint64_t cr2;
             asm volatile("mov %%cr2, %0" : "=r"(cr2));
+            char cr2_str[20], rip_str[20];
+            htoa(cr2, cr2_str);
+            htoa(regs->rip, rip_str);
 
-            // Serial logging for debugging
-            SerialWrite("\n[PAGEFAULT] CR2: 0x");
-            SerialWriteHex(cr2);
-            SerialWrite(" RIP: 0x");
-            SerialWriteHex(regs->rip);
-            SerialWrite(" RSP: 0x");
-            SerialWriteHex(regs->rsp);
-            SerialWrite(" Error: 0x");
-            SerialWriteHex(regs->error_code);
-            SerialWrite("\n");
-
-            PrintKernelError("  TYPE: Page Fault (PF)\n");
-            PrintKernelError("  Faulting Address: ");
-            PrintKernelHex(cr2);
-            PrintKernelError("\n  RIP: ");
-            PrintKernelHex(regs->rip);
-            PrintKernelError("\n  Error Code: ");
-            PrintKernelHex(regs->error_code);
-            PrintKernelError("\n  Details:\n");
-
-            if (!(regs->error_code & 0x1)) PrintKernelError("    - Reason: Page Not Present\n");
-            else PrintKernelError("    - Reason: Protection Violation\n");
-
-            if (regs->error_code & 0x2) PrintKernelError("    - Operation: Write\n");
-            else PrintKernelError("    - Operation: Read\n");
-
-            if (regs->error_code & 0x4) PrintKernelError("    - Mode: User\n");
-            else PrintKernelError("    - Mode: Supervisor\n");
-
-            if (regs->error_code & 0x8) PrintKernelError("    - Cause: Reserved bit set\n");
-            if (regs->error_code & 0x10) PrintKernelError("    - Cause: Instruction Fetch\n");
-
-            PANIC_CODE("Page Fault", regs->error_code);
+            strcpy(panic_message, "Page Fault accessing ");
+            strcat(panic_message, cr2_str);
+            strcat(panic_message, " from instruction at ");
+            strcat(panic_message, rip_str);
+            PanicFromInterrupt(panic_message, regs);
             break;
+        }
 
         default: // All other exceptions
-            PrintKernelError("  TYPE: Unhandled Exception\n");
-            PrintKernelError("  Interrupt Number: ");
-            PrintKernelInt(regs->interrupt_number);
-            PrintKernelError("\n  RIP: ");
-            PrintKernelHex(regs->rip);
-            PrintKernelError("\n  Error Code: ");
-            PrintKernelHex(regs->error_code);
-            PrintKernelError("\n");
-            PANIC("Unhandled CPU Exception");
+        {
+            char int_str[20], rip_str[20];
+            itoa(regs->interrupt_number, int_str);
+            htoa(regs->rip, rip_str);
+
+            strcpy(panic_message, "Unhandled Exception #");
+            strcat(panic_message, int_str);
+            strcat(panic_message, " at ");
+            strcat(panic_message, rip_str);
+            PanicFromInterrupt(panic_message, regs);
             break;
+        }
     }
 }

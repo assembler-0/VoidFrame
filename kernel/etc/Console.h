@@ -5,10 +5,13 @@
 #define VGA_WIDTH           80
 #define VGA_HEIGHT          25
 #define VGA_BUFFER_SIZE     (VGA_WIDTH * VGA_HEIGHT)
-#define VGA_COLOR_DEFAULT   0x08
+
+#define VGA_COLOR_DEFAULT   0x07
 #define VGA_COLOR_SUCCESS   0x0B
 #define VGA_COLOR_ERROR     0x0C
 #define VGA_COLOR_WARNING   0x0E
+#define VGA_COLOR_WHITE     0x0F
+
 #include "stdint.h"
 // Console state
 typedef struct {
@@ -38,8 +41,8 @@ void PrintKernelHex(uint64_t num);
 void PrintKernel(const char* str);
 void PrintKernelInt(int64_t num);
 void PrintKernelAt(const char* str, uint32_t line, uint32_t col);
-void PrintKernelN(const char* str, uint32_t n);
 void ClearScreen();
+void ConsoleSetColor(uint8_t color);
 void ConsoleInit(void);
 
 #endif // VOIDFRAME_CONSOLE_H

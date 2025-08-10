@@ -3,14 +3,14 @@
 
 #include "stdint.h"
 
+// Forward declare the Registers struct to avoid circular header dependencies.
+// The full definition is expected in a file like "Interrupts.h".
+struct Registers;
 // For __builtin_expect, if not globally available
 #define likely(x)   __builtin_expect(!!(x), 1)
 #define unlikely(x) __builtin_expect(!!(x), 0)
 
-// Forward declarations for the public panic API
-void __attribute__((noreturn)) Panic(const char* message);
-void __attribute__((noreturn)) PanicWithCode(const char* message, uint64_t error_code);
-void __attribute__((noreturn)) PanicWithContext(const char* message, uint64_t error_code, const char* function, const char* file, int line);
+// Panic codes remain the same
 typedef enum {
     PANIC_GENERAL = 0x0001,
     PANIC_MEMORY = 0x0002,
@@ -22,12 +22,17 @@ typedef enum {
     PANIC_ASSERTION = 0x0008
 } PanicCode;
 
-/**
- * @brief Halts the kernel if a condition is not met.
- *
- * This is a critical assertion. If the condition is false, the kernel will
- * immediately panic, displaying the failed condition, function, file, and line.
- */
+// --- Public Panic API ---
+void __attribute__((noreturn)) Panic(const char* message);
+void __attribute__((noreturn)) PanicWithCode(const char* message, uint64_t error_code);
+void __attribute__((noreturn)) PanicWithContext(const char* message, uint64_t error_code, const char* function, const char* file, int line);
+
+// NEW: A panic function specifically for interrupt contexts.
+// It correctly captures the registers of the code that was interrupted.
+void __attribute__((noreturn)) PanicFromInterrupt(const char* message, struct Registers* regs);
+
+
+// Macros remain the same
 #define ASSERT(condition) \
 do { \
 if (unlikely(!(condition))) { \
@@ -37,21 +42,9 @@ __FUNCTION__, __FILE__, __LINE__); \
 } \
 } while(0)
 
-
-/**
- * @brief Unconditionally halts the kernel.
- *
- * Displays the given message and context information (function, file, line).
- */
 #define PANIC(msg) \
 PanicWithContext(msg, PANIC_GENERAL, __FUNCTION__, __FILE__, __LINE__)
 
-
-/**
- * @brief Unconditionally halts the kernel with a specific error code.
- *
- * Displays the given message and context information (function, file, line).
- */
 #define PANIC_CODE(msg, code) \
 PanicWithContext(msg, code, __FUNCTION__, __FILE__, __LINE__)
 

@@ -163,7 +163,7 @@ static void ConsolePutchar(char c) {
 }
 
 // For colors to work properly:
-static void ConsoleSetColor(uint8_t color) {
+void ConsoleSetColor(uint8_t color) {
     if (use_vbe) {
         VBEConsoleSetColor(color);  // Let VBEConsole handle it
     } else {
@@ -189,27 +189,8 @@ void PrintKernel(const char* str) {
     SerialWrite(str);
 }
 
-void PrintKernelN(const char* str, uint32_t n) {
-    if (!str) return;
-    SpinLock(&lock);
-    
-    if (use_vbe) {
-        for (uint32_t i = 0; i < n && str[i]; i++) {
-            VBEConsolePutChar(str[i]);
-        }
-    } else {
-        const uint8_t original_color = console.color;
-        for (uint32_t i = 0; i < n && str[i]; i++) {
-            ConsolePutchar(str[i]);
-        }
-        console.color = original_color;
-    }
-    
-    SpinUnlock(&lock);
-}
-
 void PrintKernelSuccess(const char* str) {
-    ConsoleSetColor(VGA_COLOR_SUCCESS);
+    ConsoleSetColor(VGA_COLOR_WHITE);
     PrintKernel(str);
     ConsoleSetColor(VGA_COLOR_DEFAULT);
 }
@@ -280,7 +261,8 @@ void PrintKernelInt(int64_t num) {
 
 void PrintKernelAt(const char* str, uint32_t line, uint32_t col) {
     if (!str) return;
-    
+    SerialWrite(str);
+    SerialWrite("\n");
     if (use_vbe) {
         VBEConsoleSetCursor(col, line);
         VBEConsolePrint(str);
@@ -300,5 +282,6 @@ void PrintKernelAt(const char* str, uint32_t line, uint32_t col) {
 
         console.line = saved_line;
         console.column = saved_col;
+
     }
 }

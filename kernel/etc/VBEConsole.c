@@ -1,4 +1,6 @@
 #include "VBEConsole.h"
+
+#include "Console.h"
 #include "VesaBIOSExtension.h"
 #include "stdint.h"
 
@@ -43,7 +45,7 @@ void VBEConsoleClear(void) {
     for (int row = 0; row < CONSOLE_ROWS; row++) {
         for (int col = 0; col < CONSOLE_COLS; col++) {
             vbe_console.buffer[row][col] = ' ';
-            vbe_console.color_buffer[row][col] = 0x08; // Gray on black
+            vbe_console.color_buffer[row][col] = VBE_CONSOLE_DEFAULT_COLOR;  // Use 0x07, not 0x08
         }
     }
     vbe_console.cursor_x = 0;
@@ -63,10 +65,9 @@ static void VBEConsoleScroll(void) {
     // Clear last line
     for (int col = 0; col < CONSOLE_COLS; col++) {
         vbe_console.buffer[CONSOLE_ROWS - 1][col] = ' ';
-        vbe_console.color_buffer[CONSOLE_ROWS - 1][col] = 0x08;
+        vbe_console.color_buffer[CONSOLE_ROWS - 1][col] = VBE_CONSOLE_DEFAULT_COLOR;  // Fixed!
     }
 
-    // Redraw screen
     VBEConsoleRefresh();
 }
 
@@ -87,6 +88,23 @@ void VBEConsoleRefresh(void) {
 }
 
 void VBEConsolePutChar(char c) {
+    // Calculate current VGA attribute from fg/bg colors
+    uint8_t current_attr = 0x07;  // Default
+    // Find the palette index for current fg_color
+    for (int i = 0; i < 16; i++) {
+        if (vga_palette[i] == vbe_console.fg_color) {
+            current_attr = (current_attr & 0xF0) | i;
+            break;
+        }
+    }
+    // Find the palette index for current bg_color
+    for (int i = 0; i < 16; i++) {
+        if (vga_palette[i] == vbe_console.bg_color) {
+            current_attr = (current_attr & 0x0F) | (i << 4);
+            break;
+        }
+    }
+
     switch (c) {
         case '\n':
             vbe_console.cursor_x = 0;
@@ -106,6 +124,7 @@ void VBEConsolePutChar(char c) {
             if (vbe_console.cursor_x > 0) {
                 vbe_console.cursor_x--;
                 vbe_console.buffer[vbe_console.cursor_y][vbe_console.cursor_x] = ' ';
+                vbe_console.color_buffer[vbe_console.cursor_y][vbe_console.cursor_x] = current_attr;  // ADD THIS
                 VBEDrawChar(vbe_console.cursor_x * CHAR_WIDTH,
                            vbe_console.cursor_y * CHAR_HEIGHT,
                            ' ', vbe_console.fg_color, vbe_console.bg_color);
@@ -114,17 +133,17 @@ void VBEConsolePutChar(char c) {
         default:
             if (c >= 32 && c < 127) {
                 vbe_console.buffer[vbe_console.cursor_y][vbe_console.cursor_x] = c;
+                vbe_console.color_buffer[vbe_console.cursor_y][vbe_console.cursor_x] = current_attr;  // ADD THIS
                 VBEDrawChar(vbe_console.cursor_x * CHAR_WIDTH,
                            vbe_console.cursor_y * CHAR_HEIGHT,
                            c, vbe_console.fg_color, vbe_console.bg_color);
                 vbe_console.cursor_x++;
+                if (vbe_console.cursor_x >= CONSOLE_COLS) {
+                    vbe_console.cursor_x = 0;
+                    vbe_console.cursor_y++;
+                }
             }
             break;
-    }
-
-    if (vbe_console.cursor_x >= CONSOLE_COLS) {
-        vbe_console.cursor_x = 0;
-        vbe_console.cursor_y++;
     }
 
     if (vbe_console.cursor_y >= CONSOLE_ROWS) {
@@ -132,7 +151,6 @@ void VBEConsolePutChar(char c) {
         vbe_console.cursor_y = CONSOLE_ROWS - 1;
     }
 }
-
 void VBEConsolePrint(const char* str) {
     while (*str) {
         VBEConsolePutChar(*str++);

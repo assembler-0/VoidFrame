@@ -2,6 +2,42 @@
 #include "Cpu.h"
 #include "Panic.h"
 
+void strcpy(char* dest, const char* src) {
+    while ((*dest++ = *src++));
+}
+
+void strcat(char* dest, const char* src) {
+    while (*dest) dest++;
+    while ((*dest++ = *src++));
+}
+
+void htoa(uint64_t n, char* buffer) {
+    const char* hex_chars = "0123456789ABCDEF";
+    buffer[0] = '0';
+    buffer[1] = 'x';
+    for (int i = 0; i < 16; i++) {
+        buffer[2 + i] = hex_chars[(n >> (60 - i * 4)) & 0xF];
+    }
+    buffer[18] = '\0';
+}
+
+void itoa(uint64_t n, char* buffer) {
+    if (n == 0) {
+        buffer[0] = '0';
+        buffer[1] = '\0';
+        return;
+    }
+    char int_buffer[21];
+    char* p = &int_buffer[20];
+    *p = '\0';
+    uint64_t temp = n;
+    do {
+        *--p = '0' + (temp % 10);
+        temp /= 10;
+    } while(temp > 0);
+    strcpy(buffer, p);
+}
+
 void* FastMemset(void* dest, int value, uint64_t size) {
     ASSERT(dest != NULL);
     CpuFeatures* features = GetCpuFeatures();

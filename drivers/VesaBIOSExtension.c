@@ -14,6 +14,7 @@ extern const uint32_t _binary_splash7_32_raw_start[];
 extern const uint32_t _binary_splash8_32_raw_start[];
 extern const uint32_t _binary_splash9_32_raw_start[];
 extern const uint32_t _binary_splash10_32_raw_start[];
+extern const uint32_t _binary_panic_32_raw_start[];
 
 // Update your array of pointers
 const uint32_t* splash_images[] = {
@@ -30,6 +31,12 @@ const uint32_t* splash_images[] = {
 };
 
 const unsigned int num_splash_images = sizeof(splash_images) / sizeof(uint32_t*);
+
+const uint32_t* panic_images[] = {
+    _binary_panic_32_raw_start
+};
+
+const unsigned int num_panic_images = sizeof(panic_images) / sizeof(uint32_t*);
 // Multiboot2 tag types
 #define MULTIBOOT_TAG_FRAMEBUFFER 8
 #define MULTIBOOT_TAG_VBE         7
@@ -323,12 +330,11 @@ void VBEDrawStringCentered(uint32_t center_x, uint32_t center_y, const char* str
     VBEDrawString(start_x, start_y, str, fg_color, bg_color);
 }
 
-
 // Create a simple splash screen
 void VBEShowSplash(void) {
     if (!vbe_initialized) return;
 
-    for (unsigned int i = 0; i < num_splash_images * 10; i++) { // Loop
+    for (unsigned int i = 0; i < num_splash_images * 6; i++) { // Loop
         const uint32_t* image_data = (const uint32_t*)splash_images[i % num_splash_images];
 
         for (uint32_t y = 0; y < vbe_info.height; y++) {
@@ -337,6 +343,17 @@ void VBEShowSplash(void) {
             }
         }
         delay(15500000); // Adjust this value to change the delay
+    }
+}
+
+void VBEShowPanic(void) {
+    if (!vbe_initialized) return;
+    const uint32_t* image_data = (const uint32_t*)panic_images[0];
+
+    for (uint32_t y = 0; y < vbe_info.height; y++) {
+        for (uint32_t x = 0; x < vbe_info.width; x++) {
+            VBEPutPixel(x, y, image_data[y * vbe_info.width + x]);
+        }
     }
 }
 
