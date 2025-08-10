@@ -2,7 +2,6 @@
 #include "Console.h"
 #include "FAT12.h"
 #include "Fs.h"
-#include "FsUtils.h"
 #include "MemOps.h"
 #include "StringOps.h"
 #include "Serial.h"
@@ -19,7 +18,7 @@ int VfsMount(const char* path, VfsType type, uint8_t drive) {
             mounts[i].type = type;
             mounts[i].drive = drive;
             mounts[i].active = 1;
-            
+
             // Create mount point directory in root filesystem (except for root mount)
             if (FastStrCmp(path, "/") != 0) {
                 // Find root mount to create directory
@@ -32,7 +31,7 @@ int VfsMount(const char* path, VfsType type, uint8_t drive) {
                     }
                 }
             }
-            
+
             return 0;
         }
     }
@@ -71,20 +70,6 @@ int VfsInit(void) {
         PrintKernel("[VFS] Skipping FAT12 mount - Already initialized\n");
     }
 
-    // // Test mount table integrity
-    // SerialWrite("[VFS] Testing mount table integrity:\n");
-    // for (int i = 0; i < VFS_MAX_MOUNTS; i++) {
-    //     if (mounts[i].active) {
-    //         SerialWrite("[VFS] Mount ");
-    //         PrintKernelInt(i);
-    //         PrintKernel(": '");
-    //         PrintKernel(mounts[i].mount_point);
-    //         PrintKernel("' type=");
-    //         PrintKernelInt(mounts[i].type);
-    //         PrintKernel("\n");
-    //     }
-    // }
-    
     PrintKernelSuccess("[VFS] Virtual File System initialized\n");
     return 0;
 }
@@ -92,13 +77,13 @@ int VfsInit(void) {
 VfsMountStruct* VfsFindMount(const char* path) {
     int best_match = -1;
     int best_len = 0;
-    
+
     for (int i = 0; i < VFS_MAX_MOUNTS; i++) {
         if (!mounts[i].active) continue;
-        
+
         int mount_len = FastStrlen(mounts[i].mount_point, 64);
         int path_len = FastStrlen(path, 256);
-        
+
         if (path_len >= mount_len) {
             int matches = 1;
             for (int j = 0; j < mount_len; j++) {
@@ -107,7 +92,7 @@ VfsMountStruct* VfsFindMount(const char* path) {
                     break;
                 }
             }
-            
+
             if (matches && (mount_len == 1 || path[mount_len] == '/' || path[mount_len] == '\0')) {
                 if (mount_len > best_len) {
                     best_match = i;
@@ -116,13 +101,13 @@ VfsMountStruct* VfsFindMount(const char* path) {
             }
         }
     }
-    
+
     return (best_match >= 0) ? &mounts[best_match] : NULL;
 }
 
 const char* VfsStripMount(const char* path, VfsMountStruct* mount) {
     if (!path || !mount) return NULL;
-    
+
     int mount_len = FastStrlen(mount->mount_point, 64);
     if (mount_len == 1 && mount->mount_point[0] == '/') {
         return path; // Root mount
@@ -140,92 +125,51 @@ int VfsReadFile(const char* path, void* buffer, uint32_t max_size) {
         SerialWrite("[VFS] Invalid parameters\n");
         return -1;
     }
-    
-    SerialWrite("[VFS] Finding mount for: ");
-    SerialWrite(path);
-    SerialWrite("\n");
-    
+
     VfsMountStruct* mount = VfsFindMount(path);
     if (!mount) {
         SerialWrite("[VFS] No mount found\n");
         return -1;
     }
-    
-    SerialWrite("[VFS] Mount found, stripping path\n");
+
     const char* local_path = VfsStripMount(path, mount);
     if (!local_path) {
         SerialWrite("[VFS] Path strip failed\n");
         return -1;
     }
-    
-    SerialWrite("[VFS] Mount type: ");
-    SerialWriteHex(mount->type);
-    SerialWrite("\n");
-    
+
     switch (mount->type) {
         case VFS_RAMFS: {
-            SerialWrite("[VFS] RAMFS path, calling FsFind\n");
             if (FastStrlen(local_path, 2) == 0) local_path = "/";
-            
-            SerialWrite("[VFS] About to call FsFind with: ");
-            SerialWrite(local_path);
-            SerialWrite("\n");
-            
             FsNode* node = FsFind(local_path);
-            SerialWrite("[VFS] FsFind returned\n");
-            
-            if (!node || node->type != FS_FILE) {
-                SerialWrite("[VFS] Node not found or not a file\n");
-                return -1;
-            }
-            
-            // Handle empty files safely (node->data may be NULL when size == 0)
-            if (node->size == 0) {
-                SerialWrite("[VFS] Empty file, returning 0 bytes\n");
-                return 0;
-            }
-
-            // Guard against NULL data pointer
-            if (node->data == NULL) {
-                SerialWrite("[VFS] File data is NULL, returning 0 bytes\n");
-                return 0;
-            }
-
-            SerialWrite("[VFS] Copying data\n");
+            if (!node || node->type != FS_FILE) return -1;
+            if (node->size == 0) return 0;
+            if (node->data == NULL) return 0;
             uint32_t copy_size = (node->size < max_size) ? node->size : max_size;
-            if (copy_size == 0) {
-                SerialWrite("[VFS] Nothing to copy (bounded to 0)\n");
-                return 0;
-            }
             FastMemcpy(buffer, node->data, copy_size);
-            SerialWrite("[VFS] Copy complete\n");
             return copy_size;
         }
         case VFS_FAT12: {
             extern int fat12_initialized;
-            if (!fat12_initialized) {
-                PrintKernel("[VFS] FAT12 not initialized, cannot read\n");
-                return -1;
-            }
-            PrintKernel("[VFS] Calling Fat12ReadFile\n");
+            if (!fat12_initialized) return -1;
             return Fat12ReadFile(local_path, buffer, max_size);
         }
     }
-    
+
     return -1;
 }
 
 int VfsListDir(const char* path) {
     VfsMountStruct* mount = VfsFindMount(path);
     if (!mount) return -1;
-    
+
     const char* local_path = VfsStripMount(path, mount);
-    
+
     switch (mount->type) {
         case VFS_RAMFS: {
             if (FastStrlen(local_path, 2) == 0) local_path = "/"; // normalize empty to root
             int result = FsListDir(local_path);
-            
+
             // If listing root, also show mount points
             if (FastStrCmp(path, "/") == 0) {
                 for (int i = 0; i < VFS_MAX_MOUNTS; i++) {
@@ -249,62 +193,67 @@ int VfsListDir(const char* path) {
             return -1;
         }
     }
-    
+
     return -1;
 }
 
 int VfsCreateFile(const char* path) {
     VfsMountStruct* mount = VfsFindMount(path);
     if (!mount) return -1;
-    
+
     const char* local_path = VfsStripMount(path, mount);
-    
+
     switch (mount->type) {
         case VFS_RAMFS: {
-            if (FastStrlen(local_path, 2) == 0) return -1; // don't create at root with empty name
+            if (FastStrlen(local_path, 2) == 0) return -1;
             int fd = FsOpen(local_path, FS_WRITE);
             if (fd < 0) return -1;
             FsClose(fd);
             return 0;
         }
         case VFS_FAT12:
-            return -1; // FAT12 write not implemented yet
+            // Bridge to the FAT12 driver
+            if (FastStrlen(local_path, 2) == 0) return -1;
+            return Fat12CreateFile(local_path);
     }
-    
+
     return -1;
 }
 
 int VfsCreateDir(const char* path) {
     VfsMountStruct* mount = VfsFindMount(path);
     if (!mount) return -1;
-    
+
     const char* local_path = VfsStripMount(path, mount);
-    
+
     switch (mount->type) {
         case VFS_RAMFS:
             if (FastStrlen(local_path, 2) == 0) return -1;
             return FsMkdir(local_path);
         case VFS_FAT12:
-            return -1;
+            if (FastStrlen(local_path, 2) == 0) return -1;
+            return Fat12CreateDir(local_path); // Not implemented
     }
-    
+
     return -1;
 }
 
 int VfsDelete(const char* path) {
     VfsMountStruct* mount = VfsFindMount(path);
     if (!mount) return -1;
-    
+
     const char* local_path = VfsStripMount(path, mount);
-    
+
     switch (mount->type) {
         case VFS_RAMFS:
             if (FastStrlen(local_path, 2) == 0) return -1;
             return FsDelete(local_path);
         case VFS_FAT12:
-            return -1;
+            // Bridge to our new function!
+            if (FastStrlen(local_path, 2) == 0) return -1;
+            return Fat12DeleteFile(local_path);
     }
-    
+
     return -1;
 }
 
@@ -320,7 +269,6 @@ int VfsIsDir(const char* path) {
             return node && node->type == FS_DIRECTORY;
         }
         case VFS_FAT12: {
-            // Only root listing supported for FAT12 currently; treat "/Device" as a directory
             return FastStrlen(local_path, 256) == 0;
         }
     }
@@ -330,9 +278,9 @@ int VfsIsDir(const char* path) {
 int VfsWriteFile(const char* path, const void* buffer, uint32_t size) {
     VfsMountStruct* mount = VfsFindMount(path);
     if (!mount) return -1;
-    
+
     const char* local_path = VfsStripMount(path, mount);
-    
+
     switch (mount->type) {
         case VFS_RAMFS: {
             if (FastStrlen(local_path, 2) == 0) return -1;
@@ -343,7 +291,8 @@ int VfsWriteFile(const char* path, const void* buffer, uint32_t size) {
             return result;
         }
         case VFS_FAT12:
-            return -1;
+            // Bridge to the FAT12 driver
+            return Fat12WriteFile(local_path, buffer, size);
     }
     
     return -1;

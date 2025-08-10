@@ -39,6 +39,7 @@ void PrintKernelError(const char* str);
 void PrintKernelWarning(const char* str);
 void PrintKernelHex(uint64_t num);
 void PrintKernel(const char* str);
+void PrintKernelChar(const char c);
 void PrintKernelInt(int64_t num);
 void PrintKernelAt(const char* str, uint32_t line, uint32_t col);
 void ClearScreen();

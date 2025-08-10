@@ -1,16 +1,15 @@
 // kernel/etc/Console.c - PATCHED VERSION WITH VBE SUPPORT
 #include "Console.h"
-#include "VBEConsole.h"
-#include "VesaBIOSExtension.h"
 #include "Io.h"
 #include "Serial.h"
 #include "Spinlock.h"
+#include "VBEConsole.h"
+#include "VesaBIOSExtension.h"
 #include "stdbool.h"
 #include "stdint.h"
 
 // VBE mode flag
 static uint8_t use_vbe = 0;
-
 // Original VGA implementation preserved
 static void UpdateCursor(void) {
     if (use_vbe) return; // VBE handles cursor internally
@@ -34,30 +33,30 @@ static volatile int lock = 0;
 static uint32_t vbe_fg_color = 0xFFFFFF;  // White
 static uint32_t vbe_bg_color = 0x000000;  // Black
 
-static void SetVBEColors(uint8_t vga_color) {
-    // Convert VGA color attributes to RGB
-    static const uint32_t vga_to_rgb[16] = {
-        0x000000, // Black
-        0x0000AA, // Blue
-        0x00AA00, // Green
-        0x00AAAA, // Cyan
-        0xAA0000, // Red
-        0xAA00AA, // Magenta
-        0xAA5500, // Brown
-        0xAAAAAA, // Light Gray
-        0x555555, // Dark Gray
-        0x5555FF, // Light Blue
-        0x55FF55, // Light Green
-        0x55FFFF, // Light Cyan (This might be your cyan flash!)
-        0xFF5555, // Light Red
-        0xFF55FF, // Light Magenta
-        0xFFFF55, // Yellow
-        0xFFFFFF  // White
-    };
-
-    vbe_fg_color = vga_to_rgb[vga_color & 0x0F];
-    vbe_bg_color = vga_to_rgb[(vga_color >> 4) & 0x0F];
-}
+// static void SetVBEColors(uint8_t vga_color) {
+//     // Convert VGA color attributes to RGB
+//     static const uint32_t vga_to_rgb[16] = {
+//         0x000000, // Black
+//         0x0000AA, // Blue
+//         0x00AA00, // Green
+//         0x00AAAA, // Cyan
+//         0xAA0000, // Red
+//         0xAA00AA, // Magenta
+//         0xAA5500, // Brown
+//         0xAAAAAA, // Light Gray
+//         0x555555, // Dark Gray
+//         0x5555FF, // Light Blue
+//         0x55FF55, // Light Green
+//         0x55FFFF, // Light Cyan (This might be your cyan flash!)
+//         0xFF5555, // Light Red
+//         0xFF55FF, // Light Magenta
+//         0xFFFF55, // Yellow
+//         0xFFFFFF  // White
+//     };
+//
+//     vbe_fg_color = vga_to_rgb[vga_color & 0x0F];
+//     vbe_bg_color = vga_to_rgb[(vga_color >> 4) & 0x0F];
+// }
 
 // Initialize console - auto-detect VBE or VGA
 void ConsoleInit(void) {
@@ -189,6 +188,14 @@ void PrintKernel(const char* str) {
     SerialWrite(str);
 }
 
+void PrintKernelChar(const char c) {
+    // Create a temporary 2-character string on the stack
+    char str[2];
+    str[0] = c;
+    str[1] = '\0'; // Null-terminate it
+    PrintKernel(str);
+}
+
 void PrintKernelSuccess(const char* str) {
     ConsoleSetColor(VGA_COLOR_WHITE);
     PrintKernel(str);
@@ -263,6 +270,7 @@ void PrintKernelAt(const char* str, uint32_t line, uint32_t col) {
     if (!str) return;
     SerialWrite(str);
     SerialWrite("\n");
+
     if (use_vbe) {
         VBEConsoleSetCursor(col, line);
         VBEConsolePrint(str);

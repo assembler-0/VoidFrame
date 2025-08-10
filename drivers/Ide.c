@@ -188,7 +188,7 @@ int IdeReadSector(uint8_t drive, uint32_t lba, void* buffer) {
     return IDE_OK;
 }
 
-int IdeWriteSector(uint8_t drive, uint32_t lba, const void* buffer) {
+int IdeWriteSector(uint8_t drive, uint32_t lba, const uint8_t* buffer) {
     if (drive >= 4) return IDE_ERROR_NO_DRIVE;
     
     uint8_t channel = drive / 2;
