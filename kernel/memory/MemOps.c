@@ -38,6 +38,10 @@ void itoa(uint64_t n, char* buffer) {
     strcpy(buffer, p);
 }
 
+void* memset(void* dest, int value, unsigned long size) { // FCK GCC
+    return FastMemset(dest, value, size);
+}
+
 void* FastMemset(void* dest, int value, uint64_t size) {
     ASSERT(dest != NULL);
     CpuFeatures* features = GetCpuFeatures();

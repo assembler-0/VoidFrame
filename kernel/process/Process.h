@@ -5,9 +5,8 @@
 #include "Ipc.h"
 #include "Cpu.h"
 
-
 // =============================================================================
-// MLFQ SCHEDULER TUNING PARAMETERS
+// MLFQ SCHEDULER PARAMETERS
 // =============================================================================
 
 // Core Queue Configuration
@@ -83,8 +82,8 @@
 #define FAIRNESS_BOOST_ACTUAL_INTERVAL (FAIRNESS_BOOST_INTERVAL * FAIRNESS_BOOST_MULTIPLIER)
 #define LOAD_BALANCE_ACTUAL_THRESHOLD (LOAD_BALANCE_THRESHOLD * LOAD_BALANCE_MULTIPLIER)
 
-#define PROC_PRIV_SYSTEM    0   // Highest privilege (kernel services)
-#define PROC_PRIV_USER      1   // User processes
+#define PROC_PRIV_SYSTEM     0   // Highest privilege (kernel services)
+#define PROC_PRIV_USER       1   // User processes
 #define PROC_PRIV_RESTRICTED 2  // Restricted processes
 
 #define PIT_BUFF 20

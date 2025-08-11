@@ -342,7 +342,7 @@ void VBEDrawStringCentered(uint32_t center_x, uint32_t center_y, const char* str
 void VBEShowSplash(void) {
     if (!vbe_initialized) return;
 
-    for (unsigned int i = 0; i < num_splash_images * 6; i++) { // Loop
+    for (unsigned int i = 0; i < num_splash_images * 4; i++) { // Loop
         const uint32_t* image_data = (const uint32_t*)splash_images[i % num_splash_images];
 
         for (uint32_t y = 0; y < vbe_info.height; y++) {

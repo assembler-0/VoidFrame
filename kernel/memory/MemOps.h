@@ -7,6 +7,7 @@ void* FastMemset(void* dest, int value, uint64_t size);
 void* FastMemcpy(void* dest, const void* src, uint64_t size);
 int FastMemcmp(const void* ptr1, const void* ptr2, uint64_t size);
 void FastZeroPage(void* page);
+void* memset(void* dest, int value, unsigned long size);
 
 void strcpy(char* dest, const char* src);
 void strcat(char* dest, const char* src);

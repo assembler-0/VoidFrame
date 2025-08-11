@@ -321,9 +321,10 @@ static InitResultT SystemInitS2(void) {
     PrintKernelSuccess("[SYSTEM] System calls initialized\n");
 
     // Initialize PIC
-    PrintKernel("[INFO] Initializing PIC...\n");
+    PrintKernel("[INFO] Initializing PIC & PIT...\n");
     PicInstall();
-    PrintKernelSuccess("[SYSTEM] PIC initialized\n");
+    PitInstall();
+    PrintKernelSuccess("[SYSTEM] PIC & PIT initialized\n");
 
     // Initialize keyboard
     PrintKernel("[INFO] Initializing keyboard...\n");

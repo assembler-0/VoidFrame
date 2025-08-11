@@ -20,7 +20,23 @@ void PitInstall() {
     outb(0x40, (divisor >> 8) & 0xFF); // High byte
 }
 
+void PitSetFrequency(uint16_t hz) {
+    // Save current interrupt state
+    irq_flags_t flags = save_irq_flags();
+    cli();
 
+    PIT_FREQUENCY_HZ = hz;
+    // Safer divisor calculation
+    uint32_t div32 = 1193180u / (hz ? hz : 1u);
+    uint16_t divisor = (uint16_t)div32;
+
+    outb(0x43, 0x36);
+    outb(0x40, divisor & 0xFF);
+    outb(0x40, (divisor >> 8) & 0xFF);
+
+    // Restore previous interrupt state
+    restore_irq_flags(flags);
+}
 void PicInstall() {
     uint8_t a1, a2;
 
@@ -52,7 +68,4 @@ void PicInstall() {
     // Read current mask, clear bit 0, write back
     uint8_t pic1_mask = inb(PIC1_DATA);
     outb(PIC1_DATA, pic1_mask & ~0x01); // Clear bit 0 (IRQ0)
-
-    // Initialize PIT after PIC
-    PitInstall();
 }

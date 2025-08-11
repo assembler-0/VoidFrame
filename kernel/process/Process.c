@@ -5,8 +5,8 @@
 #include "Io.h"
 #include "Ipc.h"
 #include "MemOps.h"
-#include "Memory.h"
 #include "Panic.h"
+#include "Pic.h"
 #include "Shell.h"
 #include "Spinlock.h"
 #include "VMem.h"
@@ -64,10 +64,6 @@ static uint64_t context_switches = 0;
 static uint64_t scheduler_calls = 0;
 
 extern uint16_t PIT_FREQUENCY_HZ;
-
-static void UpdatePIT(const uint16_t hz) {
-    PIT_FREQUENCY_HZ = hz;
-}
 
 static int FastFFS(const uint64_t value) {
     return __builtin_ctzll(value);
@@ -907,6 +903,7 @@ void RequestSchedule(void) {
 }
 
 void Yield() {
+    irq_flags_t flags = SpinLockIrqSave(&scheduler_lock);
     Process* current = GetCurrentProcess();
     if (current) {
         // A process that yields is ready to run again, just giving up its timeslice.
@@ -916,6 +913,7 @@ void Yield() {
     RequestSchedule();
     // This instruction halts the CPU until the next interrupt (e.g., the timer),
     // which will then trigger the scheduler.
+    SpinUnlockIrqRestore(&scheduler_lock, flags);
     __asm__ __volatile__("hlt");
 }
 
@@ -1225,7 +1223,7 @@ void SystemService(void) {
 
             // Hysteresis - only change if difference is significant
             if (ABSi(new_freq - controller.current_freq) > 10) {
-                UpdatePIT(new_freq);
+                PitSetFrequency(new_freq);
                 controller.current_freq = new_freq;
 
                 // Log the change for analysis
