@@ -5,6 +5,7 @@
 #include "Io.h"
 #include "KernelHeap.h" // For allocating memory
 #include "MemOps.h"
+#include "VMem.h"
 
 // Global device object
 static Rtl8139Device rtl_device;
@@ -19,8 +20,14 @@ void Rtl8139_Init() {
     PrintKernel("Found RTL8139!\n");
 
     // --- Part 1: Read BAR0 and get the I/O base address ---
-    uint32_t bar0 = PciConfigReadDWord(rtl_device.pci_info.bus, rtl_device.pci_info.device, rtl_device.pci_info.function, 0x10);
-    rtl_device.io_base = bar0 & 0xFFFC;
+    const uint32_t bar0 = PciConfigReadDWord(rtl_device.pci_info.bus, rtl_device.pci_info.device, rtl_device.pci_info.function, 0x10);
+    if (bar0 & 0x1) {
+        // I/O mapped
+        rtl_device.io_base = bar0 & ~0x3;
+    } else {
+        PrintKernel("RTL8139 BAR0 is memory mapped, not supported.\n");
+        return;
+    }
     PrintKernel("I/O Base: 0x"); PrintKernelHex(rtl_device.io_base); PrintKernel("\n");
 
     // --- Part 2: Power on and Reset ---
@@ -42,15 +49,30 @@ void Rtl8139_Init() {
     // NOTE: This MUST be physically contiguous memory! For now, we assume KernelMemoryAlloc does this.
     // In a real OS, you'd need a proper physical memory manager.
     rtl_device.rx_buffer = KernelMemoryAlloc(RX_BUFFER_SIZE);
+    if (!rtl_device.rx_buffer) {
+        PrintKernel("Failed to allocate RX buffer.\n");
+        return;
+    }
+
     for (int i = 0; i < TX_BUFFER_COUNT; i++) {
         rtl_device.tx_buffers[i] = KernelMemoryAlloc(2048); // 2K per TX buffer
+        if (!rtl_device.tx_buffers[i]) {
+            PrintKernel("Failed to allocate TX buffer.\n");
+            // Clean up previously allocated buffers
+            for (int j = 0; j < i; j++) {
+                KernelFree(rtl_device.tx_buffers[j]);
+            }
+            KernelFree(rtl_device.rx_buffer);
+            return;
+        }
     }
+
     rtl_device.current_tx_buffer = 0;
     PrintKernel("DMA buffers allocated.\n");
 
     // --- Part 4: Tell the card where the receive buffer is ---
     // The hardware needs the PHYSICAL address of the buffer.
-    uint32_t rx_phys_addr = (uint32_t)rtl_device.rx_buffer; // Assuming identity mapping for now
+    uint32_t rx_phys_addr = VIRT_TO_PHYS(rtl_device.rx_buffer); // Assuming identity mapping for now
     outl(rtl_device.io_base + REG_RX_BUFFER_START, rx_phys_addr);
     PrintKernel("Receive buffer configured.\n");
 
@@ -61,7 +83,7 @@ void Rtl8139_Init() {
 
     // Configure Rx register: accept broadcast, multicast, and packets for our MAC (AB+AM+APM)
     // and wrap packets that are too long.
-    outl(rtl_device.io_base + REG_RX_CONFIG, 0x0F);
+    outl(rtl_device.io_base + REG_RX_CONFIG, (1 << 7) | (1 << 3) | (1 << 2) | (1 << 1));
 
     PrintKernel("RTL8139 initialization finished!\n");
 }

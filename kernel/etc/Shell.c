@@ -81,7 +81,7 @@ void ArpRequestTestProcess() {
     // Get the network card's info, especially our MAC address
     const Rtl8139Device* nic = GetRtl8139Device();
     if (!nic) {
-        // Handle error: NIC not initialized
+        PrintKernelError("[NIC] RTL8139 not ready");
         return;
     }
 

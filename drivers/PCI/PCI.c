@@ -4,13 +4,6 @@
 #include "Io.h"
 #include "stdint.h"
 
-static PciDevice found_device;
-static int device_found_flag;
-static uint16_t target_vendor_id;
-static uint16_t target_device_id;
-// Callback function pointer type
-typedef void (*PciDeviceCallback)(PciDevice device);
-
 uint32_t PciConfigReadDWord(uint8_t bus, uint8_t slot, uint8_t func, uint8_t offset) {
     uint32_t address;
     uint32_t lbus  = (uint32_t)bus;

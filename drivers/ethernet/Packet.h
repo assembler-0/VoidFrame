@@ -5,7 +5,11 @@
 
 // Endianness conversion - crucial for network packets
 // Network byte order is Big Endian, x86 is Little Endian.
-#define HTONS(n) ((((n) & 0xFF) << 8) | (((n) & 0xFF00) >> 8))
+static inline uint16_t bswap16(uint16_t v) {
+    return (uint16_t)((v << 8) | (v >> 8));
+}
+#define HTONS(x)  bswap16((uint16_t)(x))
+#define NTOHS(x)  bswap16((uint16_t)(x))
 
 // Ethernet Header (14 bytes)
 typedef struct {
@@ -33,5 +37,8 @@ typedef struct {
     ArpPacket arp;
 } __attribute__((packed)) FullArpPacket;
 
+_Static_assert(sizeof(EthernetHeader) == 14, "EthernetHeader must be 14 bytes");
+_Static_assert(sizeof(ArpPacket) == 28, "ArpPacket must be 28 bytes");
+_Static_assert(sizeof(FullArpPacket) == 42, "FullArpPacket must be 42 bytes");
 
 #endif // PACKET_H
