@@ -1,4 +1,6 @@
 #include "Pic.h"
+
+#include "Console.h"
 #include "Io.h"
 
 #define PIC1_COMMAND 0x20

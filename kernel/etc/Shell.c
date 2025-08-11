@@ -9,6 +9,7 @@
 #include "PS2.h"
 #include "Packet.h"
 #include "Panic.h"
+#include "Pic.h"
 #include "Process.h"
 #include "RTL8139.h"
 #include "StringOps.h"
@@ -29,7 +30,8 @@ static void Version() {
 void info(void) {
     if (!VBEIsInitialized()) return;
     VBEShowInfo();
-    Yield();
+    int count = 100;
+    while (count--) Yield();
 }
 
 static char* GetArg(const char* cmd, int arg_num) {
@@ -165,6 +167,7 @@ static void show_help() {
     PrintKernel("  sched          - Show scheduler state\n");
     PrintKernel("  perf           - Show performance stats\n");
     PrintKernel("  memstat        - Show memory statistics\n");
+    PrintKernel("  setfreq <hz>   - Set PIT timer <hz>\n");
     PrintKernel("  pciscan        - Perform a PCI scan\n");
     PrintKernel("  arptest        - Perform an ARP test and send packets\n");
     PrintKernel("  clear          - Clear screen\n");
@@ -219,6 +222,18 @@ static void ExecuteCommand(const char* cmd) {
             return;
         }
         KernelMemoryAlloc((uint32_t)size);
+    } else if (FastStrCmp(cmd_name, "setfreq") == 0) {
+        char* freq_str = GetArg(cmd, 1);
+        if (!freq_str) {
+            PrintKernel("Usage: setfreq <hz>\n");
+            return;
+        }
+        const uint16_t freq = atoi(freq_str);
+        if (freq <= 0) {
+            PrintKernel("Usage: setfreq <hz>\n");
+            return;
+        }
+        PitSetFrequency(freq);
     } else if (FastStrCmp(cmd_name, "panic") == 0) {
         char* str = GetArg(cmd, 1);
         if (!str) {
