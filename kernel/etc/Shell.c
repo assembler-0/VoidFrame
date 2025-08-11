@@ -14,6 +14,8 @@
 #include "VMem.h"
 #include "VesaBIOSExtension.h"
 #include "stdlib.h"
+#include "Packet.h"
+#include "RTL8139.h"
 
 static char command_buffer[256];
 static int cmd_pos = 0;
@@ -73,6 +75,60 @@ static char* GetArg(const char* cmd, int arg_num) {
     return NULL;
 }
 
+void ArpRequestTestProcess() {
+    FullArpPacket packet;
+
+    // Get the network card's info, especially our MAC address
+    const Rtl8139Device* nic = GetRtl8139Device();
+    if (!nic) {
+        // Handle error: NIC not initialized
+        return;
+    }
+
+    // --- Part 1: Build the Ethernet Header ---
+
+    // Destination MAC: FF:FF:FF:FF:FF:FF (Broadcast)
+    FastMemset(packet.eth.dest_mac, 0xFF, 6);
+
+    // Source MAC: Our card's MAC address
+    FastMemcpy(packet.eth.src_mac, nic->mac_address, 6);
+
+    // EtherType: 0x0806 for ARP
+    packet.eth.ethertype = HTONS(0x0806);
+
+    // --- Part 2: Build the ARP Packet ---
+
+    packet.arp.hardware_type = HTONS(1);      // 1 = Ethernet
+    packet.arp.protocol_type = HTONS(0x0800); // 0x0800 = IPv4
+    packet.arp.hardware_addr_len = 6;
+    packet.arp.protocol_addr_len = 4;
+    packet.arp.opcode = HTONS(1);             // 1 = ARP Request
+
+    // Sender MAC: Our MAC address
+    FastMemcpy(packet.arp.sender_mac, nic->mac_address, 6);
+
+    // Sender IP: We don't have an IP stack, so let's pretend we're 192.168.1.100
+    packet.arp.sender_ip[0] = 192;
+    packet.arp.sender_ip[1] = 168;
+    packet.arp.sender_ip[2] = 1;
+    packet.arp.sender_ip[3] = 100;
+
+    // Target MAC: 00:00:00:00:00:00 (this is what we're asking for)
+    FastMemset(packet.arp.target_mac, 0x00, 6);
+
+    // Target IP: The IP of the computer we want to find (e.g., your router)
+    packet.arp.target_ip[0] = 192;
+    packet.arp.target_ip[1] = 168;
+    packet.arp.target_ip[2] = 1;
+    packet.arp.target_ip[3] = 1;
+
+    // --- Part 3: Send the packet! ---
+
+    // The total packet size is the size of the two headers
+    uint32_t packet_size = sizeof(EthernetHeader) + sizeof(ArpPacket);
+    Rtl8139_SendPacket(&packet, packet_size);
+}
+
 static void ResolvePath(const char* input, char* output, int max_len) {
     if (!input || !output) return;
     
@@ -113,6 +169,7 @@ static void show_help() {
     PrintKernel("  perf           - Show performance stats\n");
     PrintKernel("  memstat        - Show memory statistics\n");
     PrintKernel("  pciscan        - Perform a PCI scan\n");
+    PrintKernel("  arptest        - Perform an ARP test and send packets\n");
     PrintKernel("  clear          - Clear screen\n");
     PrintKernel("  info           - A piece information about the kernel\n");
     PrintKernel("  cd <dir>       - Change directory\n");
@@ -123,7 +180,7 @@ static void show_help() {
     PrintKernel("  touch <name>   - Create empty file\n");
     PrintKernel("  alloc <size>   - Allocate <size> bytes\n");
     PrintKernel("  panic <message>- Panic with <message>\n");
-    PrintKernel("  kill <pic>     - Terminate process with pid <pid>\n");
+    PrintKernel("  kill <pid>     - Terminate process with pid <pid>\n");
     PrintKernel("  rm <file>      - Remove file or empty directory\n");
     PrintKernel("  echo <text> <file> - Write text to file\n");
     PrintKernel("  fstest         - Run filesystem tests\n");
@@ -217,6 +274,8 @@ static void ExecuteCommand(const char* cmd) {
     } else if (FastStrCmp(cmd_name, "pwd") == 0) {
         PrintKernel(current_dir);
         PrintKernel("\n");
+    } else if (FastStrCmp(cmd_name, "arptest") == 0) {
+        CreateProcess(ArpRequestTestProcess);
     } else if (FastStrCmp(cmd_name, "ls") == 0) {
         char* path = GetArg(cmd, 1);
         if (!path) {

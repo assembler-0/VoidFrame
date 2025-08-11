@@ -10,11 +10,13 @@
 #include "MemPool.h"
 #include "Memory.h"
 #include "Multiboot2.h"
+#include "PCI/PCI.h"
 #include "PS2.h"
 #include "Paging.h"
 #include "Panic.h"
 #include "Pic.h"
 #include "Process.h"
+#include "ethernet/RTL8139.h"
 #include "Serial.h"
 #include "Shell.h"
 #include "StackGuard.h"
@@ -24,7 +26,6 @@
 #include "VesaBIOSExtension.h"
 #include "stdbool.h"
 #include "stdint.h"
-#include "PCI/PCI.h"
 
 void KernelMainHigherHalf(void);
 #define KERNEL_STACK_SIZE (16 * 1024) // 16KB stack
@@ -380,6 +381,10 @@ static InitResultT SystemInitS2(void) {
     PrintKernel("[INFO] Scanning PCI devices...\n");
     PciEnumerate();
     PrintKernelSuccess("[SYSTEM] PCI devices scanned\n");
+
+    PrintKernel("[INFO] Initializing RTL8139 Driver...\n");
+    Rtl8139_Init();
+    PrintKernelSuccess("[SYSTEM] RTL8139 Driver initialized\n");
 
     // NEW: Final memory health check
     PrintKernel("[INFO] Final memory health check...\n");
