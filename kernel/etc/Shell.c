@@ -5,6 +5,7 @@
 #include "KernelHeap.h"
 #include "MemOps.h"
 #include "Memory.h"
+#include "PCI/PCI.h"
 #include "PS2.h"
 #include "Panic.h"
 #include "Process.h"
@@ -111,6 +112,7 @@ static void show_help() {
     PrintKernel("  sched          - Show scheduler state\n");
     PrintKernel("  perf           - Show performance stats\n");
     PrintKernel("  memstat        - Show memory statistics\n");
+    PrintKernel("  pciscan        - Perform a PCI scan\n");
     PrintKernel("  clear          - Clear screen\n");
     PrintKernel("  info           - A piece information about the kernel\n");
     PrintKernel("  cd <dir>       - Change directory\n");
@@ -149,6 +151,8 @@ static void ExecuteCommand(const char* cmd) {
         PrintKernel("MB\n");
         PrintVMemStats();
         PrintHeapStats();
+    } else if (FastStrCmp(cmd_name, "pciscan") == 0) {
+        PciEnumerate();
     } else if (FastStrCmp(cmd_name, "alloc") == 0) {
         char* size_str = GetArg(cmd, 1);
         if (!size_str) {

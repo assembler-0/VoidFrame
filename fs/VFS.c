@@ -10,7 +10,6 @@
 
 static VfsMountStruct mounts[VFS_MAX_MOUNTS];
 
-
 int VfsMount(const char* path, VfsType type, uint8_t drive) {
     for (int i = 0; i < VFS_MAX_MOUNTS; i++) {
         if (!mounts[i].active) {
@@ -67,7 +66,7 @@ int VfsInit(void) {
             SerialWrite("[VFS] FAT12 mount failed\n");
         }
     } else {
-        PrintKernel("[VFS] Skipping FAT12 mount - Already initialized\n");
+        PrintKernel("[VFS] Skipping FAT12 mount - Not initialized\n");
     }
 
     PrintKernelSuccess("[VFS] Virtual File System initialized\n");
@@ -109,14 +108,19 @@ const char* VfsStripMount(const char* path, VfsMountStruct* mount) {
     if (!path || !mount) return NULL;
 
     int mount_len = FastStrlen(mount->mount_point, 64);
+
+    // If the mount is the root filesystem ("/"), the local path is the original path.
     if (mount_len == 1 && mount->mount_point[0] == '/') {
-        return path; // Root mount
+        return path;
     }
-    const char* local = path + mount_len;
-    if (*local == '/') {
-        local++;
+
+    const char* local_path_start = path + mount_len;
+
+    if (*local_path_start == '\0') {
+        return "/";
     }
-    return local;
+
+    return local_path_start;
 }
 
 int VfsReadFile(const char* path, void* buffer, uint32_t max_size) {
@@ -152,6 +156,7 @@ int VfsReadFile(const char* path, void* buffer, uint32_t max_size) {
         case VFS_FAT12: {
             extern int fat12_initialized;
             if (!fat12_initialized) return -1;
+            // Use new path-aware function
             return Fat12ReadFile(local_path, buffer, max_size);
         }
     }
@@ -187,10 +192,8 @@ int VfsListDir(const char* path) {
         case VFS_FAT12: {
             extern int fat12_initialized;
             if (!fat12_initialized) return -1;
-            if (FastStrCmp(local_path, "/") == 0 || FastStrlen(local_path, 256) == 0) {
-                return Fat12ListRoot();
-            }
-            return -1;
+            // Use new directory listing function that supports any directory
+            return Fat12ListDirectory(local_path);
         }
     }
 
@@ -212,8 +215,9 @@ int VfsCreateFile(const char* path) {
             return 0;
         }
         case VFS_FAT12:
-            // Bridge to the FAT12 driver
             if (FastStrlen(local_path, 2) == 0) return -1;
+            extern int fat12_initialized;
+            if (!fat12_initialized) return -1;
             return Fat12CreateFile(local_path);
     }
 
@@ -232,7 +236,9 @@ int VfsCreateDir(const char* path) {
             return FsMkdir(local_path);
         case VFS_FAT12:
             if (FastStrlen(local_path, 2) == 0) return -1;
-            return Fat12CreateDir(local_path); // Not implemented
+            extern int fat12_initialized;
+            if (!fat12_initialized) return -1;
+            return Fat12CreateDir(local_path);
     }
 
     return -1;
@@ -249,8 +255,9 @@ int VfsDelete(const char* path) {
             if (FastStrlen(local_path, 2) == 0) return -1;
             return FsDelete(local_path);
         case VFS_FAT12:
-            // Bridge to our new function!
             if (FastStrlen(local_path, 2) == 0) return -1;
+            extern int fat12_initialized;
+            if (!fat12_initialized) return -1;
             return Fat12DeleteFile(local_path);
     }
 
@@ -269,7 +276,10 @@ int VfsIsDir(const char* path) {
             return node && node->type == FS_DIRECTORY;
         }
         case VFS_FAT12: {
-            return FastStrlen(local_path, 256) == 0;
+            extern int fat12_initialized;
+            if (!fat12_initialized) return 0;
+            // Use new directory detection function
+            return Fat12IsDirectory(local_path);
         }
     }
     return 0;
@@ -291,9 +301,12 @@ int VfsWriteFile(const char* path, const void* buffer, uint32_t size) {
             return result;
         }
         case VFS_FAT12:
-            // Bridge to the FAT12 driver
+            // Use enhanced path-aware file writing
+            extern int fat12_initialized;
+            if (!fat12_initialized) return -1;
             return Fat12WriteFile(local_path, buffer, size);
     }
     
     return -1;
 }
+

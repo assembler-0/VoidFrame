@@ -91,6 +91,7 @@ c_sources = [
     src_root + '/drivers/PS2.c',
     src_root + '/drivers/Ide.c',
     src_root + '/drivers/VesaBIOSExtension.c',
+    src_root + '/drivers/PCI/PCI.c',
     arch_root + '/idt/Idt.c',
     arch_root + '/gdt/Gdt.c',
     arch_root + '/syscall/Syscall.c',
@@ -169,7 +170,15 @@ iso = custom_target('VoidFrame.iso',
 
 # Run target
 run_target('run',
-           command : ['qemu-system-x86_64', '-cdrom', 'VoidFrame.iso',  '-serial', 'stdio' , '-no-reboot','-no-shutdown','-m', '1G', '-drive', 'file=VoidFrameDisk.img,format=raw,if=ide', '-boot', 'd']
+           command : ['qemu-system-x86_64',
+                      '-cdrom', 'VoidFrame.iso',
+                      '-serial', 'stdio' ,
+                      '-no-reboot','-no-shutdown',
+                      '-m', '1G',
+                      '-drive', 'file=VoidFrameDisk.img,format=raw,if=ide',
+                      '-boot', 'd',
+                      '-device', 'rtl8139'
+           ]
 )
 
 run_target('img',
