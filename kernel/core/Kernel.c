@@ -1,3 +1,4 @@
+// VoidFrame Kernel Entry File
 #include "Kernel.h"
 #include "Console.h"
 #include "FAT12.h"
@@ -495,7 +496,6 @@ static void ValidateMemoryLayout(void) {
     if (VIRT_ADDR_SPACE_START >= KERNEL_SPACE_START) {
         PrintKernelError("[ERROR] Virtual address space overlaps with kernel space\n");
     }
-
 
     PrintKernelSuccess("[SYSTEM] Memory layout validated\n");
 }

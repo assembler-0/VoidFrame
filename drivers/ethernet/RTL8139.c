@@ -1,6 +1,4 @@
 #include "RTL8139.h"
-
-
 #include "Console.h"
 #include "Io.h"
 #include "KernelHeap.h" // For allocating memory
@@ -119,3 +117,4 @@ void Rtl8139_SendPacket(void* data, uint32_t len) {
 const Rtl8139Device* GetRtl8139Device() {
     return &rtl_device;
 }
+
