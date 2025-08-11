@@ -259,8 +259,9 @@ void TerminateProcess(uint32_t pid, TerminationReason reason, uint32_t exit_code
         RequestSchedule();
     }
 
-    AddToTerminationQueueAtomic(slot);
-    proc->state = PROC_ZOMBIE;
+    proc->state = PROC_ZOMBIE;           // Set state FIRST
+    __sync_synchronize();                 // Full memory barrier
+    AddToTerminationQueueAtomic(slot);   // Then add to queue
     SpinLock(&pid_lock);
     int idx = proc->pid / 64;
     int bit = proc->pid % 64;
