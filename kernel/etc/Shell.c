@@ -7,15 +7,15 @@
 #include "Memory.h"
 #include "PCI/PCI.h"
 #include "PS2.h"
+#include "Packet.h"
 #include "Panic.h"
 #include "Process.h"
+#include "RTL8139.h"
 #include "StringOps.h"
 #include "VFS.h"
 #include "VMem.h"
 #include "VesaBIOSExtension.h"
 #include "stdlib.h"
-#include "Packet.h"
-#include "RTL8139.h"
 
 static char command_buffer[256];
 static int cmd_pos = 0;
@@ -29,10 +29,7 @@ static void Version() {
 void info(void) {
     if (!VBEIsInitialized()) return;
     VBEShowInfo();
-    int count = 10000000;
-    while (--count) {
-        Yield();
-    }
+    Yield();
 }
 
 static char* GetArg(const char* cmd, int arg_num) {

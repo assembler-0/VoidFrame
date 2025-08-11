@@ -21,17 +21,22 @@ void PitInstall() {
 }
 
 void PitSetFrequency(uint16_t hz) {
-    // Disable interrupts to ensure atomic update
-    asm volatile("cli");
-    PIT_FREQUENCY_HZ = hz; // Update the global state
-    const uint16_t divisor = 1193180 / hz;
+    // Save current interrupt state
+    irq_flags_t flags = save_irq_flags();
+    cli();
+
+    PIT_FREQUENCY_HZ = hz;
+    // Safer divisor calculation
+    uint32_t div32 = 1193180u / (hz ? hz : 1u);
+    uint16_t divisor = (uint16_t)div32;
+
     outb(0x43, 0x36);
     outb(0x40, divisor & 0xFF);
     outb(0x40, (divisor >> 8) & 0xFF);
-    // Re-enable interrupts
-    asm volatile("sti");
-}
 
+    // Restore previous interrupt state
+    restore_irq_flags(flags);
+}
 void PicInstall() {
     uint8_t a1, a2;
 
