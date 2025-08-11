@@ -170,6 +170,37 @@ typedef struct {
     uint32_t context_switch_overhead; // Measured overhead
 } Scheduler;
 
+typedef struct {
+    uint64_t timestamp;
+    uint16_t process_count;
+    uint16_t frequency;
+    uint32_t context_switches;
+    uint32_t avg_latency;
+} FrequencyHistory;
+
+#define FREQ_HISTORY_SIZE 32
+#define PREDICTION_WINDOW 10
+
+// Advanced PIT frequency controller
+typedef struct {
+    FrequencyHistory history[FREQ_HISTORY_SIZE];
+    uint32_t history_index;
+    uint16_t min_freq;
+    uint16_t max_freq;
+    uint16_t current_freq;
+
+    // Machine learning-inspired parameters
+    float learning_rate;
+    float momentum;
+    float last_adjustment;
+
+    // Performance metrics
+    uint64_t total_idle_ticks;
+    uint64_t total_busy_ticks;
+    uint32_t missed_deadlines;
+    uint32_t power_state;  // 0=low, 1=normal, 2=turbo
+} PITController;
+
 // Core process functions
 int ProcessInit(void);
 uint32_t CreateProcess(void (*entry_point)(void));
