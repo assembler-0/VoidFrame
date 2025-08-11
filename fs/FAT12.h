@@ -67,3 +67,5 @@ int Fat12CreateFile(const char* filename);
 int Fat12CreateDir(const char* dirname);
 int Fat12ListRoot(void);
 int Fat12GetCluster(uint16_t cluster, uint8_t* buffer);
+int Fat12IsDirectory(const char* path);
+int Fat12ListDirectory(const char* path);
