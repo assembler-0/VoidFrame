@@ -11,6 +11,7 @@
 #include "Spinlock.h"
 #include "VMem.h"
 #include "stdbool.h"
+#include "stdlib.h"
 
 #define offsetof(type, member) ((uint64_t)&(((type*)0)->member))
 
@@ -61,6 +62,12 @@ static volatile uint32_t term_queue_count = 0;
 // Performance counters
 static uint64_t context_switches = 0;
 static uint64_t scheduler_calls = 0;
+
+extern uint16_t PIT_FREQUENCY_HZ;
+
+static void UpdatePIT(const uint16_t hz) {
+    PIT_FREQUENCY_HZ = hz;
+}
 
 static int FastFFS(const uint64_t value) {
     return __builtin_ctzll(value);
@@ -1133,9 +1140,120 @@ Process* GetProcessByPid(uint32_t pid) {
 }
 
 
-void SystemTracer(void) {
-    PrintKernelSuccess("[SYSTEM] SystemTracer() has started. Scanning...\n");
+void SystemService(void) {
+    PITController controller = {
+        .min_freq = 100,
+        .max_freq = 1000,
+        .current_freq = PIT_FREQUENCY_HZ,
+        .learning_rate = 0.1f,
+        .momentum = 0.7f,
+        .last_adjustment = 0
+    };
+
+    uint64_t last_sample_time = GetSystemTicks();
+    uint64_t last_context_switches = context_switches;
+
+    PrintKernelSuccess("[SYSTEM] Advanced frequency controller active\n");
+
     while (1) {
+        uint64_t current_time = GetSystemTicks();
+        uint64_t time_delta = current_time - last_sample_time;
+
+        if (time_delta >= 50) {  // Sample every 50 ticks
+            // Gather system metrics
+            int process_count = __builtin_popcountll(active_process_bitmap);
+            int ready_count = __builtin_popcountll(ready_process_bitmap);
+            uint64_t cs_delta = context_switches - last_context_switches;
+
+            // Calculate system load (0.0 to 1.0)
+            float load = (float)ready_count / (float)MAX_PROCESSES;
+
+            // Calculate context switch rate
+            float cs_rate = (float)cs_delta / (float)time_delta;
+
+            // Analyze queue depths for latency estimation
+            uint32_t total_queue_depth = 0;
+            uint32_t max_queue_depth = 0;
+            for (int i = 0; i < MAX_PRIORITY_LEVELS; i++) {
+                uint32_t depth = MLFQscheduler.queues[i].count;
+                total_queue_depth += depth;
+                if (depth > max_queue_depth) max_queue_depth = depth;
+            }
+
+            // Predictive frequency calculation using multiple factors
+            float target_freq = controller.min_freq;
+
+            // Factor 1: Process count (base load)
+            target_freq += (process_count - 1) * 30;  // 30Hz per process
+
+            // Factor 2: Queue pressure (responsiveness)
+            if (max_queue_depth > 3) {
+                target_freq += max_queue_depth * 20;  // Boost for queue buildup
+            }
+
+            // Factor 3: Context switch rate (thrashing detection)
+            if (cs_rate > 10.0f) {
+                // High context switching - might be thrashing
+                target_freq *= 1.2f;  // Boost to reduce overhead
+            } else if (cs_rate < 2.0f && process_count > 2) {
+                // Low switching with multiple processes - might be too slow
+                target_freq *= 0.9f;  // Reduce slightly
+            }
+
+            // Factor 4: Power-aware scaling
+            if (total_queue_depth == 0 && process_count <= 2) {
+                controller.power_state = 0;  // Low power
+                target_freq = controller.min_freq;
+            } else if (load > 0.7f) {
+                controller.power_state = 2;  // Turbo
+                target_freq *= 1.3f;
+            } else {
+                controller.power_state = 1;  // Normal
+            }
+
+            // Apply momentum for smooth transitions
+            float adjustment = (target_freq - controller.current_freq) * controller.learning_rate;
+            adjustment = adjustment + controller.momentum * controller.last_adjustment;
+            controller.last_adjustment = adjustment;
+
+            uint16_t new_freq = controller.current_freq + (int16_t)adjustment;
+
+            // Clamp to limits
+            if (new_freq < controller.min_freq) new_freq = controller.min_freq;
+            if (new_freq > controller.max_freq) new_freq = controller.max_freq;
+
+            // Hysteresis - only change if difference is significant
+            if (ABSi(new_freq - controller.current_freq) > 10) {
+                UpdatePIT(new_freq);
+                controller.current_freq = new_freq;
+
+                // Log the change for analysis
+                if (current_time % 500 == 0) {
+                    PrintKernel("[TRACER] Freq: ");
+                    PrintKernelInt(new_freq);
+                    PrintKernel("Hz, Load: ");
+                    PrintKernelInt((uint32_t)(load * 100));
+                    PrintKernel("%, Power: ");
+                    PrintKernelInt(controller.power_state);
+                    PrintKernel("\n");
+                }
+            }
+
+            // Update history for pattern learning
+            uint32_t idx = controller.history_index % FREQ_HISTORY_SIZE;
+            controller.history[idx] = (FrequencyHistory){
+                .timestamp = current_time,
+                .process_count = process_count,
+                .frequency = controller.current_freq,
+                .context_switches = cs_delta,
+                .avg_latency = total_queue_depth
+            };
+            controller.history_index++;
+
+            last_sample_time = current_time;
+            last_context_switches = context_switches;
+        }
+
         CleanupTerminatedProcesses();
         Yield();
     }
@@ -1172,7 +1290,7 @@ void SystemIntegrityVerificationAgent(void) {
     security_manager_pid = current->pid;
 
     // Create system tracer with enhanced security
-    uint32_t tracer_pid = CreateProcess(SystemTracer); // demote, it hogs cpu
+    uint32_t tracer_pid = CreateSecureProcess(SystemService, PROC_PRIV_SYSTEM); // demote, it hogs cpu
     if (tracer_pid) {
         Process* tracer = GetProcessByPid(tracer_pid);
         if (tracer) {
@@ -1456,6 +1574,9 @@ void ListProcesses(void) {
 }
 
 void DumpSchedulerState(void) {
+    PrintKernel("[SCHED] PIT frequency: ");
+    PrintKernelInt(PIT_FREQUENCY_HZ);
+    PrintKernel("\n");
     PrintKernel("[SCHED] Current: ");
     PrintKernelInt(MLFQscheduler.current_running);
     PrintKernel(" Quantum: ");
