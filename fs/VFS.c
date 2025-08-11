@@ -215,8 +215,9 @@ int VfsCreateFile(const char* path) {
             return 0;
         }
         case VFS_FAT12:
-            // Use enhanced path-aware function
             if (FastStrlen(local_path, 2) == 0) return -1;
+            extern int fat12_initialized;
+            if (!fat12_initialized) return -1;
             return Fat12CreateFile(local_path);
     }
 
@@ -235,7 +236,8 @@ int VfsCreateDir(const char* path) {
             return FsMkdir(local_path);
         case VFS_FAT12:
             if (FastStrlen(local_path, 2) == 0) return -1;
-            // Use enhanced path-aware directory creation
+            extern int fat12_initialized;
+            if (!fat12_initialized) return -1;
             return Fat12CreateDir(local_path);
     }
 
@@ -253,8 +255,9 @@ int VfsDelete(const char* path) {
             if (FastStrlen(local_path, 2) == 0) return -1;
             return FsDelete(local_path);
         case VFS_FAT12:
-            // Use enhanced deletion function that handles both files and directories
             if (FastStrlen(local_path, 2) == 0) return -1;
+            extern int fat12_initialized;
+            if (!fat12_initialized) return -1;
             return Fat12DeleteFile(local_path);
     }
 
@@ -299,6 +302,8 @@ int VfsWriteFile(const char* path, const void* buffer, uint32_t size) {
         }
         case VFS_FAT12:
             // Use enhanced path-aware file writing
+            extern int fat12_initialized;
+            if (!fat12_initialized) return -1;
             return Fat12WriteFile(local_path, buffer, size);
     }
     

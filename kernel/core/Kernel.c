@@ -24,6 +24,7 @@
 #include "VesaBIOSExtension.h"
 #include "stdbool.h"
 #include "stdint.h"
+#include "PCI/PCI.h"
 
 void KernelMainHigherHalf(void);
 #define KERNEL_STACK_SIZE (16 * 1024) // 16KB stack
@@ -375,6 +376,10 @@ static InitResultT SystemInitS2(void) {
     // Setup memory protection LAST - after all systems are ready
     StackGuardInit();
     SetupMemoryProtection();
+
+    PrintKernel("[INFO] Scanning PCI devices...\n");
+    PciEnumerate();
+    PrintKernelSuccess("[SYSTEM] PCI devices scanned\n");
 
     // NEW: Final memory health check
     PrintKernel("[INFO] Final memory health check...\n");

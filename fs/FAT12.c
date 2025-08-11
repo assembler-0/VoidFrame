@@ -329,8 +329,8 @@ int Fat12ListDirectory(const char* path) {
             if ((uint8_t)current_entry->name[0] == 0x00) break;
             if ((uint8_t)current_entry->name[0] == 0xE5) continue;
             if (current_entry->attr & FAT12_ATTR_VOLUME_ID) continue;
-            if (entry->name[0] == '.' && entry->name[1] == ' ' && entry->ext[0] == ' ') continue;
-            if (entry->name[0] == '.' && entry->name[1] == '.' && entry->name[2] == ' ') continue;
+            if (current_entry->name[0] == '.' && current_entry->name[1] == ' ' && current_entry->ext[0] == ' ') continue;
+            if (current_entry->name[0] == '.' && current_entry->name[1] == '.' && current_entry->name[2] == ' ') continue;
 
             // (Printing logic is the same)
             PrintKernel("  ");
