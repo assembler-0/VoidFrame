@@ -25,6 +25,7 @@ c_flags = [
     '-finline-functions',
     '-foptimize-sibling-calls',
     '-nostdinc',
+    '-nostdlib',
     '-fno-builtin',
     '-ffreestanding',
     '-fstack-protector-strong',

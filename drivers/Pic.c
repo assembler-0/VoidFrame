@@ -20,6 +20,17 @@ void PitInstall() {
     outb(0x40, (divisor >> 8) & 0xFF); // High byte
 }
 
+void PitSetFrequency(uint16_t hz) {
+    // Disable interrupts to ensure atomic update
+    asm volatile("cli");
+    PIT_FREQUENCY_HZ = hz; // Update the global state
+    const uint16_t divisor = 1193180 / hz;
+    outb(0x43, 0x36);
+    outb(0x40, divisor & 0xFF);
+    outb(0x40, (divisor >> 8) & 0xFF);
+    // Re-enable interrupts
+    asm volatile("sti");
+}
 
 void PicInstall() {
     uint8_t a1, a2;
@@ -52,7 +63,4 @@ void PicInstall() {
     // Read current mask, clear bit 0, write back
     uint8_t pic1_mask = inb(PIC1_DATA);
     outb(PIC1_DATA, pic1_mask & ~0x01); // Clear bit 0 (IRQ0)
-
-    // Initialize PIT after PIC
-    PitInstall();
 }
