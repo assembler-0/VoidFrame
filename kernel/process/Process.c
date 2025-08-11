@@ -62,6 +62,12 @@ static volatile uint32_t term_queue_count = 0;
 static uint64_t context_switches = 0;
 static uint64_t scheduler_calls = 0;
 
+extern uint16_t PIT_FREQUENCY_HZ;
+
+static void UpdatePIT(const uint16_t hz) {
+    PIT_FREQUENCY_HZ = hz;
+}
+
 static int FastFFS(const uint64_t value) {
     return __builtin_ctzll(value);
 }
@@ -1135,7 +1141,14 @@ Process* GetProcessByPid(uint32_t pid) {
 
 void SystemTracer(void) {
     PrintKernelSuccess("[SYSTEM] SystemTracer() has started. Scanning...\n");
+    int initialProcessCount = __builtin_popcountll(active_process_bitmap);
+    uint16_t base = PIT_FREQUENCY_HZ;
     while (1) {
+        if (__builtin_popcountll(active_process_bitmap) > initialProcessCount) {
+            base += PIT_BUFF;
+            UpdatePIT(base);
+            initialProcessCount = __builtin_popcountll(active_process_bitmap);
+        }
         CleanupTerminatedProcesses();
         Yield();
     }
@@ -1456,6 +1469,9 @@ void ListProcesses(void) {
 }
 
 void DumpSchedulerState(void) {
+    PrintKernel("[SCHED] PIT frequency: ");
+    PrintKernelInt(PIT_FREQUENCY_HZ);
+    PrintKernel("\n");
     PrintKernel("[SCHED] Current: ");
     PrintKernelInt(MLFQscheduler.current_running);
     PrintKernel(" Quantum: ");

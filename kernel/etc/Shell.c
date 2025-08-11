@@ -161,6 +161,18 @@ static void ExecuteCommand(const char* cmd) {
             return;
         }
         KernelMemoryAlloc((uint32_t)size);
+    } else if (FastStrCmp(cmd_name, "free") == 0) {
+        char* size_str = GetArg(cmd, 1);
+        if (!size_str) {
+            PrintKernel("Usage: alloc <size>\n");
+            return;
+        }
+        int size = atoi(size_str);
+        if (size <= 0) {
+            PrintKernel("Usage: alloc <size>\n");
+            return;
+        }
+        KernelFree((void*)size);
     } else if (FastStrCmp(cmd_name, "panic") == 0) {
         char* str = GetArg(cmd, 1);
         if (!str) {

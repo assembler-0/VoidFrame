@@ -10,8 +10,10 @@
 #define ICW1_INIT    0x10
 #define ICW4_8086    0x01
 
+uint16_t PIT_FREQUENCY_HZ = 250;
+
 void PitInstall() {
-    uint16_t divisor = 1193180 / PIT_FREQUENCY_HZ;
+    const uint16_t divisor = 1193180 / PIT_FREQUENCY_HZ;
 
     outb(0x43, 0x36);  // Command byte: channel 0, lobyte/hibyte, rate generator
     outb(0x40, divisor & 0xFF);        // Low byte

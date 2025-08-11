@@ -87,6 +87,8 @@
 #define PROC_PRIV_USER      1   // User processes
 #define PROC_PRIV_RESTRICTED 2  // Restricted processes
 
+#define PIT_BUFF 20
+
 typedef struct {
     uint64_t magic;
     uint32_t creator_pid;
