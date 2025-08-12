@@ -21,15 +21,17 @@ SyscallEntry:
     push r13
     push r14
     push r15
-    
+    ; Stop SMAP temporarily
+    stac
     ; System call convention: rax=syscall_num, rdi=arg1, rsi=arg2, rdx=arg3
     mov rdi, rax    ; syscall number
-    mov rsi, rbx    ; arg1 
-    mov rdx, rcx    ; arg2
-    mov rcx, r8     ; arg3
+    mov rsi, rdi    ; arg1
+    mov rdx, rsi    ; arg2
+    mov rcx, rdx    ; arg3
     
     call Syscall
-    
+    ; Reset SMAP
+    clac
     ; Return value in rax is already set
     
     ; Restore registers
