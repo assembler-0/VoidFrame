@@ -1,9 +1,7 @@
 #include "Io.h"
 #include "PS2.h"
 
-#define KEYBOARD_DATA_PORT 0x60
-#define KEYBOARD_STATUS_PORT 0x64
-
+// Keyboard buffer (unchanged)
 static volatile char input_buffer[256];
 static volatile int buffer_head = 0;
 static volatile int buffer_tail = 0;
@@ -12,6 +10,17 @@ static volatile int buffer_count = 0;
 static int shift_pressed = 0;
 static int ctrl_pressed = 0;
 static int alt_pressed = 0;
+
+// Mouse state
+typedef struct {
+    int x, y;
+    int delta_x, delta_y;
+    uint8_t buttons;
+    int packet_index;
+    uint8_t packet[3];
+} MouseState;
+
+static MouseState mouse = {0};
 
 static char scancode_to_ascii[] = {
     0, 27, '1', '2', '3', '4', '5', '6', '7', '8', '9', '0', '-', '=', '\b',
@@ -29,37 +38,97 @@ static char scancode_to_ascii_shift[] = {
     '*', 0, ' '
 };
 
+// Helper functions
+static void wait_for_input_buffer_empty(void) {
+    int timeout = 100000;
+    while ((inb(KEYBOARD_STATUS_PORT) & 0x02) && --timeout);
+}
+
+static void wait_for_output_buffer_full(void) {
+    int timeout = 100000;
+    while (!(inb(KEYBOARD_STATUS_PORT) & 0x01) && --timeout);
+}
+
+void send_mouse_command(uint8_t cmd) {
+    wait_for_input_buffer_empty();
+    outb(KEYBOARD_STATUS_PORT, PS2_CMD_WRITE_AUX);
+    wait_for_input_buffer_empty();
+    outb(KEYBOARD_DATA_PORT, cmd);
+    wait_for_output_buffer_full();
+    uint8_t response = inb(KEYBOARD_DATA_PORT);
+    // Should be 0xFA (ACK) for most commands
+}
+
 void PS2Init(void) {
     // Flush the keyboard controller's buffer
     while (inb(KEYBOARD_STATUS_PORT) & 0x01) {
-        inb(KEYBOARD_DATA_PORT);  // Read and discard any pending data
+        inb(KEYBOARD_DATA_PORT);
     }
 
-    // Wait for controller to be ready
-    while (inb(KEYBOARD_STATUS_PORT) & 0x02);
+    // Disable both devices first
+    wait_for_input_buffer_empty();
+    outb(KEYBOARD_STATUS_PORT, 0xAD); // Disable keyboard
+    wait_for_input_buffer_empty();
+    outb(KEYBOARD_STATUS_PORT, PS2_CMD_DISABLE_AUX); // Disable mouse
 
-    // Send reset command to keyboard
+    // Read current configuration
+    wait_for_input_buffer_empty();
+    outb(KEYBOARD_STATUS_PORT, PS2_CMD_READ_CONFIG);
+    wait_for_output_buffer_full();
+    uint8_t config = inb(KEYBOARD_DATA_PORT);
+
+    config |= 0x03;  // Enable keyboard and mouse interrupts
+
+    // Write back configuration
+    wait_for_input_buffer_empty();
+    outb(KEYBOARD_STATUS_PORT, PS2_CMD_WRITE_CONFIG);
+    wait_for_input_buffer_empty();
+    outb(KEYBOARD_DATA_PORT, config);
+
+    // Enable auxiliary device
+    wait_for_input_buffer_empty();
+    outb(KEYBOARD_STATUS_PORT, PS2_CMD_ENABLE_AUX);
+
+    // Initialize mouse
+    send_mouse_command(MOUSE_CMD_SET_DEFAULTS);
+    send_mouse_command(MOUSE_CMD_ENABLE);
+
+    // Re-enable keyboard
+    wait_for_input_buffer_empty();
+    outb(KEYBOARD_STATUS_PORT, 0xAE);
+
+    // Reset keyboard
+    wait_for_input_buffer_empty();
     outb(KEYBOARD_DATA_PORT, 0xFF);
-
-    // Wait for ACK (0xFA) and self-test passed (0xAA)
-    while (inb(KEYBOARD_STATUS_PORT) & 0x01) {
-        uint8_t response = inb(KEYBOARD_DATA_PORT);
-        if (response == 0xAA) break;  // Self-test passed
+    wait_for_output_buffer_full();
+    uint8_t response = inb(KEYBOARD_DATA_PORT);
+    if (response == 0xFA) {
+        wait_for_output_buffer_full();
+        inb(KEYBOARD_DATA_PORT); // Should be 0xAA
     }
 
-    // Clear our software buffers
+    // Clear software state
     buffer_head = buffer_tail = buffer_count = 0;
     shift_pressed = ctrl_pressed = alt_pressed = 0;
+    mouse.x = mouse.y = 0;
+    mouse.packet_index = 0;
+    mouse.buttons = 0;
 }
 
 void KeyboardHandler(void) {
     uint8_t status = inb(KEYBOARD_STATUS_PORT);
     if (!(status & 0x01)) return;
-    
+
+    // If bit 5 is set, the data is for the mouse.
+    // In that case, the MouseHandler will deal with it, so we should ignore it.
+    if (status & 0x20) {
+        return;
+    }
+
     uint8_t scancode = inb(KEYBOARD_DATA_PORT);
     int key_released = scancode & 0x80;
     scancode &= 0x7F;
-    
+
     // Handle modifier keys
     if (scancode == 0x2A || scancode == 0x36) { // Left/Right Shift
         shift_pressed = !key_released;
@@ -73,24 +142,24 @@ void KeyboardHandler(void) {
         alt_pressed = !key_released;
         return;
     }
-    
+
     if (key_released) return;
     if (scancode >= sizeof(scancode_to_ascii)) return;
-    
+
     char c;
     if (shift_pressed) {
         c = scancode_to_ascii_shift[scancode];
     } else {
         c = scancode_to_ascii[scancode];
     }
-    
+
     // Handle Ctrl combinations
     if (ctrl_pressed && c >= 'a' && c <= 'z') {
-        c = c - 'a' + 1; // Ctrl+A = 1, Ctrl+B = 2, etc.
+        c = c - 'a' + 1;
     } else if (ctrl_pressed && c >= 'A' && c <= 'Z') {
         c = c - 'A' + 1;
     }
-    
+
     if (c && buffer_count < 255) {
         input_buffer[buffer_tail] = c;
         buffer_tail = (buffer_tail + 1) % 256;
@@ -98,9 +167,68 @@ void KeyboardHandler(void) {
     }
 }
 
+void MouseHandler(void) {
+    uint8_t status = inb(KEYBOARD_STATUS_PORT);
+    if (!(status & 0x01)) return;
+
+    // Check if this is mouse data (bit 5 set in status)
+    if (!(status & 0x20)) return;
+
+    uint8_t data = inb(KEYBOARD_DATA_PORT);
+
+    mouse.packet[mouse.packet_index] = data;
+    mouse.packet_index++;
+
+    // Standard PS2 mouse sends 3-byte packets
+    if (mouse.packet_index >= 3) {
+        // Parse packet
+        uint8_t flags = mouse.packet[0];
+        int8_t delta_x = (int8_t)mouse.packet[1];
+        int8_t delta_y = (int8_t)mouse.packet[2];
+
+        // Check if packet is valid (bit 3 should be set)
+        if (flags & 0x08) {
+            // Handle X overflow
+            if (flags & 0x40) {
+                delta_x = (flags & 0x10) ? -256 : 255;
+            } else if (flags & 0x10) {
+                delta_x = (delta_x == 0) ? 0 : (delta_x | 0xFFFFFF00);
+            }
+
+            // Handle Y overflow
+            if (flags & 0x80) {
+                delta_y = (flags & 0x20) ? -256 : 255;
+            } else if (flags & 0x20) {
+                delta_y = (delta_y == 0) ? 0 : (delta_y | 0xFFFFFF00);
+            }
+
+            // Y axis is inverted in PS2 mouse
+            delta_y = -delta_y;
+
+            // Update position
+            mouse.delta_x = delta_x;
+            mouse.delta_y = delta_y;
+            mouse.x += delta_x;
+            mouse.y += delta_y;
+
+            // Update button state
+            mouse.buttons = flags & 0x07; // Lower 3 bits are button states
+
+            // Clamp position to reasonable bounds (you can adjust these)
+            if (mouse.x < 0) mouse.x = 0;
+            if (mouse.y < 0) mouse.y = 0;
+            if (mouse.x > 1023) mouse.x = 1023;  // Adjust for your screen resolution
+            if (mouse.y > 767) mouse.y = 767;
+        }
+
+        mouse.packet_index = 0;
+    }
+}
+
+// Existing keyboard functions (unchanged)
 char GetChar(void) {
     if (buffer_count == 0) return 0;
-    
+
     char c = input_buffer[buffer_head];
     buffer_head = (buffer_head + 1) % 256;
     buffer_count--;
@@ -109,4 +237,41 @@ char GetChar(void) {
 
 int HasInput(void) {
     return buffer_count > 0;
+}
+
+// New mouse functions
+int GetMouseX(void) {
+    return mouse.x;
+}
+
+int GetMouseY(void) {
+    return mouse.y;
+}
+
+int GetMouseDeltaX(void) {
+    int delta = mouse.delta_x;
+    mouse.delta_x = 0;  // Reset after reading
+    return delta;
+}
+
+int GetMouseDeltaY(void) {
+    int delta = mouse.delta_y;
+    mouse.delta_y = 0;  // Reset after reading
+    return delta;
+}
+
+uint8_t GetMouseButtons(void) {
+    return mouse.buttons;
+}
+
+int IsLeftButtonPressed(void) {
+    return mouse.buttons & 0x01;
+}
+
+int IsRightButtonPressed(void) {
+    return mouse.buttons & 0x02;
+}
+
+int IsMiddleButtonPressed(void) {
+    return mouse.buttons & 0x04;
 }
