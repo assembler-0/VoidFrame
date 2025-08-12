@@ -35,6 +35,25 @@ void info(void) {
     while (count--) Yield();
 }
 
+void MaliciousPayload(void) { PrintKernelError("I am an evil process!\n"); }
+
+void PrivilegeEscalatorProcess(void) {
+    PrintKernel("[TEST] Running PrivilegeEscalator...\n");
+
+    extern uint32_t CreateSecureProcess(void (*entry_point)(void), uint8_t privilege, uint32_t initial_flags);
+
+    PrintKernel("           Attempting to create a SYSTEM process from USER level...\n");
+    uint32_t evil_pid = CreateSecureProcess(MaliciousPayload, PROC_PRIV_SYSTEM, 0);
+
+    if (evil_pid == 0) {
+        PrintKernelSuccess("[TEST-PASS] PrivilegeEscalator was blocked successfully!\n");
+    } else {
+        PrintKernelError("[TEST-FAIL] PrivilegeEscalator created a process with PID: ");
+        PrintKernelInt(evil_pid);
+        PrintKernelError(". API hardening failed.\n");
+    }
+}
+
 static char* GetArg(const char* cmd, int arg_num) {
     static char arg_buf[64];
     int word = 0, pos = 0, buf_pos = 0;
@@ -216,6 +235,8 @@ static void ExecuteCommand(const char* cmd) {
         PrintHeapStats();
     } else if (FastStrCmp(cmd_name, "pciscan") == 0) {
         PciEnumerate();
+    } else if (FastStrCmp(cmd_name, "test") == 0) {
+        CreateProcess(PrivilegeEscalatorProcess);
     } else if (FastStrCmp(cmd_name, "alloc") == 0) {
         char* size_str = GetArg(cmd, 1);
         if (!size_str) {

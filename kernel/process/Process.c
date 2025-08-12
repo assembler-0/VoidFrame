@@ -19,8 +19,9 @@
 // Security flags
 #define PROC_FLAG_IMMUNE        (1U << 0)
 #define PROC_FLAG_CRITICAL      (1U << 1)
-#define PROC_FLAG_VALIDATED     (1U << 2)
 #define PROC_FLAG_SUPERVISOR    (1U << 3)
+#define PROC_FLAG_CORE          (PROC_FLAG_IMMUNE | PROC_FLAG_SUPERVISOR | PROC_FLAG_CRITICAL)
+#define PROC_FLAG_USER
 
 // Performance optimizations
 #define LIKELY(x)               __builtin_expect(!!(x), 1)
@@ -45,7 +46,6 @@ static volatile int scheduler_lock = 0;
 static uint32_t security_manager_pid = 0;
 static uint32_t security_violation_count = 0;
 static uint64_t last_security_check = 0;
-
 // Fast bitmap operations for process slots (up to 64 processes for 64-bit)
 static uint64_t active_process_bitmap = 0;
 static uint64_t ready_process_bitmap = 0;
@@ -640,7 +640,7 @@ static void SmartAging(void) {
                 
                 queue->count--;
                 
-                // CRITICAL FIX: To prevent starvation, user processes must be boosted
+                // To prevent starvation, user processes must be boosted
                 // to the highest priority (0) to guarantee they get to run. Boosting
                 // them to a lower priority was ineffective.
                 uint32_t new_priority = 0;
@@ -673,6 +673,34 @@ static void SmartAging(void) {
     }
 }
 
+
+static inline int AstraPreflightCheck(uint32_t slot) {
+    if (slot == 0) return 1; // Idle process is always safe.
+
+    Process* proc = &processes[slot];
+
+    // This catches unauthorized modifications to the process state or flags.
+    if (UNLIKELY(!ValidateToken(&proc->token, proc->pid))) {
+        PrintKernelError("[AS-PREFLIGHT] Token validation failed for PID: ");
+        PrintKernelInt(proc->pid);
+        PrintKernelError("\n");
+        ASTerminate(proc->pid, "Pre-flight token validation failure");
+        return 0; // Do not schedule this process.
+    }
+
+    // If a process is marked as SYSTEM but lacks the SUPERVISOR or CRITICAL flag,
+    // it's a huge red flag that it may have tampered with its own privilege level.
+    if (UNLIKELY(proc->privilege_level == PROC_PRIV_SYSTEM &&
+                 !(proc->token.flags & (PROC_FLAG_SUPERVISOR | PROC_FLAG_CRITICAL | PROC_FLAG_IMMUNE)))) {
+        PrintKernelError("[AS-PREFLIGHT] Illicit SYSTEM privilege detected for PID: ");
+        PrintKernelInt(proc->pid);
+        PrintKernelError("\n");
+        ASTerminate(proc->pid, "Unauthorized privilege escalation");
+        return 0; // Do not schedule this process.
+    }
+
+    return 1; // Process appears safe to run.
+}
 
 // Enhanced scheduler with smart preemption and load balancing
 void FastSchedule(struct Registers* regs) {
@@ -791,13 +819,16 @@ select_next:;
     uint32_t next_slot;
 
     if (UNLIKELY(next_priority == -1)) {
-        next_slot = 0;
+        next_slot = 0; // Nothing is ready, select idle process.
     } else {
         next_slot = DeQueue(&MLFQscheduler.queues[next_priority]);
 
-        if (UNLIKELY(next_slot >= MAX_PROCESSES ||
-                    processes[next_slot].state != PROC_READY)) {
-            next_slot = 0;
+        if (UNLIKELY(!AstraPreflightCheck(next_slot))) {
+            goto select_next;
+        }
+
+        if (UNLIKELY(next_slot >= MAX_PROCESSES || processes[next_slot].state != PROC_READY)) {
+            goto select_next;
         }
     }
 
@@ -928,7 +959,7 @@ void ProcessExitStub() {
     }
 }
 
-uint32_t CreateSecureProcess(void (*entry_point)(void), uint8_t privilege) {
+uint32_t CreateSecureProcess(void (*entry_point)(void), uint8_t privilege, uint32_t initial_flags) {
     irq_flags_t flags = SpinLockIrqSave(&scheduler_lock);
     if (UNLIKELY(!entry_point)) {
         SpinUnlockIrqRestore(&scheduler_lock, flags);
@@ -936,6 +967,17 @@ uint32_t CreateSecureProcess(void (*entry_point)(void), uint8_t privilege) {
     }
 
     Process* creator = GetCurrentProcess();
+
+    if (privilege == PROC_PRIV_SYSTEM && creator->privilege_level != PROC_PRIV_SYSTEM) {
+        PrintKernelError("[AS-API] Unauthorized privilege escalation attempt by PID: ");
+        PrintKernelInt(creator->pid);
+        PrintKernelError(" (tried to create a system process).\n");
+        // This is a hostile act. Terminate the caller.
+        SpinUnlockIrqRestore(&scheduler_lock, flags);
+        ASTerminate(creator->pid, "Illegal attempt to create system process");
+        return 0; // Return PID 0 to indicate failure
+    }
+
 
     // Enhanced security validation
     if (UNLIKELY(!ValidateToken(&creator->token, creator->pid))) {
@@ -1022,7 +1064,7 @@ uint32_t CreateSecureProcess(void (*entry_point)(void), uint8_t privilege) {
     token->magic = SECURITY_MAGIC;
     token->creator_pid = creator->pid;
     token->privilege = privilege;
-    token->flags = 0;
+    token->flags = initial_flags;
     token->creation_tick = GetSystemTicks();
     token->checksum = CalculateSecureChecksum(token, new_pid);
 
@@ -1057,7 +1099,7 @@ uint32_t CreateSecureProcess(void (*entry_point)(void), uint8_t privilege) {
 }
 
 uint32_t CreateProcess(void (*entry_point)(void)) {
-    return CreateSecureProcess(entry_point, PROC_PRIV_USER);
+    return CreateSecureProcess(entry_point, PROC_PRIV_USER, 0);
 }
 
 
@@ -1417,28 +1459,19 @@ static int SecureTokenUpdate(Process* proc, uint8_t new_flags) {
     return 1;
 }
 
+
+
 void Astra(void) {
     PrintKernelSuccess("[AS] Astra initializing...\n");
     Process* current = GetCurrentProcess();
 
-    if (!SecureTokenUpdate(current, PROC_FLAG_IMMUNE | PROC_FLAG_CRITICAL | PROC_FLAG_SUPERVISOR)) {
-        PANIC("AS: Failed to update secure token");
-    }
     // register
     security_manager_pid = current->pid;
 
     // Create system tracer with enhanced security
-    uint32_t tracer_pid = CreateSecureProcess(DynamoX, PROC_PRIV_SYSTEM); // demote, it hogs cpu
-    if (tracer_pid) {
-        Process* tracer = GetProcessByPid(tracer_pid);
-        if (tracer) {
-            tracer->token.flags |= (PROC_FLAG_IMMUNE | PROC_FLAG_CRITICAL);
-            tracer->token.checksum = 0;
-            tracer->token.checksum = CalculateSecureChecksum(&tracer->token, tracer_pid);
-        }
-    }
+    CreateSecureProcess(DynamoX, PROC_PRIV_SYSTEM, PROC_FLAG_CORE);
 
-    PrintKernelSuccess("[AS] Advanced threat detection active\n");
+    PrintKernelSuccess("[AS] Astra active.\n");
 
     uint64_t last_check = 0;
 
@@ -1545,26 +1578,45 @@ void Astra(void) {
             }
         }
 
-        // Aggressive threat management
-        if (threat_level > 50) {  // Much higher threshold
-            PrintKernelError("[AS] DEFCON 1: Critical threat - selective termination\n");
-            // Only kill processes with recent violations, not everything
-            for (int i = 1; i < MAX_PROCESSES; i++) {
-                if (processes[i].pid != 0 &&
-                    processes[i].state != PROC_TERMINATED &&
-                    !(processes[i].token.flags & (PROC_FLAG_CRITICAL | PROC_FLAG_IMMUNE)) &&
-                    processes[i].pid != security_manager_pid &&
-                    processes[i].preemption_count > 1000) { // Only suspicious ones
-                    ASTerminate(processes[i].pid, "Selective lockdown");
-                    }
+        // 4. Bitmap check
+        static uint64_t last_sched_scan = 0;
+
+        if (current_tick - last_sched_scan >= SCHED_CONSISTENCY_INTERVAL) {
+            last_sched_scan = current_tick;
+
+            uint32_t popcount_processes = __builtin_popcountll(active_process_bitmap);
+            if (UNLIKELY(popcount_processes != process_count)) {
+                PrintKernelError("[AS] CRITICAL: Process count/bitmap mismatch! System may be unstable.\n");
+                // This is a serious issue, but maybe not panic-worthy immediately.
+                // Let's increase the threat level aggressively.
+                threat_level += 20;
             }
-            threat_level = 25; // Reset after action
-        } else if (threat_level > 25) {
-            PrintKernelWarning("[AS] DEFCON 2: Elevated monitoring\n");
-            current_scan_interval = base_scan_interval / 2; // Scan more frequently
         }
 
-        if (current_tick % 500 == 0 && threat_level > 0) {
+        // Aggressive threat management
+        if (threat_level > 75) {
+            PANIC("AS-CRITICAL: High threat level indicates unrecoverable system corruption.");
+        }
+
+        if (threat_level > 40) {
+            // DEFCON 2: Aggressive containment.
+            // A serious threat was detected. Terminate all non-critical, non-immune processes.
+            PrintKernelError("[AS] DEFCON 2: High threat detected. Initiating selective lockdown.\n");
+            for (int i = 1; i < MAX_PROCESSES; i++) {
+                Process* p = &processes[i];
+                if (p->pid != 0 && p->pid != security_manager_pid &&
+                    p->state != PROC_TERMINATED &&
+                    !(p->token.flags & (PROC_FLAG_CRITICAL | PROC_FLAG_IMMUNE)))
+                {
+                    ASTerminate(p->pid, "System-wide security lockdown");
+                }
+            }
+            // After such drastic action, reduce the threat level but not to zero.
+            threat_level = 20;
+        }
+
+        // Decay the threat level slowly
+        if (current_tick % 200 == 0 && threat_level > 0) {
             threat_level--;
         }
 
@@ -1592,7 +1644,7 @@ int ProcessInit(void) {
     token->magic = SECURITY_MAGIC;
     token->creator_pid = 0;
     token->privilege = PROC_PRIV_SYSTEM;
-    token->flags = PROC_FLAG_IMMUNE | PROC_FLAG_CRITICAL;
+    token->flags = PROC_FLAG_CORE;
     token->creation_tick = idle_proc->creation_time;
     token->checksum = 0;
     token->checksum = CalculateSecureChecksum(token, 0);
@@ -1602,7 +1654,7 @@ int ProcessInit(void) {
 
     // Create AS internally during init - no external access
     PrintKernel("[SYSTEM] Creating AS (Astra)...\n");
-    uint32_t AS_pid = CreateSecureProcess(Astra, PROC_PRIV_SYSTEM);
+    uint32_t AS_pid = CreateSecureProcess(Astra, PROC_PRIV_SYSTEM, PROC_FLAG_CORE);
     if (!AS_pid) {
         PANIC("CRITICAL: Failed to create AS - system compromised");
     }
@@ -1613,18 +1665,10 @@ int ProcessInit(void) {
 
     // Create shell process
     PrintKernel("[SYSTEM] Creating shell process...\n");
-    uint32_t shell_pid = CreateSecureProcess(ShellProcess, PROC_PRIV_SYSTEM);
+    uint32_t shell_pid = CreateSecureProcess(ShellProcess, PROC_PRIV_SYSTEM, PROC_FLAG_CORE);
     if (!shell_pid) {
         PANIC("CRITICAL: Failed to create shell process");
     }
-
-    Process* shell_proc = GetProcessByPid(shell_pid);
-    if (shell_proc) {
-        shell_proc->token.flags |= PROC_FLAG_SUPERVISOR;
-        // IMPORTANT: Recalculate the checksum after changing the flags!
-        shell_proc->token.checksum = CalculateSecureChecksum(&shell_proc->token, shell_pid);
-    }
-
     PrintKernelSuccess("[SYSTEM] Shell created with PID: ");
     PrintKernelInt(shell_pid);
     PrintKernel("\n");
