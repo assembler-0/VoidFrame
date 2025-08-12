@@ -7,6 +7,7 @@
 #include "MemOps.h"
 #include "Panic.h"
 #include "Pic.h"
+#include "Serial.h"
 #include "Shell.h"
 #include "Spinlock.h"
 #include "VMem.h"
@@ -1134,9 +1135,8 @@ Process* GetProcessByPid(uint32_t pid) {
 }
 
 
-void DynamoX(void) { // Dynamic Freq Controller
-
-    PrintKernel("[DX] DynamoX starting...\n");
+void DynamoX(void) {
+    PrintKernel("[DX] DynamoX v0.2 Enhanced starting...\n");
 
     typedef struct {
         uint16_t min_freq;
@@ -1145,120 +1145,255 @@ void DynamoX(void) { // Dynamic Freq Controller
         uint8_t  power_state;
         uint32_t history_index;
         FrequencyHistory history[FREQ_HISTORY_SIZE];
-        // Fixed-point parameters
+
+        // Enhanced learning parameters
         int32_t learning_rate;
         int32_t momentum;
         int32_t last_adjustment;
+        int32_t prediction_weight;
+
+        // Responsiveness enhancements
+        uint32_t emergency_boost_counter;
+        uint32_t stability_counter;
+        uint16_t predicted_freq;
+        uint16_t baseline_freq;
+
+        // Smart adaptation
+        uint32_t load_trend;
+        uint32_t performance_score;
+        uint8_t  adaptive_mode;
+        uint32_t consecutive_samples;
     } Controller;
 
     Controller controller = {
-        .min_freq = 100,
-        .max_freq = 1000,
+        .min_freq = 200,        // Increased base responsiveness
+        .max_freq = 2000,       // Higher ceiling for heavy loads
         .current_freq = PIT_FREQUENCY_HZ,
-        .learning_rate = (int32_t)(0.1f * FXP_SCALE), // Becomes 102
-        .momentum = (int32_t)(0.7f * FXP_SCALE),      // Becomes 716
+        .baseline_freq = 400,   // Smart baseline instead of minimum
+        .learning_rate = (int32_t)(0.25f * FXP_SCALE),    // More aggressive learning
+        .momentum = (int32_t)(0.8f * FXP_SCALE),          // Higher momentum for stability
+        .prediction_weight = (int32_t)(0.3f * FXP_SCALE), // Predictive component
+        .adaptive_mode = 1,     // Start in balanced adaptive mode
         .last_adjustment = 0,
         .history_index = 0,
-        .power_state = 0
+        .power_state = 1,
+        .performance_score = 50 // Start with neutral score
     };
+
+    // Enhanced tuning parameters
+    const uint32_t ENHANCED_SAMPLING = 25;      // 2x faster sampling
+    const uint32_t ENHANCED_HZ_PER_PROCESS = 80; // More responsive scaling
+    const uint32_t EMERGENCY_CS_THRESHOLD = 15;  // Context switches per tick
+    const uint32_t STABILITY_REQUIREMENT = 5;    // Confirm stability
+    const uint32_t PREDICTION_CONFIDENCE = 70;   // Minimum confidence %
+    const uint32_t ENHANCED_QUEUE_PRESSURE = 30; // Stronger pressure response
+    const uint32_t ENHANCED_HYSTERESIS = 5;      // More responsive changes
 
     uint64_t last_sample_time = GetSystemTicks();
     uint64_t last_context_switches = context_switches;
-
-    PrintKernelSuccess("[DX] Advanced frequency controller active\n");
+    uint32_t consecutive_high_load = 0;
+    uint32_t consecutive_low_load = 0;
 
     while (1) {
         CleanupTerminatedProcesses();
         uint64_t current_time = GetSystemTicks();
         uint64_t time_delta = current_time - last_sample_time;
 
-        if (time_delta >= SAMPLING_INTERVAL) {
+        if (time_delta >= ENHANCED_SAMPLING) {
+            // Enhanced process and queue metrics
             int process_count = __builtin_popcountll(active_process_bitmap);
             int ready_count = __builtin_popcountll(ready_process_bitmap);
             uint64_t cs_delta = context_switches - last_context_switches;
 
             if (time_delta == 0) time_delta = 1; // Avoid division by zero
 
-            // --- FIXED-POINT CALCULATIONS ---
-            // Calculate system load, scaled by FXP_SCALE
+            // Enhanced load calculations
             uint32_t load = (ready_count * FXP_SCALE) / MAX_PROCESSES;
-
-            // Calculate context switch rate, scaled by FXP_SCALE
             uint32_t cs_rate = (cs_delta * FXP_SCALE) / time_delta;
 
+            // Smart queue analysis with RT priority awareness
             uint32_t total_queue_depth = 0;
             uint32_t max_queue_depth = 0;
+            uint32_t rt_queue_depth = 0;
+            uint32_t active_queues = 0;
+
             for (int i = 0; i < MAX_PRIORITY_LEVELS; i++) {
                 uint32_t depth = MLFQscheduler.queues[i].count;
                 total_queue_depth += depth;
+                if (depth > 0) active_queues++;
                 if (depth > max_queue_depth) max_queue_depth = depth;
+                if (i < RT_PRIORITY_THRESHOLD) rt_queue_depth += depth;
             }
 
-            uint32_t target_freq = controller.min_freq;
+            // Smart baseline calculation
+            uint32_t target_freq = controller.baseline_freq;
 
-            // Factor 1: Base load
-            target_freq += (process_count > 1) ? (process_count - 1) * HZ_PER_PROCESS : 0;
-
-            // Factor 2: Queue pressure
-            if (max_queue_depth > QUEUE_PRESSURE_THRESHOLD) {
-                target_freq += max_queue_depth * QUEUE_PRESSURE_FACTOR;
+            // Factor 1: Enhanced process load with RT awareness
+            if (process_count > 1) {
+                uint32_t base_load = (process_count - 1) * ENHANCED_HZ_PER_PROCESS;
+                uint32_t rt_boost = rt_queue_depth * (ENHANCED_HZ_PER_PROCESS / 2);
+                target_freq += base_load + rt_boost;
             }
 
-            // Factor 3: Context switch rate (thrashing detection)
-            if (cs_rate > CS_RATE_THRESHOLD_HIGH) {
-                target_freq = (target_freq * FREQ_BOOST_FACTOR) >> FXP_SHIFT; // Multiply then shift
-            } else if (cs_rate < CS_RATE_THRESHOLD_LOW && process_count > 2) {
-                target_freq = (target_freq * FREQ_REDUCE_FACTOR) >> FXP_SHIFT;
+            // Factor 2: Intelligent queue pressure with active queue weighting
+            if (max_queue_depth > 2) { // More sensitive threshold
+                uint32_t pressure_factor = (active_queues > 2) ?
+                    ENHANCED_QUEUE_PRESSURE * 2 : ENHANCED_QUEUE_PRESSURE;
+                target_freq += max_queue_depth * pressure_factor;
             }
 
-            // Factor 4: Power-aware scaling
-            // (Using 716 which is approx 0.7 * 1024)
-            if (total_queue_depth == 0 && process_count <= 2) {
-                controller.power_state = 0; // Low power
-                target_freq = controller.min_freq;
-            } else if (load > (716)) { // 0.7 in fixed point
-                controller.power_state = 2; // Turbo
-                target_freq = (target_freq * POWER_TURBO_FACTOR) >> FXP_SHIFT;
+            // Factor 3: Advanced context switch analysis with emergency response
+            if (cs_rate > EMERGENCY_CS_THRESHOLD * FXP_SCALE) {
+                // Emergency thrashing response
+                target_freq = (target_freq * 1536) >> FXP_SHIFT; // 1.5x emergency boost
+                controller.emergency_boost_counter++;
+                consecutive_high_load++;
+                consecutive_low_load = 0;
+
+                if (controller.emergency_boost_counter > 3) {
+                    controller.power_state = 3; // Emergency turbo
+                    target_freq = controller.max_freq;
+                }
+
+                PrintKernelWarning("[DX] Emergency boost - CS rate: ");
+                PrintKernelInt(cs_rate >> FXP_SHIFT);
+                PrintKernel("\n");
+
+            } else if (cs_rate > (8 * FXP_SCALE)) { // Enhanced threshold
+                target_freq = (target_freq * 1331) >> FXP_SHIFT; // 1.3x boost
+                consecutive_high_load++;
+                consecutive_low_load = 0;
+                controller.emergency_boost_counter = 0;
+            } else if (cs_rate < (3 * FXP_SCALE) && process_count > 1) { // Higher low threshold
+                target_freq = (target_freq * 870) >> FXP_SHIFT; // 0.85x gentler reduction
+                consecutive_low_load++;
+                consecutive_high_load = 0;
+                controller.emergency_boost_counter = 0;
             } else {
-                controller.power_state = 1; // Normal
+                controller.emergency_boost_counter = 0;
             }
 
-            // Apply momentum for smooth transitions (all integer math!)
-            // Use 64-bit for intermediate multiplication to prevent overflow
+            // Factor 4: Predictive scaling using pattern history
+            if (controller.history_index > PREDICTION_WINDOW) {
+                uint32_t predicted_cs = 0;
+                uint32_t trend_weight = 0;
+
+                for (int i = 1; i <= PREDICTION_WINDOW; i++) {
+                    uint32_t idx = (controller.history_index - i) % FREQ_HISTORY_SIZE;
+                    predicted_cs += controller.history[idx].context_switches;
+                    trend_weight += (PREDICTION_WINDOW - i + 1); // Recent samples weighted more
+                }
+
+                predicted_cs = (predicted_cs * trend_weight) /
+                              (PREDICTION_WINDOW * (PREDICTION_WINDOW + 1) / 2);
+
+                // Apply prediction if trend suggests increase
+                if (predicted_cs > cs_delta + (cs_delta / 5)) { // 20% increase predicted
+                    uint16_t prediction_boost = (target_freq * controller.prediction_weight) >> FXP_SHIFT;
+                    target_freq += prediction_boost;
+                    controller.predicted_freq = target_freq;
+                }
+            }
+
+            // Factor 5: Enhanced adaptive power management
+            uint32_t load_percentage = (total_queue_depth * 100) / MAX_PROCESSES;
+
+            if (consecutive_low_load > 8 && process_count <= 2) {
+                controller.power_state = 0; // Deep power saving
+                target_freq = controller.min_freq;
+                controller.adaptive_mode = 0; // Conservative
+            } else if (consecutive_high_load > 4 || load_percentage > 50) {
+                controller.power_state = 2; // Performance mode
+                target_freq = (target_freq * 1434) >> FXP_SHIFT; // 1.4x turbo
+                controller.adaptive_mode = 2; // Aggressive
+            } else if (load_percentage > 75 || controller.emergency_boost_counter > 0) {
+                controller.power_state = 3; // Maximum performance
+                target_freq = (target_freq * 1536) >> FXP_SHIFT; // 1.5x max turbo
+                controller.adaptive_mode = 2;
+            } else {
+                controller.power_state = 1; // Balanced
+                controller.adaptive_mode = 1;
+            }
+
+            // Enhanced learning with adaptive rates
+            int32_t adaptive_learning = controller.learning_rate;
+            if (controller.adaptive_mode == 2) {
+                adaptive_learning = (controller.learning_rate * 3) >> 1; // 1.5x faster
+            } else if (controller.adaptive_mode == 0) {
+                adaptive_learning = (controller.learning_rate * 3) >> 2;   // 0.75x slower
+            }
+
+            // Apply momentum and learning
             int32_t diff = (int32_t)target_freq - (int32_t)controller.current_freq;
-            int32_t adjustment = (diff * controller.learning_rate); // Result is scaled
+            int32_t adjustment = (diff * adaptive_learning);
             adjustment += (((int64_t)controller.momentum * controller.last_adjustment) >> FXP_SHIFT);
 
             controller.last_adjustment = adjustment;
 
-            // Apply the final adjustment, scaling it back down to a raw frequency
+            // Smart frequency application with adaptive bounds
             uint16_t new_freq = controller.current_freq + (adjustment >> FXP_SHIFT);
 
-            // Clamp and apply with Hysteresis
-            if (new_freq < controller.min_freq) new_freq = controller.min_freq;
-            if (new_freq > controller.max_freq) new_freq = controller.max_freq;
+            // Dynamic bounds based on power state
+            uint16_t effective_min = (controller.power_state == 0) ?
+                controller.min_freq : (controller.min_freq + controller.baseline_freq) / 2;
+            uint16_t effective_max = (controller.power_state >= 2) ?
+                controller.max_freq : (controller.max_freq * 4) / 5;
 
-            if (ABSi(new_freq - controller.current_freq) > HYSTERESIS_THRESHOLD) {
+            if (new_freq < effective_min) new_freq = effective_min;
+            if (new_freq > effective_max) new_freq = effective_max;
+
+            // Enhanced hysteresis with stability consideration
+            uint32_t change_threshold = (controller.stability_counter > STABILITY_REQUIREMENT) ?
+                ENHANCED_HYSTERESIS / 2 : ENHANCED_HYSTERESIS;
+
+            if (ABSi(new_freq - controller.current_freq) > change_threshold) {
                 PitSetFrequency(new_freq);
                 controller.current_freq = new_freq;
+                controller.stability_counter = 0;
+
+                // Performance feedback scoring
+                if (cs_rate < (3 * FXP_SCALE)) {
+                    controller.performance_score = MIN(100, controller.performance_score + 1);
+                } else if (cs_rate > (8 * FXP_SCALE)) {
+                    controller.performance_score = MAX(0, controller.performance_score - 1);
+                }
+            } else {
+                controller.stability_counter++;
             }
 
-            // Update history for pattern learning
+            // Enhanced history recording with more context
             uint32_t idx = controller.history_index % FREQ_HISTORY_SIZE;
             controller.history[idx] = (FrequencyHistory){
                 .timestamp = current_time,
                 .process_count = process_count,
                 .frequency = controller.current_freq,
                 .context_switches = cs_delta,
-                .avg_latency = total_queue_depth
+                .avg_latency = total_queue_depth | (rt_queue_depth << 8) | (controller.power_state << 16)
             };
             controller.history_index++;
+            controller.consecutive_samples++;
+
+            // Periodic detailed reporting
+            if (controller.consecutive_samples % 100 == 0) {
+                SerialWrite("[DX] Freq: ");
+                SerialWriteDec(controller.current_freq);
+                SerialWrite("Hz | Load: ");
+                SerialWriteDec(load_percentage);
+                SerialWrite("% | CS: ");
+                SerialWriteDec(cs_rate >> FXP_SHIFT);
+                SerialWrite(" | Mode: ");
+                SerialWriteDec(controller.adaptive_mode);
+                SerialWrite(" | Score: ");
+                SerialWriteDec(controller.performance_score);
+                SerialWrite("\n");
+            }
 
             last_sample_time = current_time;
             last_context_switches = context_switches;
         }
 
-        Yield();
+        // Shorter yield for better responsiveness
+        for (volatile int i = 0; i < 30000; i++); // Reduced from standard Yield()
     }
 }
 

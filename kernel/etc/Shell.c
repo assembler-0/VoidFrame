@@ -2,7 +2,6 @@
 #include "../elf/ELFloader.h"
 #include "Console.h"
 #include "Editor.h"
-#include "FAT12.h"
 #include "KernelHeap.h"
 #include "MemOps.h"
 #include "Memory.h"

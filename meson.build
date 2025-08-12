@@ -54,8 +54,7 @@ inc_dirs = [
     arch_root + '/cpu',
     arch_root + '/gdt',
     arch_root + '/idt',
-    arch_root + '/interrupts',
-    arch_root + '/syscall'
+    arch_root + '/interrupts'
 ]
 
 # Assembly sources (organized)
@@ -63,7 +62,6 @@ asm_sources = [
     arch_root + '/asm/pxs.asm',
     arch_root + '/idt/IdtLoad.asm',
     arch_root + '/gdt/GdtTssFlush.asm',
-    arch_root + '/syscall/SyscallEntry.asm',
     arch_root + '/interrupts/Interrupts.asm',
     src_root + '/include/Paging.asm'
 ]
@@ -101,7 +99,6 @@ c_sources = [
     src_root + '/drivers/ethernet/RTL8139.c',
     arch_root + '/idt/Idt.c',
     arch_root + '/gdt/Gdt.c',
-    arch_root + '/syscall/Syscall.c',
     arch_root + '/interrupts/Interrupts.c',
     arch_root + '/cpu/Cpu.c'
 ]

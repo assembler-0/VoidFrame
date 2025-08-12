@@ -20,7 +20,6 @@
 #include "Serial.h"
 #include "Shell.h"
 #include "StackGuard.h"
-#include "Syscall.h"
 #include "VFS.h"
 #include "VMem.h"
 #include "VesaBIOSExtension.h"
@@ -329,11 +328,6 @@ static InitResultT SystemInitS2(void) {
     PrintKernel("[INFO] Initializing IDT...\n");
     IdtInstall();
     PrintKernelSuccess("[SYSTEM] IDT initialized\n");
-
-    // Initialize System Calls
-    PrintKernel("[INFO] Initializing system calls...\n");
-    SyscallInit();
-    PrintKernelSuccess("[SYSTEM] System calls initialized\n");
 
     // Initialize PIC
     PrintKernel("[INFO] Initializing PIC & PIT...\n");
