@@ -21,12 +21,13 @@ uint64_t Syscall(uint64_t syscall_num, uint64_t arg1, uint64_t arg2, uint64_t ar
     }
     switch (syscall_num) {
         case SYS_EXIT:
-            // Terminate current process
+
             if (current) {
-                KillProcess(current->pid); // arg1 can be exit code
+                KillProcess(current->pid);
+                RequestSchedule();
             }
-            // Should not return from TerminateProcess
-            while(1) { __asm__ __volatile__("hlt"); }
+
+            return 0;
             
         case SYS_WRITE:
             // arg1 = fd (ignored for now), arg2 = buffer, arg3 = count
@@ -50,6 +51,10 @@ uint64_t Syscall(uint64_t syscall_num, uint64_t arg1, uint64_t arg2, uint64_t ar
             return -1;
             
         case SYS_READ:
+            // unix approach i think
+            while (!HasInput()) {
+                Yield(); // yield like a good citizen
+            }
             return GetChar();
             
         case SYS_GETPID:
@@ -75,8 +80,10 @@ uint64_t Syscall(uint64_t syscall_num, uint64_t arg1, uint64_t arg2, uint64_t ar
             FastMemcpy(path_fread, (const void*)arg1, arg2);
             path_fread[arg2] = '\0'; // Ensure null termination
             uint8_t* fbuff = KernelMemoryAlloc(4096);
-            VfsReadFile(path_fread, fbuff, 4095);
-            return 0;
+            if (!fbuff) return -1;
+            int bytes_read = VfsReadFile(path_fread, fbuff, 4095);
+            KernelFree(fbuff);
+            return bytes_read;
 
         case SYS_FWRITE:
             return 0;
@@ -94,7 +101,7 @@ uint64_t Syscall(uint64_t syscall_num, uint64_t arg1, uint64_t arg2, uint64_t ar
             char ls_path[MAX_SYSCALL_BUFFER_SIZE + 1]; // +1 for null terminator
             FastMemcpy(ls_path, (const void*)arg1, arg2);
             ls_path[arg2] = '\0'; // Ensure null termination
-            VfsCreateDir(ls_path);
+            VfsListDir(ls_path);
             return 0;
 
         case SYS_RM:
@@ -102,7 +109,7 @@ uint64_t Syscall(uint64_t syscall_num, uint64_t arg1, uint64_t arg2, uint64_t ar
             char rm_path[MAX_SYSCALL_BUFFER_SIZE + 1]; // +1 for null terminator
             FastMemcpy(rm_path, (const void*)arg1, arg2);
             rm_path[arg2] = '\0'; // Ensure null termination
-            VfsCreateDir(rm_path);
+            VfsDelete(rm_path);
             return 0;
 
         case SYS_SET_FREQ:

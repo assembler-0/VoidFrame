@@ -530,19 +530,6 @@ static void PrintBootstrapSummary(void) {
     PrintKernel("  Bootstrap complete\n");
 }
 
-void UserTestProcess(void) {
-    // Try to make a syscall from user mode
-    const char* msg = "Hello from user mode!\n";
-    __asm__ volatile(
-        "mov $2, %%rax\n"      // SYS_WRITE
-        "mov $1, %%rdi\n"      // stdout
-        "mov %0, %%rsi\n"      // buffer
-        "mov $22, %%rdx\n"     // length
-        "int $0x80\n"
-        : : "r"(msg) : "rax", "rdi", "rsi", "rdx"
-    );
-}
-
 
 void KernelMainHigherHalf(void) {
     PrintKernelSuccess("[SYSTEM] Successfully jumped to higher half. Virtual memory is active.\n");
@@ -555,8 +542,6 @@ void KernelMainHigherHalf(void) {
 
     // Initialize core systems
     SystemInitS2();
-
-    CreateProcess(UserTestProcess);
 
     PrintKernelSuccess("[SYSTEM] Kernel initialization complete\n");
     PrintKernelSuccess("[SYSTEM] Initializing interrupts...\n");

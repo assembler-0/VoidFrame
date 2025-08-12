@@ -1136,6 +1136,8 @@ Process* GetProcessByPid(uint32_t pid) {
 
 void DynamoX(void) { // Dynamic Freq Controller
 
+    PrintKernel("[DX] DynamoX starting...\n");
+
     typedef struct {
         uint16_t min_freq;
         uint16_t max_freq;
@@ -1144,16 +1146,15 @@ void DynamoX(void) { // Dynamic Freq Controller
         uint32_t history_index;
         FrequencyHistory history[FREQ_HISTORY_SIZE];
         // Fixed-point parameters
-        int32_t learning_rate;      // No more float!
-        int32_t momentum;           // No more float!
-        int32_t last_adjustment;    // No more float!
-    } PITController;
+        int32_t learning_rate;
+        int32_t momentum;
+        int32_t last_adjustment;
+    } Controller;
 
-    PITController controller = {
+    Controller controller = {
         .min_freq = 100,
         .max_freq = 1000,
         .current_freq = PIT_FREQUENCY_HZ,
-        // --- FIXED-POINT CONVERSIONS ---
         .learning_rate = (int32_t)(0.1f * FXP_SCALE), // Becomes 102
         .momentum = (int32_t)(0.7f * FXP_SCALE),      // Becomes 716
         .last_adjustment = 0,
@@ -1164,7 +1165,7 @@ void DynamoX(void) { // Dynamic Freq Controller
     uint64_t last_sample_time = GetSystemTicks();
     uint64_t last_context_switches = context_switches;
 
-    PrintKernelSuccess("[SYSTEM] Advanced integer-only frequency controller active\n");
+    PrintKernelSuccess("[DX] Advanced frequency controller active\n");
 
     while (1) {
         CleanupTerminatedProcesses();
@@ -1297,7 +1298,6 @@ void Astra(void) {
         Process* tracer = GetProcessByPid(tracer_pid);
         if (tracer) {
             tracer->token.flags |= (PROC_FLAG_IMMUNE | PROC_FLAG_CRITICAL);
-            // Also fix it here for the tracer process!
             tracer->token.checksum = 0;
             tracer->token.checksum = CalculateSecureChecksum(&tracer->token, tracer_pid);
         }
