@@ -72,7 +72,7 @@
 #define TERMINATION_QUEUE_SIZE MAX_PROCESSES    // Size of termination queue
 #define CLEANUP_MAX_PER_CALL 3          // Max processes to cleanup per call
 #define SECURITY_VIOLATION_LIMIT 3      // Max violations before panic
-
+#define SCHED_CONSISTENCY_INTERVAL 75   // Bitmap check
 // Stack and Memory
 #define STACK_SIZE 4096                 // Process stack size
 #define CACHE_LINE_SIZE 64              // CPU cache line size for alignment
