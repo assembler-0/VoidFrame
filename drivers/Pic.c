@@ -39,6 +39,7 @@ void PitSetFrequency(uint16_t hz) {
     // Restore previous interrupt state
     restore_irq_flags(flags);
 }
+
 void PicInstall() {
     uint8_t a1, a2;
 

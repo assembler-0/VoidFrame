@@ -1,3 +1,4 @@
+// VoidFrame Kernel Entry File
 #include "Kernel.h"
 #include "Console.h"
 #include "FAT12.h"
@@ -16,14 +17,15 @@
 #include "Panic.h"
 #include "Pic.h"
 #include "Process.h"
-#include "ethernet/RTL8139.h"
 #include "Serial.h"
 #include "Shell.h"
 #include "StackGuard.h"
 #include "Syscall.h"
+#include "UserMode.h"
 #include "VFS.h"
 #include "VMem.h"
 #include "VesaBIOSExtension.h"
+#include "ethernet/RTL8139.h"
 #include "stdbool.h"
 #include "stdint.h"
 
@@ -496,7 +498,6 @@ static void ValidateMemoryLayout(void) {
         PrintKernelError("[ERROR] Virtual address space overlaps with kernel space\n");
     }
 
-
     PrintKernelSuccess("[SYSTEM] Memory layout validated\n");
 }
 
@@ -528,6 +529,7 @@ static void PrintBootstrapSummary(void) {
 
     PrintKernel("  Bootstrap complete\n");
 }
+
 
 void KernelMainHigherHalf(void) {
     PrintKernelSuccess("[SYSTEM] Successfully jumped to higher half. Virtual memory is active.\n");

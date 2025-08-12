@@ -1,4 +1,5 @@
 #include "Shell.h"
+#include "../elf/ELFloader.h"
 #include "Console.h"
 #include "Editor.h"
 #include "FAT12.h"
@@ -170,6 +171,7 @@ static void show_help() {
     PrintKernel("  setfreq <hz>   - Set PIT timer <hz>\n");
     PrintKernel("  pciscan        - Perform a PCI scan\n");
     PrintKernel("  arptest        - Perform an ARP test and send packets\n");
+    PrintKernel("  elfload <path> - Load ELF executable in <path>\n");
     PrintKernel("  clear          - Clear screen\n");
     PrintKernel("  info           - A piece information about the kernel\n");
     PrintKernel("  cd <dir>       - Change directory\n");
@@ -300,10 +302,10 @@ static void ExecuteCommand(const char* cmd) {
         }
     } else if (FastStrCmp(cmd_name, "cat") == 0) {
         char* file = GetArg(cmd, 1);
-            if (file) {
+        if (file) {
             char full_path[256];
             ResolvePath(file, full_path, 256);
-            
+
             uint8_t* file_buffer = KernelMemoryAlloc(4096);
             if (file_buffer) {
                 int bytes = VfsReadFile(full_path, file_buffer, 4095);
@@ -338,6 +340,20 @@ static void ExecuteCommand(const char* cmd) {
             KernelFree(name);
         } else {
             PrintKernel("Usage: mkdir <dirname>\n");
+        }
+    } else if (FastStrCmp(cmd_name, "elfload") == 0) {
+        char* name = GetArg(cmd, 1);
+        if (name) {
+            char full_path[256];
+            ResolvePath(name, full_path, 256);
+            if (LoadElfFromFile(full_path) == 0) {
+                PrintKernel("ELF Executable loaded\n");
+            } else {
+                PrintKernel("Failed to load ELF executable\n");
+            }
+            KernelFree(name);
+        } else {
+            PrintKernel("Usage: elfload <path>\n");
         }
     } else if (FastStrCmp(cmd_name, "touch") == 0) {
         char* name = GetArg(cmd, 1);

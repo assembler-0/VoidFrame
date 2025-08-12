@@ -4,9 +4,13 @@
 #include "Gdt.h"
 #include "Idt.h"
 #include "Ipc.h"
+#include "KernelHeap.h"
 #include "MemOps.h"
+#include "PS2.h"
 #include "Panic.h"
+#include "Pic.h"
 #include "Process.h"
+#include "VFS.h"
 #define likely(x)   __builtin_expect(!!(x), 1)
 #define unlikely(x) __builtin_expect(!!(x), 0)
 extern void SyscallEntry(void);
@@ -17,12 +21,12 @@ uint64_t Syscall(uint64_t syscall_num, uint64_t arg1, uint64_t arg2, uint64_t ar
     }
     switch (syscall_num) {
         case SYS_EXIT:
-            // Terminate current process
+
             if (current) {
-                KillProcess(current->pid); // arg1 can be exit code
+                KillProcess(current->pid);
+                RequestSchedule();
             }
-            // Should not return from TerminateProcess
-            while(1) { __asm__ __volatile__("hlt"); }
+
             return 0;
             
         case SYS_WRITE:
@@ -35,7 +39,7 @@ uint64_t Syscall(uint64_t syscall_num, uint64_t arg1, uint64_t arg2, uint64_t ar
                 if (unlikely(arg3 > MAX_SYSCALL_BUFFER_SIZE)) {
                     return -1; // Buffer too large
                 }
-                
+
                 // Copy user buffer to a kernel-controlled buffer
                 char kernel_buffer[MAX_SYSCALL_BUFFER_SIZE + 1]; // +1 for null terminator
                 FastMemcpy(kernel_buffer, (const void*)arg2, arg3);
@@ -47,8 +51,11 @@ uint64_t Syscall(uint64_t syscall_num, uint64_t arg1, uint64_t arg2, uint64_t ar
             return -1;
             
         case SYS_READ:
-            // Not implemented yet
-            return 0;
+            // unix approach i think
+            while (!HasInput()) {
+                Yield(); // yield like a good citizen
+            }
+            return GetChar();
             
         case SYS_GETPID:
             return current ? current->pid : -1;
@@ -61,7 +68,57 @@ uint64_t Syscall(uint64_t syscall_num, uint64_t arg1, uint64_t arg2, uint64_t ar
         case SYS_IPC_RECV:
             // arg1 = message_buffer
             return IpcReceiveMessage((IpcMessage*)arg1);
-            
+
+        case SYS_OPEN:
+            return 0;
+
+        case SYS_CLOSE:
+            return 0;
+
+        case SYS_FREAD:
+            char path_fread[MAX_SYSCALL_BUFFER_SIZE + 1]; // +1 for null terminator
+            FastMemcpy(path_fread, (const void*)arg1, arg2);
+            path_fread[arg2] = '\0'; // Ensure null termination
+            uint8_t* fbuff = KernelMemoryAlloc(4096);
+            if (!fbuff) return -1;
+            int bytes_read = VfsReadFile(path_fread, fbuff, 4095);
+            KernelFree(fbuff);
+            return bytes_read;
+
+        case SYS_FWRITE:
+            return 0;
+
+        case SYS_MKDIR:
+            (void)arg3;
+            char mkdir_path[MAX_SYSCALL_BUFFER_SIZE + 1]; // +1 for null terminator
+            FastMemcpy(mkdir_path, (const void*)arg1, arg2);
+            mkdir_path[arg2] = '\0'; // Ensure null termination
+            VfsCreateDir(mkdir_path);
+            return 0;
+
+        case SYS_STAT:
+            (void)arg3;
+            char ls_path[MAX_SYSCALL_BUFFER_SIZE + 1]; // +1 for null terminator
+            FastMemcpy(ls_path, (const void*)arg1, arg2);
+            ls_path[arg2] = '\0'; // Ensure null termination
+            VfsListDir(ls_path);
+            return 0;
+
+        case SYS_RM:
+            (void)arg3;
+            char rm_path[MAX_SYSCALL_BUFFER_SIZE + 1]; // +1 for null terminator
+            FastMemcpy(rm_path, (const void*)arg1, arg2);
+            rm_path[arg2] = '\0'; // Ensure null termination
+            VfsDelete(rm_path);
+            return 0;
+
+        case SYS_SET_FREQ:
+            (void)arg2;
+            (void)arg3;
+            if (arg1 <= 0 || arg1 > 65535) return -1;
+            PitSetFrequency((uint16_t)arg1);
+            return 0;
+
         default:
             return -1;
     }

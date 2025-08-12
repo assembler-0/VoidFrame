@@ -268,17 +268,12 @@ void TerminateProcess(uint32_t pid, TerminationReason reason, uint32_t exit_code
         MLFQscheduler.total_processes--;
     }
 
-    // Self-termination handling
-    if (UNLIKELY(pid == caller->pid)) {
-        SpinUnlockIrqRestore(&scheduler_lock, flags);
-        __asm__ __volatile__("cli; hlt" ::: "memory");
-    }
     SpinUnlockIrqRestore(&scheduler_lock, flags);
 }
 
 
-// SIVA's deadly termination function - bypasses all protections
-static void SivaTerminate(uint32_t pid, const char* reason) {
+// AS's deadly termination function - bypasses all protections
+static void ASTerminate(uint32_t pid, const char* reason) {
     irq_flags_t flags = SpinLockIrqSave(&scheduler_lock);
     Process* proc = GetProcessByPid(pid);
 
@@ -287,17 +282,17 @@ static void SivaTerminate(uint32_t pid, const char* reason) {
         return;
     }
 
-    PrintKernelError("[SIVA] EXECUTING: PID ");
+    PrintKernelError("[AS] EXECUTING: PID ");
     PrintKernelInt(pid);
     PrintKernelError(" - ");
     PrintKernelError(reason);
     PrintKernelError("\n");
 
-    // SIVA overrides ALL protections - even immune and critical
+    // AS overrides ALL protections - even immune and critical
     uint32_t slot = proc - processes;
     proc->state = PROC_DYING;
     proc->term_reason = TERM_SECURITY;
-    proc->exit_code = 666; // SIVA signature
+    proc->exit_code = 666; // AS signature
     proc->termination_time = GetSystemTicks();
 
     RemoveFromScheduler(slot);
@@ -321,17 +316,17 @@ static void SivaTerminate(uint32_t pid, const char* reason) {
 static void SecurityViolationHandler(uint32_t violator_pid, const char* reason) {
     AtomicInc(&security_violation_count);
 
-    PrintKernelError("[SIVA] Security breach by PID ");
+    PrintKernelError("[AS] Security breach by PID ");
     PrintKernelInt(violator_pid);
     PrintKernelError(": ");
     PrintKernelError(reason);
     PrintKernelError("\n");
 
     if (UNLIKELY(security_violation_count > MAX_SECURITY_VIOLATIONS)) {
-        PANIC("SIVA: Too many security violations - system compromised");
+        PANIC("AS: Too many security violations - system compromised");
     }
 
-    SivaTerminate(violator_pid, reason);
+    ASTerminate(violator_pid, reason);
 }
 
 
@@ -1139,38 +1134,58 @@ Process* GetProcessByPid(uint32_t pid) {
 }
 
 
-void SystemService(void) {
-    PITController controller = {
+void DynamoX(void) { // Dynamic Freq Controller
+
+    PrintKernel("[DX] DynamoX starting...\n");
+
+    typedef struct {
+        uint16_t min_freq;
+        uint16_t max_freq;
+        uint16_t current_freq;
+        uint8_t  power_state;
+        uint32_t history_index;
+        FrequencyHistory history[FREQ_HISTORY_SIZE];
+        // Fixed-point parameters
+        int32_t learning_rate;
+        int32_t momentum;
+        int32_t last_adjustment;
+    } Controller;
+
+    Controller controller = {
         .min_freq = 100,
         .max_freq = 1000,
         .current_freq = PIT_FREQUENCY_HZ,
-        .learning_rate = 0.1f,
-        .momentum = 0.7f,
-        .last_adjustment = 0
+        .learning_rate = (int32_t)(0.1f * FXP_SCALE), // Becomes 102
+        .momentum = (int32_t)(0.7f * FXP_SCALE),      // Becomes 716
+        .last_adjustment = 0,
+        .history_index = 0,
+        .power_state = 0
     };
 
     uint64_t last_sample_time = GetSystemTicks();
     uint64_t last_context_switches = context_switches;
 
-    PrintKernelSuccess("[SYSTEM] Advanced frequency controller active\n");
+    PrintKernelSuccess("[DX] Advanced frequency controller active\n");
 
     while (1) {
+        CleanupTerminatedProcesses();
         uint64_t current_time = GetSystemTicks();
         uint64_t time_delta = current_time - last_sample_time;
 
-        if (time_delta >= 50) {  // Sample every 50 ticks
-            // Gather system metrics
+        if (time_delta >= SAMPLING_INTERVAL) {
             int process_count = __builtin_popcountll(active_process_bitmap);
             int ready_count = __builtin_popcountll(ready_process_bitmap);
             uint64_t cs_delta = context_switches - last_context_switches;
 
-            // Calculate system load (0.0 to 1.0)
-            float load = (float)ready_count / (float)MAX_PROCESSES;
+            if (time_delta == 0) time_delta = 1; // Avoid division by zero
 
-            // Calculate context switch rate
-            float cs_rate = (float)cs_delta / (float)time_delta;
+            // --- FIXED-POINT CALCULATIONS ---
+            // Calculate system load, scaled by FXP_SCALE
+            uint32_t load = (ready_count * FXP_SCALE) / MAX_PROCESSES;
 
-            // Analyze queue depths for latency estimation
+            // Calculate context switch rate, scaled by FXP_SCALE
+            uint32_t cs_rate = (cs_delta * FXP_SCALE) / time_delta;
+
             uint32_t total_queue_depth = 0;
             uint32_t max_queue_depth = 0;
             for (int i = 0; i < MAX_PRIORITY_LEVELS; i++) {
@@ -1179,63 +1194,53 @@ void SystemService(void) {
                 if (depth > max_queue_depth) max_queue_depth = depth;
             }
 
-            // Predictive frequency calculation using multiple factors
-            float target_freq = controller.min_freq;
+            uint32_t target_freq = controller.min_freq;
 
-            // Factor 1: Process count (base load)
-            target_freq += (process_count - 1) * 30;  // 30Hz per process
+            // Factor 1: Base load
+            target_freq += (process_count > 1) ? (process_count - 1) * HZ_PER_PROCESS : 0;
 
-            // Factor 2: Queue pressure (responsiveness)
-            if (max_queue_depth > 3) {
-                target_freq += max_queue_depth * 20;  // Boost for queue buildup
+            // Factor 2: Queue pressure
+            if (max_queue_depth > QUEUE_PRESSURE_THRESHOLD) {
+                target_freq += max_queue_depth * QUEUE_PRESSURE_FACTOR;
             }
 
             // Factor 3: Context switch rate (thrashing detection)
-            if (cs_rate > 10.0f) {
-                // High context switching - might be thrashing
-                target_freq *= 1.2f;  // Boost to reduce overhead
-            } else if (cs_rate < 2.0f && process_count > 2) {
-                // Low switching with multiple processes - might be too slow
-                target_freq *= 0.9f;  // Reduce slightly
+            if (cs_rate > CS_RATE_THRESHOLD_HIGH) {
+                target_freq = (target_freq * FREQ_BOOST_FACTOR) >> FXP_SHIFT; // Multiply then shift
+            } else if (cs_rate < CS_RATE_THRESHOLD_LOW && process_count > 2) {
+                target_freq = (target_freq * FREQ_REDUCE_FACTOR) >> FXP_SHIFT;
             }
 
             // Factor 4: Power-aware scaling
+            // (Using 716 which is approx 0.7 * 1024)
             if (total_queue_depth == 0 && process_count <= 2) {
-                controller.power_state = 0;  // Low power
+                controller.power_state = 0; // Low power
                 target_freq = controller.min_freq;
-            } else if (load > 0.7f) {
-                controller.power_state = 2;  // Turbo
-                target_freq *= 1.3f;
+            } else if (load > (716)) { // 0.7 in fixed point
+                controller.power_state = 2; // Turbo
+                target_freq = (target_freq * POWER_TURBO_FACTOR) >> FXP_SHIFT;
             } else {
-                controller.power_state = 1;  // Normal
+                controller.power_state = 1; // Normal
             }
 
-            // Apply momentum for smooth transitions
-            float adjustment = (target_freq - controller.current_freq) * controller.learning_rate;
-            adjustment = adjustment + controller.momentum * controller.last_adjustment;
+            // Apply momentum for smooth transitions (all integer math!)
+            // Use 64-bit for intermediate multiplication to prevent overflow
+            int32_t diff = (int32_t)target_freq - (int32_t)controller.current_freq;
+            int32_t adjustment = (diff * controller.learning_rate); // Result is scaled
+            adjustment += (((int64_t)controller.momentum * controller.last_adjustment) >> FXP_SHIFT);
+
             controller.last_adjustment = adjustment;
 
-            uint16_t new_freq = controller.current_freq + (int16_t)adjustment;
+            // Apply the final adjustment, scaling it back down to a raw frequency
+            uint16_t new_freq = controller.current_freq + (adjustment >> FXP_SHIFT);
 
-            // Clamp to limits
+            // Clamp and apply with Hysteresis
             if (new_freq < controller.min_freq) new_freq = controller.min_freq;
             if (new_freq > controller.max_freq) new_freq = controller.max_freq;
 
-            // Hysteresis - only change if difference is significant
-            if (ABSi(new_freq - controller.current_freq) > 10) {
+            if (ABSi(new_freq - controller.current_freq) > HYSTERESIS_THRESHOLD) {
                 PitSetFrequency(new_freq);
                 controller.current_freq = new_freq;
-
-                // Log the change for analysis
-                if (current_time % 500 == 0) {
-                    PrintKernel("[TRACER] Freq: ");
-                    PrintKernelInt(new_freq);
-                    PrintKernel("Hz, Load: ");
-                    PrintKernelInt((uint32_t)(load * 100));
-                    PrintKernel("%, Power: ");
-                    PrintKernelInt(controller.power_state);
-                    PrintKernel("\n");
-                }
             }
 
             // Update history for pattern learning
@@ -1253,7 +1258,6 @@ void SystemService(void) {
             last_context_switches = context_switches;
         }
 
-        CleanupTerminatedProcesses();
         Yield();
     }
 }
@@ -1278,29 +1282,28 @@ static int SecureTokenUpdate(Process* proc, uint8_t new_flags) {
     return 1;
 }
 
-void SystemIntegrityVerificationAgent(void) {
-    PrintKernelSuccess("[SIVA] SystemIntegrityVerificationAgent initializing...\n");
+void Astra(void) {
+    PrintKernelSuccess("[AS] Astra initializing...\n");
     Process* current = GetCurrentProcess();
 
     if (!SecureTokenUpdate(current, PROC_FLAG_IMMUNE | PROC_FLAG_CRITICAL | PROC_FLAG_SUPERVISOR)) {
-        PANIC("SIVA: Failed to update secure token");
+        PANIC("AS: Failed to update secure token");
     }
     // register
     security_manager_pid = current->pid;
 
     // Create system tracer with enhanced security
-    uint32_t tracer_pid = CreateSecureProcess(SystemService, PROC_PRIV_SYSTEM); // demote, it hogs cpu
+    uint32_t tracer_pid = CreateSecureProcess(DynamoX, PROC_PRIV_SYSTEM); // demote, it hogs cpu
     if (tracer_pid) {
         Process* tracer = GetProcessByPid(tracer_pid);
         if (tracer) {
             tracer->token.flags |= (PROC_FLAG_IMMUNE | PROC_FLAG_CRITICAL);
-            // Also fix it here for the tracer process!
             tracer->token.checksum = 0;
             tracer->token.checksum = CalculateSecureChecksum(&tracer->token, tracer_pid);
         }
     }
 
-    PrintKernelSuccess("[SIVA] Advanced threat detection active\n");
+    PrintKernelSuccess("[AS] Advanced threat detection active\n");
 
     uint64_t last_check = 0;
 
@@ -1326,9 +1329,9 @@ void SystemIntegrityVerificationAgent(void) {
         }
 
         if (current->state == PROC_DYING || current->state == PROC_ZOMBIE) {
-            PrintKernelError("[SIVA] CRITICAL: SIVA compromised - emergency restart\n");
+            PrintKernelError("[AS] CRITICAL: AS compromised - emergency restart\n");
             // Could trigger system recovery here instead of dying
-            PANIC("SIVA terminated - security system failure");
+            PANIC("AS terminated - security system failure");
         }
 
         const uint64_t current_tick = GetSystemTicks();
@@ -1351,12 +1354,12 @@ void SystemIntegrityVerificationAgent(void) {
 
                     // This process has elevated privileges but is not a trusted supervisor
                     // or a critical process. This is a massive red flag.
-                    PrintKernelError("[SIVA] THREAT: Illicit system process detected! PID: ");
+                    PrintKernelError("[AS] THREAT: Illicit system process detected! PID: ");
                     PrintKernelInt(proc->pid);
                     PrintKernelError("\n");
 
                     // Immediately terminate with extreme prejudice.
-                    SivaTerminate(proc->pid, "Unauthorized privilege escalation");
+                    ASTerminate(proc->pid, "Unauthorized privilege escalation");
                     threat_level += 20; // Escalate threat level immediately
                     }
             }
@@ -1377,9 +1380,9 @@ void SystemIntegrityVerificationAgent(void) {
 
                 const Process* proc = &processes[slot];
                 if (proc->state == PROC_READY || proc->state == PROC_RUNNING) {
-                    if (proc->pid != security_manager_pid && // Don't check SIVA itself
+                    if (proc->pid != security_manager_pid && // Don't check AS itself
                             UNLIKELY(!ValidateToken(&proc->token, proc->pid))) {
-                        PrintKernelError("[SIVA] CRITICAL: Token corruption PID ");
+                        PrintKernelError("[AS] CRITICAL: Token corruption PID ");
                         PrintKernelInt(proc->pid);
                         PrintKernelError("\n");
                         threat_level += 10;
@@ -1394,14 +1397,14 @@ void SystemIntegrityVerificationAgent(void) {
             last_memory_scan = current_tick;
 
             if (MLFQscheduler.current_running >= MAX_PROCESSES) {
-                PrintKernelError("[SIVA] CRITICAL: Scheduler corruption detected\n");
+                PrintKernelError("[AS] CRITICAL: Scheduler corruption detected\n");
                 threat_level += 30;
-                PANIC("SIVA: Critical scheduler corruption - system compromised");
+                PANIC("AS: Critical scheduler corruption - system compromised");
             }
 
             uint32_t actual_count = __builtin_popcountll(active_process_bitmap);
             if (actual_count != process_count) {
-                PrintKernelError("[SIVA] CRITICAL: Process count corruption\n");
+                PrintKernelError("[AS] CRITICAL: Process count corruption\n");
                 threat_level += 10;
                 suspicious_activity_count++;
             }
@@ -1409,7 +1412,7 @@ void SystemIntegrityVerificationAgent(void) {
 
         // Aggressive threat management
         if (threat_level > 50) {  // Much higher threshold
-            PrintKernelError("[SIVA] DEFCON 1: Critical threat - selective termination\n");
+            PrintKernelError("[AS] DEFCON 1: Critical threat - selective termination\n");
             // Only kill processes with recent violations, not everything
             for (int i = 1; i < MAX_PROCESSES; i++) {
                 if (processes[i].pid != 0 &&
@@ -1417,12 +1420,12 @@ void SystemIntegrityVerificationAgent(void) {
                     !(processes[i].token.flags & (PROC_FLAG_CRITICAL | PROC_FLAG_IMMUNE)) &&
                     processes[i].pid != security_manager_pid &&
                     processes[i].preemption_count > 1000) { // Only suspicious ones
-                    SivaTerminate(processes[i].pid, "Selective lockdown");
+                    ASTerminate(processes[i].pid, "Selective lockdown");
                     }
             }
             threat_level = 25; // Reset after action
         } else if (threat_level > 25) {
-            PrintKernelWarning("[SIVA] DEFCON 2: Elevated monitoring\n");
+            PrintKernelWarning("[AS] DEFCON 2: Elevated monitoring\n");
             current_scan_interval = base_scan_interval / 2; // Scan more frequently
         }
 
@@ -1462,14 +1465,14 @@ int ProcessInit(void) {
     process_count = 1;
     active_process_bitmap |= 1ULL;
 
-    // Create SIVA internally during init - no external access
-    PrintKernel("[SYSTEM] Creating SIVA (SystemIntegrityVerificationAgent)...\n");
-    uint32_t siva_pid = CreateSecureProcess(SystemIntegrityVerificationAgent, PROC_PRIV_SYSTEM);
-    if (!siva_pid) {
-        PANIC("CRITICAL: Failed to create SIVA - system compromised");
+    // Create AS internally during init - no external access
+    PrintKernel("[SYSTEM] Creating AS (Astra)...\n");
+    uint32_t AS_pid = CreateSecureProcess(Astra, PROC_PRIV_SYSTEM);
+    if (!AS_pid) {
+        PANIC("CRITICAL: Failed to create AS - system compromised");
     }
-    PrintKernelSuccess("[SYSTEM] SIVA created with PID: ");
-    PrintKernelInt(siva_pid);
+    PrintKernelSuccess("[SYSTEM] AS created with PID: ");
+    PrintKernelInt(AS_pid);
     PrintKernel("\n");
 
 
