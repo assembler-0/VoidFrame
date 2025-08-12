@@ -6,7 +6,7 @@
 #include "Cpu.h"
 
 // =============================================================================
-// MLFQ SCHEDULER PARAMETERS
+// MLFQ Parameters (last update: 08/08/25)
 // =============================================================================
 
 // Core Queue Configuration
@@ -65,6 +65,9 @@
 #define CONTEXT_SWITCH_OVERHEAD_SHIFT 3     // log2(SAMPLES) for bit shifting
 #define PERFORMANCE_COUNTER_RESET 10000     // Reset counters every N context switches
 
+// =============================================================================
+// Aegis Parameters (carefully, it might blew up)
+// =============================================================================
 // Security and Process Management
 #define TERMINATION_QUEUE_SIZE MAX_PROCESSES    // Size of termination queue
 #define CLEANUP_MAX_PER_CALL 3          // Max processes to cleanup per call
@@ -87,22 +90,23 @@
 #define PROC_PRIV_RESTRICTED 2  // Restricted processes
 
 // =============================================================================
-// SystemService (aka dynamic frequency controller) modify as needed
+// DynamoX Parameters (v0.2)
 // =============================================================================
-// Fixed points, if you found it annoying (ofc it is what are you asking), remove and pray GCC how to handle floats.
+#define MAX(a, b) ((a) > (b) ? (a) : (b))
+#define MIN(a, b) ((a) < (b) ? (a) : (b))
 #define FXP_SHIFT 10 // Use 10 bits for the fractional part
 #define FXP_SCALE (1 << FXP_SHIFT) // Scaling factor = 1024
 
-#define SAMPLING_INTERVAL 50
-#define HZ_PER_PROCESS 30
-#define QUEUE_PRESSURE_FACTOR 20
-#define QUEUE_PRESSURE_THRESHOLD 3
-#define CS_RATE_THRESHOLD_HIGH (10 * FXP_SCALE) // 10.0 in fixed-point
-#define CS_RATE_THRESHOLD_LOW  (2  * FXP_SCALE) // 2.0 in fixed-point
-#define FREQ_BOOST_FACTOR   1228 // 1.2 * 1024
-#define FREQ_REDUCE_FACTOR  921  // 0.9 * 1024
-#define POWER_TURBO_FACTOR  1331 // 1.3 * 1024
-#define HYSTERESIS_THRESHOLD 10
+#define SAMPLING_INTERVAL 25        // 2x faster sampling (was 50)
+#define HZ_PER_PROCESS 50          // More responsive per-process scaling (was 30)
+#define QUEUE_PRESSURE_FACTOR 20   // Stronger pressure response
+#define QUEUE_PRESSURE_THRESHOLD 2 // Earlier pressure detection (was 3)
+#define CS_RATE_THRESHOLD_HIGH (8 * FXP_SCALE)  // More sensitive high threshold
+#define CS_RATE_THRESHOLD_LOW  (3 * FXP_SCALE)  // Higher low threshold for stability
+#define FREQ_BOOST_FACTOR   1331   // Stronger boost: 1.3x (was 1.2x)
+#define FREQ_REDUCE_FACTOR  870    // Gentler reduction: 0.85x (was 0.9x)
+#define POWER_TURBO_FACTOR  1434   // More aggressive turbo: 1.4x (was 1.3x)
+#define HYSTERESIS_THRESHOLD 8     // More responsive changes (was 10)
 
 typedef struct {
     uint64_t magic;

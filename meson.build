@@ -49,12 +49,12 @@ inc_dirs = [
     src_root + '/drivers',
     src_root + '/drivers/PCI',
     src_root + '/drivers/ethernet',
+    src_root + '/drivers/RTC',
     src_root + '/fs',
     arch_root + '/cpu',
     arch_root + '/gdt',
     arch_root + '/idt',
-    arch_root + '/interrupts',
-    arch_root + '/syscall'
+    arch_root + '/interrupts'
 ]
 
 # Assembly sources (organized)
@@ -62,7 +62,6 @@ asm_sources = [
     arch_root + '/asm/pxs.asm',
     arch_root + '/idt/IdtLoad.asm',
     arch_root + '/gdt/GdtTssFlush.asm',
-    arch_root + '/syscall/SyscallEntry.asm',
     arch_root + '/interrupts/Interrupts.asm',
     src_root + '/include/Paging.asm'
 ]
@@ -78,7 +77,6 @@ c_sources = [
     src_root + '/kernel/memory/StackGuard.c',
     src_root + '/kernel/memory/MemPool.c',
     src_root + '/kernel/process/Process.c',
-    src_root + '/kernel/process/UserMode.c',
     src_root + '/kernel/etc/Shell.c',
     src_root + '/kernel/etc/Console.c',
     src_root + '/kernel/etc/VBEConsole.c',
@@ -97,10 +95,10 @@ c_sources = [
     src_root + '/drivers/Ide.c',
     src_root + '/drivers/VesaBIOSExtension.c',
     src_root + '/drivers/PCI/PCI.c',
+    src_root + '/drivers/RTC/Rtc.c',
     src_root + '/drivers/ethernet/RTL8139.c',
     arch_root + '/idt/Idt.c',
     arch_root + '/gdt/Gdt.c',
-    arch_root + '/syscall/Syscall.c',
     arch_root + '/interrupts/Interrupts.c',
     arch_root + '/cpu/Cpu.c'
 ]
@@ -177,6 +175,7 @@ iso = custom_target('VoidFrame.iso',
 # Run target
 run_target('run',
            command : ['qemu-system-x86_64',
+                      '-cpu', 'max',
                       '-cdrom', 'VoidFrame.iso',
                       '-serial', 'stdio' ,
                       '-no-reboot','-no-shutdown',

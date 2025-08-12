@@ -20,8 +20,6 @@
 #include "Serial.h"
 #include "Shell.h"
 #include "StackGuard.h"
-#include "Syscall.h"
-#include "UserMode.h"
 #include "VFS.h"
 #include "VMem.h"
 #include "VesaBIOSExtension.h"
@@ -166,6 +164,16 @@ void BootstrapMapPage(uint64_t pml4_phys, uint64_t vaddr, uint64_t paddr, uint64
 }
 
 
+void CPUFeatureValidation(void) {
+    uint32_t eax, ebx, ecx, edx;
+    __asm__ volatile("cpuid" : "=a"(eax), "=b"(ebx), "=c"(ecx), "=d"(edx) : "a"(7), "c"(0));
+    bool has_avx2 = (ebx & (1 << 5)) != 0;
+
+    if (!has_avx2) {
+        PrintKernelWarning("[SYSTEM] This kernel requires AVX2 support (2013+ CPUs) but the extension is not found. (CPUID)\n");
+    }
+}
+
 // Memory hardening functions
 static void SetupMemoryProtection(void) {
     PrintKernel("[SYSTEM] Setting up memory protection...\n");
@@ -186,6 +194,10 @@ static void SetupMemoryProtection(void) {
         cr4 |= (1ULL << 20);  // CR4.SMEP
         PrintKernel("[SYSTEM] SMEP enabled\n");
         protection_enabled = true;
+    }
+
+    if (ecx & (1 << 7)) {
+        PrintKernelSuccess("[SYSTEM] STAC/CLAC instructions are supported\n");
     }
 
     // Enable SMAP if supported (bit 20 in EBX from CPUID leaf 7)
@@ -316,11 +328,6 @@ static InitResultT SystemInitS2(void) {
     PrintKernel("[INFO] Initializing IDT...\n");
     IdtInstall();
     PrintKernelSuccess("[SYSTEM] IDT initialized\n");
-
-    // Initialize System Calls
-    PrintKernel("[INFO] Initializing system calls...\n");
-    SyscallInit();
-    PrintKernelSuccess("[SYSTEM] System calls initialized\n");
 
     // Initialize PIC
     PrintKernel("[INFO] Initializing PIC & PIT...\n");
@@ -537,7 +544,10 @@ static void PrintBootstrapSummary(void) {
 
 void KernelMainHigherHalf(void) {
     PrintKernelSuccess("[SYSTEM] Successfully jumped to higher half. Virtual memory is active.\n");
-    
+
+    // CPU feature validation
+    CPUFeatureValidation();
+
     // Memory safety validation
     ValidateMemoryLayout();
 
@@ -552,7 +562,11 @@ void KernelMainHigherHalf(void) {
 
     asm volatile("sti");
 
-    while (1) {
-        asm volatile("hlt");
+    while (1) { // redundant but added for worst case scenario, should not reach here
+        PrintKernelWarning("[FALLBACK] Reached end of kernel.\n");
+        if (ShouldSchedule()) {
+            RequestSchedule();
+        }
+        __asm__ volatile("hlt");
     }
 }
