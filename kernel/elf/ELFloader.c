@@ -13,7 +13,9 @@ void* CreateProcessFromElf(const char* filename) {
         return NULL;
     }
 
-    if (!VfsReadFile(filename, (char*)elf_data, 65536)) {
+    int bytes_read = VfsReadFile(filename, (char*)elf_data, 65536);
+
+    if (bytes_read <= 0) {
         PrintKernel("Failed to read ELF file\n");
         KernelFree(elf_data);
         return NULL;
@@ -131,10 +133,10 @@ void* CreateProcessFromElf(const char* filename) {
     // Adjust entry point to be relative to our allocated memory
     void* adjusted_entry = (uint8_t*)process_memory + (entry_point - base_vaddr);
 
-    uint32_t pid = CreateProcess(adjusted_entry);
+    uint32_t pid = CreateProcess((void (*)(void))adjusted_entry);
     KernelFree(elf_data);
 
-    if (pid == (uint32_t)-1) {
+    if (pid == 0) {
         PrintKernel("Failed to create process\n");
         KernelFree(process_memory);
         return NULL;
