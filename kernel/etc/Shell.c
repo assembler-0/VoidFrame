@@ -167,6 +167,9 @@ static void show_help() {
     PrintKernel("  ps             - List processes\n");
     PrintKernel("  sched          - Show scheduler state\n");
     PrintKernel("  perf           - Show performance stats\n");
+    PrintKernel("  picmask <irq>  - Mask IRQ <irq>\n");
+    PrintKernel("  picunmask <irq>- Unmask IRQ <irq>\n");
+    PrintKernel("  perf           - Show performance stats\n");
     PrintKernel("  memstat        - Show memory statistics\n");
     PrintKernel("  setfreq <hz>   - Set PIT timer <hz>\n");
     PrintKernel("  pciscan        - Perform a PCI scan\n");
@@ -256,6 +259,32 @@ static void ExecuteCommand(const char* cmd) {
             return;
         }
         KillProcess(pid);
+    } else if (FastStrCmp(cmd_name, "picmask") == 0) {
+        char* irq_str = GetArg(cmd, 1);
+        if (!irq_str) {
+            PrintKernel("Usage: picmask <irq>\n");
+            return;
+        }
+        int irq = atoi(irq_str);
+        KernelFree(irq_str);
+        if (irq < 0 || irq > 15) {
+            PrintKernel("Usage: picmask <irq>\n");
+            return;
+        }
+        PIC_disable_irq(irq);
+    } else if (FastStrCmp(cmd_name, "picunmask") == 0) {
+        char* irq_str = GetArg(cmd, 1);
+        if (!irq_str) {
+            PrintKernel("Usage: picunmask <irq>\n");
+            return;
+        }
+        int irq = atoi(irq_str);
+        KernelFree(irq_str);
+        if (irq < 0 || irq > 15) {
+            PrintKernel("Usage: picunmask <irq>\n");
+            return;
+        }
+        PIC_enable_irq(irq);
     } else if (FastStrCmp(cmd_name, "ver") == 0) {
         Version();
     } else if (FastStrCmp(cmd_name, "info") == 0) {

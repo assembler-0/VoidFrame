@@ -326,11 +326,14 @@ static InitResultT SystemInitS2(void) {
     PrintKernel("[INFO] Initializing PIC & PIT...\n");
     PicInstall();
     PitInstall();
+    PIC_enable_irq(0);
     PrintKernelSuccess("[SYSTEM] PIC & PIT initialized\n");
 
     // Initialize keyboard
     PrintKernel("[INFO] Initializing keyboard...\n");
     PS2Init();
+    PIC_enable_irq(1);
+    PIC_enable_irq(12);
     PrintKernelSuccess("[SYSTEM] Keyboard initialized\n");
 
     // Initialize shell
@@ -352,6 +355,7 @@ static InitResultT SystemInitS2(void) {
         // Explicitly initialize FAT12 before VFS
         PrintKernel("[INFO] Initializing FAT12...\n");
         if (Fat12Init(0) == 0) {
+            PIC_enable_irq(2);
             PrintKernelSuccess("[SYSTEM] FAT12 Driver initialized\n");
         } else {
             PrintKernelWarning("[WARN] FAT12 initialization failed\n");

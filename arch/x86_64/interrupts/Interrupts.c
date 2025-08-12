@@ -13,13 +13,19 @@ void InterruptHandler(Registers* regs) {
 
     // Handle hardware interrupts first
     switch (regs->interrupt_number) {
-        case 32: // Timer interrupt
+        case 32: // Timer interrupt (IRQ 0)
             FastSchedule(regs);
             outb(0x20, 0x20); // EOI to master PIC
             return;
 
-        case 33: // Keyboard interrupt
+        case 33: // Keyboard interrupt (IRQ 1)
             KeyboardHandler();
+            outb(0x20, 0x20); // EOI to master PIC
+            return;
+
+        case 44: // mouse (IRQ 12)
+            MouseHandler();
+            outb(0xA0, 0x20);  // EOI to slave PIC
             outb(0x20, 0x20); // EOI to master PIC
             return;
 
@@ -36,7 +42,7 @@ void InterruptHandler(Registers* regs) {
             return;
 
         // Handle other hardware interrupts (34-45)
-        case 34 ... 45:
+        case 34 ... 43: case 45: // passthrough
             PrintKernelWarning("[IRQ] Unhandled hardware interrupt: ");
             PrintKernelInt(regs->interrupt_number - 32);
             PrintKernelWarning("\n");

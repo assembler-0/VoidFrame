@@ -103,7 +103,6 @@
 #define FREQ_REDUCE_FACTOR  921  // 0.9 * 1024
 #define POWER_TURBO_FACTOR  1331 // 1.3 * 1024
 #define HYSTERESIS_THRESHOLD 10
-#define PIT_BUFF 20
 
 typedef struct {
     uint64_t magic;
