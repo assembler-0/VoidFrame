@@ -65,6 +65,9 @@
 #define CONTEXT_SWITCH_OVERHEAD_SHIFT 3     // log2(SAMPLES) for bit shifting
 #define PERFORMANCE_COUNTER_RESET 10000     // Reset counters every N context switches
 
+// =============================================================================
+// Aegis Tuning Parameters (carefully, it might blew up)
+// =============================================================================
 // Security and Process Management
 #define TERMINATION_QUEUE_SIZE MAX_PROCESSES    // Size of termination queue
 #define CLEANUP_MAX_PER_CALL 3          // Max processes to cleanup per call
@@ -87,7 +90,7 @@
 #define PROC_PRIV_RESTRICTED 2  // Restricted processes
 
 // =============================================================================
-// SystemService (aka dynamic frequency controller) modify as needed
+// DynamoX (aka dynamic frequency controller) modify as needed
 // =============================================================================
 // Fixed points, if you found it annoying (ofc it is what are you asking), remove and pray GCC how to handle floats.
 #define FXP_SHIFT 10 // Use 10 bits for the fractional part

@@ -1,5 +1,4 @@
 #include "Syscall.h"
-
 #include "Console.h"
 #include "Gdt.h"
 #include "Idt.h"
@@ -10,7 +9,10 @@
 #include "Panic.h"
 #include "Pic.h"
 #include "Process.h"
+#include "StringOps.h"
+#include "UserMode.h"
 #include "VFS.h"
+
 #define likely(x)   __builtin_expect(!!(x), 1)
 #define unlikely(x) __builtin_expect(!!(x), 0)
 extern void SyscallEntry(void);
@@ -31,6 +33,9 @@ uint64_t Syscall(uint64_t syscall_num, uint64_t arg1, uint64_t arg2, uint64_t ar
             
         case SYS_WRITE:
             // arg1 = fd (ignored for now), arg2 = buffer, arg3 = count
+            if (!is_user_address((const void*)arg2, arg3)) {
+                return -1; // Bad address
+            }
             if (likely(arg1 == 1)) { // stdout
                 if (unlikely(!arg2)) {
                     return -1; // NULL buffer
@@ -76,14 +81,22 @@ uint64_t Syscall(uint64_t syscall_num, uint64_t arg1, uint64_t arg2, uint64_t ar
             return 0;
 
         case SYS_FREAD:
-            char path_fread[MAX_SYSCALL_BUFFER_SIZE + 1]; // +1 for null terminator
-            FastMemcpy(path_fread, (const void*)arg1, arg2);
-            path_fread[arg2] = '\0'; // Ensure null termination
-            uint8_t* fbuff = KernelMemoryAlloc(4096);
-            if (!fbuff) return -1;
-            int bytes_read = VfsReadFile(path_fread, fbuff, 4095);
-            KernelFree(fbuff);
+        {
+            // arg1 = path, arg2 = user buffer, arg3 = count
+            char path_fread[MAX_SYSCALL_BUFFER_SIZE + 1];
+
+            // Validate path pointer
+            if (!is_user_address((const void*)arg1, FastStrlen((const char*)arg1, arg1))) return -1;
+            FastStrCopy(path_fread, (const char*)arg1, arg1);
+
+            // Validate the user's destination buffer pointer
+            if (!is_user_address((void*)arg2, arg3)) return -1;
+
+            // Read directly into the user's buffer.
+            // stac has made this possible. VfsReadFile needs to be safe.
+            int bytes_read = VfsReadFile(path_fread, (uint8_t*)arg2, arg3);
             return bytes_read;
+        }
 
         case SYS_FWRITE:
             return 0;

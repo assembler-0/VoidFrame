@@ -1,12 +1,9 @@
 bits 64
-
 extern Syscall
-
 global SyscallEntry
 
 SyscallEntry:
-    ; Save all registers
-    push rax
+    ; Save all registers EXCEPT rax, which we handle specially
     push rbx
     push rcx
     push rdx
@@ -21,25 +18,28 @@ SyscallEntry:
     push r13
     push r14
     push r15
-    ; Stop SMAP temporarily
-    stac
-    ; System call convention: rax=syscall_num, rdi=arg1, rsi=arg2, rdx=arg3
-     mov r11, rdi    ; Save arg1
-     mov r12, rsi    ; Save arg2
-     mov r13, rdx    ; Save arg3
 
-     ; Now setup parameters for Syscall function
-     mov rdi, rax    ; syscall number (1st param)
-     mov rsi, r11    ; arg1 (2nd param)
-     mov rdx, r12    ; arg2 (3rd param)
-     mov rcx, r13    ; arg3 (4th param)
+    ; Save the original rax (syscall number) separately
+    push rax
+
+    stac
+
+    ; Setup parameters for Syscall(num, arg1, arg2, arg3)
+    ; We just need to get the syscall number (original rax) into rdi
+    mov rdi, [rsp]  ; 1st param: syscall number (from the saved rax)
+    mov rsi, r11    ; 2nd param: arg1 (already in rsi)
+    mov rdx, r12    ; 3rd param: arg2 (already in rdx)
+    mov rcx, r13    ; 4th param: arg3 (already in rcx)
 
     call Syscall
-    ; Reset SMAP
-    clac
-    ; Return value in rax is already set
+    ; C function return value is now in rax
 
-    ; Restore registers
+    clac
+
+    ; Discard the saved rax from the stack. The return value is safe in rax.
+    add rsp, 8
+
+    ; Restore all other registers
     pop r15
     pop r14
     pop r13
@@ -54,6 +54,5 @@ SyscallEntry:
     pop rdx
     pop rcx
     pop rbx
-    pop rax      ; Pop original rax, but leave the syscall return value in rax
 
     iretq

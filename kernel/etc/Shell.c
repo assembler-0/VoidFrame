@@ -12,6 +12,7 @@
 #include "Panic.h"
 #include "Pic.h"
 #include "Process.h"
+#include "RTC/Rtc.h"
 #include "RTL8139.h"
 #include "StringOps.h"
 #include "VFS.h"
@@ -167,6 +168,7 @@ static void show_help() {
     PrintKernel("  ps             - List processes\n");
     PrintKernel("  sched          - Show scheduler state\n");
     PrintKernel("  perf           - Show performance stats\n");
+    PrintKernel("  time           - Show current time\n");
     PrintKernel("  picmask <irq>  - Mask IRQ <irq>\n");
     PrintKernel("  picunmask <irq>- Unmask IRQ <irq>\n");
     PrintKernel("  perf           - Show performance stats\n");
@@ -314,6 +316,47 @@ static void ExecuteCommand(const char* cmd) {
             }
             KernelFree(dir);
         }
+    } else if (FastStrCmp(cmd_name, "time") == 0) {
+        rtc_time_t current_time;
+        RtcReadTime(&current_time);
+
+        // Buffer for printing. Make it large enough.
+        char time_str[64];
+        char num_buf[5]; // For itoa
+
+        // Format the date: YYYY-MM-DD
+        itoa(current_time.year, num_buf);
+        strcpy(time_str, num_buf);
+        strcat(time_str, "-");
+
+        if (current_time.month < 10) strcat(time_str, "0");
+        itoa(current_time.month, num_buf);
+        strcat(time_str, num_buf);
+        strcat(time_str, "-");
+
+        if (current_time.day < 10) strcat(time_str, "0");
+        itoa(current_time.day, num_buf);
+        strcat(time_str, num_buf);
+
+        strcat(time_str, " "); // Separator
+
+        // Format the time: HH:MM:SS
+        if (current_time.hour < 10) strcat(time_str, "0");
+        itoa(current_time.hour, num_buf);
+        strcat(time_str, num_buf);
+        strcat(time_str, ":");
+
+        if (current_time.minute < 10) strcat(time_str, "0");
+        itoa(current_time.minute, num_buf);
+        strcat(time_str, num_buf);
+        strcat(time_str, ":");
+
+        if (current_time.second < 10) strcat(time_str, "0");
+        itoa(current_time.second, num_buf);
+        strcat(time_str, num_buf);
+
+        PrintKernel(time_str);
+        PrintKernel("\n");
     } else if (FastStrCmp(cmd_name, "pwd") == 0) {
         PrintKernel(current_dir);
         PrintKernel("\n");
