@@ -149,7 +149,7 @@ uint32_t CreateProcessFromElf(const char* filename, const ElfLoadOptions* option
 
     // 3. Read ELF file from VFS
     int bytes_read = VfsReadFile(filename, (char*)elf_data, file_size);
-    if (bytes_read <= 0 || (uint64_t)bytes_read != file_size) {
+    if (bytes_read <= 0) {
         PrintKernelError("ELF: Failed to read file completely\n");
         VMemFreeWithGuards(elf_data, file_size);
         return 0;
