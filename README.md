@@ -1,141 +1,126 @@
-# VoidFrame Kernel Development Checklist
+# [VoidFrame] - a syscall-less microkernel 💫
 
-> *This file tracks the current status of all core OS features for VoidFrame.*
-
----
-
-## 🧱 Core Infrastructure
-
-- [x] Bootloader (GRUB2 with Multiboot2)
-- [x] GDT & TSS setup
-- [x] IDT & Interrupt Handling
-- [x] PIC remapping & IRQ handling
-- [x] PIT / Timer setup
-- [x] Basic `printf` to VGA text mode
-- [x] Kernel memory allocator
-- [x] Panic screen with ASCII art (yes this is mandatory)
+> A fast, simple, secure 64-bit microkernel written in C and assembly. With modern capabilities.
 
 ---
 
-## 🧠 Memory Management
-
-- [x] Physical memory manager (free list or bitmap)
-- [x] Page table setup (paging enabled)
-- [x] Virtual memory mapping API (`vmem_map()`, etc.)
-- [x] Kernel heap (virtual, malloc/free)
-- [ ] Per-process page tables
-- [ ] User-mode memory protection
+- Roadmap: [here!](docs/ROADMAP.md)
+- How to build: [here!](./BUILD.md)
 
 ---
 
-## ⚙️ Process Management & Scheduling
-
-- [x] Process control block (PCB)
-- [x] Scheduler (MLFQ)
-- [x] Context switching
-- [x] Preemption via PIT
-- [x] Process creation
-- [x] Process termination 
-- [x] Token/privilege-based validation
-- [x] Scheduler aging/starvation fix
-- [ ] CFS or vruntime-based scheduler (optional/bonus)
-
----
-
-## 🔐 Ring 3 Support (Userspace) (uhhh)
-
-- [ ] User-mode process flag
-- [ ] IRETQ from syscall/interrupt
-- [ ] Syscall handling (`syscall` or `int 0x80`)
-- [ ] Userland stack setup
-- [ ] Memory isolation (Ring 3 can't touch kernel)
-- [ ] Transitioning back to kernel on syscall
-
----
-
-## 🧩 Module System
-
-- [x] Multiboot2 module loading
-- [ ] Basic kernel extensions
-- [ ] Signature/token validation
-- [ ] Hot module unloading (optional)
-- [ ] Module registration system
-
----
-
-## 📦 ELF Executable Support
-
-- [ ] ELF64 header parsing
-- [ ] Program header mapping (`PT_LOAD`)
-- [ ] Set up new stack
-- [ ] Jump to entry point
-- [ ] Static binaries only (no relocations)
-- [ ] Dynamic linker / interpreter (WAY later)
-
----
-
-## 🧠 Init System
-
-- [ ] Create `init` process from `vmod` or ELF
-- [x] Init spawns shell or TUI
-
----
-
-## 💬 IPC / Syscalls
-
-- [x] Syscall dispatch system
-- [x] Basic message passing (pipe, queue, or buffer)
-- [ ] Shared memory region
-- [ ] Signals or async delivery
-- [ ] Named channels or sockets
-
----
-
-## 📁 Filesystem & I/O
-
-- [ ] Initrd loading
-- [ ] Basic filesystem parsing (e.g., tarfs or ext2-lite)
-- [x] Read/write file API (`fs_open()`, etc.)
-- [x] VFS layer (optional)
-- [ ] Device files (`/dev/null`, `/dev/tty0`, etc.)
-
----
-
-## 🧑‍💻 Userland Development
-
-- [ ] Userspace C runtime (libc-lite)
-- [x] Shell (`sh.vmod` or `sh.elf`)
-- [x] Basic CLI utilities (`cat`, `ls`, `echo`, etc.)
-- [x] Keyboard driver
-- [x] VGA console or terminal emulator
-
----
-
-## 🔧 Debug & Developer Features
-
-- [x] Print kernel logs to VGA
-- [x] Serial logging
-- [x] `dmesg`-style kernel log buffer
-- [x] Stack backtrace / panic debug dump
-- [x] Memory usage counters
-
----
-
-## 🌈 Extra Spice (optional but cool)
-
-- [x] Framebuffer graphics support
-- [ ] Loadable GUI modules
-- [ ] Virtual terminal switching (`tty0`, `tty1`)
-- [ ] Profiling support (ticks per process)
-- [ ] Syscall tracing / log
-- [ ] Live module patching
-
----
-
-## 🏁 Final Goals (v1.0 release)
-
-- [ ] Bootable ISO with GRUB2 EFI support
-- [ ] Fully self-hosted userland shell
-- [ ] User process execution (ELF64)
-- [ ] Init system + FS + IPC working
-- [ ] At least one userland demo program
+### Project Structure 
+```
+VoidFrame/
+├── arch/x86_64/             # Architechture specific code
+│   ├── asm/                 
+│   │   └── pxs.asm          
+│   ├── cpu/                 
+│   │   ├── Cpu.h            
+│   │   └── Cpu.c            
+│   ├── gdt/                 
+│   │   ├── GdtTssFlush.asm  
+│   │   ├── Gdt.h            
+│   │   └── Gdt.c            
+│   ├── idt/                 
+│   │   ├── IdtLoad.asm      
+│   │   ├── Gdt.h            
+│   │   └── Gdt.c            
+│   └── interrupts/          
+│       ├── Interrupts.asm   
+│       ├── Interrupts.c     
+│       └── Interrupts.h     
+├── drivers/                  # Drivers code
+│   ├── ethernet/       
+│   │   ├── Packet.h             
+│   │   ├── RTL8139.h             
+│   │   └── RTL8139.c          
+│   ├── PCI/                 
+│   │   ├── PCI.h            
+│   │   └── PCI.c            
+│   ├── RTC/                 
+│   │   ├── Rtc.h            
+│   │   └── Rtc.c            
+│   ├── xHCI/                 
+│   │   ├── xHCI.h            
+│   │   └── xHCI.c  
+│   ├── Ide.h           
+│   ├── Ide.c           
+│   ├── Pic.h            
+│   ├── Pic.c            
+│   ├── PS2.h             
+│   ├── PS2.c                         
+│   ├── Serial.c       
+│   ├── Serial.c       
+│   ├── VesaBIOSExtension.c       
+│   └── VesaBIOSExtension.h    
+├── fs/       
+│   ├── FAT12.h                # Filesystems  
+│   ├── FAT12.c           
+│   ├── Fs.h            
+│   ├── Fs.c            
+│   ├── FsUtils.h             
+│   ├── FsUtils.c                         
+│   ├── VFS.c       
+│   └── VFS.h    
+├── include/                   # Common includes
+│   ├── Font.h           
+│   ├── Io.h            
+│   ├── Paging.h             
+│   ├── Paging.asm            
+│   ├── stdbool.h            
+│   ├── stdint.h            
+│   ├── stddef.h            
+│   ├── stdlib.h            
+│   └── stdarg.h     
+├── kernel/                    # Kernel core
+│   ├── atomic/                # Atomic operations
+│   │   ├── Atomics.c               
+│   │   ├── Atomics.h               
+│   │   └── Spilock.h          
+│   ├── core/                  # Entry point
+│   │   ├── Kernel.h            
+│   │   ├── Kernel.c            
+│   │   ├── Panic.c            
+│   │   ├── Panic.c            
+│   │   └── Multiboot2.h            
+│   ├── elf/                   # ELF loader
+│   │   ├── ELFloader.c  
+│   │   └── ElFloader.h            
+│   ├── etc/                   # Misc. files
+│   │   ├── Console.c      
+│   │   ├── Console.h      
+│   │   ├── Editor.h            
+│   │   ├── Editor.c            
+│   │   ├── Shell.c            
+│   │   ├── Shell.h            
+│   │   ├── StringOps.c            
+│   │   ├── StringOps.h            
+│   │   ├── VBEConsole.c            
+│   │   └── VBEConsole.h     
+│   ├── ipc/                  # IPC related files  
+│   │   ├── Ipc.c                
+│   │   └── Ipc.h         
+│   ├── memory/               # Physical and Virtual memory manager  
+│   │   ├── KernelHeap.c      
+│   │   ├── KernelHeap.h      
+│   │   ├── MemOps.h      
+│   │   ├── MemOps.c      
+│   │   ├── Memory.h            
+│   │   ├── Memory.c            
+│   │   ├── MemoryPool.c            
+│   │   ├── MemoryPool.h            
+│   │   ├── StackGuard.c            
+│   │   ├── StackGuard.h                        
+│   │   ├── VMem.c            
+│   │   └── VMem.h    
+│   └── process/              # MLFQ scheduler  
+│       ├── Process.c     
+│       └── Process.h            
+├── scripts/       
+│   └── elf.ld               
+├── linker.ld         
+├── grub.cfg                   
+├── meson.build        
+└── ...                      
+```
