@@ -5,7 +5,7 @@
 ---
 
 - Roadmap: [here!](docs/ROADMAP.md)
-- How to build: [here!](./BUILD.md)
+- How to build: [here!](docs/BUILD.md)
 
 ---
 

@@ -10,6 +10,7 @@
 #include "Serial.h"
 #include "Shell.h"
 #include "Spinlock.h"
+#include "StackGuard.h"
 #include "VMem.h"
 #include "stdbool.h"
 #include "stdlib.h"
@@ -1614,6 +1615,7 @@ void Astra(void) {
             threat_level--;
         }
 
+        CheckResourceLeaks();
         CleanupTerminatedProcesses();
         Yield();
     }
