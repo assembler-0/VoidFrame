@@ -20,6 +20,7 @@
 #include "Serial.h"
 #include "Shell.h"
 #include "StackGuard.h"
+#include "USB/xHCI.h"
 #include "VFS.h"
 #include "VMem.h"
 #include "VesaBIOSExtension.h"
@@ -399,6 +400,10 @@ static InitResultT SystemInitS2(void) {
     PrintKernel("[INFO] Initializing RTL8139 Driver...\n");
     Rtl8139_Init();
     PrintKernelSuccess("[SYSTEM] RTL8139 Driver initialized\n");
+
+    PrintKernel("[INFO] Initializing xHCI...\n");
+    xhci_init();
+    PrintKernelSuccess("[SYSTEM] xHCI initialized\n");
 
     // NEW: Final memory health check
     PrintKernel("[INFO] Final memory health check...\n");

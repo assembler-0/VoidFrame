@@ -692,7 +692,7 @@ static inline int AstraPreflightCheck(uint32_t slot) {
     // it's a huge red flag that it may have tampered with its own privilege level.
     if (UNLIKELY(proc->privilege_level == PROC_PRIV_SYSTEM &&
                  !(proc->token.flags & (PROC_FLAG_SUPERVISOR | PROC_FLAG_CRITICAL | PROC_FLAG_IMMUNE)))) {
-        PrintKernelError("[AS-PREFLIGHT] Illicit SYSTEM privilege detected for PID: ");
+        PrintKernelError("[AS-PREFLIGHT] Illicit SYSTized EM privilege detected for PID: ");
         PrintKernelInt(proc->pid);
         PrintKernelError("\n");
         ASTerminate(proc->pid, "Unauthorized privilege escalation");

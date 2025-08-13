@@ -4,6 +4,10 @@
 #include "Io.h"
 #include "stdint.h"
 
+static uint8_t target_class;
+static uint8_t target_subclass;
+static uint8_t target_prog_if;
+
 uint32_t PciConfigReadDWord(uint8_t bus, uint8_t slot, uint8_t func, uint8_t offset) {
     uint32_t address;
     uint32_t lbus  = (uint32_t)bus;
@@ -19,6 +23,31 @@ uint32_t PciConfigReadDWord(uint8_t bus, uint8_t slot, uint8_t func, uint8_t off
 
 uint8_t PciConfigReadByte(uint8_t bus, uint8_t slot, uint8_t func, uint8_t offset) {
     return PciConfigReadDWord(bus, slot, func, offset) & 0xFF;
+}
+
+void PciConfigWriteDWord(uint8_t bus, uint8_t slot, uint8_t func, uint8_t offset, uint32_t data) {
+    uint32_t address;
+    uint32_t lbus  = (uint32_t)bus;
+    uint32_t lslot = (uint32_t)slot;
+    uint32_t lfunc = (uint32_t)func;
+
+    address = (uint32_t)((lbus << 16) | (lslot << 11) |
+              (lfunc << 8) | (offset & 0xFC) | ((uint32_t)0x80000000));
+
+    outl(0xCF8, address);
+    outl(0xCFC, data);
+}
+
+void PciConfigWriteByte(uint8_t bus, uint8_t slot, uint8_t func, uint8_t offset, uint8_t data) {
+    // For byte writes, we need to read-modify-write the dword
+    uint32_t dword_offset = offset & 0xFC;
+    uint32_t byte_offset = offset & 0x03;
+
+    uint32_t current_value = PciConfigReadDWord(bus, slot, func, dword_offset);
+    uint32_t mask = ~(0xFF << (byte_offset * 8));
+    uint32_t new_value = (current_value & mask) | ((uint32_t)data << (byte_offset * 8));
+
+    PciConfigWriteDWord(bus, slot, func, dword_offset, new_value);
 }
 
 // The core scanning logic, now separated and reusable
@@ -97,5 +126,32 @@ int PciFindDevice(uint16_t vendor_id, uint16_t device_id, PciDevice* out_device)
         return 0; // Success
     }
 
+    return -1; // Failure
+}
+
+static void FindByClassCallback(PciDevice device) {
+    if (device_found_flag) return;
+
+    if (device.class_code == target_class &&
+        device.subclass == target_subclass &&
+        device.prog_if == target_prog_if) {
+
+        found_device = device;
+        device_found_flag = 1;
+        }
+}
+
+int PciFindByClass(uint8_t class_code, uint8_t subclass, uint8_t prog_if, PciDevice* out_device) {
+    target_class = class_code;
+    target_subclass = subclass;
+    target_prog_if = prog_if;
+    device_found_flag = 0;
+
+    PciScanBus(FindByClassCallback);
+
+    if (device_found_flag) {
+        *out_device = found_device;
+        return 0; // Success
+    }
     return -1; // Failure
 }
