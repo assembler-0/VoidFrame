@@ -27,6 +27,11 @@ uint8_t PciConfigReadByte(uint8_t bus, uint8_t slot, uint8_t func, uint8_t offse
 }
 
 void PciConfigWriteDWord(uint8_t bus, uint8_t slot, uint8_t func, uint8_t offset, uint32_t data) {
+    if (offset & 0x03) {
+        PrintKernelWarning("PciConfigWriteDWord: Offset must be 4-byte aligned\n");
+        return;
+    }
+
     uint32_t address;
     uint32_t lbus  = (uint32_t)bus;
     uint32_t lslot = (uint32_t)slot;

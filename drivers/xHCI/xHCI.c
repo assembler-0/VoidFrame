@@ -83,7 +83,6 @@ int xHCIControllerInit(XhciController* controller, const PciDevice* pci_dev) {
     // Store the size in the controller for later cleanup
     controller->mmio_size = mmio_size;
 
-    // OPTION 1: Allocate virtual space, then unmap the RAM pages, then map MMIO
     controller->mmio_base = VMemAlloc(mmio_size);
     if (!controller->mmio_base) {
         PrintKernelError("xHCI: Failed to allocate virtual space for MMIO\n");
@@ -114,6 +113,16 @@ int xHCIControllerInit(XhciController* controller, const PciDevice* pci_dev) {
 
     PrintKernel("xHCI: Successfully mapped MMIO to virtual address: 0x");
     PrintKernelHex((uint64_t)controller->mmio_base); PrintKernel("\n");
+
+    // Read important controller limits and features
+    uint32_t hcsparams1 = read_cap_reg(XHCI_CAP_HCSPARAMS1);
+    controller->max_slots = (hcsparams1 & 0xFF);           // How many devices can connect
+    controller->max_ports = (hcsparams1 >> 24) & 0xFF;     // How many USB ports
+    controller->max_intrs = (hcsparams1 >> 8) & 0x7FF;     // Max interrupt sources
+
+    PrintKernel("xHCI: Max slots: "); PrintKernelInt(controller->max_slots);
+    PrintKernel( " Max ports: "); PrintKernelInt(controller->max_ports);
+    PrintKernel(" Max intrs: "); PrintKernelInt(controller->max_intrs); PrintKernel("\n");
 
     // --- Step 4: Verify the mapping works before proceeding ---
     // Test read a known register to verify mapping
@@ -217,7 +226,6 @@ int xHCIControllerInit(XhciController* controller, const PciDevice* pci_dev) {
 void xHCIControllerCleanup(XhciController* controller) {
     if (controller->mmio_base) {
         VMemUnmapMMIO((uint64_t)controller->mmio_base);
-        VMemFree((void*)controller->mmio_base, controller->mmio_size);
         controller->mmio_base = NULL;
     }
 }

@@ -20,13 +20,13 @@
 #include "Serial.h"
 #include "Shell.h"
 #include "StackGuard.h"
-#include "USB/xHCI.h"
 #include "VFS.h"
 #include "VMem.h"
 #include "VesaBIOSExtension.h"
 #include "ethernet/RTL8139.h"
 #include "stdbool.h"
 #include "stdint.h"
+#include "xHCI/xHCI.h"
 
 void KernelMainHigherHalf(void);
 #define KERNEL_STACK_SIZE (16 * 1024) // 16KB stack
