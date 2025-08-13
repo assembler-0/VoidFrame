@@ -108,7 +108,7 @@ void PciEnumerate() {
     PrintKernel("---------------------------\n");
 }
 
-static void FindDeviceCallback(PciDevice device) {
+void FindDeviceCallback(PciDevice device) {
     if (device_found_flag) return; // We already found it, stop searching
 
     if (device.vendor_id == target_vendor_id && device.device_id == target_device_id) {
@@ -151,9 +151,8 @@ int PciFindByClass(uint8_t class_code, uint8_t subclass, uint8_t prog_if, PciDev
     target_subclass = subclass;
     target_prog_if = prog_if;
     device_found_flag = 0;
-
+    PrintKernel(""); // NO REMOVE, I HAVE NO IDEA WHY ITS THERE. IT WORK
     PciScanBus(FindByClassCallback);
-
     if (device_found_flag) {
         *out_device = found_device;
         return 0; // Success
@@ -168,7 +167,7 @@ uint64_t GetPCIMMIOSize(const PciDevice* pci_dev, uint32_t bar_value) {
     uint8_t bar_offset = 0x10; // We'll assume BAR0 for now, but this could be parameterized
 
     // Read the original BAR value
-    uint32_t original_bar = PciConfigReadDWord(pci_dev->bus, pci_dev->device, pci_dev->function, bar_offset);
+    uint32_t original_bar = bar_value;
 
     // Check if this is a 64-bit BAR
     bool is_64bit = ((original_bar & 0x06) == 0x04);
