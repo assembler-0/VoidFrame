@@ -2,6 +2,7 @@
 
 #include "Console.h"
 #include "Io.h"
+#include "stdbool.h"
 #include "stdint.h"
 
 static uint8_t target_class;
@@ -135,10 +136,9 @@ static void FindByClassCallback(PciDevice device) {
     if (device.class_code == target_class &&
         device.subclass == target_subclass &&
         device.prog_if == target_prog_if) {
-
         found_device = device;
         device_found_flag = 1;
-        }
+    }
 }
 
 int PciFindByClass(uint8_t class_code, uint8_t subclass, uint8_t prog_if, PciDevice* out_device) {
@@ -154,4 +154,77 @@ int PciFindByClass(uint8_t class_code, uint8_t subclass, uint8_t prog_if, PciDev
         return 0; // Success
     }
     return -1; // Failure
+}
+
+uint64_t GetPCIMMIOSize(const PciDevice* pci_dev, uint32_t bar_value) {
+    PrintKernel("GetPCIMMIOSize: Calculating BAR size for device...\n");
+
+    // Determine which BAR register this is (0x10, 0x14, 0x18, 0x1C, 0x20, 0x24)
+    uint8_t bar_offset = 0x10; // We'll assume BAR0 for now, but this could be parameterized
+
+    // Read the original BAR value
+    uint32_t original_bar = PciConfigReadDWord(pci_dev->bus, pci_dev->device, pci_dev->function, bar_offset);
+
+    // Check if this is a 64-bit BAR
+    bool is_64bit = ((original_bar & 0x06) == 0x04);
+    uint32_t original_bar_high = 0;
+
+    if (is_64bit) {
+        // Read the upper 32 bits for 64-bit BARs
+        original_bar_high = PciConfigReadDWord(pci_dev->bus, pci_dev->device, pci_dev->function, bar_offset + 4);
+        PrintKernel("GetPCIMMIOSize: Detected 64-bit BAR\n");
+    }
+
+    // Write all 1s to the BAR to determine size
+    PciConfigWriteDWord(pci_dev->bus, pci_dev->device, pci_dev->function, bar_offset, 0xFFFFFFFF);
+    if (is_64bit) {
+        PciConfigWriteDWord(pci_dev->bus, pci_dev->device, pci_dev->function, bar_offset + 4, 0xFFFFFFFF);
+    }
+
+    // Read back to see which bits are implemented
+    uint32_t size_mask = PciConfigReadDWord(pci_dev->bus, pci_dev->device, pci_dev->function, bar_offset);
+    uint32_t size_mask_high = 0;
+
+    if (is_64bit) {
+        size_mask_high = PciConfigReadDWord(pci_dev->bus, pci_dev->device, pci_dev->function, bar_offset + 4);
+    }
+
+    // Restore the original BAR values
+    PciConfigWriteDWord(pci_dev->bus, pci_dev->device, pci_dev->function, bar_offset, original_bar);
+    if (is_64bit) {
+        PciConfigWriteDWord(pci_dev->bus, pci_dev->device, pci_dev->function, bar_offset + 4, original_bar_high);
+    }
+
+    // Calculate size from the mask
+    // Clear the lower 4 bits (they're not part of the address)
+    size_mask &= 0xFFFFFFF0;
+
+    if (size_mask == 0) {
+        PrintKernel("GetPCIMMIOSize: BAR not implemented or error\n");
+        return 0;
+    }
+
+    // Find the size by looking for the first set bit from the right
+    // Size = ~mask + 1
+    uint64_t full_mask = size_mask;
+    if (is_64bit) {
+        full_mask |= ((uint64_t)size_mask_high << 32);
+    }
+
+    uint64_t size = (~full_mask + 1) & full_mask;
+
+    // For 32-bit calculations, ensure we handle it properly
+    if (!is_64bit) {
+        size = (~(uint32_t)size_mask + 1) & 0xFFFFFFFF;
+    }
+
+    PrintKernel("GetPCIMMIOSize: Calculated BAR size: 0x"); PrintKernelHex(size); PrintKernel("\n");
+
+    // Sanity check - xHCI controllers typically have 8KB-64KB of registers
+    if (size < 0x1000 || size > 0x100000) {
+        PrintKernel("GetPCIMMIOSize: Warning - unusual BAR size, using 64KB default\n");
+        return 0x10000; // 64KB default
+    }
+
+    return size;
 }

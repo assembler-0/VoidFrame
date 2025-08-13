@@ -101,13 +101,12 @@
 #define HZ_PER_PROCESS 50          // More responsive per-process scaling (was 30)
 #define QUEUE_PRESSURE_FACTOR 20   // Stronger pressure response
 #define QUEUE_PRESSURE_THRESHOLD 2 // Earlier pressure detection (was 3)
-#define CS_RATE_THRESHOLD_HIGH (8 * FXP_SCALE)  // More sensitive high threshold
-#define CS_RATE_THRESHOLD_LOW  (3 * FXP_SCALE)  // Higher low threshold for stability
+#define CS_RATE_THRESHOLD (8 * FXP_SCALE)  // More sensitive high threshold
 #define FREQ_BOOST_FACTOR   1331   // Stronger boost: 1.3x (was 1.2x)
 #define FREQ_REDUCE_FACTOR  870    // Gentler reduction: 0.85x (was 0.9x)
 #define POWER_TURBO_FACTOR  1434   // More aggressive turbo: 1.4x (was 1.3x)
 #define HYSTERESIS_THRESHOLD 8     // More responsive changes (was 10)
-
+// #define STABILITY_REQUIREMENT 5;    // Confirm stability -- change in Process.c
 typedef struct {
     uint64_t magic;
     uint32_t creator_pid;

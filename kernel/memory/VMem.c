@@ -53,7 +53,7 @@ void VMemInit(void) {
     if (VMemGetPhysAddr(probe) != probe) {
         PANIC("Bootstrap identity mapping failed at IDENTITY_MAP_SIZE boundary");
     }
-    PrintKernelSuccess("[SYSTEM] VMem initialized using existing PML4: ");
+    PrintKernelSuccess("VMem: VMem initialized using existing PML4: ");
     PrintKernelHex(pml4_phys_addr);
     PrintKernel("\n");
 }
@@ -255,7 +255,7 @@ void* VMemAlloc(uint64_t size) {
             if (allocated_size > 0) {
                 VMemFree((void*)vaddr, allocated_size);
             }
-            PrintKernelError("[SYSTEM] VMemAlloc: VMemMap failed with code ");
+            PrintKernelError("VMem: VMemAlloc: VMemMap failed with code ");
             PrintKernelInt(result);
             PrintKernel("\n");
             return NULL;
@@ -401,7 +401,7 @@ void VMemMapKernel(uint64_t kernel_phys_start, uint64_t kernel_phys_end) {
     (void)kernel_phys_start; // Unused, but kept for signature compatibility
     (void)kernel_phys_end;   // Unused, but kept for signature compatibility
 
-    PrintKernelSuccess("[SYSTEM] VMem: Mapping kernel sections...\n");
+    PrintKernelSuccess("VMem: VMem: Mapping kernel sections...\n");
 
     // Map .text section (read-only)
     uint64_t text_start = PAGE_ALIGN_DOWN((uint64_t)_text_start);
@@ -451,7 +451,7 @@ void VMemMapKernel(uint64_t kernel_phys_start, uint64_t kernel_phys_end) {
     }
     PrintKernel("  .bss mapped (RW): 0x"); PrintKernelHex(bss_start); PrintKernel(" - 0x"); PrintKernelHex(bss_end); PrintKernel("\n");
 
-    PrintKernelSuccess("[SYSTEM] VMem: Kernel section mapping complete.\n");
+    PrintKernelSuccess("VMem: VMem: Kernel section mapping complete.\n");
 }
 
 int VMemIsPageMapped(uint64_t vaddr) {
@@ -540,4 +540,124 @@ void PrintVMemStats(void) {
 
 uint64_t VMemGetPML4PhysAddr(void) {
     return (uint64_t)kernel_space.pml4;  // This is already physical
+}
+
+int VMemMapMMIO(uint64_t vaddr, uint64_t paddr, uint64_t size, uint64_t flags) {
+    PrintKernel("VMemMapMMIO: Mapping MMIO 0x"); PrintKernelHex(paddr);
+    PrintKernel(" -> 0x"); PrintKernelHex(vaddr);
+    PrintKernel(" (size: 0x"); PrintKernelHex(size); PrintKernel(")\n");
+
+    if (!IS_PAGE_ALIGNED(vaddr) || !IS_PAGE_ALIGNED(paddr) || !IS_PAGE_ALIGNED(size)) {
+        PrintKernelError("VMemMapMMIO: ERROR - Alignment check failed\n");
+        return VMEM_ERROR_ALIGN;
+    }
+
+    if (vaddr < VIRT_ADDR_SPACE_START || vaddr >= VIRT_ADDR_SPACE_END) {
+        PrintKernelError("VMemMapMMIO: ERROR - Virtual address out of range\n");
+        return VMEM_ERROR_INVALID_ADDR;
+    }
+
+    // Add MMIO-specific flags
+    uint64_t mmio_flags = flags | PAGE_PRESENT | PAGE_NOCACHE | PAGE_WRITETHROUGH;
+
+    // Map each page in the MMIO region
+    uint64_t num_pages = size / PAGE_SIZE;
+    for (uint64_t i = 0; i < num_pages; i++) {
+        uint64_t current_vaddr = vaddr + (i * PAGE_SIZE);
+        uint64_t current_paddr = paddr + (i * PAGE_SIZE);
+
+        irq_flags_t irq_flags = SpinLockIrqSave(&vmem_lock);
+
+        // Get PDP table (level 0)
+        uint64_t pdp_phys = VMemGetPageTablePhys((uint64_t)kernel_space.pml4, current_vaddr, 0, 1);
+        if (!pdp_phys) {
+            SpinUnlockIrqRestore(&vmem_lock, irq_flags);
+            PrintKernelError("VMemMapMMIO: Failed to get/create PDP table\n");
+            return VMEM_ERROR_NOMEM;
+        }
+
+        // Get PD table (level 1)
+        uint64_t pd_phys = VMemGetPageTablePhys(pdp_phys, current_vaddr, 1, 1);
+        if (!pd_phys) {
+            SpinUnlockIrqRestore(&vmem_lock, irq_flags);
+            PrintKernelError("VMemMapMMIO: Failed to get/create PD table\n");
+            return VMEM_ERROR_NOMEM;
+        }
+
+        // Get PT table (level 2)
+        uint64_t pt_phys = VMemGetPageTablePhys(pd_phys, current_vaddr, 2, 1);
+        if (!pt_phys) {
+            SpinUnlockIrqRestore(&vmem_lock, irq_flags);
+            PrintKernelError("VMemMapMMIO: Failed to get/create PT table\n");
+            return VMEM_ERROR_NOMEM;
+        }
+
+        // Access PT through identity mapping if possible
+        uint64_t* pt_virt;
+        if (pt_phys < IDENTITY_MAP_SIZE) {
+            pt_virt = (uint64_t*)pt_phys;
+        } else {
+            pt_virt = (uint64_t*)PHYS_TO_VIRT(pt_phys);
+        }
+
+        int pt_index = (current_vaddr >> PT_SHIFT) & PT_INDEX_MASK;
+
+        // Check if already mapped
+        if (pt_virt[pt_index] & PAGE_PRESENT) {
+            SpinUnlockIrqRestore(&vmem_lock, irq_flags);
+            PrintKernelError("VMemMapMMIO: Page already mapped at index ");
+            PrintKernelInt(pt_index); PrintKernel("\n");
+            return VMEM_ERROR_ALREADY_MAPPED;
+        }
+
+        // Set the mapping with MMIO flags
+        pt_virt[pt_index] = current_paddr | mmio_flags;
+
+        SpinUnlockIrqRestore(&vmem_lock, irq_flags);
+
+        // Flush TLB for this page
+        VMemFlushTLBSingle(current_vaddr);
+
+        PrintKernel("VMemMapMMIO: Mapped page "); PrintKernelInt(i);
+        PrintKernel(" - PTE["); PrintKernelInt(pt_index); PrintKernel("] = 0x");
+        PrintKernelHex(pt_virt[pt_index]); PrintKernel("\n");
+    }
+
+    // Add a memory barrier to ensure all writes are complete
+    __asm__ volatile("mfence" ::: "memory");
+
+    PrintKernelSuccess("VMemMapMMIO: Successfully mapped ");
+    PrintKernelInt(num_pages); PrintKernel(" pages\n");
+
+    return VMEM_SUCCESS;
+}
+
+void VMemUnmapMMIO(uint64_t vaddr) {
+    PrintKernel("VMemUnmapMMIO: Unmapping MMIO at 0x"); PrintKernelHex(vaddr); PrintKernel("\n");
+
+    if (!IS_PAGE_ALIGNED(vaddr)) {
+        PrintKernel("VMemUnmapMMIO: ERROR - Address not page-aligned\n");
+        return;
+    }
+
+    // Use existing VMemGetPageTablePhys to find the page table
+    uint64_t pml4_phys = VMemGetPML4PhysAddr();
+    uint64_t pt_phys = VMemGetPageTablePhys(pml4_phys, vaddr, 1, 0); // Level 1 = PT, don't create
+
+    if (!pt_phys) {
+        PrintKernel("VMemUnmapMMIO: Virtual address was not mapped\n");
+        return;
+    }
+
+    // Clear the page table entry
+    uint64_t pt_index = (vaddr >> PT_SHIFT) & PT_INDEX_MASK;
+    uint64_t* pt_table = (uint64_t*)(pt_phys + KERNEL_VIRTUAL_OFFSET);
+
+    if (pt_table[pt_index] & PAGE_PRESENT) {
+        pt_table[pt_index] = 0;
+        VMemFlushTLBSingle(vaddr);  // Use existing TLB flush function
+        PrintKernel("VMemUnmapMMIO: Successfully unmapped MMIO\n");
+    } else {
+        PrintKernel("VMemUnmapMMIO: Virtual address was not mapped\n");
+    }
 }

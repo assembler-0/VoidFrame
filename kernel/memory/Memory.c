@@ -103,7 +103,7 @@ int MemoryInit(uint32_t multiboot_info_addr) {
         PrintKernel("MB\n");
     }
 
-    PrintKernel("[INFO] Total physical memory detected: ");
+    PrintKernel("Info: Total physical memory detected: ");
     PrintKernelInt(total_pages * PAGE_SIZE / (1024 * 1024));
     PrintKernel("MB ( ");
     PrintKernelInt(total_pages);
@@ -140,7 +140,7 @@ int MemoryInit(uint32_t multiboot_info_addr) {
         tag = (struct MultibootTag*)((uint8_t*)tag + ((tag->size + 7) & ~7));
     }
 
-    PrintKernel("[INFO] Reserving first 1MB of physical memory.\n");
+    PrintKernel("Info: Reserving first 1MB of physical memory.\n");
     for (uint64_t i = 0; i < 0x100000 / PAGE_SIZE; i++) {
         MarkPageUsed(i);
     }
@@ -152,7 +152,7 @@ int MemoryInit(uint32_t multiboot_info_addr) {
     const uint64_t kernel_start_page = kernel_start_addr / PAGE_SIZE;
     const uint64_t kernel_end_page = (kernel_end_addr + PAGE_SIZE - 1) / PAGE_SIZE;
 
-    PrintKernel("[INFO] Reserving kernel memory from page ");
+    PrintKernel("Info: Reserving kernel memory from page ");
     PrintKernelInt(kernel_start_page);
     PrintKernel(" to ");
     PrintKernelInt(kernel_end_page);
@@ -169,7 +169,7 @@ int MemoryInit(uint32_t multiboot_info_addr) {
     for (uint64_t i = mb_info_start_page; i < mb_info_end_page; i++) {
         MarkPageUsed(i);
     }
-    PrintKernelSuccess("[SYSTEM] Physical memory manager initialized\n");
+    PrintKernelSuccess("System: Physical memory manager initialized\n");
     return 0;
 }
 

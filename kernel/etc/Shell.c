@@ -305,7 +305,7 @@ static void ExecuteCommand(const char* cmd) {
 
             if (VfsIsDir(new_path)) {
                 FastMemcpy(current_dir, new_path, 256);
-                PrintKernel("[VFS] DIRECTORY SWITCHED TO ");
+                PrintKernel("VFS: DIRECTORY SWITCHED TO ");
                 PrintKernel(current_dir);
                 PrintKernel("\n");
             } else {
@@ -485,26 +485,26 @@ static void ExecuteCommand(const char* cmd) {
             PrintKernel("Usage: edit <filename>\n");
         }
     } else if (FastStrCmp(cmd_name, "fstest") == 0) {
-        PrintKernel("[VFS] Running filesystem tests...\n");
+        PrintKernel("VFS: Running filesystem tests...\n");
         
         if (VfsCreateDir("/test") == 0) {
-            PrintKernel("[VFS] Created /test directory\n");
+            PrintKernel("VFS: Created /test directory\n");
         }
         
         char* test_text = "Hello VoidFrame!\n";
         int len = 0;
         while (test_text[len]) len++;
         if (VfsWriteFile("/test/hello.txt", test_text, len) >= 0) {
-            PrintKernel("[VFS] Created /test/hello.txt\n");
+            PrintKernel("VFS: Created /test/hello.txt\n");
         }
         
-        PrintKernel("[VFS] Root directory contents:\n");
+        PrintKernel("VFS: Root directory contents:\n");
         VfsListDir("/");
         
-        PrintKernel("[VFS] Test directory contents:\n");
+        PrintKernel("VFS: Test directory contents:\n");
         VfsListDir("/test");
         
-        PrintKernel("[VFS] Contents of /test/hello.txt:\n");
+        PrintKernel("VFS: Contents of /test/hello.txt:\n");
         uint8_t* file_buffer = KernelMemoryAlloc(256);
         if (file_buffer) {
             int bytes = VfsReadFile("/test/hello.txt", file_buffer, 255);
@@ -515,7 +515,7 @@ static void ExecuteCommand(const char* cmd) {
             KernelFree(file_buffer);
         }
         
-        PrintKernel("[VFS] Filesystem tests completed\n");
+        PrintKernel("VFS: Filesystem tests completed\n");
     } else {
         PrintKernel("Unknown command: ");
         PrintKernel(cmd_name);
@@ -530,7 +530,7 @@ void ShellInit(void) {
 }
 
 void ShellProcess(void) {
-    PrintKernelSuccess("[SYSTEM] VoidFrame Shell v0.0.1-beta\n");
+    PrintKernelSuccess("System: VoidFrame Shell v0.0.1-beta\n");
     show_help();
     while (1) {
         if (HasInput()) {

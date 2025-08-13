@@ -64,7 +64,7 @@ int FsInit(void) {
     FsCreateNode("Tmp", FS_DIRECTORY, root_node);
     FsCreateNode("Home", FS_DIRECTORY, root_node);
     
-    PrintKernelSuccess("[SYSTEM] Created standard directories\n");
+    PrintKernelSuccess("VFRFS: Created standard directories\n");
     return 0;
 }
 

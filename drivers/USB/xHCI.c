@@ -1,6 +1,5 @@
 #include "xHCI.h"
 #include "Console.h"
-#include "MemOps.h"
 #include "VMem.h"
 #include "VesaBIOSExtension.h"
 
@@ -19,6 +18,10 @@
 #define USBSTS_HC_HALTED    (1 << 0) // Host Controller Halted bit
 #define USBSTS_CTRL_RDY     (1 << 11) // Controller Not Ready bit (CNR)
 
+#define XHCI_CAP_CAPLENGTH  0x00  // Capability Register Length
+#define XHCI_CAP_HCIVERSION 0x02  // Host Controller Interface Version
+#define XHCI_CAP_HCSPARAMS1 0x04  // Structural Parameters 1
+#define XHCI_CAP_RTSOFF     0x18  // Runtime Register Space Offset
 
 // A helper function to read/write to our controller's registers
 static inline uint32_t xhci_read_reg(volatile uint32_t* reg) {
@@ -29,54 +32,159 @@ static inline void xhci_write_reg(volatile uint32_t* reg, uint32_t value) {
     *reg = value;
 }
 
+// Updated initialization function
+int xHCIControllerInit(XhciController* controller, const PciDevice* pci_dev) {
+    PrintKernel("xHCI: Starting initialization for controller at B:D:F ");
+    PrintKernelHex(pci_dev->bus); PrintKernel(":");
+    PrintKernelHex(pci_dev->device); PrintKernel(":");
+    PrintKernelHex(pci_dev->function); PrintKernel("\n");
 
-int xhci_controller_init(XhciController* controller, const PciDevice* pci_dev) {
-    PrintKernel("xHCI: Initializing controller...\n");
     controller->pci_device = *pci_dev;
 
-    uint32_t bar0 = PciConfigReadDWord(pci_dev->bus, pci_dev->device, pci_dev->function, 0x10);
-    uint32_t bar1 = PciConfigReadDWord(pci_dev->bus, pci_dev->device, pci_dev->function, 0x14);
-    uint32_t mmio_physical_base = bar0 & 0xFFFFFFF0;
+    // --- Step 1: Enable PCI Bus Mastering and Memory Space ---
+    PrintKernel("xHCI: Enabling Bus Mastering and Memory Space...\n");
+    uint32_t pci_command = PciConfigReadDWord(pci_dev->bus, pci_dev->device, pci_dev->function, PCI_COMMAND_REG);
+    pci_command |= (PCI_CMD_MEM_SPACE_EN | PCI_CMD_BUS_MASTER_EN);
+    PciConfigWriteDWord(pci_dev->bus, pci_dev->device, pci_dev->function, PCI_COMMAND_REG, pci_command);
 
-    PrintKernel("xHCI: Found MMIO physical base at 0x"); PrintKernelHex(mmio_physical_base); PrintKernel("\n");
+    // --- Step 2: Discover the 64-bit MMIO Physical Base Address ---
+    uint64_t mmio_physical_base = 0;
+    uint32_t bar_for_size_calc = 0;
+    int found_bar = 0;
 
-    controller->mmio_base = VMemAlloc(PAGE_SIZE);
-    FastMemset((void*)controller->mmio_base, 0, PAGE_SIZE);
+    // xHCI controllers use a 64-bit memory BAR. We must find it.
+    for (int i = 0; i < 6; i++) {
+        uint32_t bar_low = PciConfigReadDWord(pci_dev->bus, pci_dev->device, pci_dev->function, PCI_BAR0_REG + (i * 4));
 
-    // --- STEP 2: Enable Bus Mastering in PCI Config ---
-    uint32_t pci_command = PciConfigReadDWord(pci_dev->bus, pci_dev->device, pci_dev->function, 0x04);
-    pci_command |= (1 << 2); // Set the Bus Master Enable bit
-    PciConfigWriteDWord(pci_dev->bus, pci_dev->device, pci_dev->function, 0x04, pci_command);
+        // Check if it's a memory BAR (Bit 0 is 0)
+        if ((bar_low & 0x1) == 0) {
+            uint8_t type = (bar_low >> 1) & 0x3;
+            if (type == 0x2) { // Type is 0b10, indicating a 64-bit BAR
+                PrintKernel("xHCI: Found 64-bit BAR at index "); PrintKernelInt(i); PrintKernel("\n");
+                uint32_t bar_high = PciConfigReadDWord(pci_dev->bus, pci_dev->device, pci_dev->function, PCI_BAR0_REG + ((i + 1) * 4));
+                mmio_physical_base = ((uint64_t)bar_high << 32) | (bar_low & 0xFFFFFFF0);
+                bar_for_size_calc = bar_low;
+                found_bar = 1;
+                break; // Exit loop once we've found our BAR
+            }
+        }
+    }
 
-    controller->operational_regs = (volatile uint32_t*)(controller->mmio_base + 0x00);
+    if (!found_bar) {
+        PrintKernelError("xHCI: FATAL - No 64-bit memory BAR found!\n");
+        return -1;
+    }
+    PrintKernel("xHCI: Physical MMIO Base Address: 0x"); PrintKernelHex(mmio_physical_base); PrintKernel("\n");
+
+
+    uint64_t mmio_size = GetPCIMMIOSize(&controller->pci_device, bar_for_size_calc);
+    PrintKernel("xHCI: MMIO size: 0x"); PrintKernelHex(mmio_size); PrintKernel("\n");
+
+    // Store the size in the controller for later cleanup
+    controller->mmio_size = mmio_size;
+
+    // OPTION 1: Allocate virtual space, then unmap the RAM pages, then map MMIO
+    controller->mmio_base = VMemAlloc(mmio_size);
+    if (!controller->mmio_base) {
+        PrintKernelError("xHCI: Failed to allocate virtual space for MMIO\n");
+        return -1;
+    }
+
+    // Unmap the RAM pages that VMemAlloc mapped
+    PrintKernel("xHCI: Unmapping RAM pages before MMIO mapping...\n");
+    int unmap_result = VMemUnmap((uint64_t)controller->mmio_base, mmio_size);
+    if (unmap_result != VMEM_SUCCESS) {
+        PrintKernelError("xHCI: Failed to unmap RAM pages\n");
+        VMemFree(controller->mmio_base, mmio_size);
+        return -1;
+    }
+
+    uint64_t map_flags = PAGE_WRITABLE | PAGE_NOCACHE;
+    // Now map the MMIO region to the virtual addresses
+    int map_result = VMemMapMMIO((uint64_t)controller->mmio_base, mmio_physical_base, mmio_size, map_flags);
+    if (map_result != VMEM_SUCCESS) {
+        PrintKernelError("xHCI: FATAL - VMemMapMMIO failed with code ");
+        PrintKernelInt(map_result); PrintKernel("\n");
+        // Don't call VMemFree here since we unmapped the pages manually
+        return -1;
+    }
+
+    // Add a memory barrier to ensure mapping is complete
+    __asm__ volatile("mfence" ::: "memory");
+
+    PrintKernel("xHCI: Successfully mapped MMIO to virtual address: 0x");
+    PrintKernelHex((uint64_t)controller->mmio_base); PrintKernel("\n");
+
+    // --- Step 4: Verify the mapping works before proceeding ---
+    // Test read a known register to verify mapping
+    PrintKernel("xHCI: Testing MMIO mapping...\n");
+    volatile uint8_t* mmio = controller->mmio_base;
+
+    // Read capability length - this should never be 0x00 or 0xFF for a working xHCI
+    uint8_t cap_length = mmio[XHCI_CAP_CAPLENGTH];
+    uint16_t hci_version = *((volatile uint16_t*)(mmio + XHCI_CAP_HCIVERSION));
+    uint32_t rts_offset = *((volatile uint32_t*)(mmio + XHCI_CAP_RTSOFF));
+
+    PrintKernel("xHCI: Raw read test - CAPLENGTH = 0x"); PrintKernelHex(cap_length); PrintKernel("\n");
+    PrintKernel("xHCI: Raw read test - HCIVERSION = 0x"); PrintKernelHex(hci_version); PrintKernel("\n");
+    PrintKernel("xHCI: Raw read test - RTSOFF = 0x"); PrintKernelHex(rts_offset); PrintKernel("\n");
+
+    // Check for invalid values which indicate mapping failure
+    if (cap_length == 0x00 || cap_length == 0xFF || cap_length > 0x40) {
+        PrintKernelError("xHCI: FATAL - CAPLENGTH invalid (0x");
+        PrintKernelHex(cap_length);
+        PrintKernel("). MMIO mapping failed.\n");
+
+        // Additional debugging - try reading multiple locations
+        PrintKernel("xHCI: Debug - First 16 bytes of MMIO:\n");
+        for (int i = 0; i < 16; i++) {
+            PrintKernel("  ["); PrintKernelHex(i); PrintKernel("] = 0x");
+            PrintKernelHex(mmio[i]); PrintKernel("\n");
+        }
+
+        VMemFree((void*)controller->mmio_base, mmio_size);
+        return -1;
+    }
+
+    // Verify HCI version makes sense (should be 0x0100, 0x0110, etc.)
+    if (hci_version < 0x0100 || hci_version > 0x0120) {
+        PrintKernelWarning("xHCI: Warning - Unusual HCI version: 0x");
+        PrintKernelHex(hci_version); PrintKernel("\n");
+    }
+
+    controller->operational_regs = (volatile uint32_t*)(mmio + cap_length);
+    controller->runtime_regs = (volatile uint32_t*)(mmio + (rts_offset & 0xFFFFFFE0));
+
+    PrintKernel("xHCI: MMIO mapping verified successfully!\n");
+    PrintKernel("xHCI: Operational Regs at VAddr: 0x");
+    PrintKernelHex((uint64_t)controller->operational_regs); PrintKernel("\n");
+
+    // --- Step 5: Halt, Reset, and Wait for the Controller ---
+    const int TIMEOUT_MS = 1000;
+    int timeout;
 
     // Make sure the controller is halted before we reset
     uint32_t status = xhci_read_reg(&controller->operational_regs[XHCI_OP_USBSTS / 4]);
     if ((status & USBSTS_HC_HALTED) == 0) {
         PrintKernel("xHCI: Controller not halted. Attempting to stop...\n");
         xhci_write_reg(&controller->operational_regs[XHCI_OP_USBCMD / 4], 0);
-        // Wait for it to halt (with a timeout)
-        int timeout = 500; // 500ms timeout
+
+        timeout = TIMEOUT_MS;
         while (timeout > 0) {
             status = xhci_read_reg(&controller->operational_regs[XHCI_OP_USBSTS / 4]);
             if (status & USBSTS_HC_HALTED) break;
-            // You need a sleep/delay function here!
-            delay(1000);
+            delay(1000); // delay 1ms
             timeout--;
         }
         if (timeout == 0) {
-            PrintKernel("xHCI: FATAL - Controller failed to halt!\n");
+            PrintKernelError("xHCI: FATAL - Controller failed to halt!\n");
             return -1;
         }
     }
-    PrintKernel("xHCI: Controller is halted.\n");
 
-    // Issue the reset command
     PrintKernel("xHCI: Resetting controller...\n");
     xhci_write_reg(&controller->operational_regs[XHCI_OP_USBCMD / 4], USBCMD_HC_RESET);
-
-    // Wait for the reset bit to be cleared by the hardware (with a timeout)
-    int timeout = 1000; // 1 second timeout
+    timeout = TIMEOUT_MS;
     while (timeout > 0) {
         uint32_t cmd = xhci_read_reg(&controller->operational_regs[XHCI_OP_USBCMD / 4]);
         if ((cmd & USBCMD_HC_RESET) == 0) break;
@@ -84,14 +192,12 @@ int xhci_controller_init(XhciController* controller, const PciDevice* pci_dev) {
         timeout--;
     }
     if (timeout == 0) {
-        PrintKernel("xHCI: FATAL - Controller reset timed out!\n");
+        PrintKernelError("xHCI: FATAL - Controller reset timed out!\n");
         return -1;
     }
-    PrintKernel("xHCI: Controller reset complete.\n");
 
-    // The spec says we must also wait until the Controller Not Ready (CNR)
-    // bit in USBSTS is 0.
-    timeout = 1000; // 1 second timeout
+    PrintKernel("xHCI: Waiting for controller to be ready...\n");
+    timeout = TIMEOUT_MS;
     while (timeout > 0) {
         status = xhci_read_reg(&controller->operational_regs[XHCI_OP_USBSTS / 4]);
         if ((status & USBSTS_CTRL_RDY) == 0) break;
@@ -99,29 +205,36 @@ int xhci_controller_init(XhciController* controller, const PciDevice* pci_dev) {
         timeout--;
     }
     if (timeout == 0) {
-        PrintKernel("xHCI: FATAL - Controller not ready after reset!\n");
+        PrintKernelError("xHCI: FATAL - Controller not ready after reset!\n");
         return -1;
     }
-    PrintKernel("xHCI: Controller is ready for setup.\n");
 
-
-    PrintKernel("xHCI: Phase 1 initialization complete!\n");
+    PrintKernelSuccess("xHCI: Controller is ready for setup.\n");
+    PrintKernelSuccess("xHCI: Phase 1 initialization complete!\n");
     return 0; // Success!
 }
 
-void xhci_init() {
+void xHCIControllerCleanup(XhciController* controller) {
+    if (controller->mmio_base) {
+        VMemUnmapMMIO((uint64_t)controller->mmio_base);
+        VMemFree((void*)controller->mmio_base, controller->mmio_size);
+        controller->mmio_base = NULL;
+    }
+}
+
+void xHCIInit() {
     PciDevice xhci_pci_dev;
     if (PciFindByClass(0x0C, 0x03, 0x30, &xhci_pci_dev) == 0) {
-        PrintKernelSuccess("[SYSTEM] Found an xHCI controller!\n");
+        PrintKernelSuccess("xHCI: Found an xHCI controller!\n");
 
-        XhciController my_xhci_controller;
-        if (xhci_controller_init(&my_xhci_controller, &xhci_pci_dev) == 0) {
-            PrintKernelSuccess("[SYSTEM] xHCI driver phase 1 succeeded!\n");
+        XhciController controller;
+        if (xHCIControllerInit(&controller, &xhci_pci_dev) == 0) {
+            PrintKernelSuccess("xHCI: xHCI driver phase 1 succeeded!\n");
         } else {
-            PrintKernelError("[SYSTEM] xHCI driver phase 1 failed!\n");
+            PrintKernelError("xHCI: xHCI driver phase 1 failed!\n");
         }
 
     } else {
-        PrintKernel("[SYSTEM] No xHCI controller found on the system.\n");
+        PrintKernel("xHCI: No xHCI controller found on the system.\n");
     }
 }
