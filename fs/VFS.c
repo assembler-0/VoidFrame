@@ -264,6 +264,69 @@ int VfsDelete(const char* path) {
     return -1;
 }
 
+uint64_t VfsGetFileSize(const char* path) {
+    if (!path) {
+        SerialWrite("[VFS] VfsGetFileSize: NULL path\n");
+        return 0;
+    }
+
+    if (FastStrlen(path, VFS_MAX_PATH_LEN) == 0) {
+        SerialWrite("[VFS] VfsGetFileSize: Empty path\n");
+        return 0;
+    }
+
+    VfsMountStruct* mount = VfsFindMount(path);
+    if (!mount) {
+        SerialWrite("[VFS] VfsGetFileSize: No mount found for path\n");
+        return 0;
+    }
+
+    const char* local_path = VfsStripMount(path, mount);
+    if (!local_path) {
+        SerialWrite("[VFS] VfsGetFileSize: Path strip failed\n");
+        return 0;
+    }
+
+    switch (mount->type) {
+        case VFS_RAMFS: {
+            // Normalize empty path to root
+            if (FastStrlen(local_path, 2) == 0) local_path = "/";
+
+            FsNode* node = FsFind(local_path);
+            if (!node) {
+                SerialWrite("[VFS] VfsGetFileSize: File not found in RAMFS\n");
+                return 0;
+            }
+
+            if (node->type != FS_FILE) {
+                SerialWrite("[VFS] VfsGetFileSize: Path is not a file in RAMFS\n");
+                return 0;
+            }
+
+            SerialWrite("[VFS] VfsGetFileSize: RAMFS file found, size: ");
+            SerialWriteDec((uint32_t)node->size);
+            SerialWrite("\n");
+            return node->size;
+        }
+
+        case VFS_FAT12: {
+            extern int fat12_initialized;
+            if (!fat12_initialized) return 0;
+            // assume
+            char test_buffer[1];
+            int result = Fat12ReadFile(local_path, test_buffer, 1);
+            if (result < 0) return 0; // File doesn't exist
+
+            return 1024 * 1024;
+
+        }
+
+        default:
+            SerialWrite("[VFS] VfsGetFileSize: Unknown filesystem type\n");
+            return 0;
+    }
+}
+
 int VfsIsDir(const char* path) {
     VfsMountStruct* mount = VfsFindMount(path);
     if (!mount) return 0;

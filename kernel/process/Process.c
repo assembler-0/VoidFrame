@@ -1429,32 +1429,9 @@ void DynamoX(void) {
             last_context_switches = context_switches;
         }
 
-        // Shorter yield for better responsiveness
-        for (volatile int i = 0; i < 30000; i++); // Reduced from standard Yield()
+        Yield();
     }
 }
-
-static int SecureTokenUpdate(Process* proc, uint8_t new_flags) {
-    if (!proc || proc->pid == 0) return 0;
-
-    // Only allow self-modification or system process modification
-    Process* caller = GetCurrentProcess();
-    if (caller->pid != proc->pid && caller->privilege_level != PROC_PRIV_SYSTEM) {
-        return 0; // Unauthorized
-    }
-
-    // Create new token with updated flags
-    SecurityToken new_token = proc->token;
-    new_token.flags |= new_flags;
-    new_token.checksum = 0; // Clear for recalculation
-    new_token.checksum = CalculateSecureChecksum(&new_token, proc->pid);
-
-    // Atomic update
-    proc->token = new_token;
-    return 1;
-}
-
-
 
 void Astra(void) {
     PrintKernelSuccess("Astra: Astra initializing...\n");
@@ -1615,8 +1592,8 @@ void Astra(void) {
             threat_level--;
         }
 
-        CheckResourceLeaks();
         CleanupTerminatedProcesses();
+        CheckResourceLeaks();
         Yield();
     }
 }

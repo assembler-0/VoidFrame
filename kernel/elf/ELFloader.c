@@ -4,115 +4,229 @@
 #include "MemOps.h"
 #include "Process.h"
 #include "VFS.h"
+#include "VMem.h"
+#include "Panic.h"
+#include "StackGuard.h"
 
-void* CreateProcessFromElf(const char* filename) {
-    // 1. Read ELF file from VFS
-    uint8_t* elf_data = (uint8_t*)KernelMemoryAlloc(65536);
-    if (!elf_data) {
-        PrintKernel("Failed to allocate memory for ELF data\n");
-        return NULL;
-    }
+// Default maximum ELF file size (4MB)
+#define MAX_ELF_FILE_SIZE (4 * 1024 * 1024)
 
-    int bytes_read = VfsReadFile(filename, (char*)elf_data, 65536);
+// Default process memory limit (16MB)
+#define DEFAULT_PROCESS_MEMORY_LIMIT (16 * 1024 * 1024)
 
-    if (bytes_read <= 0) {
-        PrintKernel("Failed to read ELF file\n");
-        KernelFree(elf_data);
-        return NULL;
-    }
-    PrintKernel("1 - ELF file read successfully\n");
-
-    // 2. Validate ELF header with proper bounds checking
-    if (sizeof(ElfHeader) > 65536) {
-        PrintKernel("ELF header too large");
-        KernelFree(elf_data);
-        return NULL;
-    }
-
-    ElfHeader* header = (ElfHeader*)elf_data;
-
-    // Check magic bytes properly (ELF magic is 0x7F454C46 in little endian)
+static int ValidateElfHeader(const ElfHeader* header, uint64_t file_size) {
+    // Check magic bytes
     if (header->e_ident[0] != 0x7F ||
         header->e_ident[1] != 'E' ||
         header->e_ident[2] != 'L' ||
         header->e_ident[3] != 'F') {
-        PrintKernel("Invalid ELF magic\n");
-        KernelFree(elf_data);
-        return NULL;
+        PrintKernelError("ELF: Invalid magic bytes\n");
+        return 0;
+    }
+
+    // Check class (64-bit)
+    if (header->e_ident[4] != ELFCLASS64) {
+        PrintKernelError("ELF: Only 64-bit ELF files supported\n");
+        return 0;
+    }
+
+    // Check data encoding (little-endian)
+    if (header->e_ident[5] != ELFDATA2LSB) {
+        PrintKernelError("ELF: Only little-endian ELF files supported\n");
+        return 0;
+    }
+
+    // Check file type (executable)
+    if (header->e_type != ET_EXEC && header->e_type != ET_DYN) {
+        PrintKernelError("ELF: Only executable files supported\n");
+        return 0;
     }
 
     // Check architecture
     if (header->e_machine != EM_X86_64) {
-        PrintKernel("Unsupported architecture\n");
-        KernelFree(elf_data);
-        return NULL;
+        PrintKernelError("ELF: Only x86-64 architecture supported\n");
+        return 0;
     }
 
-    // Check if program header table is within bounds
-    if (header->e_phoff + (header->e_phnum * header->e_phentsize) > 65536) {
-        PrintKernel("Program header table out of bounds\n");
-        KernelFree(elf_data);
-        return NULL;
+    // Validate program header table bounds
+    if (header->e_phoff + (header->e_phnum * header->e_phentsize) > file_size) {
+        PrintKernelError("ELF: Program header table out of bounds\n");
+        return 0;
     }
 
-    PrintKernel("2 - ELF header validated\n");
+    // Check for reasonable limits
+    if (header->e_phnum > 64) {
+        PrintKernelError("ELF: Too many program headers\n");
+        return 0;
+    }
 
-    // 3. Find PT_LOAD segments and allocate memory
-    ProgramHeader* ph = (ProgramHeader*)(elf_data + header->e_phoff);
-    void* process_memory = NULL;
-    uint64_t entry_point = header->e_entry;
-    uint64_t base_vaddr = 0;
-    uint64_t total_size = 0;
+    if (header->e_entry == 0) {
+        PrintKernelError("ELF: Invalid entry point\n");
+        return 0;
+    }
 
-    // First pass: calculate total memory needed
+    return 1;
+}
+
+int ValidateElfFile(const uint8_t* elf_data, uint64_t size) {
+    if (!elf_data || size < sizeof(ElfHeader)) {
+        return 0;
+    }
+
+    const ElfHeader* header = (const ElfHeader*)elf_data;
+    return ValidateElfHeader(header, size);
+}
+
+static uint64_t CalculateProcessMemorySize(const ElfHeader* header, const uint8_t* elf_data) {
+    const ProgramHeader* ph = (const ProgramHeader*)(elf_data + header->e_phoff);
+    uint64_t lowest_addr = UINT64_MAX;
+    uint64_t highest_addr = 0;
+
     for (int i = 0; i < header->e_phnum; i++) {
         if (ph[i].p_type == PT_LOAD) {
-            if (base_vaddr == 0) {
-                base_vaddr = ph[i].p_vaddr;
+            if (ph[i].p_vaddr < lowest_addr) {
+                lowest_addr = ph[i].p_vaddr;
             }
-            uint64_t segment_end = ph[i].p_vaddr + ph[i].p_memsz - base_vaddr;
-            if (segment_end > total_size) {
-                total_size = segment_end;
+            uint64_t segment_end = ph[i].p_vaddr + ph[i].p_memsz;
+            if (segment_end > highest_addr) {
+                highest_addr = segment_end;
             }
         }
     }
 
-    if (total_size == 0) {
-        PrintKernel("No loadable segments found\n");
-        KernelFree(elf_data);
-        return NULL;
+    if (lowest_addr == UINT64_MAX) {
+        return 0; // No loadable segments
     }
 
-    // Allocate contiguous memory for entire process image
-    process_memory = KernelMemoryAlloc(total_size);
+    return highest_addr - lowest_addr;
+}
+
+uint32_t CreateProcessFromElf(const char* filename, const ElfLoadOptions* options) {
+    if (!filename) {
+        PrintKernelError("ELF: NULL filename provided\n");
+        return 0;
+    }
+
+    // Set default options if none provided
+    ElfLoadOptions default_opts = {
+        .privilege_level = PROC_PRIV_USER,
+        .security_flags = 0,
+        .max_memory = DEFAULT_PROCESS_MEMORY_LIMIT,
+        .process_name = filename
+    };
+
+    if (!options) {
+        options = &default_opts;
+    }
+
+    // Security check: Only system processes can create system processes
+    Process* creator = GetCurrentProcess();
+    if (options->privilege_level == PROC_PRIV_SYSTEM &&
+        creator->privilege_level != PROC_PRIV_SYSTEM) {
+        PrintKernelError("ELF: Unauthorized attempt to create system process\n");
+        return 0;
+    }
+
+    PrintKernelSuccess("ELF: Loading executable: ");
+    PrintKernel(filename);
+    PrintKernel("\n");
+
+    // 1. Determine file size first
+    uint64_t file_size = VfsGetFileSize(filename);
+    if (file_size == 0 || file_size > MAX_ELF_FILE_SIZE) {
+        PrintKernelError("ELF: File too large or empty (");
+        PrintKernelInt((uint32_t)file_size);
+        PrintKernel(" bytes)\n");
+        return 0;
+    }
+
+    // 2. Allocate memory for ELF file with guards
+    uint8_t* elf_data = (uint8_t*)VMemAllocWithGuards(file_size);
+    if (!elf_data) {
+        PrintKernelError("ELF: Failed to allocate memory for ELF data\n");
+        return 0;
+    }
+
+    // 3. Read ELF file from VFS
+    int bytes_read = VfsReadFile(filename, (char*)elf_data, file_size);
+    if (bytes_read <= 0 || (uint64_t)bytes_read != file_size) {
+        PrintKernelError("ELF: Failed to read file completely\n");
+        VMemFreeWithGuards(elf_data, file_size);
+        return 0;
+    }
+
+    PrintKernelSuccess("ELF: File loaded (");
+    PrintKernelInt((uint32_t)bytes_read);
+    PrintKernel(" bytes)\n");
+
+    // 4. Validate ELF header
+    if (!ValidateElfFile(elf_data, file_size)) {
+        PrintKernelError("ELF: File validation failed\n");
+        VMemFreeWithGuards(elf_data, file_size);
+        return 0;
+    }
+
+    const ElfHeader* header = (const ElfHeader*)elf_data;
+    PrintKernelSuccess("ELF: Header validation passed\n");
+
+    // 5. Calculate required memory for process
+    uint64_t process_memory_size = CalculateProcessMemorySize(header, elf_data);
+    if (process_memory_size == 0) {
+        PrintKernelError("ELF: No loadable segments found\n");
+        VMemFreeWithGuards(elf_data, file_size);
+        return 0;
+    }
+
+    if (process_memory_size > options->max_memory) {
+        PrintKernelError("ELF: Process memory requirement (");
+        PrintKernelInt((uint32_t)process_memory_size);
+        PrintKernel(") exceeds limit (");
+        PrintKernelInt((uint32_t)options->max_memory);
+        PrintKernel(")\n");
+        VMemFreeWithGuards(elf_data, file_size);
+        return 0;
+    }
+
+    // 6. Allocate protected memory for process image
+    void* process_memory = VMemAllocWithGuards(process_memory_size);
     if (!process_memory) {
-        PrintKernel("Failed to allocate process memory\n");
-        KernelFree(elf_data);
-        return NULL;
+        PrintKernelError("ELF: Failed to allocate process memory\n");
+        VMemFreeWithGuards(elf_data, file_size);
+        return 0;
     }
 
-    // Initialize all memory to zero
-    FastMemset(process_memory, 0, total_size);
+    // Initialize memory to zero
+    FastMemset(process_memory, 0, process_memory_size);
 
-    // Second pass: load segments
+    // 7. Load segments into memory
+    const ProgramHeader* ph = (const ProgramHeader*)(elf_data + header->e_phoff);
+    uint64_t base_vaddr = UINT64_MAX;
+
+    // Find the base virtual address
+    for (int i = 0; i < header->e_phnum; i++) {
+        if (ph[i].p_type == PT_LOAD && ph[i].p_vaddr < base_vaddr) {
+            base_vaddr = ph[i].p_vaddr;
+        }
+    }
+
+    // Load each PT_LOAD segment
     for (int i = 0; i < header->e_phnum; i++) {
         if (ph[i].p_type == PT_LOAD) {
             // Validate segment bounds
-            if (ph[i].p_offset + ph[i].p_filesz > 65536) {
-                PrintKernel("Segment data out of ELF bounds\n");
-                KernelFree(process_memory);
-                KernelFree(elf_data);
-                return NULL;
+            if (ph[i].p_offset + ph[i].p_filesz > file_size) {
+                PrintKernelError("ELF: Segment data out of file bounds\n");
+                VMemFreeWithGuards(process_memory, process_memory_size);
+                VMemFreeWithGuards(elf_data, file_size);
+                return 0;
             }
 
-            // Calculate offset within allocated memory
+            // Calculate memory offset
             uint64_t mem_offset = ph[i].p_vaddr - base_vaddr;
-
-            if (mem_offset + ph[i].p_memsz > total_size) {
-                PrintKernel("Segment exceeds allocated memory\n");
-                KernelFree(process_memory);
-                KernelFree(elf_data);
-                return NULL;
+            if (mem_offset + ph[i].p_memsz > process_memory_size) {
+                PrintKernelError("ELF: Segment exceeds allocated memory\n");
+                VMemFreeWithGuards(process_memory, process_memory_size);
+                VMemFreeWithGuards(elf_data, file_size);
+                return 0;
             }
 
             // Copy file data to memory
@@ -122,32 +236,63 @@ void* CreateProcessFromElf(const char* filename) {
                           ph[i].p_filesz);
             }
 
-            // BSS section is already zeroed from initial memset
-            PrintKernel("Loaded segment\n");
+            // Zero out BSS if p_memsz > p_filesz
+            if (ph[i].p_memsz > ph[i].p_filesz) {
+                FastMemset((uint8_t*)process_memory + mem_offset + ph[i].p_filesz,
+                          0,
+                          ph[i].p_memsz - ph[i].p_filesz);
+            }
+
+            PrintKernelSuccess("ELF: Loaded segment ");
+            PrintKernelInt(i);
+            PrintKernel(" (");
+            PrintKernelInt((uint32_t)ph[i].p_memsz);
+            PrintKernel(" bytes)\n");
         }
     }
 
-    PrintKernel("3 - All segments loaded\n");
-
-    // 4. Create kernel process
-    // Adjust entry point to be relative to our allocated memory
-    void* adjusted_entry = (uint8_t*)process_memory + (entry_point - base_vaddr);
-
-    uint32_t pid = CreateProcess((void (*)(void))adjusted_entry);
-    KernelFree(elf_data);
-
-    if (pid == 0) {
-        PrintKernel("Failed to create process\n");
-        KernelFree(process_memory);
-        return NULL;
+    // 8. Calculate adjusted entry point
+    uint64_t entry_point = header->e_entry;
+    if (entry_point < base_vaddr || entry_point >= base_vaddr + process_memory_size) {
+        PrintKernelError("ELF: Entry point outside loaded segments\n");
+        VMemFreeWithGuards(process_memory, process_memory_size);
+        VMemFreeWithGuards(elf_data, file_size);
+        return 0;
     }
 
-    PrintKernel("4 - Process created successfully\n");
-    return (void*)(uintptr_t)pid;
+    void* adjusted_entry = (uint8_t*)process_memory + (entry_point - base_vaddr);
+
+    // 9. Create process with enhanced security
+    uint32_t pid = CreateProcess(
+        (void (*)(void))adjusted_entry
+    );
+
+    // Clean up temporary ELF data
+    VMemFreeWithGuards(elf_data, file_size);
+
+    if (pid == 0) {
+        PrintKernelError("ELF: Failed to create process\n");
+        VMemFreeWithGuards(process_memory, process_memory_size);
+        return 0;
+    }
+
+    PrintKernelSuccess("ELF: Process created successfully (PID: ");
+    PrintKernelInt(pid);
+    PrintKernel(")\n");
+
+    // Check for resource leaks after ELF loading
+    CheckResourceLeaks();
+
+    return pid;
 }
 
-// Convenience function
+// Simple wrapper for backward compatibility
+uint32_t LoadElfExecutable(const char* filename) {
+    return CreateProcessFromElf(filename, NULL);
+}
+
+// Legacy compatibility function
 int LoadElfFromFile(const char* filename) {
-    void* process = CreateProcessFromElf(filename);
-    return process ? 0 : -1;
+    uint32_t pid = LoadElfExecutable(filename);
+    return pid ? 0 : -1;
 }

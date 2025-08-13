@@ -4,6 +4,7 @@
 #include "KernelHeap.h"
 #include "MemOps.h"
 #include "MemPool.h"
+#include "Serial.h"
 #include "StringOps.h"
 
 static Fat12Volume volume;
@@ -81,6 +82,7 @@ int Fat12Init(uint8_t drive) {
     fat12_initialized = 1;
     return 0;
 }
+
 
 // Get next cluster from FAT table
 static uint16_t Fat12GetNextCluster(uint16_t cluster) {

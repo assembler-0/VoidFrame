@@ -26,7 +26,7 @@ int VfsCreateFile(const char* path);
 int VfsCreateDir(const char* path);
 int VfsDelete(const char* path);
 int VfsIsDir(const char* path);
-
+uint64_t VfsGetFileSize(const char* path);
 // Internal
 VfsMountStruct* VfsFindMount(const char* path);
 const char* VfsStripMount(const char* path, VfsMountStruct* mount);

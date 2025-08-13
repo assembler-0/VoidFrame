@@ -174,6 +174,7 @@ static void show_help() {
     PrintKernel("  perf           - Show performance stats\n");
     PrintKernel("  memstat        - Show memory statistics\n");
     PrintKernel("  setfreq <hz>   - Set PIT timer <hz>\n");
+    PrintKernel("  filesize <file>- Get size of <file> in bytes\n");
     PrintKernel("  lspci          - List current PCI device(s)\n");
     PrintKernel("  lsusb          - List current USB device(s) and xHCI controller(s)\n");
     PrintKernel("  arptest        - Perform an ARP test and send packets\n");
@@ -416,15 +417,38 @@ static void ExecuteCommand(const char* cmd) {
         } else {
             PrintKernel("Usage: mkdir <dirname>\n");
         }
+    } else if (FastStrCmp(cmd_name, "filesize") == 0) {
+        char* filename = GetArg(cmd, 1);
+        if (filename) {
+            uint64_t size = VfsGetFileSize(filename);
+            PrintKernel("File size: ");
+            PrintKernelInt((uint32_t)size);
+            PrintKernel(" bytes\n");
+            KernelFree(filename);
+        } else {
+            PrintKernel("Usage: filesize <filename>\n");
+        }
     } else if (FastStrCmp(cmd_name, "elfload") == 0) {
         char* name = GetArg(cmd, 1);
         if (name) {
             char full_path[256];
             ResolvePath(name, full_path, 256);
-            if (LoadElfFromFile(full_path) == 0) {
-                PrintKernel("ELF Executable loaded\n");
+
+            // Enhanced options for ELF loading
+            ElfLoadOptions opts = {
+                .privilege_level = PROC_PRIV_USER,
+                .security_flags = 0,
+                .max_memory = 16 * 1024 * 1024, // 16MB limit
+                .process_name = full_path
+            };
+
+            uint32_t pid = CreateProcessFromElf(full_path, &opts);
+            if (pid != 0) {
+                PrintKernelSuccess("ELF Executable loaded (PID: ");
+                PrintKernelInt(pid);
+                PrintKernel(")\n");
             } else {
-                PrintKernel("Failed to load ELF executable\n");
+                PrintKernelError("Failed to load ELF executable\n");
             }
             KernelFree(name);
         } else {
