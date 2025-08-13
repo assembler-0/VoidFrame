@@ -400,7 +400,7 @@ int xHCIControllerInit(XhciController* controller, const PciDevice* pci_dev) {
 
     // Verify HCI version makes sense (should be 0x0100, 0x0110, etc.)
     if (hci_version < 0x0100 || hci_version > 0x0120) {
-        PrintKernelWarning("xHCI: Warning - Unusual HCI version: 0x");
+        PrintKernel("xHCI: Warning - Unusual HCI version: 0x");
         PrintKernelHex(hci_version); PrintKernel("\n");
     }
 
@@ -535,7 +535,7 @@ void xHCIControllerCleanup(XhciController* controller) {
     }
     
     if (controller->mmio_base) {
-        VMemUnmapMMIO((uint64_t)controller->mmio_base);
+        VMemUnmapMMIO((uint64_t)controller->mmio_base, controller->mmio_size);
         controller->mmio_base = NULL;
     }
 }
@@ -585,7 +585,7 @@ static void xHCIProcessEvents(XhciController* controller) {
         uint32_t trb_type = (event->control >> 10) & 0x3F;
         
         PrintKernel("xHCI: Event TRB Type: "); PrintKernelInt(trb_type); PrintKernel("\n");
-        
+
         // Advance dequeue pointer
         controller->event_ring_dequeue = (controller->event_ring_dequeue + 1) % EVENT_RING_SIZE;
         if (controller->event_ring_dequeue == 0) {
@@ -658,7 +658,7 @@ int xHCIAddressDevice(XhciController* controller, uint8_t slot_id) {
     delay(10000);
     xHCIProcessEvents(controller);
     
-    PrintKernel("xHCI: Device addressed successfully\n");
+    PrintKernel("xHCI: Device addressed\n");
     return 0;
 }
 

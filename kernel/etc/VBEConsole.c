@@ -88,7 +88,13 @@ static void VBEConsoleScroll(void) {
 }
 
 void VBEConsoleRefresh(void) {
+    // Memory barrier before framebuffer operations
+    __asm__ volatile("mfence" ::: "memory");
+
     VBEFillScreen(vbe_console.bg_color);
+
+    // Memory barrier after clear
+    __asm__ volatile("mfence" ::: "memory");
 
     for (int row = 0; row < CONSOLE_ROWS; row++) {
         for (int col = 0; col < CONSOLE_COLS; col++) {
@@ -101,6 +107,9 @@ void VBEConsoleRefresh(void) {
             }
         }
     }
+
+    // Final memory barrier
+    __asm__ volatile("mfence" ::: "memory");
 }
 
 void VBEConsolePutChar(char c) {

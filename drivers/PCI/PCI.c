@@ -2,6 +2,7 @@
 
 #include "Console.h"
 #include "Io.h"
+#include "VesaBIOSExtension.h"
 #include "stdbool.h"
 #include "stdint.h"
 
@@ -151,7 +152,7 @@ int PciFindByClass(uint8_t class_code, uint8_t subclass, uint8_t prog_if, PciDev
     target_subclass = subclass;
     target_prog_if = prog_if;
     device_found_flag = 0;
-    PrintKernel(""); // NO REMOVE, I HAVE NO IDEA WHY ITS THERE. IT WORK
+    delay(1000); // Temporary timing fix
     PciScanBus(FindByClassCallback);
     if (device_found_flag) {
         *out_device = found_device;
@@ -168,7 +169,12 @@ uint64_t GetPCIMMIOSize(const PciDevice* pci_dev, uint32_t bar_value) {
 
     // Read the original BAR value
     uint32_t original_bar = bar_value;
+    uint32_t actual_bar = PciConfigReadDWord(pci_dev->bus, pci_dev->device, pci_dev->function, bar_offset);
 
+    if (actual_bar != bar_value) {
+        PrintKernelWarning("GetPCIMMIOSize: BAR value mismatch, using hardware value\n");
+        original_bar = actual_bar;
+    }
     // Check if this is a 64-bit BAR
     bool is_64bit = ((original_bar & 0x06) == 0x04);
     uint32_t original_bar_high = 0;
