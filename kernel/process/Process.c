@@ -234,7 +234,7 @@ void TerminateProcess(uint32_t pid, TerminationReason reason, uint32_t exit_code
         return; // Race condition, another thread is handling termination
     }
 
-    PrintKernel("[SYSTEM] Terminating PID ");
+    PrintKernel("System: Terminating PID ");
     PrintKernelInt(pid);
     PrintKernel(" Reason: ");
     PrintKernelInt(reason);
@@ -283,7 +283,7 @@ static void ASTerminate(uint32_t pid, const char* reason) {
         return;
     }
 
-    PrintKernelError("[AS] EXECUTING: PID ");
+    PrintKernelError("Astra: EXECUTING: PID ");
     PrintKernelInt(pid);
     PrintKernelError(" - ");
     PrintKernelError(reason);
@@ -317,7 +317,7 @@ static void ASTerminate(uint32_t pid, const char* reason) {
 static void SecurityViolationHandler(uint32_t violator_pid, const char* reason) {
     AtomicInc(&security_violation_count);
 
-    PrintKernelError("[AS] Security breach by PID ");
+    PrintKernelError("Astra: Security breach by PID ");
     PrintKernelInt(violator_pid);
     PrintKernelError(": ");
     PrintKernelError(reason);
@@ -692,7 +692,7 @@ static inline int AstraPreflightCheck(uint32_t slot) {
     // it's a huge red flag that it may have tampered with its own privilege level.
     if (UNLIKELY(proc->privilege_level == PROC_PRIV_SYSTEM &&
                  !(proc->token.flags & (PROC_FLAG_SUPERVISOR | PROC_FLAG_CRITICAL | PROC_FLAG_IMMUNE)))) {
-        PrintKernelError("[AS-PREFLIGHT] Illicit SYSTEM privilege detected for PID: ");
+        PrintKernelError("[AS-PREFLIGHT] Illicit SYSTized EM privilege detected for PID: ");
         PrintKernelInt(proc->pid);
         PrintKernelError("\n");
         ASTerminate(proc->pid, "Unauthorized privilege escalation");
@@ -947,7 +947,7 @@ void Yield() {
 void ProcessExitStub() {
     Process* current = GetCurrentProcess();
 
-    PrintKernelWarning("\n[SYSTEM] Process PID ");
+    PrintKernelWarning("\nSystem: Process PID ");
     PrintKernelInt(current->pid);
     PrintKernelWarning(" exited normally\n");
 
@@ -1121,7 +1121,7 @@ void CleanupTerminatedProcesses(void) {
 
         // Double-check state
         if (proc->state != PROC_ZOMBIE) {
-            PrintKernelWarning("[SYSTEM] Cleanup found non-zombie process (PID: ");
+            PrintKernelWarning("System: Cleanup found non-zombie process (PID: ");
             PrintKernelInt(proc->pid);
             PrintKernelWarning(", State: ");
             PrintKernelInt(proc->state);
@@ -1129,7 +1129,7 @@ void CleanupTerminatedProcesses(void) {
             continue;
         }
 
-        PrintKernel("[SYSTEM] Cleaning up process PID: ");
+        PrintKernel("System: Cleaning up process PID: ");
         PrintKernelInt(proc->pid);
         PrintKernel("\n");
 
@@ -1153,7 +1153,7 @@ void CleanupTerminatedProcesses(void) {
         process_count--;
         cleanup_count++;
 
-        PrintKernel("[SYSTEM] Process PID ");
+        PrintKernel("System: Process PID ");
         PrintKernelInt(pid_backup);
         PrintKernel(" cleaned up successfully (state now PROC_TERMINATED=0)\n");
     }
@@ -1178,7 +1178,7 @@ Process* GetProcessByPid(uint32_t pid) {
 
 
 void DynamoX(void) {
-    PrintKernel("[DX] DynamoX v0.2 Enhanced starting...\n");
+    PrintKernel("DynamoX: DynamoX v0.2 Enhanced starting...\n");
 
     typedef struct {
         uint16_t min_freq;
@@ -1211,7 +1211,7 @@ void DynamoX(void) {
         .min_freq = 200,        // Increased base responsiveness
         .max_freq = 2000,       // Higher ceiling for heavy loads
         .current_freq = PIT_FREQUENCY_HZ,
-        .baseline_freq = 400,   // Smart baseline instead of minimum
+        .baseline_freq = 330,   // Smart baseline instead of minimum
         .learning_rate = (int32_t)(0.25f * FXP_SCALE),    // More aggressive learning
         .momentum = (int32_t)(0.8f * FXP_SCALE),          // Higher momentum for stability
         .prediction_weight = (int32_t)(0.3f * FXP_SCALE), // Predictive component
@@ -1223,13 +1223,7 @@ void DynamoX(void) {
     };
 
     // Enhanced tuning parameters
-    const uint32_t ENHANCED_SAMPLING = 25;      // 2x faster sampling
-    const uint32_t ENHANCED_HZ_PER_PROCESS = 80; // More responsive scaling
-    const uint32_t EMERGENCY_CS_THRESHOLD = 15;  // Context switches per tick
     const uint32_t STABILITY_REQUIREMENT = 5;    // Confirm stability
-    const uint32_t PREDICTION_CONFIDENCE = 70;   // Minimum confidence %
-    const uint32_t ENHANCED_QUEUE_PRESSURE = 30; // Stronger pressure response
-    const uint32_t ENHANCED_HYSTERESIS = 5;      // More responsive changes
 
     uint64_t last_sample_time = GetSystemTicks();
     uint64_t last_context_switches = context_switches;
@@ -1241,7 +1235,7 @@ void DynamoX(void) {
         uint64_t current_time = GetSystemTicks();
         uint64_t time_delta = current_time - last_sample_time;
 
-        if (time_delta >= ENHANCED_SAMPLING) {
+        if (time_delta >= SAMPLING_INTERVAL) {
             // Enhanced process and queue metrics
             int process_count = __builtin_popcountll(active_process_bitmap);
             int ready_count = __builtin_popcountll(ready_process_bitmap);
@@ -1272,20 +1266,20 @@ void DynamoX(void) {
 
             // Factor 1: Enhanced process load with RT awareness
             if (process_count > 1) {
-                uint32_t base_load = (process_count - 1) * ENHANCED_HZ_PER_PROCESS;
-                uint32_t rt_boost = rt_queue_depth * (ENHANCED_HZ_PER_PROCESS / 2);
+                uint32_t base_load = (process_count - 1) * HZ_PER_PROCESS;
+                uint32_t rt_boost = rt_queue_depth * (HZ_PER_PROCESS / 2);
                 target_freq += base_load + rt_boost;
             }
 
             // Factor 2: Intelligent queue pressure with active queue weighting
             if (max_queue_depth > 2) { // More sensitive threshold
                 uint32_t pressure_factor = (active_queues > 2) ?
-                    ENHANCED_QUEUE_PRESSURE * 2 : ENHANCED_QUEUE_PRESSURE;
+                    QUEUE_PRESSURE_FACTOR * 2 : QUEUE_PRESSURE_FACTOR;
                 target_freq += max_queue_depth * pressure_factor;
             }
 
             // Factor 3: Advanced context switch analysis with emergency response
-            if (cs_rate > EMERGENCY_CS_THRESHOLD * FXP_SCALE) {
+            if (cs_rate > CS_RATE_THRESHOLD * FXP_SCALE) {
                 // Emergency thrashing response
                 target_freq = (target_freq * 1536) >> FXP_SHIFT; // 1.5x emergency boost
                 controller.emergency_boost_counter++;
@@ -1297,7 +1291,7 @@ void DynamoX(void) {
                     target_freq = controller.max_freq;
                 }
 
-                PrintKernelWarning("[DX] Emergency boost - CS rate: ");
+                PrintKernelWarning("DynamoX: Emergency boost - CS rate: ");
                 PrintKernelInt(cs_rate >> FXP_SHIFT);
                 PrintKernel("\n");
 
@@ -1386,7 +1380,7 @@ void DynamoX(void) {
 
             // Enhanced hysteresis with stability consideration
             uint32_t change_threshold = (controller.stability_counter > STABILITY_REQUIREMENT) ?
-                ENHANCED_HYSTERESIS / 2 : ENHANCED_HYSTERESIS;
+                HYSTERESIS_THRESHOLD / 2 : HYSTERESIS_THRESHOLD;
 
             if (ABSi(new_freq - controller.current_freq) > change_threshold) {
                 PitSetFrequency(new_freq);
@@ -1417,7 +1411,7 @@ void DynamoX(void) {
 
             // Periodic detailed reporting
             if (controller.consecutive_samples % 100 == 0) {
-                SerialWrite("[DX] Freq: ");
+                SerialWrite("DynamoX: Freq: ");
                 SerialWriteDec(controller.current_freq);
                 SerialWrite("Hz | Load: ");
                 SerialWriteDec(load_percentage);
@@ -1462,7 +1456,7 @@ static int SecureTokenUpdate(Process* proc, uint8_t new_flags) {
 
 
 void Astra(void) {
-    PrintKernelSuccess("[AS] Astra initializing...\n");
+    PrintKernelSuccess("Astra: Astra initializing...\n");
     Process* current = GetCurrentProcess();
 
     // register
@@ -1471,7 +1465,7 @@ void Astra(void) {
     // Create system tracer with enhanced security
     CreateSecureProcess(DynamoX, PROC_PRIV_SYSTEM, PROC_FLAG_CORE);
 
-    PrintKernelSuccess("[AS] Astra active.\n");
+    PrintKernelSuccess("Astra: Astra active.\n");
 
     uint64_t last_check = 0;
 
@@ -1497,7 +1491,7 @@ void Astra(void) {
         }
 
         if (current->state == PROC_DYING || current->state == PROC_ZOMBIE) {
-            PrintKernelError("[AS] CRITICAL: AS compromised - emergency restart\n");
+            PrintKernelError("Astra: CRITICAL: AS compromised - emergency restart\n");
             // Could trigger system recovery here instead of dying
             PANIC("AS terminated - security system failure");
         }
@@ -1522,7 +1516,7 @@ void Astra(void) {
 
                     // This process has elevated privileges but is not a trusted supervisor
                     // or a critical process. This is a massive red flag.
-                    PrintKernelError("[AS] THREAT: Illicit system process detected! PID: ");
+                    PrintKernelError("Astra: THREAT: Illicit system process detected! PID: ");
                     PrintKernelInt(proc->pid);
                     PrintKernelError("\n");
 
@@ -1550,7 +1544,7 @@ void Astra(void) {
                 if (proc->state == PROC_READY || proc->state == PROC_RUNNING) {
                     if (proc->pid != security_manager_pid && // Don't check AS itself
                             UNLIKELY(!ValidateToken(&proc->token, proc->pid))) {
-                        PrintKernelError("[AS] CRITICAL: Token corruption PID ");
+                        PrintKernelError("Astra: CRITICAL: Token corruption PID ");
                         PrintKernelInt(proc->pid);
                         PrintKernelError("\n");
                         threat_level += 10;
@@ -1565,14 +1559,14 @@ void Astra(void) {
             last_memory_scan = current_tick;
 
             if (MLFQscheduler.current_running >= MAX_PROCESSES) {
-                PrintKernelError("[AS] CRITICAL: Scheduler corruption detected\n");
+                PrintKernelError("Astra: CRITICAL: Scheduler corruption detected\n");
                 threat_level += 30;
                 PANIC("AS: Critical scheduler corruption - system compromised");
             }
 
             uint32_t actual_count = __builtin_popcountll(active_process_bitmap);
             if (actual_count != process_count) {
-                PrintKernelError("[AS] CRITICAL: Process count corruption\n");
+                PrintKernelError("Astra: CRITICAL: Process count corruption\n");
                 threat_level += 10;
                 suspicious_activity_count++;
             }
@@ -1586,7 +1580,7 @@ void Astra(void) {
 
             uint32_t popcount_processes = __builtin_popcountll(active_process_bitmap);
             if (UNLIKELY(popcount_processes != process_count)) {
-                PrintKernelError("[AS] CRITICAL: Process count/bitmap mismatch! System may be unstable.\n");
+                PrintKernelError("Astra: CRITICAL: Process count/bitmap mismatch! System may be unstable.\n");
                 // This is a serious issue, but maybe not panic-worthy immediately.
                 // Let's increase the threat level aggressively.
                 threat_level += 20;
@@ -1601,7 +1595,7 @@ void Astra(void) {
         if (threat_level > 40) {
             // DEFCON 2: Aggressive containment.
             // A serious threat was detected. Terminate all non-critical, non-immune processes.
-            PrintKernelError("[AS] DEFCON 2: High threat detected. Initiating selective lockdown.\n");
+            PrintKernelError("Astra: DEFCON 2: High threat detected. Initiating selective lockdown.\n");
             for (int i = 1; i < MAX_PROCESSES; i++) {
                 Process* p = &processes[i];
                 if (p->pid != 0 && p->pid != security_manager_pid &&
@@ -1653,23 +1647,23 @@ int ProcessInit(void) {
     active_process_bitmap |= 1ULL;
 
     // Create AS internally during init - no external access
-    PrintKernel("[SYSTEM] Creating AS (Astra)...\n");
+    PrintKernel("System: Creating AS (Astra)...\n");
     uint32_t AS_pid = CreateSecureProcess(Astra, PROC_PRIV_SYSTEM, PROC_FLAG_CORE);
     if (!AS_pid) {
         PANIC("CRITICAL: Failed to create AS - system compromised");
     }
-    PrintKernelSuccess("[SYSTEM] AS created with PID: ");
+    PrintKernelSuccess("System: AS created with PID: ");
     PrintKernelInt(AS_pid);
     PrintKernel("\n");
 
 
     // Create shell process
-    PrintKernel("[SYSTEM] Creating shell process...\n");
+    PrintKernel("System: Creating shell process...\n");
     uint32_t shell_pid = CreateSecureProcess(ShellProcess, PROC_PRIV_SYSTEM, PROC_FLAG_CORE);
     if (!shell_pid) {
         PANIC("CRITICAL: Failed to create shell process");
     }
-    PrintKernelSuccess("[SYSTEM] Shell created with PID: ");
+    PrintKernelSuccess("System: Shell created with PID: ");
     PrintKernelInt(shell_pid);
     PrintKernel("\n");
 

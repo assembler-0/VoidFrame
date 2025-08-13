@@ -127,7 +127,7 @@ void* CreateProcessFromElf(const char* filename) {
         }
     }
 
-    PrintKernel("3 - All segments loaded");
+    PrintKernel("3 - All segments loaded\n");
 
     // 4. Create kernel process
     // Adjust entry point to be relative to our allocated memory

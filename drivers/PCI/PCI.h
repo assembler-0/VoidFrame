@@ -22,9 +22,20 @@ static uint16_t target_device_id;
 // Callback function pointer type
 typedef void (*PciDeviceCallback)(PciDevice device);
 
+#define PCI_COMMAND_REG         0x04
+#define PCI_BAR0_REG            0x10
+
+// PCI Command Register Bits
+#define PCI_CMD_MEM_SPACE_EN    (1 << 1)
+#define PCI_CMD_BUS_MASTER_EN   (1 << 2)
+
 // Function prototypes
 void PciEnumerate();
 int PciFindDevice(uint16_t vendor_id, uint16_t device_id, PciDevice* out_device);
+int PciFindByClass(uint8_t class, uint8_t subclass, uint8_t prog_if, PciDevice* out_device);
 uint32_t PciConfigReadDWord(uint8_t bus, uint8_t slot, uint8_t func, uint8_t offset);
-
+uint8_t PciConfigReadByte(uint8_t bus, uint8_t slot, uint8_t func, uint8_t offset);
+void PciConfigWriteDWord(uint8_t bus, uint8_t slot, uint8_t func, uint8_t offset, uint32_t data);
+void PciConfigWriteByte(uint8_t bus, uint8_t slot, uint8_t func, uint8_t offset, uint8_t data);
+uint64_t GetPCIMMIOSize(const PciDevice* pci_dev, uint32_t bar_value);
 #endif // PCI_H

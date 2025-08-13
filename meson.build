@@ -50,6 +50,7 @@ inc_dirs = [
     src_root + '/drivers/PCI',
     src_root + '/drivers/ethernet',
     src_root + '/drivers/RTC',
+    src_root + '/drivers/xHCI',
     src_root + '/fs',
     arch_root + '/cpu',
     arch_root + '/gdt',
@@ -97,6 +98,7 @@ c_sources = [
     src_root + '/drivers/PCI/PCI.c',
     src_root + '/drivers/RTC/Rtc.c',
     src_root + '/drivers/ethernet/RTL8139.c',
+    src_root + '/drivers/xHCI/xHCI.c',
     arch_root + '/idt/Idt.c',
     arch_root + '/gdt/Gdt.c',
     arch_root + '/interrupts/Interrupts.c',
@@ -182,7 +184,9 @@ run_target('run',
                       '-m', '1G',
                       '-drive', 'file=VoidFrameDisk.img,format=raw,if=ide',
                       '-boot', 'd',
-                      '-device', 'rtl8139'
+                      '-device', 'rtl8139',
+                      '-device', 'e1000',
+                      '-device', 'nec-usb-xhci,id=xhci',
            ]
 )
 

@@ -26,6 +26,7 @@
 #include "ethernet/RTL8139.h"
 #include "stdbool.h"
 #include "stdint.h"
+#include "xHCI/xHCI.h"
 
 void KernelMainHigherHalf(void);
 #define KERNEL_STACK_SIZE (16 * 1024) // 16KB stack
@@ -38,7 +39,7 @@ static uint32_t g_multiboot_info_addr = 0;
 
 void ParseMultibootInfo(uint32_t info) {
     g_multiboot_info_addr = info;
-    PrintKernel("[INFO] Parsing Multiboot2 info...\n");
+    PrintKernel("Info: Parsing Multiboot2 info...\n");
     uint32_t total_size = *(uint32_t*)info;
     PrintKernel("Multiboot2 total size: ");
     PrintKernelInt(total_size);
@@ -61,7 +62,7 @@ void ParseMultibootInfo(uint32_t info) {
         // Move to the next tag, ensuring 8-byte alignment
         tag = (struct MultibootTag*)((uint8_t*)tag + ((tag->size + 7) & ~7));
     }
-    PrintKernelSuccess("[SYSTEM] Multiboot2 info parsed.\n");
+    PrintKernelSuccess("System: Multiboot2 info parsed.\n");
 }
 
 uint64_t AllocPageTable(const char* table_name) {
@@ -170,13 +171,13 @@ void CPUFeatureValidation(void) {
     bool has_avx2 = (ebx & (1 << 5)) != 0;
 
     if (!has_avx2) {
-        PrintKernelWarning("[SYSTEM] This kernel requires AVX2 support (2013+ CPUs) but the extension is not found. (CPUID)\n");
+        PrintKernelWarning("System: This kernel requires AVX2 support (2013+ CPUs) but the extension is not found. (CPUID)\n");
     }
 }
 
 // Memory hardening functions
 static void SetupMemoryProtection(void) {
-    PrintKernel("[SYSTEM] Setting up memory protection...\n");
+    PrintKernel("System: Setting up memory protection...\n");
 
     // Check CPUID for SMEP/SMAP support
     uint32_t eax, ebx, ecx, edx;
@@ -192,18 +193,18 @@ static void SetupMemoryProtection(void) {
     // Enable SMEP if supported (bit 7 in EBX from CPUID leaf 7)
     if (ebx & (1 << 7)) {
         cr4 |= (1ULL << 20);  // CR4.SMEP
-        PrintKernel("[SYSTEM] SMEP enabled\n");
+        PrintKernel("System: SMEP enabled\n");
         protection_enabled = true;
     }
 
     if (ecx & (1 << 7)) {
-        PrintKernelSuccess("[SYSTEM] STAC/CLAC instructions are supported\n");
+        PrintKernelSuccess("System: STAC/CLAC instructions are supported\n");
     }
 
     // Enable SMAP if supported (bit 20 in EBX from CPUID leaf 7)
     if (ebx & (1 << 20)) {
         cr4 |= (1ULL << 21);  // CR4.SMAP
-        PrintKernel("[SYSTEM] SMAP enabled\n");
+        PrintKernel("System: SMAP enabled\n");
         protection_enabled = true;
     }
 
@@ -216,7 +217,7 @@ static void SetupMemoryProtection(void) {
         efer_lo |= (1u << 11);             // EFER.NXE is bit 11 (low 32 bits)
         // Write back both halves to EFER
         __asm__ volatile("wrmsr" :: "c"(0xC0000080), "a"(efer_lo), "d"(efer_hi));
-        PrintKernel("[SYSTEM] NX bit enabled\n");
+        PrintKernel("System: NX bit enabled\n");
         protection_enabled = true;
     }
 
@@ -224,16 +225,16 @@ static void SetupMemoryProtection(void) {
     __asm__ volatile("cpuid" : "=a"(eax), "=c"(ecx) : "a"(1) : "ebx", "edx");
     if (ecx & (1 << 17)) {
         cr4 |= (1ULL << 17);  // CR4.PCIDE
-        PrintKernel("[SYSTEM] PCID enabled\n");
+        PrintKernel("System: PCID enabled\n");
         protection_enabled = true;
     }
 
     // Write back the modified CR4
     if (protection_enabled) {
         __asm__ volatile("mov %0, %%cr4" :: "r"(cr4) : "memory");
-        PrintKernelSuccess("[SYSTEM] Memory protection configured\n");
+        PrintKernelSuccess("System: Memory protection configured\n");
     } else {
-        PrintKernel("[SYSTEM] No memory protection features available\n");
+        PrintKernel("System: No memory protection features available\n");
     }
 }
 
@@ -243,13 +244,13 @@ static bool CheckHugePageSupport(void) {
     // Check for PSE (Page Size Extension) - required for 2MB pages
     __asm__ volatile("cpuid" : "=a"(eax), "=d"(edx) : "a"(1) : "ebx", "ecx");
     if (!(edx & (1 << 3))) {
-        PrintKernel("[INFO] PSE not supported - no huge pages\n");
+        PrintKernel("Info: PSE not supported - no huge pages\n");
         return false;
     }
 
     // Check for PSE-36 for extended physical addressing
     if (edx & (1 << 17)) {
-        PrintKernel("[INFO] PSE-36 supported\n");
+        PrintKernel("Info: PSE-36 supported\n");
     }
 
     return true;
@@ -263,49 +264,49 @@ void SystemInitS1(const uint32_t info) {
         if (SerialInitPort(COM2) != 0 && SerialInitPort(COM3) != 0 &&SerialInitPort(COM4) != 0) {
             PrintKernelWarning("[WARN] No serial ports initialized. Continuing without serial.\n");
         } else {
-            PrintKernelSuccess("[SYSTEM] Serial driver initialized on fallback port\n");
+            PrintKernelSuccess("System: Serial driver initialized on fallback port\n");
         }
     } else {
-        PrintKernelSuccess("[SYSTEM] Serial driver initialized on COM1\n");
+        PrintKernelSuccess("System: Serial driver initialized on COM1\n");
     }
 
     if (VBEInit(info) != 0) {
-        PrintKernelError("[SYSTEM] Failed to initialize VBE and graphical environment");
+        PrintKernelError("System: Failed to initialize VBE and graphical environment");
     }
-    PrintKernel("[SYSTEM] Starting Console...\n");
+    PrintKernel("System: Starting Console...\n");
     ConsoleInit();
-    PrintKernelSuccess("[SYSTEM] Console initialized\n");
+    PrintKernelSuccess("System: Console initialized\n");
 
     VBEShowSplash();
 
-    PrintKernel("[SYSTEM] Parsing MULTIBOOT2 info...\n");
+    PrintKernel("System: Parsing MULTIBOOT2 info...\n");
     ParseMultibootInfo(info);
-    PrintKernelSuccess("[SYSTEM] MULTIBOOT2 info parsed\n");
+    PrintKernelSuccess("System: MULTIBOOT2 info parsed\n");
 
-    PrintKernel("[SYSTEM] Initializing memory...\n");
+    PrintKernel("System: Initializing memory...\n");
     MemoryInit(g_multiboot_info_addr);
-    PrintKernelSuccess("[SYSTEM] Memory initialized\n");
+    PrintKernelSuccess("System: Memory initialized\n");
 }
 
 // Enhanced SystemInitS2 function with memory enhancements
 static InitResultT SystemInitS2(void) {
     // Initialize virtual memory manager with validation
-    PrintKernel("[INFO] Initializing virtual memory manager...\n");
+    PrintKernel("Info: Initializing virtual memory manager...\n");
     VMemInit();
-    PrintKernelSuccess("[SYSTEM] Virtual memory manager initialized\n");
+    PrintKernelSuccess("System: Virtual memory manager initialized\n");
 
     // Initialize kernel heap with memory statistics
-    PrintKernel("[INFO] Initializing kernel heap...\n");
+    PrintKernel("Info: Initializing kernel heap...\n");
     KernelHeapInit();
-    PrintKernelSuccess("[SYSTEM] Kernel heap initialized\n");
+    PrintKernelSuccess("System: Kernel heap initialized\n");
 
     // NEW: Initialize memory pools early for efficient small allocations
-    PrintKernel("[INFO] Initializing memory pools...\n");
+    PrintKernel("Info: Initializing memory pools...\n");
     InitDefaultPools();
-    PrintKernelSuccess("[SYSTEM] Memory pools initialized\n");
+    PrintKernelSuccess("System: Memory pools initialized\n");
 
     // NEW: Display detailed memory statistics
-    PrintKernel("[INFO] Initial memory statistics:\n");
+    PrintKernel("Info: Initial memory statistics:\n");
     MemoryStats stats;
     GetDetailedMemoryStats(&stats);
     PrintKernel("  Physical: ");
@@ -315,55 +316,55 @@ static InitResultT SystemInitS2(void) {
     PrintKernel("% fragmented\n");
     PrintVMemStats();
 
-    PrintKernel("[INFO] Initializing GDT...\n");
+    PrintKernel("Info: Initializing GDT...\n");
     GdtInit();
-    PrintKernelSuccess("[SYSTEM] GDT initialized\n");
+    PrintKernelSuccess("System: GDT initialized\n");
 
     // Initialize CPU features
-    PrintKernel("[INFO] Initializing CPU features...\n");
+    PrintKernel("Info: Initializing CPU features...\n");
     CpuInit();
-    PrintKernelSuccess("[SYSTEM] CPU features initialized\n");
+    PrintKernelSuccess("System: CPU features initialized\n");
 
     // Initialize IDT
-    PrintKernel("[INFO] Initializing IDT...\n");
+    PrintKernel("Info: Initializing IDT...\n");
     IdtInstall();
-    PrintKernelSuccess("[SYSTEM] IDT initialized\n");
+    PrintKernelSuccess("System: IDT initialized\n");
 
     // Initialize PIC
-    PrintKernel("[INFO] Initializing PIC & PIT...\n");
+    PrintKernel("Info: Initializing PIC & PIT...\n");
     PicInstall();
     PitInstall();
     PIC_enable_irq(0);
-    PrintKernelSuccess("[SYSTEM] PIC & PIT initialized\n");
+    PrintKernelSuccess("System: PIC & PIT initialized\n");
 
     // Initialize keyboard
-    PrintKernel("[INFO] Initializing keyboard...\n");
+    PrintKernel("Info: Initializing keyboard...\n");
     PS2Init();
     PIC_enable_irq(1);
     PIC_enable_irq(12);
-    PrintKernelSuccess("[SYSTEM] Keyboard initialized\n");
+    PrintKernelSuccess("System: Keyboard initialized\n");
 
     // Initialize shell
-    PrintKernel("[INFO] Initializing shell...\n");
+    PrintKernel("Info: Initializing shell...\n");
     ShellInit();
-    PrintKernelSuccess("[SYSTEM] Shell initialized\n");
+    PrintKernelSuccess("System: Shell initialized\n");
 
     // Initialize Process Management
-    PrintKernel("[INFO] Initializing process management...\n");
+    PrintKernel("Info: Initializing process management...\n");
     ProcessInit();
-    PrintKernelSuccess("[SYSTEM] Process management initialized\n");
+    PrintKernelSuccess("System: Process management initialized\n");
 
     // Initialize IDE driver
-    PrintKernel("[INFO] Initializing IDE driver...\n");
+    PrintKernel("Info: Initializing IDE driver...\n");
     int ide_result = IdeInit();
     if (ide_result == IDE_OK) {
-        PrintKernelSuccess("[SYSTEM] IDE driver initialized\n");
+        PrintKernelSuccess("System: IDE driver initialized\n");
 
         // Explicitly initialize FAT12 before VFS
-        PrintKernel("[INFO] Initializing FAT12...\n");
+        PrintKernel("Info: Initializing FAT12...\n");
         if (Fat12Init(0) == 0) {
             PIC_enable_irq(2);
-            PrintKernelSuccess("[SYSTEM] FAT12 Driver initialized\n");
+            PrintKernelSuccess("System: FAT12 Driver initialized\n");
         } else {
             PrintKernelWarning("[WARN] FAT12 initialization failed\n");
         }
@@ -373,35 +374,39 @@ static InitResultT SystemInitS2(void) {
     }
 
     // Initialize ram filesystem
-    PrintKernel("[INFO] Initializing VFRFS...\n");
+    PrintKernel("Info: Initializing VFRFS...\n");
     FsInit();
-    PrintKernelSuccess("[SYSTEM] VFRFS (VoidFrame RamFS) initialized\n");
+    PrintKernelSuccess("System: VFRFS (VoidFrame RamFS) initialized\n");
 
     // Initialize VFS
-    PrintKernel("[INFO] Initializing VFS...\n");
+    PrintKernel("Info: Initializing VFS...\n");
     VfsInit();
-    PrintKernelSuccess("[SYSTEM] VFS initialized\n");
+    PrintKernelSuccess("System: VFS initialized\n");
 
     // NEW: Check if huge pages should be enabled
-    PrintKernel("[INFO] Checking huge page support...\n");
+    PrintKernel("Info: Checking huge page support...\n");
     if (CheckHugePageSupport()) {
-        PrintKernelSuccess("[SYSTEM] Huge pages available\n");
+        PrintKernelSuccess("System: Huge pages available\n");
     }
 
     // Setup memory protection LAST - after all systems are ready
     StackGuardInit();
     SetupMemoryProtection();
 
-    PrintKernel("[INFO] Scanning PCI devices...\n");
+    PrintKernel("Info: Scanning PCI devices...\n");
     PciEnumerate();
-    PrintKernelSuccess("[SYSTEM] PCI devices scanned\n");
+    PrintKernelSuccess("System: PCI devices scanned\n");
 
-    PrintKernel("[INFO] Initializing RTL8139 Driver...\n");
+    PrintKernel("Info: Initializing RTL8139 Driver...\n");
     Rtl8139_Init();
-    PrintKernelSuccess("[SYSTEM] RTL8139 Driver initialized\n");
+    PrintKernelSuccess("System: RTL8139 Driver initialized\n");
+
+    PrintKernel("Info: Initializing xHCI...\n");
+    xHCIInit();
+    PrintKernelSuccess("System: xHCI initialized\n");
 
     // NEW: Final memory health check
-    PrintKernel("[INFO] Final memory health check...\n");
+    PrintKernel("Info: Final memory health check...\n");
     GetDetailedMemoryStats(&stats);
     if (stats.fragmentation_score > 50) {
         PrintKernelWarning("[WARN] High memory fragmentation detected\n");
@@ -423,7 +428,7 @@ void KernelMain(const uint32_t magic, const uint32_t info) {
     console.buffer = (volatile uint16_t*)VGA_BUFFER_ADDR;
     
     ClearScreen();
-    PrintKernelSuccess("[SYSTEM] VoidFrame Kernel - Version 0.0.1-beta loaded\n");
+    PrintKernelSuccess("System: VoidFrame Kernel - Version 0.0.1-beta2 loaded\n");
     PrintKernel("Magic: ");
     PrintKernelHex(magic);
     PrintKernel(", Info: ");
@@ -443,7 +448,7 @@ void KernelMain(const uint32_t magic, const uint32_t info) {
     FastZeroPage(pml4_phys);
     uint64_t pml4_addr = (uint64_t)pml4_phys;
     
-    PrintKernelSuccess("[SYSTEM] Bootstrap: Identity mapping...\n");
+    PrintKernelSuccess("System: Bootstrap: Identity mapping...\n");
     
     for (uint64_t paddr = 0; paddr < IDENTITY_MAP_SIZE; paddr += PAGE_SIZE) {
         BootstrapMapPage(pml4_addr, paddr, paddr, PAGE_WRITABLE);
@@ -454,14 +459,14 @@ void KernelMain(const uint32_t magic, const uint32_t info) {
     }
     PrintKernel("\n");
     
-    PrintKernelSuccess("[SYSTEM] Bootstrap: Mapping kernel...\n");
+    PrintKernelSuccess("System: Bootstrap: Mapping kernel...\n");
     uint64_t kernel_start = (uint64_t)_kernel_phys_start & ~0xFFF;
     uint64_t kernel_end = ((uint64_t)_kernel_phys_end + 0xFFF) & ~0xFFF;
     for (uint64_t paddr = kernel_start; paddr < kernel_end; paddr += PAGE_SIZE) {
         BootstrapMapPage(pml4_addr, paddr + KERNEL_VIRTUAL_OFFSET, paddr, PAGE_WRITABLE);
     }
     
-    PrintKernelSuccess("[SYSTEM] Bootstrap: Mapping kernel stack...\n");
+    PrintKernelSuccess("System: Bootstrap: Mapping kernel stack...\n");
     uint64_t stack_phys_start = (uint64_t)kernel_stack & ~0xFFF;
     uint64_t stack_phys_end = ((uint64_t)kernel_stack + KERNEL_STACK_SIZE + 0xFFF) & ~0xFFF;
 
@@ -469,14 +474,14 @@ void KernelMain(const uint32_t magic, const uint32_t info) {
         BootstrapMapPage(pml4_addr, paddr + KERNEL_VIRTUAL_OFFSET, paddr, PAGE_WRITABLE);
     }
 
-    PrintKernelSuccess("[SYSTEM] Page tables prepared. Switching to virtual addressing...\n");
+    PrintKernelSuccess("System: Page tables prepared. Switching to virtual addressing...\n");
     const uint64_t new_stack_top = ((uint64_t)kernel_stack + KERNEL_VIRTUAL_OFFSET) + KERNEL_STACK_SIZE;
     const uint64_t higher_half_entry = (uint64_t)&KernelMainHigherHalf + KERNEL_VIRTUAL_OFFSET;
     EnablePagingAndJump(pml4_addr, higher_half_entry, new_stack_top);
 }
 
 static void ValidateMemoryLayout(void) {
-    PrintKernel("[SYSTEM] Validating memory layout...\n");
+    PrintKernel("System: Validating memory layout...\n");
 
     const uint64_t kernel_start = (uint64_t)_kernel_phys_start;
     const uint64_t kernel_end = (uint64_t)_kernel_phys_end;
@@ -509,7 +514,7 @@ static void ValidateMemoryLayout(void) {
         PrintKernelError("[ERROR] Virtual address space overlaps with kernel space\n");
     }
 
-    PrintKernelSuccess("[SYSTEM] Memory layout validated\n");
+    PrintKernelSuccess("System: Memory layout validated\n");
 }
 
 static void PrintBootstrapSummary(void) {
@@ -543,7 +548,7 @@ static void PrintBootstrapSummary(void) {
 
 
 void KernelMainHigherHalf(void) {
-    PrintKernelSuccess("[SYSTEM] Successfully jumped to higher half. Virtual memory is active.\n");
+    PrintKernelSuccess("System: Successfully jumped to higher half. Virtual memory is active.\n");
 
     // CPU feature validation
     CPUFeatureValidation();
@@ -557,8 +562,8 @@ void KernelMainHigherHalf(void) {
     // Initialize core systems
     SystemInitS2();
 
-    PrintKernelSuccess("[SYSTEM] Kernel initialization complete\n");
-    PrintKernelSuccess("[SYSTEM] Initializing interrupts...\n");
+    PrintKernelSuccess("System: Kernel initialization complete\n");
+    PrintKernelSuccess("System: Initializing interrupts...\n");
 
     asm volatile("sti");
 

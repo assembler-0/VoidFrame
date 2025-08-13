@@ -106,6 +106,9 @@ int VMemMap(uint64_t vaddr, uint64_t paddr, uint64_t flags);
 int VMemUnmap(uint64_t vaddr, uint64_t size);
 void PrintVMemStats(void);
 void VMemMapKernel(uint64_t kernel_phys_start, uint64_t kernel_phys_end);
+// MMIO-specific mapping functions (bypass RAM validation for hardware registers)
+int VMemMapMMIO(uint64_t vaddr, uint64_t paddr, uint64_t size, uint64_t flags);
+void VMemUnmapMMIO(uint64_t vaddr);
 
 void* VMemAllocWithGuards(uint64_t size);
 void VMemFreeWithGuards(void* ptr, uint64_t size);
