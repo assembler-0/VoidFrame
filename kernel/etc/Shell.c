@@ -18,6 +18,7 @@
 #include "VMem.h"
 #include "VesaBIOSExtension.h"
 #include "stdlib.h"
+#include "xHCI/xHCI.h"
 
 static char command_buffer[256];
 static int cmd_pos = 0;
@@ -173,7 +174,8 @@ static void show_help() {
     PrintKernel("  perf           - Show performance stats\n");
     PrintKernel("  memstat        - Show memory statistics\n");
     PrintKernel("  setfreq <hz>   - Set PIT timer <hz>\n");
-    PrintKernel("  pciscan        - Perform a PCI scan\n");
+    PrintKernel("  lspci          - List current PCI device(s)\n");
+    PrintKernel("  lsusb          - List current USB device(s) and xHCI controller(s)\n");
     PrintKernel("  arptest        - Perform an ARP test and send packets\n");
     PrintKernel("  elfload <path> - Load ELF executable in <path>\n");
     PrintKernel("  clear          - Clear screen\n");
@@ -214,8 +216,10 @@ static void ExecuteCommand(const char* cmd) {
         PrintKernel("MB\n");
         PrintVMemStats();
         PrintHeapStats();
-    } else if (FastStrCmp(cmd_name, "pciscan") == 0) {
+    } else if (FastStrCmp(cmd_name, "lspci") == 0) {
         PciEnumerate();
+    } else if (FastStrCmp(cmd_name, "lsusb") == 0) {
+        xHCIEnumerate();
     } else if (FastStrCmp(cmd_name, "alloc") == 0) {
         char* size_str = GetArg(cmd, 1);
         if (!size_str) {

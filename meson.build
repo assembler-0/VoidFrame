@@ -187,6 +187,7 @@ run_target('run',
                       '-device', 'rtl8139',
                       '-device', 'e1000',
                       '-device', 'nec-usb-xhci,id=xhci',
+                      '-usb', '-device', 'usb-tablet'
            ]
 )
 

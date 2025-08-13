@@ -1,5 +1,6 @@
 #include "xHCI.h"
 #include "Console.h"
+#include "MemOps.h"
 #include "VMem.h"
 #include "VesaBIOSExtension.h"
 
@@ -66,24 +67,24 @@
 #define TRANSFER_RING_SIZE  256
 
 // A helper function to read/write to our controller's registers
-static inline uint32_t xhci_read_reg(volatile uint32_t* reg) {
+static inline uint32_t xHCIReadRegister(volatile uint32_t* reg) {
     return *reg;
 }
 
-static inline void xhci_write_reg(volatile uint32_t* reg, uint32_t value) {
+static inline void xHCIWriteRegister(volatile uint32_t* reg, uint32_t value) {
     *reg = value;
 }
 
-static inline uint64_t xhci_read_reg64(volatile uint64_t* reg) {
+static inline uint64_t xHCIReadRegister64(volatile uint64_t* reg) {
     return *reg;
 }
 
-static inline void xhci_write_reg64(volatile uint64_t* reg, uint64_t value) {
+static inline void xHCIWriteRegister64(volatile uint64_t* reg, uint64_t value) {
     *reg = value;
 }
 
 // Ring management functions
-static int xhci_init_command_ring(XhciController* controller) {
+static int xHCIInitCommandRing(XhciController* controller) {
     PrintKernel("xHCI: Initializing command ring...\n");
     
     // Allocate physically contiguous memory for command ring
@@ -112,14 +113,14 @@ static int xhci_init_command_ring(XhciController* controller) {
     controller->command_ring_cycle = 1;
     
     // Set the Command Ring Control Register
-    xhci_write_reg64((volatile uint64_t*)&controller->operational_regs[XHCI_OP_CRCR / 4], ring_phys | 1);
+    xHCIWriteRegister64((volatile uint64_t*)&controller->operational_regs[XHCI_OP_CRCR / 4], ring_phys | 1);
     
     PrintKernel("xHCI: Command ring initialized at physical address 0x");
     PrintKernelHex(ring_phys); PrintKernel("\n");
     return 0;
 }
 
-static int xhci_init_event_ring(XhciController* controller) {
+static int xHCIInitEventRing(XhciController* controller) {
     PrintKernel("xHCI: Initializing event ring...\n");
     
     // Allocate event ring
@@ -156,21 +157,21 @@ static int xhci_init_event_ring(XhciController* controller) {
     
     // Configure interrupter 0
     volatile uint32_t* interrupter = &controller->runtime_regs[XHCI_RT_IR0 / 4];
-    xhci_write_reg(&interrupter[0], 0x3); // Enable interrupt and set interval
-    xhci_write_reg(&interrupter[1], 1);   // ERST size = 1
+    xHCIWriteRegister(&interrupter[0], 0x3); // Enable interrupt and set interval
+    xHCIWriteRegister(&interrupter[1], 1);   // ERST size = 1
     
     // Set ERST base address
     uint64_t erst_phys = VIRT_TO_PHYS((uint64_t)controller->erst);
-    xhci_write_reg64((volatile uint64_t*)&interrupter[2], erst_phys);
+    xHCIWriteRegister64((volatile uint64_t*)&interrupter[2], erst_phys);
     
     // Set event ring dequeue pointer
-    xhci_write_reg64((volatile uint64_t*)&interrupter[4], event_ring_phys);
+    xHCIWriteRegister64((volatile uint64_t*)&interrupter[4], event_ring_phys);
     
     PrintKernel("xHCI: Event ring initialized\n");
     return 0;
 }
 
-static int xhci_init_device_context_base_array(XhciController* controller) {
+static int xHCIInitDeviceContextBaseArray(XhciController* controller) {
     PrintKernel("xHCI: Initializing Device Context Base Address Array...\n");
     
     // Allocate DCBAA - array of pointers to device contexts
@@ -188,21 +189,21 @@ static int xhci_init_device_context_base_array(XhciController* controller) {
     
     // Set the DCBAAP register
     uint64_t dcbaa_phys = VIRT_TO_PHYS((uint64_t)controller->dcbaa);
-    xhci_write_reg64((volatile uint64_t*)&controller->operational_regs[XHCI_OP_DCBAAP / 4], dcbaa_phys);
+    xHCIWriteRegister64((volatile uint64_t*)&controller->operational_regs[XHCI_OP_DCBAAP / 4], dcbaa_phys);
     
     PrintKernel("xHCI: DCBAA initialized at physical address 0x");
     PrintKernelHex(dcbaa_phys); PrintKernel("\n");
     return 0;
 }
 
-static void xhci_scan_ports(XhciController* controller) {
+static void xHCIScanPorts(XhciController* controller) {
     PrintKernel("xHCI: Scanning ports...\n");
     
     volatile uint32_t* port_regs = (volatile uint32_t*)((uint8_t*)controller->operational_regs + 0x400);
     
     for (uint32_t port = 0; port < controller->max_ports; port++) {
         volatile uint32_t* port_sc = &port_regs[port * 4];
-        uint32_t status = xhci_read_reg(port_sc);
+        uint32_t status = xHCIReadRegister(port_sc);
         
         PrintKernel("xHCI: Port "); PrintKernelInt(port + 1); PrintKernel(": ");
         
@@ -214,18 +215,18 @@ static void xhci_scan_ports(XhciController* controller) {
             // Power on port if not already powered
             if (!(status & PORTSC_PP)) {
                 PrintKernel(" - Powering on port");
-                xhci_write_reg(port_sc, status | PORTSC_PP);
+                xHCIWriteRegister(port_sc, status | PORTSC_PP);
             }
             
             // Reset port to enable it
             if (!(status & PORTSC_PED)) {
                 PrintKernel(" - Resetting port");
-                xhci_write_reg(port_sc, status | PORTSC_PR);
+                xHCIWriteRegister(port_sc, status | PORTSC_PR);
                 
                 // Wait for reset to complete
                 int timeout = 100;
                 while (timeout > 0) {
-                    status = xhci_read_reg(port_sc);
+                    status = xHCIReadRegister(port_sc);
                     if (!(status & PORTSC_PR)) break;
                     delay(1000);
                     timeout--;
@@ -244,23 +245,23 @@ static void xhci_scan_ports(XhciController* controller) {
     }
 }
 
-static int xhci_start_controller(XhciController* controller) {
+static int xHCIStartController(XhciController* controller) {
     PrintKernel("xHCI: Starting controller...\n");
     
     // Set the number of device slots
-    uint32_t config = xhci_read_reg(&controller->operational_regs[XHCI_OP_CONFIG / 4]);
+    uint32_t config = xHCIReadRegister(&controller->operational_regs[XHCI_OP_CONFIG / 4]);
     config = (config & ~0xFF) | controller->max_slots;
-    xhci_write_reg(&controller->operational_regs[XHCI_OP_CONFIG / 4], config);
+    xHCIWriteRegister(&controller->operational_regs[XHCI_OP_CONFIG / 4], config);
     
     // Start the controller
-    uint32_t cmd = xhci_read_reg(&controller->operational_regs[XHCI_OP_USBCMD / 4]);
+    uint32_t cmd = xHCIReadRegister(&controller->operational_regs[XHCI_OP_USBCMD / 4]);
     cmd |= USBCMD_RUN_STOP;
-    xhci_write_reg(&controller->operational_regs[XHCI_OP_USBCMD / 4], cmd);
+    xHCIWriteRegister(&controller->operational_regs[XHCI_OP_USBCMD / 4], cmd);
     
     // Wait for controller to start
     int timeout = 1000;
     while (timeout > 0) {
-        uint32_t status = xhci_read_reg(&controller->operational_regs[XHCI_OP_USBSTS / 4]);
+        uint32_t status = xHCIReadRegister(&controller->operational_regs[XHCI_OP_USBSTS / 4]);
         if (!(status & USBSTS_HC_HALTED)) break;
         delay(1000);
         timeout--;
@@ -415,14 +416,14 @@ int xHCIControllerInit(XhciController* controller, const PciDevice* pci_dev) {
     int timeout;
 
     // Make sure the controller is halted before we reset
-    uint32_t status = xhci_read_reg(&controller->operational_regs[XHCI_OP_USBSTS / 4]);
+    uint32_t status = xHCIReadRegister(&controller->operational_regs[XHCI_OP_USBSTS / 4]);
     if ((status & USBSTS_HC_HALTED) == 0) {
         PrintKernel("xHCI: Controller not halted. Attempting to stop...\n");
-        xhci_write_reg(&controller->operational_regs[XHCI_OP_USBCMD / 4], 0);
+        xHCIWriteRegister(&controller->operational_regs[XHCI_OP_USBCMD / 4], 0);
 
         timeout = TIMEOUT_MS;
         while (timeout > 0) {
-            status = xhci_read_reg(&controller->operational_regs[XHCI_OP_USBSTS / 4]);
+            status = xHCIReadRegister(&controller->operational_regs[XHCI_OP_USBSTS / 4]);
             if (status & USBSTS_HC_HALTED) break;
             delay(1000); // delay 1ms
             timeout--;
@@ -434,10 +435,10 @@ int xHCIControllerInit(XhciController* controller, const PciDevice* pci_dev) {
     }
 
     PrintKernel("xHCI: Resetting controller...\n");
-    xhci_write_reg(&controller->operational_regs[XHCI_OP_USBCMD / 4], USBCMD_HC_RESET);
+    xHCIWriteRegister(&controller->operational_regs[XHCI_OP_USBCMD / 4], USBCMD_HC_RESET);
     timeout = TIMEOUT_MS;
     while (timeout > 0) {
-        uint32_t cmd = xhci_read_reg(&controller->operational_regs[XHCI_OP_USBCMD / 4]);
+        uint32_t cmd = xHCIReadRegister(&controller->operational_regs[XHCI_OP_USBCMD / 4]);
         if ((cmd & USBCMD_HC_RESET) == 0) break;
         delay(1000);
         timeout--;
@@ -450,7 +451,7 @@ int xHCIControllerInit(XhciController* controller, const PciDevice* pci_dev) {
     PrintKernel("xHCI: Waiting for controller to be ready...\n");
     timeout = TIMEOUT_MS;
     while (timeout > 0) {
-        status = xhci_read_reg(&controller->operational_regs[XHCI_OP_USBSTS / 4]);
+        status = xHCIReadRegister(&controller->operational_regs[XHCI_OP_USBSTS / 4]);
         if ((status & USBSTS_CTRL_RDY) == 0) break;
         delay(1000);
         timeout--;
@@ -466,31 +467,31 @@ int xHCIControllerInit(XhciController* controller, const PciDevice* pci_dev) {
     PrintKernel("xHCI: Starting Phase 2 - Data structure initialization...\n");
 
     // Initialize command ring
-    if (xhci_init_command_ring(controller) != 0) {
+    if (xHCIInitCommandRing(controller) != 0) {
         PrintKernelError("xHCI: Failed to initialize command ring\n");
         return -1;
     }
 
     // Initialize event ring
-    if (xhci_init_event_ring(controller) != 0) {
+    if (xHCIInitEventRing(controller) != 0) {
         PrintKernelError("xHCI: Failed to initialize event ring\n");
         return -1;
     }
 
     // Initialize Device Context Base Address Array
-    if (xhci_init_device_context_base_array(controller) != 0) {
+    if (xHCIInitDeviceContextBaseArray(controller) != 0) {
         PrintKernelError("xHCI: Failed to initialize DCBAA\n");
         return -1;
     }
 
     // Start the controller
-    if (xhci_start_controller(controller) != 0) {
+    if (xHCIStartController(controller) != 0) {
         PrintKernelError("xHCI: Failed to start controller\n");
         return -1;
     }
 
     // Scan for connected devices and enumerate them
-    xhci_scan_and_enumerate_ports(controller);
+    xHCIScanAndEnumeratePorts(controller);
 
     PrintKernelSuccess("xHCI: Full initialization complete!\n");
     return 0; // Success!
@@ -499,12 +500,12 @@ int xHCIControllerInit(XhciController* controller, const PciDevice* pci_dev) {
 void xHCIControllerCleanup(XhciController* controller) {
     if (controller->mmio_base) {
         // Stop the controller first
-        xhci_write_reg(&controller->operational_regs[XHCI_OP_USBCMD / 4], 0);
+        xHCIWriteRegister(&controller->operational_regs[XHCI_OP_USBCMD / 4], 0);
         
         // Wait for halt
         int timeout = 1000;
         while (timeout > 0) {
-            uint32_t status = xhci_read_reg(&controller->operational_regs[XHCI_OP_USBSTS / 4]);
+            uint32_t status = xHCIReadRegister(&controller->operational_regs[XHCI_OP_USBSTS / 4]);
             if (status & USBSTS_HC_HALTED) break;
             delay(1000);
             timeout--;
@@ -540,13 +541,13 @@ void xHCIControllerCleanup(XhciController* controller) {
 }
 
 // Command ring management
-static void xhci_ring_command_doorbell(XhciController* controller) {
+static void xHCIRingCommandDoorbell(XhciController* controller) {
     // Ring doorbell for command ring (doorbell 0)
     volatile uint32_t* doorbell_regs = (volatile uint32_t*)((uint8_t*)controller->operational_regs + 0x400 + (controller->max_ports * 0x10));
-    xhci_write_reg(&doorbell_regs[0], 0);
+    xHCIWriteRegister(&doorbell_regs[0], 0);
 }
 
-static int xhci_submit_command(XhciController* controller, XhciTRB* trb) {
+static int xHCISubmitCommand(XhciController* controller, XhciTRB* trb) {
     // Check if ring is full
     uint32_t next_enqueue = (controller->command_ring_enqueue + 1) % (COMMAND_RING_SIZE - 1);
     
@@ -564,13 +565,13 @@ static int xhci_submit_command(XhciController* controller, XhciTRB* trb) {
     }
     
     // Ring doorbell
-    xhci_ring_command_doorbell(controller);
+    xHCIRingCommandDoorbell(controller);
     
     return 0;
 }
 
 // Process events from the event ring
-static void xhci_process_events(XhciController* controller) {
+static void xHCIProcessEvents(XhciController* controller) {
     while (1) {
         XhciTRB* event = &controller->event_ring[controller->event_ring_dequeue];
         
@@ -594,28 +595,28 @@ static void xhci_process_events(XhciController* controller) {
         // Update event ring dequeue pointer in hardware
         volatile uint32_t* interrupter = &controller->runtime_regs[XHCI_RT_IR0 / 4];
         uint64_t erdp = VIRT_TO_PHYS((uint64_t)&controller->event_ring[controller->event_ring_dequeue]);
-        xhci_write_reg64((volatile uint64_t*)&interrupter[4], erdp | (1 << 3)); // Set EHB bit
+        xHCIWriteRegister64((volatile uint64_t*)&interrupter[4], erdp | (1 << 3)); // Set EHB bit
     }
 }
 
 // Enable a device slot
-int xhci_enable_slot(XhciController* controller) {
+int xHCIEnableSlot(XhciController* controller) {
     PrintKernel("xHCI: Enabling device slot...\n");
     
     XhciTRB enable_slot_trb = {0};
     enable_slot_trb.control = (9 << 10); // Enable Slot Command TRB type
     
-    xhci_submit_command(controller, &enable_slot_trb);
+    xHCISubmitCommand(controller, &enable_slot_trb);
     
     // Wait for command completion event
     delay(10000); // 10ms delay
-    xhci_process_events(controller);
+    xHCIProcessEvents(controller);
     
     return 1; // Return slot ID (simplified - should parse from command completion event)
 }
 
 // Address a device
-int xhci_address_device(XhciController* controller, uint8_t slot_id) {
+int xHCIAddressDevice(XhciController* controller, uint8_t slot_id) {
     PrintKernel("xHCI: Addressing device in slot "); PrintKernelInt(slot_id); PrintKernel("\n");
     
     // Allocate device context for this slot
@@ -651,18 +652,18 @@ int xhci_address_device(XhciController* controller, uint8_t slot_id) {
     address_dev_trb.parameter_hi = (uint32_t)(dev_ctx_phys >> 32);
     address_dev_trb.control = (11 << 10) | (slot_id << 24); // Address Device Command TRB
     
-    xhci_submit_command(controller, &address_dev_trb);
+    xHCISubmitCommand(controller, &address_dev_trb);
     
     // Wait for command completion
     delay(10000);
-    xhci_process_events(controller);
+    xHCIProcessEvents(controller);
     
     PrintKernel("xHCI: Device addressed successfully\n");
     return 0;
 }
 
 // Control transfer function
-int xhci_control_transfer(XhciController* controller, uint8_t slot_id, 
+int xHCIControlTransfer(XhciController* controller, uint8_t slot_id, 
                          USBSetupPacket* setup, void* data, uint16_t length) {
     PrintKernel("xHCI: Performing control transfer for slot "); PrintKernelInt(slot_id); PrintKernel("\n");
     
@@ -722,11 +723,11 @@ int xhci_control_transfer(XhciController* controller, uint8_t slot_id,
     
     // Ring doorbell for endpoint
     volatile uint32_t* doorbell_regs = (volatile uint32_t*)((uint8_t*)controller->operational_regs + 0x400 + (controller->max_ports * 0x10));
-    xhci_write_reg(&doorbell_regs[slot_id], 1); // EP0
+    xHCIWriteRegister(&doorbell_regs[slot_id], 1); // EP0
     
     // Wait for completion
     delay(50000); // 50ms
-    xhci_process_events(controller);
+    xHCIProcessEvents(controller);
     
     // Cleanup
     VMemFree(transfer_ring, TRANSFER_RING_SIZE * sizeof(XhciTRB));
@@ -736,22 +737,22 @@ int xhci_control_transfer(XhciController* controller, uint8_t slot_id,
 }
 
 // USB device enumeration
-static int xhci_enumerate_device(XhciController* controller, uint8_t port) {
+static int xHCIEnumerateDevice(XhciController* controller, uint8_t port) {
     PrintKernel("xHCI: Enumerating device on port "); PrintKernelInt(port + 1); PrintKernel("\n");
     
     // Enable a slot for this device
-    uint8_t slot_id = xhci_enable_slot(controller);
+    uint8_t slot_id = xHCIEnableSlot(controller);
     if (slot_id == 0) {
         PrintKernelError("xHCI: Failed to enable slot\n");
         return -1;
     }
     
     // Address the device
-    if (xhci_address_device(controller, slot_id) != 0) {
+    if (xHCIAddressDevice(controller, slot_id) != 0) {
         PrintKernelError("xHCI: Failed to address device\n");
         return -1;
     }
-    
+
     // Get device descriptor
     USBSetupPacket get_device_desc = {
         .bmRequestType = USB_REQTYPE_DIR_IN | USB_REQTYPE_TYPE_STD | USB_REQTYPE_RECIP_DEVICE,
@@ -760,33 +761,40 @@ static int xhci_enumerate_device(XhciController* controller, uint8_t port) {
         .wIndex = 0,
         .wLength = 18
     };
-    
+
+
+
     USBDeviceDescriptor* device_desc = VMemAlloc(sizeof(USBDeviceDescriptor));
     if (!device_desc) {
         PrintKernelError("xHCI: Failed to allocate device descriptor buffer\n");
         return -1;
     }
     
-    if (xhci_control_transfer(controller, slot_id, &get_device_desc, device_desc, 18) == 0) {
+    if (xHCIControlTransfer(controller, slot_id, &get_device_desc, device_desc, 18) == 0) {
         PrintKernel("xHCI: Device enumerated successfully!\n");
         PrintKernel("  Vendor ID: 0x"); PrintKernelHex(device_desc->idVendor); PrintKernel("\n");
         PrintKernel("  Product ID: 0x"); PrintKernelHex(device_desc->idProduct); PrintKernel("\n");
         PrintKernel("  Device Class: 0x"); PrintKernelHex(device_desc->bDeviceClass); PrintKernel("\n");
     }
-    
+
+    if (device_desc->bDeviceClass == 0x03) { // HID class
+        PrintKernelSuccess("xHCI: HID keyboard detected!\n");
+        xHCISetupUSBKeyboard(controller, slot_id);
+    }
+
     VMemFree(device_desc, sizeof(USBDeviceDescriptor));
     return 0;
 }
 
 // Enhanced port scanning with enumeration
-void xhci_scan_and_enumerate_ports(XhciController* controller) {
+void xHCIScanAndEnumeratePorts(XhciController* controller) {
     PrintKernel("xHCI: Scanning and enumerating ports...\n");
     
     volatile uint32_t* port_regs = (volatile uint32_t*)((uint8_t*)controller->operational_regs + 0x400);
     
     for (uint32_t port = 0; port < controller->max_ports; port++) {
         volatile uint32_t* port_sc = &port_regs[port * 4];
-        uint32_t status = xhci_read_reg(port_sc);
+        uint32_t status = xHCIReadRegister(port_sc);
         
         PrintKernel("xHCI: Port "); PrintKernelInt(port + 1); PrintKernel(": ");
         
@@ -798,19 +806,19 @@ void xhci_scan_and_enumerate_ports(XhciController* controller) {
             // Power on port if not already powered
             if (!(status & PORTSC_PP)) {
                 PrintKernel(" - Powering on port");
-                xhci_write_reg(port_sc, status | PORTSC_PP);
+                xHCIWriteRegister(port_sc, status | PORTSC_PP);
                 delay(20000); // Wait 20ms for power stabilization
             }
             
             // Reset port to enable it
             if (!(status & PORTSC_PED)) {
                 PrintKernel(" - Resetting port");
-                xhci_write_reg(port_sc, status | PORTSC_PR);
+                xHCIWriteRegister(port_sc, status | PORTSC_PR);
                 
                 // Wait for reset to complete
                 int timeout = 100;
                 while (timeout > 0) {
-                    status = xhci_read_reg(port_sc);
+                    status = xHCIReadRegister(port_sc);
                     if (!(status & PORTSC_PR)) break;
                     delay(1000);
                     timeout--;
@@ -824,20 +832,100 @@ void xhci_scan_and_enumerate_ports(XhciController* controller) {
                     delay(100000); // 100ms
                     
                     // Enumerate the device
-                    xhci_enumerate_device(controller, port);
+                    xHCIEnumerateDevice(controller, port);
                 } else {
                     PrintKernel(" - Port enable failed");
                 }
             } else {
                 PrintKernel(" - Already enabled");
                 PrintKernel("\n");
-                xhci_enumerate_device(controller, port);
+                xHCIEnumerateDevice(controller, port);
             }
         } else {
             PrintKernel("No device");
         }
         PrintKernel("\n");
     }
+}
+
+// USB device scanner - like lsusb
+void xHCIEnumerate(void) {
+    PrintKernelSuccess("=== xHCI Device Scanner ===\n");
+
+    PciDevice xhci_pci_dev;
+    if (PciFindByClass(0x0C, 0x03, 0x30, &xhci_pci_dev) == 0) {
+        PrintKernelError("Found xHCI Controller at PCI "); PrintKernelHex(xhci_pci_dev.bus); PrintKernel(":");
+        PrintKernelHex(xhci_pci_dev.device); PrintKernel(":");
+        PrintKernelHex(xhci_pci_dev.function); PrintKernel("\n");
+
+        XhciController controller;
+        if (xHCIControllerInit(&controller, &xhci_pci_dev) == 0) {
+
+            PrintKernel("Scanning USB ports...\n");
+
+            // Scan all ports
+            for (uint32_t port = 1; port <= controller.max_ports; port++) {
+                volatile uint32_t* port_regs = (volatile uint32_t*)
+                    ((uint8_t*)controller.operational_regs + 0x400 + ((port - 1) * 0x10));
+
+                uint32_t portsc = *port_regs;
+
+                if (portsc & 0x1) { // CCS - Device connected
+                    PrintKernel("Port "); PrintKernelInt(port); PrintKernel(": Device connected\n");
+
+                    // Try to get device info
+                    int slot_id = xHCIEnableSlot(&controller);
+                    if (slot_id > 0) {
+                        if (xHCIAddressDevice(&controller, slot_id) == 0) {
+
+                            // Get device descriptor
+                            USBSetupPacket setup = {
+                                .bmRequestType = 0x80,
+                                .bRequest = 6,
+                                .wValue = 0x0100,
+                                .wIndex = 0,
+                                .wLength = sizeof(USBDeviceDescriptor)
+                            };
+
+                            USBDeviceDescriptor device_desc;
+                            if (xHCIControlTransfer(&controller, slot_id, &setup,
+                                                    &device_desc, sizeof(device_desc)) == 0) {
+
+                                PrintKernel("  Vendor: "); PrintKernelHex(device_desc.idVendor);
+                                PrintKernel("  Product: "); PrintKernelHex(device_desc.idProduct);
+                                PrintKernel("  Class: "); PrintKernelHex(device_desc.bDeviceClass);
+                                PrintKernel("\n");
+
+                                // Device type
+                                switch (device_desc.bDeviceClass) {
+                                    case 0x03: PrintKernel("  Type: HID Device (Keyboard/Mouse)\n"); break;
+                                    case 0x08: PrintKernel("  Type: Mass Storage Device\n"); break;
+                                    case 0x09: PrintKernel("  Type: USB Hub\n"); break;
+                                    default: PrintKernel("  Type: Other Device\n"); break;
+                                }
+                            } else {
+                                PrintKernel("  Failed to read device descriptor\n");
+                            }
+                        } else {
+                            PrintKernel("  Failed to address device\n");
+                        }
+                    } else {
+                        PrintKernel("  Failed to enable slot\n");
+                    }
+                } else {
+                    PrintKernel("Port "); PrintKernelInt(port); PrintKernel(": No device\n");
+                }
+            }
+
+            xHCIControllerCleanup(&controller);
+        } else {
+            PrintKernelError("Failed to initialize xHCI controller\n");
+        }
+    } else {
+        PrintKernel("No xHCI controller found\n");
+    }
+
+    PrintKernel("==================\n");
 }
 
 void xHCIInit() {
@@ -850,7 +938,7 @@ void xHCIInit() {
             PrintKernelSuccess("xHCI: xHCI driver initialization succeeded!\n");
             
             // Enumerate connected devices
-            xhci_scan_and_enumerate_ports(&controller);
+            xHCIScanAndEnumeratePorts(&controller);
             
             // Store the controller globally or pass it to a USB stack
         } else {
@@ -859,5 +947,105 @@ void xHCIInit() {
 
     } else {
         PrintKernel("xHCI: No xHCI controller found on the system.\n");
+    }
+}
+
+int xHCIConfigureEndpoint(XhciController* controller, uint8_t slot_id) {
+    if (!controller || slot_id == 0 || slot_id > controller->max_slots) {
+        return -1;
+    }
+
+    XhciDeviceContext* dev_ctx = controller->device_contexts[slot_id - 1];
+    if (!dev_ctx) {
+        return -1;
+    }
+
+    // Configure endpoint 1 IN (interrupt endpoint for keyboard)
+    XhciEndpointContext* ep_ctx = &dev_ctx->endpoints[1];
+
+    ep_ctx->ep_type = 3;           // Interrupt IN
+    ep_ctx->max_packet_size = 8;   // Standard HID keyboard report
+    ep_ctx->interval = 3;          // 8ms polling
+    ep_ctx->max_burst_size = 0;
+    ep_ctx->error_count = 3;
+
+    // Allocate transfer ring for endpoint
+    XhciTRB* ep_ring = (XhciTRB*)VMemAlloc(1);
+    if (!ep_ring) return -1;
+
+    FastMemset(ep_ring, 0, 4096);
+
+    // Setup link TRB for circular ring
+    ep_ring[255].parameter_lo = (uint32_t)(uintptr_t)ep_ring;
+    ep_ring[255].parameter_hi = (uint32_t)((uintptr_t)ep_ring >> 32);
+    ep_ring[255].control = (6 << 10) | (1 << 1) | 1;
+
+    ep_ctx->tr_dequeue_pointer = (uint64_t)(uintptr_t)ep_ring | 1;
+
+    // Submit Configure Endpoint command
+    uint32_t cmd_idx = controller->command_ring_enqueue;
+    XhciTRB* cmd_trb = &controller->command_ring[cmd_idx];
+
+    cmd_trb->parameter_lo = (uint32_t)(uintptr_t)dev_ctx;
+    cmd_trb->parameter_hi = (uint32_t)((uintptr_t)dev_ctx >> 32);
+    cmd_trb->status = 0;
+    cmd_trb->control = (11 << 10) | (controller->command_ring_cycle ? 1 : 0);
+
+    controller->command_ring_enqueue = (controller->command_ring_enqueue + 1) % 256;
+    if (controller->command_ring_enqueue == 0) {
+        controller->command_ring_cycle = !controller->command_ring_cycle;
+    }
+
+    xHCIRingCommandDoorbell(controller);
+    delay(10000);
+    xHCIProcessEvents(controller);
+
+    return 0;
+}
+
+int xHCIInterruptTransfer(XhciController* controller, uint8_t slot_id,
+                           uint8_t endpoint, void* buffer, uint16_t length) {
+    if (!controller || !buffer || slot_id == 0) return -1;
+
+    XhciDeviceContext* dev_ctx = controller->device_contexts[slot_id - 1];
+    if (!dev_ctx) return -1;
+
+    XhciEndpointContext* ep_ctx = &dev_ctx->endpoints[endpoint];
+    XhciTRB* ep_ring = (XhciTRB*)(uintptr_t)(ep_ctx->tr_dequeue_pointer & ~0xFULL);
+
+    if (!ep_ring) return -1;
+
+    static uint32_t ep_enqueue = 0;
+    XhciTRB* data_trb = &ep_ring[ep_enqueue];
+
+    data_trb->parameter_lo = (uint32_t)(uintptr_t)buffer;
+    data_trb->parameter_hi = (uint32_t)((uintptr_t)buffer >> 32);
+    data_trb->status = length;
+    data_trb->control = (1 << 10) | (1 << 5) | 1; // Normal TRB, IOC, Cycle
+
+    ep_enqueue = (ep_enqueue + 1) % 255;
+
+    // Ring doorbell for endpoint
+    volatile uint32_t* doorbell = (volatile uint32_t*)((uintptr_t)controller->mmio_base +
+                                                       0x1000 + (slot_id * 4));
+    *doorbell = endpoint;
+
+    return 0;
+}
+
+// USB Keyboard setup function
+void xHCISetupUSBKeyboard(XhciController* controller, uint8_t slot_id) {
+    PrintKernelSuccess("xHCI: Configuring USB keyboard on slot ");
+    PrintKernelInt(slot_id);
+    PrintKernel("\n");
+
+    if (xHCIConfigureEndpoint(controller, slot_id) == 0) {
+        PrintKernelSuccess("xHCI: USB keyboard configured and ready!\n");
+
+        // Setup continuous interrupt transfers for keyboard input
+        static USBHIDKeyboardReport kbd_report;
+        xHCIInterruptTransfer(controller, slot_id, 1, &kbd_report, sizeof(kbd_report));
+    } else {
+        PrintKernelError("xHCI: Failed to configure keyboard endpoint\n");
     }
 }

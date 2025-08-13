@@ -153,6 +153,12 @@ typedef struct {
     uint8_t bInterval;
 } USBEndpointDescriptor;
 
+typedef struct {
+    uint8_t modifiers;    // Ctrl, Shift, Alt, etc.
+    uint8_t reserved;     // Reserved byte
+    uint8_t keycodes[6];  // Up to 6 simultaneous key presses
+} USBHIDKeyboardReport;
+
 // USB Request Types
 #define USB_REQ_GET_STATUS       0
 #define USB_REQ_CLEAR_FEATURE    1
@@ -186,15 +192,23 @@ int xHCIControllerInit(XhciController* controller, const PciDevice* pci_dev);
 void xHCIControllerCleanup(XhciController* controller);
 
 // Command functions
-int xhci_enable_slot(XhciController* controller);
-int xhci_address_device(XhciController* controller, uint8_t slot_id);
-int xhci_configure_endpoint(XhciController* controller, uint8_t slot_id);
+int xHCIEnableSlot(XhciController* controller);
+int xHCIAddressDevice(XhciController* controller, uint8_t slot_id);
+static void xHCIScanPorts(XhciController* controller);
+int xHCIConfigureEndpoint(XhciController* controller, uint8_t slot_id);
 
 // Transfer functions
-int xhci_control_transfer(XhciController* controller, uint8_t slot_id,
+int xHCIControlTransfer(XhciController* controller, uint8_t slot_id,
                          USBSetupPacket* setup, void* data, uint16_t length);
-int xhci_bulk_transfer(XhciController* controller, uint8_t slot_id,
+int xHCIBulkTransfer(XhciController* controller, uint8_t slot_id,
                       uint8_t endpoint, void* data, uint32_t length, int direction);
-void xhci_scan_and_enumerate_ports(XhciController* controller);
+void xHCIScanAndEnumeratePorts(XhciController* controller);
+int xHCIInterruptTransfer(XhciController* controller, uint8_t slot_id,
+                           uint8_t endpoint, void* buffer, uint16_t length);
 
+// USB Keyboard
+void xHCISetupUSBKeyboard(XhciController* controller, uint8_t slot_id);
+
+// Misc.
+void xHCIEnumerate(void);
 #endif // XHCI_H
