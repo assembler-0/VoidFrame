@@ -947,9 +947,9 @@ void Yield() {
 void ProcessExitStub() {
     Process* current = GetCurrentProcess();
 
-    PrintKernelWarning("\nSystem: Process PID ");
+    PrintKernel("\nSystem: Process PID ");
     PrintKernelInt(current->pid);
-    PrintKernelWarning(" exited normally\n");
+    PrintKernel(" exited normally\n");
 
     // Use the safe termination function
     TerminateProcess(current->pid, TERM_NORMAL, 0);

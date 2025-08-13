@@ -217,9 +217,9 @@ static void ExecuteCommand(const char* cmd) {
         PrintVMemStats();
         PrintHeapStats();
     } else if (FastStrCmp(cmd_name, "lspci") == 0) {
-        PciEnumerate();
+        CreateProcess(PciEnumerate);
     } else if (FastStrCmp(cmd_name, "lsusb") == 0) {
-        xHCIEnumerate();
+        CreateProcess(xHCIEnumerate);
     } else if (FastStrCmp(cmd_name, "alloc") == 0) {
         char* size_str = GetArg(cmd, 1);
         if (!size_str) {

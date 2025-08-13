@@ -400,7 +400,7 @@ int xHCIControllerInit(XhciController* controller, const PciDevice* pci_dev) {
 
     // Verify HCI version makes sense (should be 0x0100, 0x0110, etc.)
     if (hci_version < 0x0100 || hci_version > 0x0120) {
-        PrintKernelWarning("xHCI: Warning - Unusual HCI version: 0x");
+        PrintKernel("xHCI: Warning - Unusual HCI version: 0x");
         PrintKernelHex(hci_version); PrintKernel("\n");
     }
 
@@ -535,7 +535,7 @@ void xHCIControllerCleanup(XhciController* controller) {
     }
     
     if (controller->mmio_base) {
-        VMemUnmapMMIO((uint64_t)controller->mmio_base);
+        VMemUnmapMMIO((uint64_t)controller->mmio_base, controller->mmio_size);
         controller->mmio_base = NULL;
     }
 }
@@ -585,7 +585,7 @@ static void xHCIProcessEvents(XhciController* controller) {
         uint32_t trb_type = (event->control >> 10) & 0x3F;
         
         PrintKernel("xHCI: Event TRB Type: "); PrintKernelInt(trb_type); PrintKernel("\n");
-        
+
         // Advance dequeue pointer
         controller->event_ring_dequeue = (controller->event_ring_dequeue + 1) % EVENT_RING_SIZE;
         if (controller->event_ring_dequeue == 0) {
@@ -658,7 +658,7 @@ int xHCIAddressDevice(XhciController* controller, uint8_t slot_id) {
     delay(10000);
     xHCIProcessEvents(controller);
     
-    PrintKernel("xHCI: Device addressed successfully\n");
+    PrintKernel("xHCI: Device addressed\n");
     return 0;
 }
 
@@ -850,11 +850,10 @@ void xHCIScanAndEnumeratePorts(XhciController* controller) {
 
 // USB device scanner - like lsusb
 void xHCIEnumerate(void) {
-    PrintKernelSuccess("=== xHCI Device Scanner ===\n");
-
+    PrintKernel("--- xHCI Enumeration ---\n");
     PciDevice xhci_pci_dev;
     if (PciFindByClass(0x0C, 0x03, 0x30, &xhci_pci_dev) == 0) {
-        PrintKernelError("Found xHCI Controller at PCI "); PrintKernelHex(xhci_pci_dev.bus); PrintKernel(":");
+        PrintKernel("Found xHCI Controller at PCI "); PrintKernelHex(xhci_pci_dev.bus); PrintKernel(":");
         PrintKernelHex(xhci_pci_dev.device); PrintKernel(":");
         PrintKernelHex(xhci_pci_dev.function); PrintKernel("\n");
 
@@ -925,14 +924,13 @@ void xHCIEnumerate(void) {
         PrintKernel("No xHCI controller found\n");
     }
 
-    PrintKernel("==================\n");
+    PrintKernel("------------------\n");
 }
 
 void xHCIInit() {
     PciDevice xhci_pci_dev;
     if (PciFindByClass(0x0C, 0x03, 0x30, &xhci_pci_dev) == 0) {
         PrintKernelSuccess("xHCI: Found an xHCI controller!\n");
-
         XhciController controller;
         if (xHCIControllerInit(&controller, &xhci_pci_dev) == 0) {
             PrintKernelSuccess("xHCI: xHCI driver initialization succeeded!\n");
