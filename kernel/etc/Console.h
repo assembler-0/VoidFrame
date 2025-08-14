@@ -6,11 +6,29 @@
 #define VGA_HEIGHT          25
 #define VGA_BUFFER_SIZE     (VGA_WIDTH * VGA_HEIGHT)
 
-#define VGA_COLOR_DEFAULT   0x07
-#define VGA_COLOR_SUCCESS   0x0B
-#define VGA_COLOR_ERROR     0x0C
-#define VGA_COLOR_WARNING   0x0E
-#define VGA_COLOR_WHITE     0x0F
+#define VGA_COLOR_BLACK      0x00
+#define VGA_COLOR_BLUE       0x01
+#define VGA_COLOR_GREEN      0x02
+#define VGA_COLOR_CYAN       0x03
+#define VGA_COLOR_RED        0x04
+#define VGA_COLOR_MAGENTA    0x05
+#define VGA_COLOR_BROWN      0x06
+#define VGA_COLOR_LIGHT_GREY 0x07
+#define VGA_COLOR_DARK_GREY  0x08
+#define VGA_COLOR_LIGHT_BLUE 0x09
+#define VGA_COLOR_LIGHT_GREEN 0x0A
+#define VGA_COLOR_LIGHT_CYAN  0x0B
+#define VGA_COLOR_LIGHT_RED   0x0C
+#define VGA_COLOR_LIGHT_MAGENTA 0x0D
+#define VGA_COLOR_LIGHT_YELLOW 0x0E
+#define VGA_COLOR_WHITE       0x0F
+
+#define VGA_COLOR_DEFAULT   VGA_COLOR_LIGHT_GREY
+#define VGA_COLOR_SUCCESS   VGA_COLOR_LIGHT_GREEN
+#define VGA_COLOR_ERROR     VGA_COLOR_LIGHT_RED
+#define VGA_COLOR_WARNING   VGA_COLOR_LIGHT_YELLOW
+
+
 
 #include "stdint.h"
 // Console state
@@ -45,5 +63,10 @@ void PrintKernelAt(const char* str, uint32_t line, uint32_t col);
 void ClearScreen();
 void ConsoleSetColor(uint8_t color);
 void ConsoleInit(void);
+// formated functions
+void PrintKernelF(const char* format, ...);
+void SerialWriteF(const char* format, ...);
+void PrintKernelErrorF(const char* format, ...);
+void PrintKernelWarningF(const char* format, ...);
 
 #endif // VOIDFRAME_CONSOLE_H

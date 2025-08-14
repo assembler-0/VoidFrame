@@ -1,10 +1,13 @@
 // kernel/etc/Console.c - PATCHED VERSION WITH VBE SUPPORT
 #include "Console.h"
+
+#include "Format.h"
 #include "Io.h"
 #include "Serial.h"
 #include "Spinlock.h"
 #include "VBEConsole.h"
 #include "VesaBIOSExtension.h"
+#include "stdarg.h"
 #include "stdbool.h"
 #include "stdint.h"
 
@@ -13,7 +16,7 @@ static uint8_t use_vbe = 0;
 // Original VGA implementation preserved
 static void UpdateCursor(void) {
     if (use_vbe) return; // VBE handles cursor internally
-    
+
     uint16_t pos = console.line * VGA_WIDTH + console.column;
     outb(0x3D4, 0x0F);
     outb(0x3D5, (uint8_t)(pos & 0xFF));
@@ -33,31 +36,6 @@ static volatile int lock = 0;
 static uint32_t vbe_fg_color = 0xFFFFFF;  // White
 static uint32_t vbe_bg_color = 0x000000;  // Black
 
-// static void SetVBEColors(uint8_t vga_color) {
-//     // Convert VGA color attributes to RGB
-//     static const uint32_t vga_to_rgb[16] = {
-//         0x000000, // Black
-//         0x0000AA, // Blue
-//         0x00AA00, // Green
-//         0x00AAAA, // Cyan
-//         0xAA0000, // Red
-//         0xAA00AA, // Magenta
-//         0xAA5500, // Brown
-//         0xAAAAAA, // Light Gray
-//         0x555555, // Dark Gray
-//         0x5555FF, // Light Blue
-//         0x55FF55, // Light Green
-//         0x55FFFF, // Light Cyan (This might be your cyan flash!)
-//         0xFF5555, // Light Red
-//         0xFF55FF, // Light Magenta
-//         0xFFFF55, // Yellow
-//         0xFFFFFF  // White
-//     };
-//
-//     vbe_fg_color = vga_to_rgb[vga_color & 0x0F];
-//     vbe_bg_color = vga_to_rgb[(vga_color >> 4) & 0x0F];
-// }
-
 // Initialize console - auto-detect VBE or VGA
 void ConsoleInit(void) {
     if (VBEIsInitialized()) {
@@ -76,7 +54,7 @@ static inline uint16_t MakeVGAEntry(char c, uint8_t color) {
 
 static void ConsolePutcharAt(char c, uint32_t x, uint32_t y, uint8_t color) {
     if (use_vbe) return; // VBE handles this differently
-    
+
     if (x >= VGA_WIDTH || y >= VGA_HEIGHT) return;
     const uint32_t index = y * VGA_WIDTH + x;
     console.buffer[index] = MakeVGAEntry(c, color);
@@ -84,12 +62,12 @@ static void ConsolePutcharAt(char c, uint32_t x, uint32_t y, uint8_t color) {
 
 void ClearScreen(void) {
     SpinLock(&lock);
-    
+
     if (use_vbe) {
         VBEConsoleClear();
     } else {
         if (!console.buffer) console.buffer = (volatile uint16_t*)VGA_BUFFER_ADDR;
-        
+
         const uint16_t blank = MakeVGAEntry(' ', VGA_COLOR_DEFAULT);
         volatile uint32_t* buffer32 = (volatile uint32_t*)console.buffer;
         const uint32_t blank32 = ((uint32_t)blank << 16) | blank;
@@ -103,13 +81,13 @@ void ClearScreen(void) {
         console.column = 0;
         UpdateCursor();
     }
-    
+
     SpinUnlock(&lock);
 }
 
 static void ConsoleScroll(void) {
     if (use_vbe) return; // VBE handles scrolling internally
-    
+
     for (uint32_t i = 0; i < (VGA_HEIGHT - 1) * VGA_WIDTH; i++) {
         console.buffer[i] = console.buffer[i + VGA_WIDTH];
     }
@@ -173,7 +151,7 @@ void ConsoleSetColor(uint8_t color) {
 void PrintKernel(const char* str) {
     if (!str) return;
     SpinLock(&lock);
-    
+
     if (use_vbe) {
         VBEConsolePrint(str);
     } else {
@@ -183,7 +161,7 @@ void PrintKernel(const char* str) {
         }
         console.color = original_color;
     }
-    
+
     SpinUnlock(&lock);
     SerialWrite(str);
 }
@@ -196,20 +174,27 @@ void PrintKernelChar(const char c) {
     PrintKernel(str);
 }
 
+void PrintKernelBadge(const char * str) {
+    PrintKernelF("[ %s ] ", str);
+}
+
 void PrintKernelSuccess(const char* str) {
     ConsoleSetColor(VGA_COLOR_WHITE);
+    PrintKernelBadge("SUCCESS");
     PrintKernel(str);
     ConsoleSetColor(VGA_COLOR_DEFAULT);
 }
 
 void PrintKernelError(const char* str) {
     ConsoleSetColor(VGA_COLOR_ERROR);
+    PrintKernelBadge("ERROR");
     PrintKernel(str);
     ConsoleSetColor(VGA_COLOR_DEFAULT);
 }
 
 void PrintKernelWarning(const char* str) {
     ConsoleSetColor(VGA_COLOR_WARNING);
+    PrintKernelBadge("WARNING");
     PrintKernel(str);
     ConsoleSetColor(VGA_COLOR_DEFAULT);
 }
@@ -238,6 +223,42 @@ void PrintKernelHex(uint64_t num) {
     }
 
     PrintKernel(&buffer[pos + 1]);
+}
+
+void PrintKernelF(const char* format, ...) {
+    va_list args;
+    va_start(args, format);
+    char* formatted = Format(format, args);
+    va_end(args);
+
+    PrintKernel(formatted);
+}
+
+void PrintKernelWarningF(const char* format, ...) {
+    va_list args;
+    va_start(args, format);
+    char* formatted = Format(format, args);
+    va_end(args);
+
+    PrintKernelWarning(formatted);
+}
+
+void PrintKernelErrorF(const char* format, ...) {
+    va_list args;
+    va_start(args, format);
+    char* formatted = Format(format, args);
+    va_end(args);
+
+    PrintKernelError(formatted);
+}
+
+void SerialWriteF(const char* format, ...) {
+    va_list args;
+    va_start(args, format);
+    char* formatted = Format(format, args);
+    va_end(args);
+
+    SerialWrite(formatted);
 }
 
 void PrintKernelInt(int64_t num) {
@@ -276,7 +297,7 @@ void PrintKernelAt(const char* str, uint32_t line, uint32_t col) {
         VBEConsolePrint(str);
     } else {
         if (line >= VGA_HEIGHT || col >= VGA_WIDTH) return;
-        
+
         const uint32_t saved_line = console.line;
         const uint32_t saved_col = console.column;
 

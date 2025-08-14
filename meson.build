@@ -80,6 +80,7 @@ c_sources = [
     src_root + '/kernel/process/Process.c',
     src_root + '/kernel/etc/Shell.c',
     src_root + '/kernel/etc/Console.c',
+    src_root + '/kernel/etc/Format.c',
     src_root + '/kernel/etc/VBEConsole.c',
     src_root + '/kernel/etc/Editor.c',
     src_root + '/kernel/etc/StringOps.c',

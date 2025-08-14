@@ -1,5 +1,11 @@
 #include "StringOps.h"
 
+int StringLength(const char* str) {
+    int len = 0;
+    while (str[len]) len++;
+    return len;
+}
+
 size_t FastStrlen(const char* s, size_t max) {
     if (!s) return 0;
     size_t i = 0;
