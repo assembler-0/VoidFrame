@@ -46,14 +46,14 @@ void* FastMemset(void* dest, int value, uint64_t size) {
     ASSERT(dest != NULL);
     CpuFeatures* features = GetCpuFeatures();
     uint8_t* d = (uint8_t*)dest;
-    
+
     if (features->sse2 && size >= 16) {
         // Create a 128-bit value where all bytes are 'value'
         uint64_t val64 = ((uint64_t)value << 56) | ((uint64_t)value << 48) |
                          ((uint64_t)value << 40) | ((uint64_t)value << 32) |
                          ((uint64_t)value << 24) | ((uint64_t)value << 16) |
                          ((uint64_t)value << 8) | value;
-        
+
         asm volatile(
             "movq %0, %%xmm0\n"
             "punpcklqdq %%xmm0, %%xmm0\n"
@@ -62,14 +62,14 @@ void* FastMemset(void* dest, int value, uint64_t size) {
             : "r"(val64)
             : "xmm0"
         );
-        
+
         while (size >= 16) {
             asm volatile("movdqu %%xmm0, (%0)" : : "r"(d) : "memory");
             d += 16;
             size -= 16;
         }
     }
-    
+
     // Handle remaining bytes
     while (size--) *d++ = value;
     return dest;
@@ -77,36 +77,66 @@ void* FastMemset(void* dest, int value, uint64_t size) {
 
 void* FastMemcpy(void* dest, const void* src, uint64_t size) {
     ASSERT(dest != NULL && src != NULL);
-    CpuFeatures* features = GetCpuFeatures();
     uint8_t* d = (uint8_t*)dest;
     const uint8_t* s = (const uint8_t*)src;
-    
-    if (features->sse2 && size >= 16) {
-        while (size >= 16) {
-            asm volatile(
-                "movdqu (%1), %%xmm0\n"
-                "movdqu %%xmm0, (%0)\n"
-                :
-                : "r"(d), "r"(s)
-                : "xmm0", "memory"
-            );
-            d += 16;
-            s += 16;
-            size -= 16;
+
+    if (size >= 8) {
+        // Handle alignment
+        while (((uintptr_t)d & 7) != 0 && size > 0) {
+            *d++ = *s++;
+            size--;
+        }
+
+        if (((uintptr_t)s & 7) == 0) {
+            // Both aligned - use 64-bit copies with loop unrolling
+            uint64_t* d64 = (uint64_t*)d;
+            const uint64_t* s64 = (const uint64_t*)s;
+
+            // Unrolled loop for better performance
+            while (size >= 32) {
+                d64[0] = s64[0];  // Copy 32 bytes
+                d64[1] = s64[1];  // in 4 operations
+                d64[2] = s64[2];
+                d64[3] = s64[3];
+                d64 += 4;
+                s64 += 4;
+                size -= 32;
+            }
+
+            while (size >= 8) {
+                *d64++ = *s64++;
+                size -= 8;
+            }
+
+            d = (uint8_t*)d64;
+            s = (const uint8_t*)s64;
+        } else {
+            // Source not aligned - use 32-bit copies
+            while (size >= 4 && ((uintptr_t)s & 3) == 0) {
+                *(uint32_t*)d = *(const uint32_t*)s;
+                d += 4;
+                s += 4;
+                size -= 4;
+            }
         }
     }
-    
-    while (size--) *d++ = *s++;
+
+    // Handle remainder bytes
+    while (size > 0) {
+        *d++ = *s++;
+        size--;
+    }
+
     return dest;
 }
 
 void FastZeroPage(void* page) {
     ASSERT(page != NULL);
     CpuFeatures* features = GetCpuFeatures();
-    
+
     if (features->sse2) {
         asm volatile("pxor %%xmm0, %%xmm0" ::: "xmm0");
-        
+
         uint8_t* p = (uint8_t*)page;
         for (int i = 0; i < 4096; i += 16) {
             asm volatile("movdqu %%xmm0, (%0)" : : "r"(p + i) : "memory");
