@@ -15,7 +15,7 @@
 #define MAX_PROCESSES 64                // Keep as is
 
 // Quantum Management - EXPONENTIAL GROWTH for better differentiation
-#define QUANTUM_BASE 2                  // Slightly reduced base for better interactivity
+#define QUANTUM_BASE 4                  // Slightly reduced base for better interactivity
 #define QUANTUM_DECAY_SHIFT 1           // Enable quantum growth: L0=4, L1=8, L2=16, L3=32, L4=64
 #define QUANTUM_MIN 2                   // Increased minimum to reduce overhead
 #define QUANTUM_MAX 64                  // Increased max for CPU-bound processes
@@ -97,7 +97,7 @@
 #define FXP_SHIFT 10 // Use 10 bits for the fractional part
 #define FXP_SCALE (1 << FXP_SHIFT) // Scaling factor = 1024
 
-#define SAMPLING_INTERVAL 25        // 2x faster sampling (was 50)
+#define SAMPLING_INTERVAL 25       // 2x faster sampling (was 50)
 #define HZ_PER_PROCESS 50          // More responsive per-process scaling (was 30)
 #define QUEUE_PRESSURE_FACTOR 20   // Stronger pressure response
 #define QUEUE_PRESSURE_THRESHOLD 2 // Earlier pressure detection (was 3)
@@ -106,7 +106,7 @@
 #define FREQ_REDUCE_FACTOR  870    // Gentler reduction: 0.85x (was 0.9x)
 #define POWER_TURBO_FACTOR  1434   // More aggressive turbo: 1.4x (was 1.3x)
 #define HYSTERESIS_THRESHOLD 8     // More responsive changes (was 10)
-#define STABILITY_REQ 5;    // Confirm stability -- change in Process.c
+#define STABILITY_REQ 5            // Confirm stability -- change in Process.c
 
 typedef struct {
     uint64_t magic;

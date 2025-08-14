@@ -185,10 +185,15 @@ void CPUFeatureValidation(void) {
                      : "=a"(eax), "=b"(ebx), "=c"(ecx), "=d"(edx)
                      : "a"(7), "c"(0));
 
+
     bool has_avx2 = (ebx & (1 << 5)) != 0;
     bool has_bmi1 = (ebx & (1 << 3)) != 0;
     bool has_bmi2 = (ebx & (1 << 8)) != 0;
-    bool has_fma = (ebx & (1 << 12)) != 0; // FMA3
+    // FMA (FMA3) is CPUID.(EAX=1):ECX[12]
+    __asm__ volatile("cpuid"
+                     : "=a"(eax), "=b"(ebx), "=c"(ecx), "=d"(edx)
+                     : "a"(1), "c"(0));
+    bool has_fma = (ecx & (1 << 12)) != 0;
 
     if (!has_sse) {
         PrintKernelWarning("System: This kernel requires SSE support but the extension is not found. (CPUID)\n");

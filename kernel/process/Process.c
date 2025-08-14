@@ -22,7 +22,6 @@
 #define PROC_FLAG_CRITICAL      (1U << 1)
 #define PROC_FLAG_SUPERVISOR    (1U << 3)
 #define PROC_FLAG_CORE          (PROC_FLAG_IMMUNE | PROC_FLAG_SUPERVISOR | PROC_FLAG_CRITICAL)
-#define PROC_FLAG_USER
 
 // Performance optimizations
 #define LIKELY(x)               __builtin_expect(!!(x), 1)
@@ -42,6 +41,7 @@ static volatile uint32_t current_process = 0;
 static volatile uint32_t process_count = 0;
 static volatile int need_schedule = 0;
 static volatile int scheduler_lock = 0;
+rwlock_t process_table_rwlock = {0};
 
 // Security subsystem
 static uint32_t security_manager_pid = 0;
@@ -478,14 +478,11 @@ static uint32_t ClassifyProcess(Process* proc) {
     avg_burst /= CPU_BURST_HISTORY;
     
     // Short CPU bursts = interactive process = higher priority
-    if (avg_burst < QUANTUM_BASE / 2) {
-        return 2;
-    } else if (avg_burst < QUANTUM_BASE) {
-        return 3;
-    } else {
-        // CPU intensive processes go to lower priorities
-        return MAX_PRIORITY_LEVELS - 1;
-    }
+    if (avg_burst < QUANTUM_BASE / INTERACTIVE_AGGRESSIVE_DIVISOR) return 2;
+
+    if (avg_burst < QUANTUM_BASE / INTERACTIVE_BURST_DIVISOR) return 3;
+
+    return MAX_PRIORITY_LEVELS - 1;
 }
 
 void AddToScheduler(uint32_t slot) {
@@ -1165,11 +1162,13 @@ Process* GetCurrentProcess(void) {
 }
 
 Process* GetProcessByPid(uint32_t pid) {
+    ReadLock(&process_table_rwlock);
     for (int i = 0; i < MAX_PROCESSES; i++) {
         if (processes[i].pid == pid && processes[i].state != PROC_TERMINATED) {
             return &processes[i];
         }
     }
+    ReadUnlock(&process_table_rwlock);
     return NULL;
 }
 
@@ -1759,6 +1758,7 @@ void DumpSchedulerState(void) {
 
 // Get detailed process scheduling information
 void GetProcessStats(uint32_t pid, uint32_t* cpu_time, uint32_t* io_ops, uint32_t* preemptions) {
+    ReadLock(&process_table_rwlock);
     Process* proc = GetProcessByPid(pid);
     if (!proc) {
         if (cpu_time) *cpu_time = 0;
@@ -1770,6 +1770,7 @@ void GetProcessStats(uint32_t pid, uint32_t* cpu_time, uint32_t* io_ops, uint32_
     if (cpu_time) *cpu_time = (uint32_t)proc->cpu_time_accumulated;
     if (io_ops) *io_ops = proc->io_operations;
     if (preemptions) *preemptions = proc->preemption_count;
+    ReadUnlock(&process_table_rwlock);
 }
 
 // Force priority boost for a specific process (for testing/debugging)

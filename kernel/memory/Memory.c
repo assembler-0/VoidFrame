@@ -27,6 +27,7 @@ static volatile int memory_lock = 0;
 static uint64_t next_free_hint = 0x100000 / PAGE_SIZE;
 static uint64_t low_memory_watermark = 0;
 static uint64_t allocation_failures = 0;
+volatile mcs_node_t* memory_mcs_lock = NULL;
 
 // Fast bitmap operations using 64-bit words
 static inline void MarkPageUsed(uint64_t page_idx) {

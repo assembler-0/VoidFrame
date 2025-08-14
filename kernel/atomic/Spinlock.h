@@ -36,7 +36,10 @@ static inline void SpinLock(volatile int* lock) {
 
         // Deadlock detection
         if (get_cycles() - start > DEADLOCK_TIMEOUT_CYCLES) {
-            break; // or call panic
+            backoff_delay(MAX_BACKOFF_CYCLES);
+            start = get_cycles();
+            attempts = 0;
+            continue;
         }
 
         attempts++;
