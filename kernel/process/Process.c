@@ -934,13 +934,9 @@ void Yield() {
     irq_flags_t flags = SpinLockIrqSave(&scheduler_lock);
     Process* current = GetCurrentProcess();
     if (current) {
-        // A process that yields is ready to run again, just giving up its timeslice.
-        // Setting it to PROC_BLOCKED was incorrect as there was no corresponding unblock mechanism.
         current->state = PROC_READY;
     }
     RequestSchedule();
-    // This instruction halts the CPU until the next interrupt (e.g., the timer),
-    // which will then trigger the scheduler.
     SpinUnlockIrqRestore(&scheduler_lock, flags);
     __asm__ __volatile__("hlt");
 }
@@ -1224,7 +1220,7 @@ void DynamoX(void) {
     };
 
     // Enhanced tuning parameters
-    const uint32_t STABILITY_REQUIREMENT = 5;    // Confirm stability
+    const uint32_t STABILITY_REQUIREMENT = STABILITY_REQ;
 
     uint64_t last_sample_time = GetSystemTicks();
     uint64_t last_context_switches = context_switches;

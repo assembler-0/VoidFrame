@@ -6,16 +6,16 @@
 #include "Cpu.h"
 
 // =============================================================================
-// MLFQ Parameters (last update: 08/08/25)
+// MLFQ Parameters (last update: 14/08/25)
 // =============================================================================
 
 // Core Queue Configuration
 #define MAX_PRIORITY_LEVELS 5           // Reduced from 6 - fewer levels = better cache locality
-#define RT_PRIORITY_THRESHOLD 2         // Increased RT levels for better interactive response
+#define RT_PRIORITY_THRESHOLD 3         // Increased RT levels for better interactive response
 #define MAX_PROCESSES 64                // Keep as is
 
 // Quantum Management - EXPONENTIAL GROWTH for better differentiation
-#define QUANTUM_BASE 4                  // Slightly reduced base for better interactivity
+#define QUANTUM_BASE 2                  // Slightly reduced base for better interactivity
 #define QUANTUM_DECAY_SHIFT 1           // Enable quantum growth: L0=4, L1=8, L2=16, L3=32, L4=64
 #define QUANTUM_MIN 2                   // Increased minimum to reduce overhead
 #define QUANTUM_MAX 64                  // Increased max for CPU-bound processes
@@ -51,7 +51,7 @@
 #define IO_BOOST_CONSERVATIVE_MULTIPLIER 1  // More aggressive I/O detection
 #define IO_BOOST_AGGRESSIVE_MULTIPLIER 2
 #define CPU_BURST_HISTORY 4             // Track more history for better decisions
-#define INTERACTIVE_BURST_DIVISOR 3     // More sensitive interactive detection (QUANTUM_BASE/3)
+#define INTERACTIVE_BURST_DIVISOR 2     // More sensitive interactive detection (QUANTUM_BASE/3)
 #define INTERACTIVE_AGGRESSIVE_DIVISOR 6 // Very interactive = QUANTUM_BASE/6
 
 // Priority Adjustment Thresholds
@@ -106,7 +106,8 @@
 #define FREQ_REDUCE_FACTOR  870    // Gentler reduction: 0.85x (was 0.9x)
 #define POWER_TURBO_FACTOR  1434   // More aggressive turbo: 1.4x (was 1.3x)
 #define HYSTERESIS_THRESHOLD 8     // More responsive changes (was 10)
-// #define STABILITY_REQUIREMENT 5;    // Confirm stability -- change in Process.c
+#define STABILITY_REQ 5;    // Confirm stability -- change in Process.c
+
 typedef struct {
     uint64_t magic;
     uint32_t creator_pid;

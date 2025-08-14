@@ -164,14 +164,64 @@ void BootstrapMapPage(uint64_t pml4_phys, uint64_t vaddr, uint64_t paddr, uint64
     }
 }
 
-
 void CPUFeatureValidation(void) {
     uint32_t eax, ebx, ecx, edx;
-    __asm__ volatile("cpuid" : "=a"(eax), "=b"(ebx), "=c"(ecx), "=d"(edx) : "a"(7), "c"(0));
-    bool has_avx2 = (ebx & (1 << 5)) != 0;
 
+    // Check for standard features (EAX=1)
+    __asm__ volatile("cpuid"
+                     : "=a"(eax), "=b"(ebx), "=c"(ecx), "=d"(edx)
+                     : "a"(1), "c"(0));
+
+    bool has_sse = (edx & (1 << 25)) != 0;
+    bool has_sse2 = (edx & (1 << 26)) != 0;
+    bool has_sse3 = (ecx & (1 << 0)) != 0;
+    bool has_ssse3 = (ecx & (1 << 9)) != 0;
+    bool has_sse4_1 = (ecx & (1 << 19)) != 0;
+    bool has_sse4_2 = (ecx & (1 << 20)) != 0;
+    bool has_avx = (ecx & (1 << 28)) != 0;
+
+    // Check for extended features (EAX=7, ECX=0)
+    __asm__ volatile("cpuid"
+                     : "=a"(eax), "=b"(ebx), "=c"(ecx), "=d"(edx)
+                     : "a"(7), "c"(0));
+
+    bool has_avx2 = (ebx & (1 << 5)) != 0;
+    bool has_bmi1 = (ebx & (1 << 3)) != 0;
+    bool has_bmi2 = (ebx & (1 << 8)) != 0;
+    bool has_fma = (ebx & (1 << 12)) != 0; // FMA3
+
+    if (!has_sse) {
+        PrintKernelWarning("System: This kernel requires SSE support but the extension is not found. (CPUID)\n");
+    }
+    if (!has_sse2) {
+        PrintKernelWarning("System: This kernel requires SSE2 support but the extension is not found. (CPUID)\n");
+    }
+    if (!has_sse3) {
+        PrintKernelWarning("System: This kernel requires SSE3 support but the extension is not found. (CPUID)\n");
+    }
+    if (!has_ssse3) {
+        PrintKernelWarning("System: This kernel requires SSSE3 support but the extension is not found. (CPUID)\n");
+    }
+    if (!has_sse4_1) {
+        PrintKernelWarning("System: This kernel requires SSE4.1 support but the extension is not found. (CPUID)\n");
+    }
+    if (!has_sse4_2) {
+        PrintKernelWarning("System: This kernel requires SSE4.2 support but the extension is not found. (CPUID)\n");
+    }
+    if (!has_avx) {
+        PrintKernelWarning("System: This kernel requires AVX support but the extension is not found. (CPUID)\n");
+    }
     if (!has_avx2) {
         PrintKernelWarning("System: This kernel requires AVX2 support (2013+ CPUs) but the extension is not found. (CPUID)\n");
+    }
+    if (!has_fma) {
+        PrintKernelWarning("System: This kernel requires FMA3 support but the extension is not found. (CPUID)\n");
+    }
+    if (!has_bmi1) {
+        PrintKernelWarning("System: This kernel requires BMI1 support but the extension is not found. (CPUID)\n");
+    }
+    if (!has_bmi2) {
+        PrintKernelWarning("System: This kernel requires BMI2 support but the extension is not found. (CPUID)\n");
     }
 }
 
@@ -179,15 +229,12 @@ void CPUFeatureValidation(void) {
 static void SetupMemoryProtection(void) {
     PrintKernel("System: Setting up memory protection...\n");
 
-    // Check CPUID for SMEP/SMAP support
+    // Check CPUID
     uint32_t eax, ebx, ecx, edx;
-    __asm__ volatile("cpuid"
-                     : "=a"(eax), "=b"(ebx), "=c"(ecx), "=d"(edx)
-                     : "a"(7), "c"(0));
+    __asm__ volatile("cpuid" : "=a"(eax), "=b"(ebx), "=c"(ecx), "=d"(edx) : "a"(7), "c"(0));
 
     uint64_t cr4;
     __asm__ volatile("mov %%cr4, %0" : "=r"(cr4));
-
     bool protection_enabled = false;
 
     // Enable SMEP if supported (bit 7 in EBX from CPUID leaf 7)
@@ -229,6 +276,48 @@ static void SetupMemoryProtection(void) {
         protection_enabled = true;
     }
 
+    if (ecx & (1 << 2)) {
+        cr4 |= (1ULL << 11);  // CR4.UMIP
+        PrintKernel("System: UMIP enabled (blocks privileged instructions in usermode)\n");
+        protection_enabled = true;
+    }
+
+    // Enable PKE (Protection Keys for Userspace) if available
+    if (ecx & (1 << 3)) {
+        cr4 |= (1ULL << 22);  // CR4.PKE
+        PrintKernel("System: PKE enabled (memory protection keys)\n");
+        protection_enabled = true;
+    }
+
+    // Enable CET (Control Flow Enforcement Technology) if available
+    __asm__ volatile("cpuid" : "=a"(eax), "=c"(ecx) : "a"(7), "c"(0) : "ebx", "edx");
+    if (ecx & (1 << 7)) {  // CET_SS (Shadow Stack)
+        // Enable CET in CR4
+        cr4 |= (1ULL << 23);  // CR4.CET
+
+        // Configure CET MSRs
+        uint32_t cet_u_lo = (1 << 0) | (1 << 1);  // SH_STK_EN | WR_SHSTK_EN
+        __asm__ volatile("wrmsr" :: "c"(0x6A2), "a"(cet_u_lo), "d"(0));  // MSR_IA32_U_CET
+
+        PrintKernel("System: CET Shadow Stack enabled\n");
+        protection_enabled = true;
+    }
+
+    // Set up Write Protection (WP) bit - prevents kernel writes to read-only pages
+    uint64_t cr0;
+    __asm__ volatile("mov %%cr0, %0" : "=r"(cr0));
+    cr0 |= (1ULL << 16);  // CR0.WP
+    __asm__ volatile("mov %0, %%cr0" :: "r"(cr0) : "memory");
+    PrintKernel("System: Write Protection (WP) enabled\n");
+
+    // Enable FSGSBASE for faster userspace context switches
+    __asm__ volatile("cpuid" : "=a"(eax), "=b"(ebx), "=c"(ecx), "=d"(edx) : "a"(7), "c"(0));
+    if (ebx & (1 << 0)) {
+        cr4 |= (1ULL << 16);  // CR4.FSGSBASE
+        PrintKernel("System: FSGSBASE enabled\n");
+        protection_enabled = true;
+    }
+
     // Write back the modified CR4
     if (protection_enabled) {
         __asm__ volatile("mov %0, %%cr4" :: "r"(cr4) : "memory");
@@ -236,6 +325,7 @@ static void SetupMemoryProtection(void) {
     } else {
         PrintKernel("System: No memory protection features available\n");
     }
+
 }
 
 static bool CheckHugePageSupport(void) {
@@ -568,10 +658,7 @@ void KernelMainHigherHalf(void) {
     asm volatile("sti");
 
     while (1) { // redundant but added for worst case scenario, should not reach here
-        PrintKernelWarning("[FALLBACK] Reached end of kernel.\n");
-        if (ShouldSchedule()) {
-            RequestSchedule();
-        }
+        Yield();
         __asm__ volatile("hlt");
     }
 }

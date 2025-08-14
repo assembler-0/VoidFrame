@@ -270,6 +270,7 @@ void IdtSetGate(uint8_t num, uint64_t base, uint16_t sel, uint8_t flags) {
     g_Idt[num].Selector = sel;
     g_Idt[num].Reserved = 0;
     g_Idt[num].Flags = flags;
+    g_Idt[num].Flags = flags;
     g_Idt[num].BaseHigh = (base >> 16) & 0xFFFF;
     g_Idt[num].BaseUpper = (base >> 32) & 0xFFFFFFFF;
     g_Idt[num].Reserved2 = 0;

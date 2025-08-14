@@ -308,8 +308,7 @@ void KernelFree(void* ptr) {
 }
 
 void PrintHeapStats(void) {
-     const irq_flags_t flags = SpinLockIrqSave(&kheap_lock);
-
+    const irq_flags_t flags = SpinLockIrqSave(&kheap_lock);
     size_t free_blocks = 0, used_blocks = 0;
     size_t free_bytes = 0, used_bytes = 0;
     size_t corrupted = 0;
@@ -330,7 +329,7 @@ void PrintHeapStats(void) {
     }
 
     SpinUnlockIrqRestore(&kheap_lock, flags);
-    
+
     PrintKernel("[HEAP] Blocks: "); PrintKernelInt(used_blocks);
     PrintKernel(" used, "); PrintKernelInt(free_blocks); PrintKernel(" free\n");
     PrintKernel("[HEAP] Memory: "); PrintKernelInt(used_bytes);
