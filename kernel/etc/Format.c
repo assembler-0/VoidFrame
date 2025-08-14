@@ -99,8 +99,11 @@ void FormatInteger(char* buffer, int64_t value, FormatSpec* spec, int base, int 
     // Convert number to string
     if (base == 16) {
         htoa(abs_value, temp_buffer);
-        // Remove "0x" prefix from htoa
+        // Remove "0x"
         char* num_part = temp_buffer + 2;
+        while (*num_part == '0' && *(num_part + 1) != '\0') {
+            num_part++;
+        }
         strcpy(temp_buffer, num_part);
     } else {
         itoa(abs_value, temp_buffer);

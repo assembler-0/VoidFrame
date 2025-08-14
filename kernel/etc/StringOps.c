@@ -1,6 +1,7 @@
 #include "StringOps.h"
 
-int StringLength(const char* str) {
+int StringLength(const char* str) { // simpler than FasStrlen,
+    if (!str) return 0;
     int len = 0;
     while (str[len]) len++;
     return len;

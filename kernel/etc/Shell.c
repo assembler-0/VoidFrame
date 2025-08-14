@@ -36,6 +36,106 @@ void info(void) {
     while (count--) Yield();
 }
 
+extern uint8_t _kernel_phys_start[];
+extern uint8_t _kernel_phys_end[];
+extern uint8_t _text_start[];
+extern uint8_t _text_end[];
+extern uint8_t _rodata_start[];
+extern uint8_t _rodata_end[];
+extern uint8_t _data_start[];
+extern uint8_t _data_end[];
+extern uint8_t _bss_start[];
+extern uint8_t _bss_end[];
+
+
+void PrintKernelMemoryLayout(void) {
+    PrintKernel("MEMORY LAYOUT\n");
+    PrintKernel("\n=== VoidFrame Kernel Memory Map ===\n\n");
+
+    // Physical Layout
+    PrintKernel("📍 PHYSICAL MEMORY LAYOUT:\n");
+    PrintKernel("  0x00000000-0x000FFFFF : Low Memory (1MB)\n");
+    PrintKernel("  0x00100000-");
+    PrintKernelHex((uint64_t)_kernel_phys_end);
+    PrintKernel(" : Kernel Image (");
+    PrintKernelInt(((uint64_t)_kernel_phys_end - (uint64_t)_kernel_phys_start) / 1024);
+    PrintKernel("KB)\n");
+
+    // Show kernel sections
+    PrintKernel("    ├─ .text    : ");
+    PrintKernelHex((uint64_t)_text_start);
+    PrintKernel(" - ");
+    PrintKernelHex((uint64_t)_text_end);
+    PrintKernel(" (");
+    PrintKernelInt(((uint64_t)_text_end - (uint64_t)_text_start) / 1024);
+    PrintKernel("KB)\n");
+
+    PrintKernel("    ├─ .rodata  : ");
+    PrintKernelHex((uint64_t)_rodata_start);
+    PrintKernel(" - ");
+    PrintKernelHex((uint64_t)_rodata_end);
+    PrintKernel(" (");
+    PrintKernelInt(((uint64_t)_rodata_end - (uint64_t)_rodata_start) / 1024);
+    PrintKernel("KB)\n");
+
+    PrintKernel("    ├─ .data    : ");
+    PrintKernelHex((uint64_t)_data_start);
+    PrintKernel(" - ");
+    PrintKernelHex((uint64_t)_data_end);
+    PrintKernel(" (");
+    PrintKernelInt(((uint64_t)_data_end - (uint64_t)_data_start) / 1024);
+    PrintKernel("KB)\n");
+
+    PrintKernel("    └─ .bss     : ");
+    PrintKernelHex((uint64_t)_bss_start);
+    PrintKernel(" - ");
+    PrintKernelHex((uint64_t)_bss_end);
+    PrintKernel(" (");
+    PrintKernelInt(((uint64_t)_bss_end - (uint64_t)_bss_start) / 1024);
+    PrintKernel("KB)\n");
+
+    // Physical memory stats
+    MemoryStats stats;
+    GetDetailedMemoryStats(&stats);
+    PrintKernel("  ");
+    PrintKernelHex((uint64_t)_kernel_phys_end);
+    PrintKernel("-0x???????? : Available RAM (");
+    PrintKernelInt(stats.total_physical_bytes / (1024*1024));
+    PrintKernel("MB total, ");
+    PrintKernelInt(stats.free_physical_bytes / (1024*1024));
+    PrintKernel("MB free)\n\n");
+
+    // Virtual Layout
+    PrintKernel("🗺️  VIRTUAL MEMORY LAYOUT:\n");
+    PrintKernel("  0x0000000000000000-0x0000007FFFFFFFFF : User Space (128TB)\n");
+    PrintKernel("  0xFFFF800000000000-0xFFFFFFFF00000000 : Heap Space (512GB)\n");
+    PrintKernel("  0xFFFFFFFF80000000-0xFFFFFFFFFFFFFFFF : Kernel Space (2GB)\n");
+    PrintKernel("    └─ Current kernel at: ");
+    PrintKernelHex(KERNEL_VIRTUAL_BASE);
+    PrintKernel("\n\n");
+
+    // Current Memory Usage
+    PrintKernel("💾 CURRENT MEMORY USAGE:\n");
+    PrintKernel("  Physical Pages: ");
+    PrintKernelInt(stats.used_physical_bytes / 1024 / 1024);
+    PrintKernel("MB used / ");
+    PrintKernelInt(stats.total_physical_bytes / 1024 / 1024);
+    PrintKernel("MB total\n");
+    PrintKernel("  Allocations: ");
+    PrintKernelInt(stats.allocation_count);
+    PrintKernel(" allocs, ");
+    PrintKernelInt(stats.free_count);
+    PrintKernel(" frees\n");
+    PrintKernel("  Fragmentation: ");
+    PrintKernelInt(stats.fragmentation_score);
+    PrintKernel("% (lower is better)\n");
+    PrintKernel("  Largest free block: ");
+    PrintKernelInt(stats.largest_free_block / 1024 / 1024);
+    PrintKernel("MB\n\n");
+
+    PrintVMemStats();
+}
+
 static char* GetArg(const char* cmd, int arg_num) {
     static char arg_buf[64];
     int word = 0, pos = 0, buf_pos = 0;
@@ -179,6 +279,7 @@ static void show_help() {
     PrintKernel("  lsusb          - List current USB device(s) and xHCI controller(s)\n");
     PrintKernel("  arptest        - Perform an ARP test and send packets\n");
     PrintKernel("  elfload <path> - Load ELF executable in <path>\n");
+    PrintKernel("  layoutmem      - Show current VoidFrame memory layout as of 14/08/25\n");
     PrintKernel("  clear          - Clear screen\n");
     PrintKernel("  info           - A piece information about the kernel\n");
     PrintKernel("  cd <dir>       - Change directory\n");
@@ -205,6 +306,8 @@ static void ExecuteCommand(const char* cmd) {
         ListProcesses();
     } else if (FastStrCmp(cmd_name, "perf") == 0) {
         DumpPerformanceStats();
+    }else if (FastStrCmp(cmd_name, "layoutmem") == 0) {
+        PrintKernelMemoryLayout();
     } else if (FastStrCmp(cmd_name, "memstat") == 0) {
         MemoryStats stats;
         GetDetailedMemoryStats(&stats);
@@ -233,7 +336,7 @@ static void ExecuteCommand(const char* cmd) {
             return;
         }
         KernelMemoryAlloc((uint32_t)size);
-    } else if (FastStrCmp(cmd_name, "setfreq") == 0) {
+    }else if (FastStrCmp(cmd_name, "setfreq") == 0) {
         char* freq_str = GetArg(cmd, 1);
         if (!freq_str) {
             PrintKernel("Usage: setfreq <hz>\n");
