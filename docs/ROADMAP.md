@@ -36,13 +36,11 @@
 - [x] Process termination 
 - [x] Token/privilege-based validation
 - [x] Scheduler aging/starvation fix
-- [ ] CFS or vruntime-based scheduler (optional/bonus)
-
 ---
 
 ## 🧩 Module System
 
-- [x] Multiboot2 module loading
+- [ ] Multiboot2 module loading
 - [ ] Basic kernel extensions
 - [ ] Signature/token validation
 - [ ] Hot module unloading (optional)
@@ -68,9 +66,8 @@
 
 ---
 
-## 💬 IPC / Syscalls
+## 💬 IPC 
 
-- [x] Syscall dispatch system
 - [x] Basic message passing (pipe, queue, or buffer)
 - [ ] Shared memory region
 - [ ] Signals or async delivery
