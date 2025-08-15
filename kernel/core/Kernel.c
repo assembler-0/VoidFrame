@@ -353,7 +353,75 @@ static bool CheckHugePageSupport(void) {
     return true;
 }
 
-void SystemInitS1(const uint32_t info) {
+static void ValidateMemoryLayout(void) {
+    PrintKernel("System: Validating memory layout...\n");
+
+    const uint64_t kernel_start = (uint64_t)_kernel_phys_start;
+    const uint64_t kernel_end = (uint64_t)_kernel_phys_end;
+    const uint64_t kernel_size = kernel_end - kernel_start;
+
+    PrintKernel("  Kernel: 0x");
+    PrintKernelHex(kernel_start);
+    PrintKernel(" - 0x");
+    PrintKernelHex(kernel_end);
+    PrintKernel(" (");
+    PrintKernelInt(kernel_size / 1024);
+    PrintKernel(" KB)\n");
+
+    // Check for dangerous overlaps
+    uint64_t stack_start = (uint64_t)kernel_stack;
+    uint64_t stack_end = stack_start + KERNEL_STACK_SIZE;
+
+    if ((stack_start >= kernel_start && stack_start < kernel_end) ||
+        (stack_end > kernel_start && stack_end <= kernel_end)) {
+        PrintKernelWarning("[WARNING] Stack overlaps with kernel code\n");
+        }
+
+    // NEW: Check multiboot info location
+    if (g_multiboot_info_addr >= kernel_start && g_multiboot_info_addr < kernel_end) {
+        PrintKernelWarning("[WARNING] Multiboot info overlaps with kernel\n");
+    }
+
+    // NEW: Validate virtual address space boundaries
+    if (VIRT_ADDR_SPACE_START >= KERNEL_SPACE_START) {
+        PrintKernelError("[ERROR] Virtual address space overlaps with kernel space\n");
+    }
+
+    PrintKernelSuccess("System: Memory layout validated\n");
+}
+
+static void PrintBootstrapSummary(void) {
+    PrintKernel("\n[BOOTSTRAP] Summary:\n");
+
+    // Count page table pages used
+    uint64_t pt_pages = 0;
+    for (uint64_t i = 0x100000 / PAGE_SIZE; i < total_pages; i++) {
+        if (!IsPageFree(i)) {
+            uint64_t addr = i * PAGE_SIZE;
+            // Heuristic: if it's not kernel or stack, likely a page table
+            if (addr < (uint64_t)_kernel_phys_start ||
+                addr >= (uint64_t)_kernel_phys_end) {
+                pt_pages++;
+            }
+        }
+    }
+
+    PrintKernel("  Identity mapping: 4GB (");
+    PrintKernelInt(IDENTITY_MAP_SIZE / (1024 * 1024 * 1024));
+    PrintKernel("GB)\n");
+
+    PrintKernel("  Page tables: ~");
+    PrintKernelInt(pt_pages);
+    PrintKernel(" pages (");
+    PrintKernelInt((pt_pages * PAGE_SIZE) / 1024);
+    PrintKernel("KB)\n");
+
+    PrintKernel("  Bootstrap complete\n");
+}
+
+
+// Pre-eXecutionSystem 1
+void PXS1(const uint32_t info) {
     int sret = SerialInit();
 
     if (sret != 0) {
@@ -370,11 +438,13 @@ void SystemInitS1(const uint32_t info) {
     if (VBEInit(info) != 0) {
         PrintKernelError("System: Failed to initialize VBE and graphical environment");
     }
+
     PrintKernel("System: Starting Console...\n");
     ConsoleInit();
     PrintKernelSuccess("System: Console initialized\n");
 
     VBEShowSplash();
+    ClearScreen();
 
     PrintKernel("System: Parsing MULTIBOOT2 info...\n");
     ParseMultibootInfo(info);
@@ -383,6 +453,50 @@ void SystemInitS1(const uint32_t info) {
     PrintKernel("System: Initializing memory...\n");
     MemoryInit(g_multiboot_info_addr);
     PrintKernelSuccess("System: Memory initialized\n");
+
+    // Create new PML4 with memory validation (ensure identity-mapped physical page)
+    void* pml4_phys = NULL;
+    for (int attempt = 0; attempt < 64; attempt++) {
+        void* candidate = AllocPage();
+        if (!candidate) break;
+        if ((uint64_t)candidate < IDENTITY_MAP_SIZE) { pml4_phys = candidate; break; }
+        FreePage(candidate);
+    }
+    if (!pml4_phys) PANIC("Failed to allocate PML4 in identity-mapped memory");
+
+    FastZeroPage(pml4_phys);
+    uint64_t pml4_addr = (uint64_t)pml4_phys;
+
+    PrintKernelSuccess("System: Bootstrap: Identity mapping...\n");
+
+    for (uint64_t paddr = 0; paddr < IDENTITY_MAP_SIZE; paddr += PAGE_SIZE) {
+        BootstrapMapPage(pml4_addr, paddr, paddr, PAGE_WRITABLE);
+
+        if (paddr / PAGE_SIZE % 32768 == 0) {
+            PrintKernel(".");
+        }
+    }
+    PrintKernel("\n");
+
+    PrintKernelSuccess("System: Bootstrap: Mapping kernel...\n");
+    uint64_t kernel_start = (uint64_t)_kernel_phys_start & ~0xFFF;
+    uint64_t kernel_end = ((uint64_t)_kernel_phys_end + 0xFFF) & ~0xFFF;
+    for (uint64_t paddr = kernel_start; paddr < kernel_end; paddr += PAGE_SIZE) {
+        BootstrapMapPage(pml4_addr, paddr + KERNEL_VIRTUAL_OFFSET, paddr, PAGE_WRITABLE);
+    }
+
+    PrintKernelSuccess("System: Bootstrap: Mapping kernel stack...\n");
+    uint64_t stack_phys_start = (uint64_t)kernel_stack & ~0xFFF;
+    uint64_t stack_phys_end = ((uint64_t)kernel_stack + KERNEL_STACK_SIZE + 0xFFF) & ~0xFFF;
+
+    for (uint64_t paddr = stack_phys_start; paddr < stack_phys_end; paddr += PAGE_SIZE) {
+        BootstrapMapPage(pml4_addr, paddr + KERNEL_VIRTUAL_OFFSET, paddr, PAGE_WRITABLE);
+    }
+
+    PrintKernelSuccess("System: Page tables prepared. Switching to virtual addressing...\n");
+    const uint64_t new_stack_top = ((uint64_t)kernel_stack + KERNEL_VIRTUAL_OFFSET) + KERNEL_STACK_SIZE;
+    const uint64_t higher_half_entry = (uint64_t)&KernelMainHigherHalf + KERNEL_VIRTUAL_OFFSET;
+    EnablePagingAndJump(pml4_addr, higher_half_entry, new_stack_top);
 }
 
 static void IRQUnmaskCoreSystems() {
@@ -396,8 +510,17 @@ static void IRQUnmaskCoreSystems() {
     PrintKernelSuccess("System: IRQs unmasked\n");
 }
 
-// Enhanced SystemInitS2 function with memory enhancements
-static InitResultT SystemInitS2(void) {
+// Pre-eXecutionSystem 2
+static InitResultT PXS2(void) {
+    // CPU feature validation
+    CPUFeatureValidation();
+
+    // Memory safety validation
+    ValidateMemoryLayout();
+
+    // Print bootstrap summary
+    PrintBootstrapSummary();
+
     // Initialize virtual memory manager with validation
     PrintKernel("Info: Initializing virtual memory manager...\n");
     VMemInit();
@@ -541,10 +664,8 @@ void KernelMain(const uint32_t magic, const uint32_t info) {
         PANIC("Unrecognized Multiboot2 magic.");
     }
 
-    SystemInitS1(info);
-
     console.buffer = (volatile uint16_t*)VGA_BUFFER_ADDR;
-    
+
     ClearScreen();
     PrintKernelSuccess("System: VoidFrame Kernel - Version 0.0.1-beta2 loaded\n");
     PrintKernel("Magic: ");
@@ -553,132 +674,14 @@ void KernelMain(const uint32_t magic, const uint32_t info) {
     PrintKernelHex(info);
     PrintKernel("\n");
 
-    // Create new PML4 with memory validation (ensure identity-mapped physical page)
-    void* pml4_phys = NULL;
-    for (int attempt = 0; attempt < 64; attempt++) {
-        void* candidate = AllocPage();
-        if (!candidate) break;
-        if ((uint64_t)candidate < IDENTITY_MAP_SIZE) { pml4_phys = candidate; break; }
-        FreePage(candidate);
-    }
-    if (!pml4_phys) PANIC("Failed to allocate PML4 in identity-mapped memory");
-    
-    FastZeroPage(pml4_phys);
-    uint64_t pml4_addr = (uint64_t)pml4_phys;
-    
-    PrintKernelSuccess("System: Bootstrap: Identity mapping...\n");
-    
-    for (uint64_t paddr = 0; paddr < IDENTITY_MAP_SIZE; paddr += PAGE_SIZE) {
-        BootstrapMapPage(pml4_addr, paddr, paddr, PAGE_WRITABLE);
-        
-        if (paddr / PAGE_SIZE % 32768 == 0) {
-            PrintKernel(".");
-        }
-    }
-    PrintKernel("\n");
-    
-    PrintKernelSuccess("System: Bootstrap: Mapping kernel...\n");
-    uint64_t kernel_start = (uint64_t)_kernel_phys_start & ~0xFFF;
-    uint64_t kernel_end = ((uint64_t)_kernel_phys_end + 0xFFF) & ~0xFFF;
-    for (uint64_t paddr = kernel_start; paddr < kernel_end; paddr += PAGE_SIZE) {
-        BootstrapMapPage(pml4_addr, paddr + KERNEL_VIRTUAL_OFFSET, paddr, PAGE_WRITABLE);
-    }
-    
-    PrintKernelSuccess("System: Bootstrap: Mapping kernel stack...\n");
-    uint64_t stack_phys_start = (uint64_t)kernel_stack & ~0xFFF;
-    uint64_t stack_phys_end = ((uint64_t)kernel_stack + KERNEL_STACK_SIZE + 0xFFF) & ~0xFFF;
-
-    for (uint64_t paddr = stack_phys_start; paddr < stack_phys_end; paddr += PAGE_SIZE) {
-        BootstrapMapPage(pml4_addr, paddr + KERNEL_VIRTUAL_OFFSET, paddr, PAGE_WRITABLE);
-    }
-
-    PrintKernelSuccess("System: Page tables prepared. Switching to virtual addressing...\n");
-    const uint64_t new_stack_top = ((uint64_t)kernel_stack + KERNEL_VIRTUAL_OFFSET) + KERNEL_STACK_SIZE;
-    const uint64_t higher_half_entry = (uint64_t)&KernelMainHigherHalf + KERNEL_VIRTUAL_OFFSET;
-    EnablePagingAndJump(pml4_addr, higher_half_entry, new_stack_top);
+    PXS1(info);
 }
-
-static void ValidateMemoryLayout(void) {
-    PrintKernel("System: Validating memory layout...\n");
-
-    const uint64_t kernel_start = (uint64_t)_kernel_phys_start;
-    const uint64_t kernel_end = (uint64_t)_kernel_phys_end;
-    const uint64_t kernel_size = kernel_end - kernel_start;
-
-    PrintKernel("  Kernel: 0x");
-    PrintKernelHex(kernel_start);
-    PrintKernel(" - 0x");
-    PrintKernelHex(kernel_end);
-    PrintKernel(" (");
-    PrintKernelInt(kernel_size / 1024);
-    PrintKernel(" KB)\n");
-
-    // Check for dangerous overlaps
-    uint64_t stack_start = (uint64_t)kernel_stack;
-    uint64_t stack_end = stack_start + KERNEL_STACK_SIZE;
-
-    if ((stack_start >= kernel_start && stack_start < kernel_end) ||
-        (stack_end > kernel_start && stack_end <= kernel_end)) {
-        PrintKernelWarning("[WARNING] Stack overlaps with kernel code\n");
-        }
-
-    // NEW: Check multiboot info location
-    if (g_multiboot_info_addr >= kernel_start && g_multiboot_info_addr < kernel_end) {
-        PrintKernelWarning("[WARNING] Multiboot info overlaps with kernel\n");
-    }
-
-    // NEW: Validate virtual address space boundaries
-    if (VIRT_ADDR_SPACE_START >= KERNEL_SPACE_START) {
-        PrintKernelError("[ERROR] Virtual address space overlaps with kernel space\n");
-    }
-
-    PrintKernelSuccess("System: Memory layout validated\n");
-}
-
-static void PrintBootstrapSummary(void) {
-    PrintKernel("\n[BOOTSTRAP] Summary:\n");
-
-    // Count page table pages used
-    uint64_t pt_pages = 0;
-    for (uint64_t i = 0x100000 / PAGE_SIZE; i < total_pages; i++) {
-        if (!IsPageFree(i)) {
-            uint64_t addr = i * PAGE_SIZE;
-            // Heuristic: if it's not kernel or stack, likely a page table
-            if (addr < (uint64_t)_kernel_phys_start ||
-                addr >= (uint64_t)_kernel_phys_end) {
-                pt_pages++;
-            }
-        }
-    }
-
-    PrintKernel("  Identity mapping: 4GB (");
-    PrintKernelInt(IDENTITY_MAP_SIZE / (1024 * 1024 * 1024));
-    PrintKernel("GB)\n");
-
-    PrintKernel("  Page tables: ~");
-    PrintKernelInt(pt_pages);
-    PrintKernel(" pages (");
-    PrintKernelInt((pt_pages * PAGE_SIZE) / 1024);
-    PrintKernel("KB)\n");
-
-    PrintKernel("  Bootstrap complete\n");
-}
-
 
 void KernelMainHigherHalf(void) {
     PrintKernelSuccess("System: Successfully jumped to higher half. Virtual memory is active.\n");
 
-    // CPU feature validation
-    CPUFeatureValidation();
-
-    // Memory safety validation
-    ValidateMemoryLayout();
-
-    // Print bootstrap summary
-    PrintBootstrapSummary();
-
     // Initialize core systems
-    SystemInitS2();
+    PXS2();
 
     PrintKernelSuccess("System: Kernel initialization complete\n");
     PrintKernelSuccess("System: Initializing interrupts...\n");
