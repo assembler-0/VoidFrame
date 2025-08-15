@@ -24,8 +24,8 @@ VoidFrame/
 │   │   └── Gdt.c            
 │   ├── idt/                 
 │   │   ├── IdtLoad.asm      
-│   │   ├── Gdt.h            
-│   │   └── Gdt.c            
+│   │   ├── Ide.h            
+│   │   └── Ide.c            
 │   └── interrupts/          
 │       ├── Interrupts.asm   
 │       ├── Interrupts.c     
