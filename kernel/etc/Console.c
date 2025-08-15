@@ -3,6 +3,7 @@
 
 #include "Format.h"
 #include "Io.h"
+#include "LPT/LPT.h"
 #include "Serial.h"
 #include "Spinlock.h"
 #include "VBEConsole.h"

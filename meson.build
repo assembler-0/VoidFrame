@@ -51,6 +51,8 @@ inc_dirs = [
     src_root + '/drivers/ethernet',
     src_root + '/drivers/RTC',
     src_root + '/drivers/xHCI',
+    src_root + '/drivers/ISA',
+    src_root + '/drivers/sound',
     src_root + '/fs',
     arch_root + '/cpu',
     arch_root + '/gdt',
@@ -100,6 +102,9 @@ c_sources = [
     src_root + '/drivers/RTC/Rtc.c',
     src_root + '/drivers/ethernet/RTL8139.c',
     src_root + '/drivers/xHCI/xHCI.c',
+    src_root + '/drivers/ISA/ISA.c',
+    src_root + '/drivers/sound/SB16.c',
+    src_root + '/drivers/LPT/LPT.c',
     arch_root + '/idt/Idt.c',
     arch_root + '/gdt/Gdt.c',
     arch_root + '/interrupts/Interrupts.c',
@@ -188,7 +193,9 @@ run_target('run',
                       '-device', 'rtl8139',
                       '-device', 'e1000',
                       '-device', 'nec-usb-xhci,id=xhci',
-                      '-usb', '-device', 'usb-tablet'
+                      '-usb', '-device', 'usb-tablet',
+                      '-device', 'sb16',
+                      '-parallel', 'file:printer.out',
            ]
 )
 

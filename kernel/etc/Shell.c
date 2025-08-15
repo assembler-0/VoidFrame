@@ -2,7 +2,9 @@
 #include "../elf/ELFloader.h"
 #include "Console.h"
 #include "Editor.h"
+#include "ISA.h"
 #include "KernelHeap.h"
+#include "LPT/LPT.h"
 #include "MemOps.h"
 #include "Memory.h"
 #include "PCI/PCI.h"
@@ -13,6 +15,7 @@
 #include "Process.h"
 #include "RTC/Rtc.h"
 #include "RTL8139.h"
+#include "Serial.h"
 #include "StringOps.h"
 #include "VFS.h"
 #include "VMem.h"
@@ -273,9 +276,12 @@ static void show_help() {
     PrintKernel("  picunmask <irq>- Unmask IRQ <irq>\n");
     PrintKernel("  perf           - Show performance stats\n");
     PrintKernel("  memstat        - Show memory statistics\n");
+    PrintKernel("  serialw <msg>  - Write <msg> to available serial port\n");
+    PrintKernel("  parallelw <msg>- Write <msg> to available parallel port\n");
     PrintKernel("  setfreq <hz>   - Set PIT timer <hz>\n");
     PrintKernel("  filesize <file>- Get size of <file> in bytes\n");
     PrintKernel("  lspci          - List current PCI device(s)\n");
+    PrintKernel("  lsisa          - List current ISA device(s)\n");
     PrintKernel("  lsusb          - List current USB device(s) and xHCI controller(s)\n");
     PrintKernel("  arptest        - Perform an ARP test and send packets\n");
     PrintKernel("  elfload <path> - Load ELF executable in <path>\n");
@@ -306,8 +312,10 @@ static void ExecuteCommand(const char* cmd) {
         ListProcesses();
     } else if (FastStrCmp(cmd_name, "perf") == 0) {
         DumpPerformanceStats();
-    }else if (FastStrCmp(cmd_name, "layoutmem") == 0) {
+    } else if (FastStrCmp(cmd_name, "layoutmem") == 0) {
         PrintKernelMemoryLayout();
+    } else if (FastStrCmp(cmd_name, "lsisa") == 0) {
+        IsaPrintDevices();
     } else if (FastStrCmp(cmd_name, "memstat") == 0) {
         MemoryStats stats;
         GetDetailedMemoryStats(&stats);
@@ -336,7 +344,21 @@ static void ExecuteCommand(const char* cmd) {
             return;
         }
         KernelMemoryAlloc((uint32_t)size);
-    }else if (FastStrCmp(cmd_name, "setfreq") == 0) {
+    } else if (FastStrCmp(cmd_name, "serialw") == 0) {
+        char* str = GetArg(cmd, 1);
+        if (!str) {
+            PrintKernel("Usage: serialw <msg>\n");
+            return;
+        }
+        SerialWrite(str);
+    } else if (FastStrCmp(cmd_name, "parallelw") == 0) {
+        char* str = GetArg(cmd, 1);
+        if (!str) {
+            PrintKernel("Usage: parallelw <msg>\n");
+            return;
+        }
+        LPT_WriteString(str);
+    } else if (FastStrCmp(cmd_name, "setfreq") == 0) {
         char* freq_str = GetArg(cmd, 1);
         if (!freq_str) {
             PrintKernel("Usage: setfreq <hz>\n");

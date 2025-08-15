@@ -4,9 +4,11 @@
 #include "FAT12.h"
 #include "Fs.h"
 #include "Gdt.h"
+#include "ISA.h"
 #include "Ide.h"
 #include "Idt.h"
 #include "KernelHeap.h"
+#include "LPT/LPT.h"
 #include "MemOps.h"
 #include "MemPool.h"
 #include "Memory.h"
@@ -484,9 +486,13 @@ static InitResultT SystemInitS2(void) {
         PrintKernelSuccess("System: Huge pages available\n");
     }
 
-    // Setup memory protection LAST - after all systems are ready
-    StackGuardInit();
-    SetupMemoryProtection();
+    PrintKernel("Info: Initializing ISA bus...\n");
+    IsaInitBus();
+    PrintKernelSuccess("System: ISA bus initialized\n");
+
+    PrintKernel("Info: Scanning ISA devices...\n");
+    IsaAutoDetect();
+    IsaPrintDevices();
 
     PrintKernel("Info: Scanning PCI devices...\n");
     PciEnumerate();
@@ -500,12 +506,20 @@ static InitResultT SystemInitS2(void) {
     xHCIInit();
     PrintKernelSuccess("System: xHCI initialized\n");
 
+    PrintKernel("Info: Initializing LPT Driver...\n");
+    LPT_Init();
+    PrintKernelSuccess("System: LPT Driver initialized\n");
+
     // NEW: Final memory health check
     PrintKernel("Info: Final memory health check...\n");
     GetDetailedMemoryStats(&stats);
     if (stats.fragmentation_score > 50) {
         PrintKernelWarning("[WARN] High memory fragmentation detected\n");
     }
+
+    // Setup memory protection LAST - after all systems are ready
+    StackGuardInit();
+    SetupMemoryProtection();
 
     return INIT_SUCCESS;
 }
