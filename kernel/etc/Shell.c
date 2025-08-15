@@ -350,7 +350,8 @@ static void ExecuteCommand(const char* cmd) {
             PrintKernel("Usage: serialw <msg>\n");
             return;
         }
-        SerialWrite(str);
+        if (SerialWrite(str) < 0) PrintKernelWarning("Serial write error\n");
+        KernelFree(str);
     } else if (FastStrCmp(cmd_name, "parallelw") == 0) {
         char* str = GetArg(cmd, 1);
         if (!str) {
@@ -358,6 +359,7 @@ static void ExecuteCommand(const char* cmd) {
             return;
         }
         LPT_WriteString(str);
+        KernelFree(str);
     } else if (FastStrCmp(cmd_name, "setfreq") == 0) {
         char* freq_str = GetArg(cmd, 1);
         if (!freq_str) {
