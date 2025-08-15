@@ -184,7 +184,8 @@ run_target('run',
                       '-device', 'e1000',
                       '-device', 'nec-usb-xhci,id=xhci',
                       '-usb', '-device', 'usb-tablet',
-                      '-device', 'sb16',
+                      '-audiodev', 'pa,id=myaudio',
+                      '-device', 'sb16,iobase=0x220,irq=5,dma=1,dma16=5,audiodev=myaudio',
                       '-parallel', 'file:printer.out',
            ]
 )

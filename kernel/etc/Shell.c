@@ -15,6 +15,7 @@
 #include "Process.h"
 #include "RTC/Rtc.h"
 #include "RTL8139.h"
+#include "SB16.h"
 #include "Serial.h"
 #include "StringOps.h"
 #include "VFS.h"
@@ -265,6 +266,7 @@ static void show_help() {
     PrintKernel("  sched          - Show scheduler state\n");
     PrintKernel("  perf           - Show performance stats\n");
     PrintKernel("  time           - Show current time\n");
+    PrintKernel("  beep <x>       - Send Beep <x> times (SB16)\n");
     PrintKernel("  picmask <irq>  - Mask IRQ <irq>\n");
     PrintKernel("  picunmask <irq>- Unmask IRQ <irq>\n");
     PrintKernel("  perf           - Show performance stats\n");
@@ -336,6 +338,21 @@ static void ExecuteCommand(const char* cmd) {
             return;
         }
         KernelMemoryAlloc((uint32_t)size);
+    }  else if (FastStrCmp(cmd_name, "beep") == 0) {
+        char* size_str = GetArg(cmd, 1);
+        if (!size_str) {
+            PrintKernel("Usage: beep <x>\n");
+            return;
+        }
+        int size = atoi(size_str);
+        if (size <= 0) {
+            PrintKernel("Usage: beep <x>\n");
+            return;
+        }
+        for (int i = 0; i < size; i++) {
+            SB16_Beep(SB16_DSP_BASE);
+        }
+        KernelFree(size_str);
     } else if (FastStrCmp(cmd_name, "serialw") == 0) {
         char* str = GetArg(cmd, 1);
         if (!str) {

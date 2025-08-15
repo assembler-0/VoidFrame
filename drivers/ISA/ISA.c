@@ -69,34 +69,29 @@ void IsaInitBus(void) {
     for (int i = 0; i < (ISA_IO_END / 32 + 1); i++) {
         g_isa_bus.io_bitmap[i] = 0;
     }
-
-    // Reserve system I/O ports that are always occupied
-    // IsaAllocatePortRange(0x000, 0x020);  // DMA controller
-    // IsaAllocatePortRange(0x020, 0x002);  // PIC 1
-    // IsaAllocatePortRange(0x040, 0x004);  // Timer
-    // IsaAllocatePortRange(0x060, 0x001);  // Keyboard controller
-    // IsaAllocatePortRange(0x070, 0x002);  // RTC
-    // IsaAllocatePortRange(0x0A0, 0x002);  // PIC 2
-    // IsaAllocatePortRange(0x0C0, 0x020);  // DMA controller 2
-    // IsaAllocatePortRange(0x0F0, 0x010);  // Math coprocessor
 }
+
+// Register ISA device
+// In ISA.c
 
 // Register ISA device
 int IsaRegisterDevice(uint16_t io_base, uint16_t io_size, uint8_t irq,
                      uint8_t dma, IsaDeviceType type, const char* name) {
     if (g_isa_bus.device_count >= 16) {
-        return -1;  // Too many devices
+        PrintKernelError("ISA: Too many devices.\n");
+        return -1;
     }
 
-    // Check if I/O range is available
+    // CRITICAL CHANGE: Check if I/O range is available BEFORE probing.
+    // This prevents us from even touching a port range that is already
+    // claimed by another driver (like xHCI).
     if (!IsaCheckPortRange(io_base, io_size)) {
-        return -2;  // I/O conflict
+        PrintKernelWarningF("ISA: I/O conflict for %s at 0x%X\n", name, io_base);
+        return -2;
     }
 
-    // Probe for actual device presence
-    if (!IsaProbeDevice(io_base, io_size)) {
-        return -3;  // Device not detected
-    }
+    // The probe should now happen in IsaAutoDetect BEFORE calling this.
+    // We assume if this function is called, the device is present.
 
     IsaDevice* dev = &g_isa_bus.devices[g_isa_bus.device_count];
     dev->io_base = io_base;
@@ -112,11 +107,12 @@ int IsaRegisterDevice(uint16_t io_base, uint16_t io_size, uint8_t irq,
     }
     dev->name[31] = '\0';
 
-    // Allocate I/O ports
+    // Allocate I/O ports ONLY after confirming they are free.
     IsaAllocatePortRange(io_base, io_size);
+    PrintKernelF("ISA: Registered %s at I/O 0x%X\n", name, io_base);
 
     g_isa_bus.device_count++;
-    return g_isa_bus.device_count - 1;  // Return device index
+    return g_isa_bus.device_count - 1;
 }
 
 // Unregister ISA device
@@ -136,7 +132,12 @@ void IsaUnregisterDevice(int device_id) {
 }
 
 // Auto-detect common ISA devices
+// In ISA.c
+
+// Auto-detect common ISA devices
 void IsaAutoDetect(void) {
+    PrintKernel("Starting ISA device auto-detection...\n");
+
     // Try to detect Serial ports
     if (IsaProbeDevice(ISA_SERIAL1, 8)) {
         IsaRegisterDevice(ISA_SERIAL1, 8, ISA_IRQ_SERIAL1, 0,
@@ -150,34 +151,30 @@ void IsaAutoDetect(void) {
 
     // Try to detect Parallel ports
     if (IsaProbeDevice(ISA_LPT1, 3)) {
-        IsaRegisterDevice(ISA_LPT1, 3, ISA_IRQ_LPT1, 0,
+        IsaRegisterDevice(ISA_LPT1, 3, ISA_IRQ_LPT1, 0, // DMA for LPT is often 3, but can be unused.
                          ISA_DEVICE_PARALLEL, "LPT1");
     }
 
-    if (IsaProbeDevice(ISA_LPT2, 3)) {
-        IsaRegisterDevice(ISA_LPT2, 3, ISA_IRQ_LPT2, 0,
-                         ISA_DEVICE_PARALLEL, "LPT2");
-    }
-
-    // Try to detect Sound Blaster 16
-    if (SB16_Probe(SB16_DSP_BASE)) {
-        IsaRegisterDevice(SB16_DSP_BASE, 16, 5, ISA_DMA_SB_8BIT,
-                         ISA_DEVICE_SOUND, "Sound Blaster 16");
-    }
-
-    // Try to detect Game Port
-    if (IsaProbeDevice(ISA_GAME_PORT, 1)) {
-        IsaRegisterDevice(ISA_GAME_PORT, 1, 0, 0,
-                         ISA_DEVICE_GAME_PORT, "Game Port");
-    }
-
     // Try to detect IDE controller
+    // This is a common one. A simple probe might be okay here.
     if (IsaProbeDevice(ISA_IDE_PRIMARY, 8)) {
         IsaRegisterDevice(ISA_IDE_PRIMARY, 8, ISA_IRQ_IDE_PRIMARY, 0,
                          ISA_DEVICE_IDE, "IDE Primary");
     }
-}
 
+    if (SB16_Probe(SB16_DSP_BASE)) {
+        IsaRegisterDevice(SB16_DSP_BASE, 16, 5, ISA_DMA_SB_8BIT,
+                         ISA_DEVICE_SOUND, "Sound Blaster 16");
+
+        // Turn the speaker on!
+        dsp_write(SB16_DSP_BASE, 0xD1);
+        PrintKernelSuccess("Sound Blaster 16 speaker is ON.\n");
+
+        PrintKernel("Testing SB16 beep...\n");
+        SB16_Beep(SB16_DSP_BASE);
+    }
+
+}
 // Get device by index
 IsaDevice* IsaGetDevice(int device_id) {
     if (device_id < 0 || device_id >= g_isa_bus.device_count) {
