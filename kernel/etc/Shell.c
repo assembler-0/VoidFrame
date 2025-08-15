@@ -335,6 +335,7 @@ static void ExecuteCommand(const char* cmd) {
         int size = atoi(size_str);
         if (size <= 0) {
             PrintKernel("Usage: alloc <size>\n");
+            KernelFree(size_str);
             return;
         }
         KernelMemoryAlloc((uint32_t)size);

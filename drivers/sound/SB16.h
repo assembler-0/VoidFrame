@@ -18,12 +18,16 @@
 int SB16_Probe(uint16_t io_base);
 void SB16_Beep(uint16_t io_base);
 
-static inline void dsp_write(uint16_t io_base, uint8_t value) {
+static inline int dsp_write(uint16_t io_base, uint8_t value) {
     // Wait until the DSP is not busy (bit 7 of the status port is 0)
-    while (inb(io_base + SB16_DSP_STATUS) & 0x80) {}
-
+    int timeout = 100000;
+    while ((inb(io_base + SB16_DSP_STATUS) & 0x80) && timeout-- > 0) {}
+    if (timeout <= 0) {
+        return -1; // Timeout
+    }
     // Send the command/data byte
     outb(io_base + SB16_DSP_WRITE, value);
+    return 0; // Success
 }
 
 #endif // VOIDFRAME_SB16_H

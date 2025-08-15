@@ -1,7 +1,10 @@
 #include "ISA.h"
 #include "Console.h"
 #include "Io.h"
+#include "KernelHeap.h"
+#include "Pic.h"
 #include "SB16.h"
+#include "VMem.h"
 #include "stdint.h"
 
 static IsaBus g_isa_bus = {0};
@@ -132,9 +135,6 @@ void IsaUnregisterDevice(int device_id) {
 }
 
 // Auto-detect common ISA devices
-// In ISA.c
-
-// Auto-detect common ISA devices
 void IsaAutoDetect(void) {
     PrintKernel("Starting ISA device auto-detection...\n");
 
@@ -165,11 +165,6 @@ void IsaAutoDetect(void) {
     if (SB16_Probe(SB16_DSP_BASE)) {
         IsaRegisterDevice(SB16_DSP_BASE, 16, 5, ISA_DMA_SB_8BIT,
                          ISA_DEVICE_SOUND, "Sound Blaster 16");
-
-        // Turn the speaker on!
-        dsp_write(SB16_DSP_BASE, 0xD1);
-        PrintKernelSuccess("Sound Blaster 16 speaker is ON.\n");
-
         PrintKernel("Testing SB16 beep...\n");
         SB16_Beep(SB16_DSP_BASE);
     }

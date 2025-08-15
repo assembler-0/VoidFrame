@@ -385,6 +385,17 @@ void SystemInitS1(const uint32_t info) {
     PrintKernelSuccess("System: Memory initialized\n");
 }
 
+static void IRQUnmaskCoreSystems() {
+    PrintKernel("Unmasking IRQs...");
+    PIC_enable_irq(0);
+    PIC_enable_irq(1);
+    PIC_enable_irq(12);
+    PIC_enable_irq(2);
+    PIC_enable_irq(14);
+    PIC_enable_irq(15);
+    PrintKernelSuccess("System: IRQs unmasked\n");
+}
+
 // Enhanced SystemInitS2 function with memory enhancements
 static InitResultT SystemInitS2(void) {
     // Initialize virtual memory manager with validation
@@ -431,14 +442,11 @@ static InitResultT SystemInitS2(void) {
     PrintKernel("Info: Initializing PIC & PIT...\n");
     PicInstall();
     PitInstall();
-    PIC_enable_irq(0);
     PrintKernelSuccess("System: PIC & PIT initialized\n");
 
     // Initialize keyboard
     PrintKernel("Info: Initializing keyboard...\n");
     PS2Init();
-    PIC_enable_irq(1);
-    PIC_enable_irq(12);
     PrintKernelSuccess("System: Keyboard initialized\n");
 
     // Initialize shell
@@ -460,7 +468,6 @@ static InitResultT SystemInitS2(void) {
         // Explicitly initialize FAT12 before VFS
         PrintKernel("Info: Initializing FAT12...\n");
         if (Fat12Init(0) == 0) {
-            PIC_enable_irq(2);
             PrintKernelSuccess("System: FAT12 Driver initialized\n");
         } else {
             PrintKernelWarning("[WARN] FAT12 initialization failed\n");
@@ -516,6 +523,8 @@ static InitResultT SystemInitS2(void) {
     if (stats.fragmentation_score > 50) {
         PrintKernelWarning("[WARN] High memory fragmentation detected\n");
     }
+
+    IRQUnmaskCoreSystems();
 
     // Setup memory protection LAST - after all systems are ready
     StackGuardInit();

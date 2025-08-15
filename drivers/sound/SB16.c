@@ -35,32 +35,24 @@ int SB16_Probe(uint16_t io_base) {
 void SB16_Beep(uint16_t io_base) {
     delay(10000);
 
-    // --- Step 1: Set the sample rate ---
-    // Command 0x40: Set Time Constant
-    // Sample Rate = 1,000,000 / (256 - time_constant)
-    // We will aim for 8000 Hz. time_constant = 256 - (1,000,000 / 8000) = 131
-    dsp_write(io_base, 0x40);
-    dsp_write(io_base, 131); // Time constant for ~8000 Hz
+    dsp_write(io_base, 0xD1);  // Turn speaker on
+    delay(1000);               // Small delay after speaker enable
 
-    // --- Step 2: Tell the DSP we are sending a block of data ---
-    // Command 0x14: Single-cycle (PIO) 8-bit Output
+    // Set the sample rate
+    dsp_write(io_base, 0x40);
+    dsp_write(io_base, 0xA8);
+
+    // Tell the DSP we are sending a block of data
     dsp_write(io_base, 0x14);
 
-    // Send the length of the data block (e.g., 256 bytes).
-    // The length is sent as (length - 1), low-byte first.
-    // For 256 bytes, length-1 is 255.
+    // Send the length
     uint16_t length = 256;
-    dsp_write(io_base, (length - 1) & 0xFF);       // Low byte of length
-    dsp_write(io_base, ((length - 1) >> 8) & 0xFF); // High byte of length
+    dsp_write(io_base, (length - 1) & 0xFF);
+    dsp_write(io_base, ((length - 1) >> 8) & 0xFF);
 
-    // --- Step 3: Send the actual audio data (our square wave) ---
+    // Send the actual audio data
     for (int j = 0; j < length; j++) {
-        // Alternate between a high and low value to create the wave
-        // Every 8 samples we flip the value. This determines the pitch.
-        if (j % 16 < 8) {
-            dsp_write(io_base, 0xF0); // High value
-        } else {
-            dsp_write(io_base, 0x10); // Low value
-        }
+        uint8_t sample = (j % 16 < 8) ? 0xF0 : 0x10;
+        dsp_write(io_base, sample);
     }
 }
