@@ -32,13 +32,6 @@ static void Version() {
     PrintKernelSuccess("VoidFrame Shell v0.0.1-beta\n");
 }
 
-void info(void) {
-    if (!VBEIsInitialized()) return;
-    VBEShowInfo();
-    int count = 100;
-    while (count--) Yield();
-}
-
 extern uint8_t _kernel_phys_start[];
 extern uint8_t _kernel_phys_end[];
 extern uint8_t _text_start[];
@@ -287,7 +280,6 @@ static void show_help() {
     PrintKernel("  elfload <path> - Load ELF executable in <path>\n");
     PrintKernel("  layoutmem      - Show current VoidFrame memory layout as of 14/08/25\n");
     PrintKernel("  clear          - Clear screen\n");
-    PrintKernel("  info           - A piece information about the kernel\n");
     PrintKernel("  cd <dir>       - Change directory\n");
     PrintKernel("  pwd            - Print working directory\n");
     PrintKernel("  ls [path]      - List directory contents\n");
@@ -420,8 +412,6 @@ static void ExecuteCommand(const char* cmd) {
         PIC_enable_irq(irq);
     } else if (FastStrCmp(cmd_name, "ver") == 0) {
         Version();
-    } else if (FastStrCmp(cmd_name, "info") == 0) {
-        CreateProcess(info);
     } else if (FastStrCmp(cmd_name, "sched") == 0) {
         DumpSchedulerState();
     } else if (FastStrCmp(cmd_name, "clear") == 0) {

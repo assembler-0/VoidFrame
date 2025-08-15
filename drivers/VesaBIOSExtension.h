@@ -43,7 +43,6 @@ void VBEDrawChar(uint32_t x, uint32_t y, char c, uint32_t fg_color, uint32_t bg_
 void VBEDrawString(uint32_t x, uint32_t y, const char* str, uint32_t fg_color, uint32_t bg_color);
 void VBEShowSplash(void);
 void VBEShowPanic(void);
-void VBEShowInfo(void);
 void delay(uint32_t ms);
 // Utility functions
 vbe_info_t* VBEGetInfo(void);

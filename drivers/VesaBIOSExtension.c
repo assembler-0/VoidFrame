@@ -6,30 +6,11 @@
 #include "stdlib.h"
 
 extern const uint32_t _binary_splash1_32_raw_start[];
-extern const uint32_t _binary_splash2_32_raw_start[];
-extern const uint32_t _binary_splash3_32_raw_start[];
-extern const uint32_t _binary_splash4_32_raw_start[];
-extern const uint32_t _binary_splash5_32_raw_start[];
-extern const uint32_t _binary_splash6_32_raw_start[];
-extern const uint32_t _binary_splash7_32_raw_start[];
-extern const uint32_t _binary_splash8_32_raw_start[];
-extern const uint32_t _binary_splash9_32_raw_start[];
-extern const uint32_t _binary_splash10_32_raw_start[];
 extern const uint32_t _binary_panic_32_raw_start[];
-extern const uint32_t _binary_info_32_raw_start[];
 
 // Update your array of pointers
 const uint32_t* splash_images[] = {
-    _binary_splash1_32_raw_start,
-    _binary_splash2_32_raw_start,
-    _binary_splash3_32_raw_start,
-    _binary_splash4_32_raw_start,
-    _binary_splash5_32_raw_start,
-    _binary_splash6_32_raw_start,
-    _binary_splash7_32_raw_start,
-    _binary_splash8_32_raw_start,
-    _binary_splash9_32_raw_start,
-    _binary_splash10_32_raw_start,
+    _binary_splash1_32_raw_start
 };
 
 const unsigned int num_splash_images = sizeof(splash_images) / sizeof(uint32_t*);
@@ -40,11 +21,6 @@ const uint32_t* panic_images[] = {
 
 const unsigned int num_panic_images = sizeof(panic_images) / sizeof(uint32_t*);
 
-const uint32_t* info_images[] = {
-    _binary_info_32_raw_start
-};
-
-const unsigned int num_info_images = sizeof(info_images) / sizeof(uint32_t*);
 // Multiboot2 tag types
 #define MULTIBOOT_TAG_FRAMEBUFFER 8
 #define MULTIBOOT_TAG_VBE         7
@@ -342,7 +318,7 @@ void VBEDrawStringCentered(uint32_t center_x, uint32_t center_y, const char* str
 void VBEShowSplash(void) {
     if (!vbe_initialized) return;
 
-    for (unsigned int i = 0; i < num_splash_images * 4; i++) { // Loop
+    for (unsigned int i = 0; i < num_splash_images; i++) { // Loop
         const uint32_t* image_data = (const uint32_t*)splash_images[i % num_splash_images];
 
         for (uint32_t y = 0; y < vbe_info.height; y++) {
@@ -350,29 +326,13 @@ void VBEShowSplash(void) {
                 VBEPutPixel(x, y, image_data[y * vbe_info.width + x]);
             }
         }
-        delay(15500000); // Adjust this value to change the delay
     }
+    delay(1000000000);
 }
 
 void VBEShowPanic(void) {
     if (!vbe_initialized) return;
     const uint32_t* image_data = (const uint32_t*)panic_images[0];
-    uint8_t* fb = (uint8_t*)vbe_info.framebuffer;
-
-    // Copy entire scanlines at once instead of pixel-by-pixel
-    for (uint32_t y = 0; y < vbe_info.height; y++) {
-        // Calculate source and destination for this scanline
-        const uint32_t* src = &image_data[y * vbe_info.width];
-        uint8_t* dst = fb + (y * vbe_info.pitch);
-
-        // Copy entire scanline (width * 4 bytes) using optimized memcpy
-        FastMemcpy(dst, src, vbe_info.width * 4);
-    }
-}
-
-void VBEShowInfo(void) {
-    if (!vbe_initialized) return;
-    const uint32_t* image_data = (const uint32_t*)info_images[0];
     uint8_t* fb = (uint8_t*)vbe_info.framebuffer;
 
     // Copy entire scanlines at once instead of pixel-by-pixel

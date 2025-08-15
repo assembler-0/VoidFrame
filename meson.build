@@ -113,17 +113,7 @@ c_sources = [
 
 obj_sources = [
 	src_root + '/kernel/etc/objects/splash1.o',
-	src_root + '/kernel/etc/objects/splash2.o',
-	src_root + '/kernel/etc/objects/splash3.o',
-	src_root + '/kernel/etc/objects/splash4.o',
-	src_root + '/kernel/etc/objects/splash5.o',
-	src_root + '/kernel/etc/objects/splash6.o',
-	src_root + '/kernel/etc/objects/splash7.o',
-	src_root + '/kernel/etc/objects/splash8.o',
-	src_root + '/kernel/etc/objects/splash9.o',
-	src_root + '/kernel/etc/objects/splash10.o',
 	src_root + '/kernel/etc/objects/panic.o',
-	src_root + '/kernel/etc/objects/info.o'
 ]
 
 # Build include flags
