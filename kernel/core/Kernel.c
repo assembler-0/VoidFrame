@@ -649,7 +649,6 @@ static InitResultT PXS2(void) {
 
     IRQUnmaskCoreSystems();
 
-    // Setup memory protection LAST - after all systems are ready
     StackGuardInit();
     SetupMemoryProtection();
 

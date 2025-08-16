@@ -57,7 +57,7 @@ void LPT_WriteChar(char c) {
     // Assert strobe (bit 1 -> pin LOW due to inversion)
     outb(g_lpt_io_base + LPT_CONTROL_PORT, control_val | LPT_CONTROL_STROBE);
 
-    // Strobe pulse width (minimum 0.5μs, using ~10μs for safety)
+    // Strobe pulse width (minimum 0.5 μs, using ~10μs for safety)
     for(volatile int i = 0; i < 50; i++);
 
     // Release strobe (bit 0 -> pin HIGH)

@@ -119,7 +119,15 @@
 ## 🏁 Final Goals (v1.0 release)
 
 - [ ] Bootable ISO with GRUB2 EFI support
-- [ ] Fully self-hosted userland shell
-- [ ] User process execution (ELF64)
-- [ ] Init system + FS + IPC working
+- [ ] Usable VMM & PMM
+- [ ] Userspace C runtime (libc-lite)
+- [ ] XFS support
+- [ ] Install and setup to disk
+- [ ] Framebuffer graphics support
+- [ ] Virtual files
+- [ ] HPET/APIC support
+- [ ] ACPI support
+- [ ] Modern drivers
+- [ ] Networking
+- [ ] Better Fault handling
 - [ ] At least one demo program
