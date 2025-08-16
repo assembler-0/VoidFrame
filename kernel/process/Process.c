@@ -94,7 +94,7 @@ static uint64_t CalculateSecureChecksum(const SecurityToken* token, uint32_t pid
 }
 
 static inline int FindFreeSlotFast(void) {
-    if (UNLIKELY(active_process_bitmap == ~1ULL)) { // All slots except 0 taken
+   if (UNLIKELY(active_process_bitmap == ~1ULL)) { // All slots except 0 taken
         return -1;
     }
     
@@ -126,7 +126,7 @@ static void AddToTerminationQueueAtomic(uint32_t slot) {
     }
 
     termination_queue[tail] = slot;
-    __sync_synchronize(); // Memory barrier
+    __atomic_thread_fence(__ATOMIC_SEQ_CST);
     term_queue_tail = new_tail;
     AtomicInc(&term_queue_count);
 }
@@ -258,7 +258,7 @@ void TerminateProcess(uint32_t pid, TerminationReason reason, uint32_t exit_code
     }
 
     proc->state = PROC_ZOMBIE;           // Set state FIRST
-    __sync_synchronize();                 // Full memory barrier
+    __atomic_thread_fence(__ATOMIC_SEQ_CST);
     AddToTerminationQueueAtomic(slot);   // Then add to queue
     SpinLock(&pid_lock);
     int idx = proc->pid / 64;
