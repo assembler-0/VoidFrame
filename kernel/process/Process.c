@@ -1129,7 +1129,7 @@ void CleanupTerminatedProcesses(void) {
 
         // Cleanup resources
         if (proc->stack) {
-            VMemFree(proc->stack, STACK_SIZE);
+            VMemFreeStack(proc->stack, STACK_SIZE);
             proc->stack = NULL;
         }
 

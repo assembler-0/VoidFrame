@@ -1,5 +1,6 @@
 #include "MemOps.h"
 #include "Cpu.h"
+#include "Io.h"
 #include "Panic.h"
 
 void strcpy(char* dest, const char* src) {
@@ -187,8 +188,11 @@ void* FastMemcpy(void* dest, const void* src, uint64_t size) {
         // when mixing with older SSE code.
         asm volatile("vzeroupper" ::: "memory");
     }
+
     else if (features->sse2 && size >= 16) {
-        // SSE2 copy using unaligned load/store.
+        // SSE2 copy using unaligned load/store. Disable IRQs to avoid ISR clobber.
+        irq_flags_t irqf = save_irq_flags();
+        cli();
         while (size >= 16) {
             asm volatile(
                 "movdqu (%1), %%xmm7\n"   // Unaligned read from src
@@ -201,6 +205,8 @@ void* FastMemcpy(void* dest, const void* src, uint64_t size) {
             s += 16;
             size -= 16;
         }
+        asm volatile("sfence" ::: "memory");
+        restore_irq_flags(irqf);
     }
 
     if (size >= 8) {
