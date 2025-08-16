@@ -690,6 +690,6 @@ void KernelMainHigherHalf(void) {
 
     while (1) { // redundant but added for worst case scenario, should not reach here
         Yield();
-        __asm__ volatile("hlt");
+        __builtin_unreachable();
     }
 }
