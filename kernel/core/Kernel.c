@@ -584,7 +584,7 @@ static InitResultT PXS2(void) {
 
     // Initialize IDE driver
     PrintKernel("Info: Initializing IDE driver...\n");
-    int ide_result = IdeInit();
+    const int ide_result = IdeInit();
     if (ide_result == IDE_OK) {
         PrintKernelSuccess("System: IDE driver initialized\n");
 
@@ -690,6 +690,5 @@ void KernelMainHigherHalf(void) {
 
     while (1) { // redundant but added for worst case scenario, should not reach here
         Yield();
-        __builtin_unreachable();
     }
 }
