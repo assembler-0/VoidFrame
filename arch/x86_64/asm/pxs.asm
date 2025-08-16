@@ -32,21 +32,6 @@ vbe_tag_end:
     dd 8    ; size
 header_end:
 
-;section .multiboot
-;header_start:
-;    dd 0xE85250D6                ; Multiboot2 magic number
-;    dd 0                         ; Architecture 0 (protected mode i386)
-;    dd header_end - header_start ; header length
-;    ; checksum = -(magic + arch + length)
-;    dd -(0xE85250D6 + 0 + (header_end - header_start))
-;
-;    ; End tag - required
-;    dw 0    ; type
-;    dw 0    ; flags
-;    dd 8    ; size
-;header_end:
-; fallback
-
 bits 32
 
 section .text
@@ -132,15 +117,15 @@ start:
     mov edi, pdp_table
     lea eax, [pd_table + 3] ; Address of PD table + Present, R/W flags
     mov [edi], eax
-    
+
     ; PDP[1] -> PD Table 2 (1-2GB)
     lea eax, [pd_table2 + 3]
     mov [edi + 8], eax
-    
+
     ; PDP[2] -> PD Table 3 (2-3GB)
     lea eax, [pd_table3 + 3]
     mov [edi + 16], eax
-    
+
     ; PDP[3] -> PD Table 4 (3-4GB)
     lea eax, [pd_table4 + 3]
     mov [edi + 24], eax

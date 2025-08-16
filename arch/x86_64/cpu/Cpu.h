@@ -2,12 +2,16 @@
 #define CPU_H
 
 #include "stdint.h"
+#include <stdbool.h> // For bool type
+
 typedef struct {
-    uint8_t sse:1;
-    uint8_t sse2:1;
-    uint8_t avx:1;
-    uint8_t avx2:1;
+    bool sse;
+    bool sse2;
+    bool osxsave; // Does the OS support XSAVE/XRSTOR? (Crucial for AVX)
+    bool avx;
+    bool avx2;
 } CpuFeatures;
+
 // DO NOT TOUCH THIS STRUCTURE - must match interrupt ASM stack layout
 typedef struct Registers {
     uint64_t r15, r14, r13, r12, r11, r10, r9, r8;
@@ -21,6 +25,5 @@ typedef struct Registers {
 
 void CpuInit(void);
 CpuFeatures* GetCpuFeatures(void);
-void EnableSse(void);
 
-#endif
+#endif // CPU_H
