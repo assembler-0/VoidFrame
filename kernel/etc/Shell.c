@@ -281,6 +281,7 @@ static void show_help() {
     PrintKernel("  arptest        - Perform an ARP test and send packets\n");
     PrintKernel("  elfload <path> - Load ELF executable in <path>\n");
     PrintKernel("  layoutmem      - Show current VoidFrame memory layout as of 14/08/25\n");
+    PrintKernel("  vmemfreelist   - Show VMem free list\n");
     PrintKernel("  clear          - Clear screen\n");
     PrintKernel("  cd <dir>       - Change directory\n");
     PrintKernel("  pwd            - Print working directory\n");
@@ -324,6 +325,8 @@ static void ExecuteCommand(const char* cmd) {
         PrintHeapStats();
     } else if (FastStrCmp(cmd_name, "lspci") == 0) {
         CreateProcess(PciEnumerate);
+    } else if (FastStrCmp(cmd_name, "vmemfreelist") == 0) {
+        VMemDumpFreeList();
     } else if (FastStrCmp(cmd_name, "lsusb") == 0) {
         CreateProcess(xHCIEnumerate);
     } else if (FastStrCmp(cmd_name, "alloc") == 0) {

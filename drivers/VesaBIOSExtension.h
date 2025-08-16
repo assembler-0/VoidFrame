@@ -22,8 +22,6 @@ typedef struct {
     uint32_t height;        // Screen height
     uint32_t pitch;         // Bytes per scanline
     uint32_t bpp;           // Bits per pixel
-
-    // NEW: Add fields for the color layout
     uint8_t red_mask_size;
     uint8_t red_field_position;
     uint8_t green_mask_size;

@@ -1024,7 +1024,7 @@ uint32_t CreateSecureProcess(void (*entry_point)(void), uint8_t privilege, uint3
     FastMemset(&processes[slot], 0, sizeof(Process));
 
     // Allocate aligned stack
-    void* stack = VMemAllocWithGuards(STACK_SIZE);
+    void* stack = VMemAllocStack(STACK_SIZE);
     if (UNLIKELY(!stack)) {
         FreeSlotFast(slot);
         SpinUnlockIrqRestore(&scheduler_lock, flags);
@@ -1063,7 +1063,7 @@ uint32_t CreateSecureProcess(void (*entry_point)(void), uint8_t privilege, uint3
     token->checksum = CalculateSecureChecksum(token, new_pid);
 
     // Set up secure initial context
-    uint64_t rsp = (uint64_t)stack + STACK_SIZE;
+    uint64_t rsp = (uint64_t)stack;
     rsp &= ~0xF; // 16-byte alignment
 
     // Push ProcessExitStub as return address
@@ -1129,7 +1129,7 @@ void CleanupTerminatedProcesses(void) {
 
         // Cleanup resources
         if (proc->stack) {
-            VMemFreeWithGuards(proc->stack, STACK_SIZE);
+            VMemFree(proc->stack, STACK_SIZE);
             proc->stack = NULL;
         }
 

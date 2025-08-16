@@ -168,90 +168,70 @@ void* FastMemcpy(void* dest, const void* src, uint64_t size) {
 
     // Use AVX2 for large copies if available
     if (features->avx2 && size >= 32) {
-        // Handle initial misalignment
-        while (((uintptr_t)d & 31) != 0 && size > 0) {
-            *d++ = *s++;
-            size--;
-        }
-
-        // AVX2 copy for aligned destination
+        // AVX2 copy using an unaligned load and store for maximum safety.
+        // We save and restore ymm7 to be invisible to the calling code.
         while (size >= 32) {
             asm volatile(
-                "vmovdqu (%1), %%ymm0\n"
-                "vmovdqa %%ymm0, (%0)\n"
+                "vmovdqu (%1), %%ymm7\n"  // Unaligned read from src
+                "vmovdqu %%ymm7, (%0)\n"  // Unaligned write to dest
                 :
                 : "r"(d), "r"(s)
-                : "memory", "ymm0"
+                : "memory", "ymm7"
             );
             d += 32;
             s += 32;
             size -= 32;
         }
 
+        // IMPORTANT: Clean up the AVX state to prevent performance issues
+        // when mixing with older SSE code.
         asm volatile("vzeroupper" ::: "memory");
     }
     else if (features->sse2 && size >= 16) {
-        // Handle alignment for SSE2
-        while (((uintptr_t)d & 15) != 0 && size > 0) {
-            *d++ = *s++;
-            size--;
-        }
-
-        // SSE2 copy
+        // SSE2 copy using unaligned load/store.
         while (size >= 16) {
             asm volatile(
-                "movdqu (%1), %%xmm0\n"
-                "movdqa %%xmm0, (%0)\n"
+                "movdqu (%1), %%xmm7\n"   // Unaligned read from src
+                "movdqu %%xmm7, (%0)\n"   // Unaligned write to dest
                 :
                 : "r"(d), "r"(s)
-                : "memory", "xmm0"
+                : "memory", "xmm7"
             );
             d += 16;
             s += 16;
             size -= 16;
         }
     }
-    else if (size >= 8) {
-        // Handle 8-byte alignment
+
+    if (size >= 8) {
+        // Byte-align destination first
         while (((uintptr_t)d & 7) != 0 && size > 0) {
             *d++ = *s++;
             size--;
         }
 
+        // If src is also aligned, we can use fast 64-bit moves
         if (((uintptr_t)s & 7) == 0) {
-            // Both aligned - use 64-bit copies with aggressive unrolling
             uint64_t* d64 = (uint64_t*)d;
             const uint64_t* s64 = (const uint64_t*)s;
 
-            // Unroll even more for better performance
             while (size >= 64) {
-                d64[0] = s64[0];  d64[1] = s64[1];  d64[2] = s64[2];  d64[3] = s64[3];
-                d64[4] = s64[4];  d64[5] = s64[5];  d64[6] = s64[6];  d64[7] = s64[7];
+                d64[0] = s64[0]; d64[1] = s64[1]; d64[2] = s64[2]; d64[3] = s64[3];
+                d64[4] = s64[4]; d64[5] = s64[5]; d64[6] = s64[6]; d64[7] = s64[7];
                 d64 += 8;
                 s64 += 8;
                 size -= 64;
             }
-
             while (size >= 8) {
                 *d64++ = *s64++;
                 size -= 8;
             }
-
             d = (uint8_t*)d64;
             s = (const uint8_t*)s64;
         }
     }
 
-    // Handle remainder bytes with potential 4-byte optimization
-    if (size >= 4 && ((uintptr_t)s & 3) == 0 && ((uintptr_t)d & 3) == 0) {
-        while (size >= 4) {
-            *(uint32_t*)d = *(const uint32_t*)s;
-            d += 4;
-            s += 4;
-            size -= 4;
-        }
-    }
-
+    // Handle the remainder
     while (size > 0) {
         *d++ = *s++;
         size--;

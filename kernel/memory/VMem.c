@@ -2,7 +2,6 @@
 // Created by Atheria on 7/15/25.
 //
 #include "VMem.h"
-
 #include "Console.h"
 #include "MemOps.h"
 #include "Memory.h"
@@ -14,6 +13,11 @@ static volatile int vmem_lock = 0;
 static uint64_t vmem_allocations = 0;
 static uint64_t vmem_frees = 0;
 static uint64_t tlb_flushes = 0;
+
+// A pre-allocated pool for free list nodes to avoid dynamic allocation issues.
+#define MAX_FREE_BLOCKS 1024
+static VMemFreeBlock free_block_pool[MAX_FREE_BLOCKS];
+static VMemFreeBlock* free_block_head = NULL;
 
 extern uint64_t total_pages;
 extern uint8_t _kernel_phys_start[];
@@ -27,12 +31,35 @@ extern uint8_t _data_end[];
 extern uint8_t _bss_start[];
 extern uint8_t _bss_end[];
 
+static void InitFreeBlockPool(void) {
+    free_block_head = &free_block_pool[0];
+    for (int i = 0; i < MAX_FREE_BLOCKS - 1; ++i) {
+        free_block_pool[i].next = &free_block_pool[i + 1];
+    }
+    free_block_pool[MAX_FREE_BLOCKS - 1].next = NULL;
+}
+
+static VMemFreeBlock* AllocFreeBlock(void) {
+    if (!free_block_head) {
+        return NULL; // Pool exhausted
+    }
+    VMemFreeBlock* block = free_block_head;
+    free_block_head = block->next;
+    return block;
+}
+
+static void ReleaseFreeBlock(VMemFreeBlock* block) {
+    block->next = free_block_head;
+    free_block_head = block;
+}
+
 static inline int is_valid_phys_addr(uint64_t paddr) {
     // Basic sanity check - adjust limits based on your system
     return (paddr != 0 && paddr < (total_pages * PAGE_SIZE));
 }
 
 void VMemInit(void) {
+    InitFreeBlockPool();
     // Get current PML4 from CR3 (set by bootstrap)
     uint64_t pml4_phys_addr;
     asm volatile("mov %%cr3, %0" : "=r"(pml4_phys_addr));
@@ -218,60 +245,70 @@ int VMemMapHuge(uint64_t vaddr, uint64_t paddr, uint64_t flags) {
 
 void* VMemAlloc(uint64_t size) {
     if (size == 0) return NULL;
-
     size = PAGE_ALIGN_UP(size);
 
+    uint64_t vaddr = 0;
     irq_flags_t flags = SpinLockIrqSave(&vmem_lock);
 
-    // Ensure heap starts in proper virtual address space
-    if (kernel_space.next_vaddr < VIRT_ADDR_SPACE_START) {
-        kernel_space.next_vaddr = VIRT_ADDR_SPACE_START;
+    // 1. Search the free list for a suitable block
+    VMemFreeBlock* prev = NULL;
+    VMemFreeBlock* current = kernel_space.free_list;
+    while (current) {
+        if (current->size >= size) {
+            vaddr = current->base;
+            if (current->size == size) { // Perfect fit
+                if (prev) {
+                    prev->next = current->next;
+                } else {
+                    kernel_space.free_list = current->next;
+                }
+                ReleaseFreeBlock(current);
+            } else { // Block is larger, split it
+                current->base += size;
+                current->size -= size;
+            }
+            break;
+        }
+        prev = current;
+        current = current->next;
     }
 
-    // Check if we have enough space
-    if (kernel_space.next_vaddr + size > VIRT_ADDR_SPACE_END) {
-        SpinUnlockIrqRestore(&vmem_lock, flags);
-        return NULL; // Out of virtual address space
+    // 2. If no suitable block found, use the bump allocator
+    if (vaddr == 0) {
+        if (kernel_space.next_vaddr < VIRT_ADDR_SPACE_START) {
+            kernel_space.next_vaddr = VIRT_ADDR_SPACE_START;
+        }
+        if (kernel_space.next_vaddr + size > VIRT_ADDR_SPACE_END) {
+            SpinUnlockIrqRestore(&vmem_lock, flags);
+            return NULL; // Out of virtual address space
+        }
+        vaddr = kernel_space.next_vaddr;
+        kernel_space.next_vaddr += size;
     }
 
-    const uint64_t vaddr = kernel_space.next_vaddr;
-
+    vmem_allocations++;
     SpinUnlockIrqRestore(&vmem_lock, flags);
 
-    // Map pages without holding the lock
-    uint64_t allocated_size = 0;
+    // 3. Map physical pages into the allocated virtual space
     for (uint64_t offset = 0; offset < size; offset += PAGE_SIZE) {
         void* paddr = AllocPage();
         if (!paddr) {
-            if (allocated_size > 0) {
-                VMemFree((void*)vaddr, allocated_size);
-            }
+            VMemFree((void*)vaddr, size); // Rollback
             return NULL;
         }
-
-        int result = VMemMap(vaddr + offset, (uint64_t)paddr, PAGE_WRITABLE);
-        if (result != VMEM_SUCCESS) {
+        if (VMemMap(vaddr + offset, (uint64_t)paddr, PAGE_WRITABLE) != VMEM_SUCCESS) {
             FreePage(paddr);
-            if (allocated_size > 0) {
-                VMemFree((void*)vaddr, allocated_size);
-            }
-            PrintKernelError("VMem: VMemAlloc: VMemMap failed with code ");
-            PrintKernelInt(result);
-            PrintKernel("\n");
+            VMemFree((void*)vaddr, size); // Rollback
             return NULL;
         }
-
-        allocated_size += PAGE_SIZE;
     }
 
-    // Update tracking
+    // 4. Update stats and zero memory
     flags = SpinLockIrqSave(&vmem_lock);
-    kernel_space.next_vaddr = vaddr + size;
     kernel_space.used_pages += size / PAGE_SIZE;
     kernel_space.total_mapped += size;
     SpinUnlockIrqRestore(&vmem_lock, flags);
 
-    // Zero the allocated memory
     FastMemset((void*)vaddr, 0, size);
     return (void*)vaddr;
 }
@@ -279,98 +316,108 @@ void* VMemAlloc(uint64_t size) {
 void VMemFree(void* vaddr, uint64_t size) {
     if (!vaddr || size == 0) return;
 
-    size = PAGE_ALIGN_UP(size);
     uint64_t start_vaddr = PAGE_ALIGN_DOWN((uint64_t)vaddr);
-    uint64_t num_pages = size / PAGE_SIZE;
+    size = PAGE_ALIGN_UP(size);
 
-    for (uint64_t i = 0; i < num_pages; i++) {
-        uint64_t current_vaddr = start_vaddr + (i * PAGE_SIZE);
-        // acquire lock for modification
-        const irq_flags_t flags = SpinLockIrqSave(&vmem_lock);
-
-        // Get physical address first (this has its own locking internally)
+    // 1. Unmap all pages and free the underlying physical frames
+    for (uint64_t offset = 0; offset < size; offset += PAGE_SIZE) {
+        uint64_t current_vaddr = start_vaddr + offset;
         uint64_t paddr = VMemGetPhysAddr(current_vaddr);
-        if (paddr == 0) {
-            SpinUnlockIrqRestore(&vmem_lock, flags);
-            continue;
+        if (paddr != 0) {
+            VMemUnmap(current_vaddr, PAGE_SIZE);
+            FreePage((void*)paddr);
         }
-        // Navigate to the Page Table Entry (PTE)
-        uint64_t pdp_phys = VMemGetPageTablePhys((uint64_t)kernel_space.pml4, current_vaddr, 0, 0);
-        if (!pdp_phys) { SpinUnlockIrqRestore(&vmem_lock, flags); continue; }
-
-        uint64_t pd_phys = VMemGetPageTablePhys(pdp_phys, current_vaddr, 1, 0);
-        if (!pd_phys) { SpinUnlockIrqRestore(&vmem_lock, flags); continue; }
-
-        uint64_t pt_phys = VMemGetPageTablePhys(pd_phys, current_vaddr, 2, 0);
-        if (!pt_phys) { SpinUnlockIrqRestore(&vmem_lock, flags); continue; }
-
-        // Access PT through identity mapping if possible
-        uint64_t* pt_virt;
-        if (pt_phys < IDENTITY_MAP_SIZE) {
-            pt_virt = (uint64_t*)pt_phys;
-        } else {
-            pt_virt = (uint64_t*)PHYS_TO_VIRT(pt_phys);
-        }
-        int pt_index = (current_vaddr >> PT_SHIFT) & PT_INDEX_MASK;
-
-        // Check if it's actually mapped before proceeding
-        if (pt_virt[pt_index] & PAGE_PRESENT) {
-            // Clear the entry (unmap)
-            pt_virt[pt_index] = 0;
-
-            // Flush the TLB for this specific address
-            VMemFlushTLBSingle(current_vaddr);
-
-            // Update stats
-            kernel_space.used_pages--;
-            kernel_space.total_mapped -= PAGE_SIZE;
-        }
-
-        SpinUnlockIrqRestore(&vmem_lock, flags);
-
-        // Free physical page outside the lock
-        FreePage((void*)paddr);
     }
+
+    // 2. Add the virtual address range back to the free list
+    irq_flags_t flags = SpinLockIrqSave(&vmem_lock);
+
+    VMemFreeBlock* new_block = AllocFreeBlock();
+    if (!new_block) { // Should be rare, but possible
+        PANIC("VMemFree: Out of free list nodes!");
+        SpinUnlockIrqRestore(&vmem_lock, flags);
+        return;
+    }
+    new_block->base = start_vaddr;
+    new_block->size = size;
+
+    // Insert into sorted list and merge with neighbors if possible
+    VMemFreeBlock *prev = NULL, *current = kernel_space.free_list;
+    while (current && current->base < new_block->base) {
+        prev = current;
+        current = current->next;
+    }
+
+    // Merge with next block?
+    if (current && new_block->base + new_block->size == current->base) {
+        current->base = new_block->base;
+        current->size += new_block->size;
+        ReleaseFreeBlock(new_block);
+        new_block = current;
+    }
+
+    // Merge with previous block?
+    if (prev && prev->base + prev->size == new_block->base) {
+        prev->size += new_block->size;
+        // If we also merged with next, link prev to next's next and free next
+        if (new_block == current) {
+             prev->next = current->next;
+             ReleaseFreeBlock(current);
+        }
+        ReleaseFreeBlock(new_block);
+    } else if (new_block != current) { // No merge with previous, insert new_block
+        if (prev) {
+            new_block->next = prev->next;
+            prev->next = new_block;
+        } else {
+            new_block->next = kernel_space.free_list;
+            kernel_space.free_list = new_block;
+        }
+    }
+
+    vmem_frees++;
+    SpinUnlockIrqRestore(&vmem_lock, flags);
 }
 
 void* VMemAllocWithGuards(uint64_t size) {
     if (size == 0) return NULL;
+    size = PAGE_ALIGN_UP(size);
 
-    // Add space for guard pages (one before, one after)
+    // Allocate space for the user area plus two guard pages
     uint64_t total_size = size + (2 * PAGE_SIZE);
-    void* base = VMemAlloc(total_size);
-    if (!base) return NULL;
+    void* base_ptr = VMemAlloc(total_size);
+    if (!base_ptr) return NULL;
 
-    uint64_t base_addr = (uint64_t)base;
+    uint64_t base_addr = (uint64_t)base_ptr;
+    uint64_t guard1_vaddr = base_addr;
+    uint64_t guard2_vaddr = base_addr + size + PAGE_SIZE;
 
-    // Map guard pages with no permissions (just present bit)
-    VMemMap(base_addr, VMemGetPhysAddr(base_addr), PAGE_PRESENT);  // First guard
-    VMemMap(base_addr + PAGE_SIZE + size,
-            VMemGetPhysAddr(base_addr + PAGE_SIZE + size), PAGE_PRESENT);  // Last guard
+    // Get the physical pages backing the guard pages
+    uint64_t paddr1 = VMemGetPhysAddr(guard1_vaddr);
+    uint64_t paddr2 = VMemGetPhysAddr(guard2_vaddr);
 
-    // Fill guard pages with pattern
-    *(uint64_t*)base_addr = GUARD_PAGE_PATTERN;
-    *(uint64_t*)(base_addr + PAGE_SIZE + size) = GUARD_PAGE_PATTERN;
+    // Unmap the guard pages - any access will now cause a page fault
+    VMemUnmap(guard1_vaddr, PAGE_SIZE);
+    VMemUnmap(guard2_vaddr, PAGE_SIZE);
 
-    return (void*)(base_addr + PAGE_SIZE);  // Return user-accessible area
+    // Return the physical pages to the allocator
+    if (paddr1) FreePage((void*)paddr1);
+    if (paddr2) FreePage((void*)paddr2);
+
+    // Return the address of the usable memory region
+    return (void*)(base_addr + PAGE_SIZE);
 }
 
 void VMemFreeWithGuards(void* ptr, uint64_t size) {
     if (!ptr) return;
+    size = PAGE_ALIGN_UP(size);
 
+    // Calculate the original base address including the first guard page
     uint64_t base_addr = (uint64_t)ptr - PAGE_SIZE;
+    uint64_t total_size = size + (2 * PAGE_SIZE);
 
-    // Check guard pages for corruption
-    if (*(uint64_t*)base_addr != GUARD_PAGE_PATTERN) {
-        PrintKernelError("[VMEM] Guard page corruption detected at start!\n");
-        PANIC("Guard page corruption detected at start");
-    }
-    if (*(uint64_t*)(base_addr + PAGE_SIZE + size) != GUARD_PAGE_PATTERN) {
-        PrintKernelError("[VMEM] Guard page corruption detected at end!\n");
-        PANIC("Guard page corruption detected at end");
-    }
-
-    VMemFree((void*)base_addr, size + (2 * PAGE_SIZE));
+    // We don't need to check for corruption; a #PF would have already occurred.
+    VMemFree((void*)base_addr, total_size);
 }
 
 uint64_t VMemGetPhysAddr(uint64_t vaddr) {
@@ -398,8 +445,8 @@ uint64_t VMemGetPhysAddr(uint64_t vaddr) {
 }
 
 void VMemMapKernel(uint64_t kernel_phys_start, uint64_t kernel_phys_end) {
-    (void)kernel_phys_start; // Unused, but kept for signature compatibility
-    (void)kernel_phys_end;   // Unused, but kept for signature compatibility
+    (void)kernel_phys_start;
+    (void)kernel_phys_end;
 
     PrintKernelSuccess("VMem: VMem: Mapping kernel sections...\n");
 
@@ -696,4 +743,70 @@ void VMemUnmapMMIO(uint64_t vaddr, uint64_t size) {
     SpinUnlockIrqRestore(&vmem_lock, irq_flags);
     PrintKernel("VMemUnmapMMIO: Successfully unmapped ");
     PrintKernelInt(num_pages); PrintKernel(" pages\n");
+}
+
+void* VMemAllocStack(uint64_t size) {
+    if (size == 0) return NULL;
+
+    uint64_t stack_size = PAGE_ALIGN_UP(size);
+    // We need space for the stack itself, plus one guard page at the bottom.
+    uint64_t total_size = stack_size + PAGE_SIZE;
+
+    // Allocate the entire region (guard + stack)
+    void* base_ptr = VMemAlloc(total_size);
+    if (!base_ptr) return NULL;
+
+    uint64_t base_addr = (uint64_t)base_ptr;
+
+    // The guard page is the very first page in the allocation.
+    uint64_t guard_page_vaddr = base_addr;
+
+    // Get the physical page backing the guard page so we can free it.
+    uint64_t paddr_guard = VMemGetPhysAddr(guard_page_vaddr);
+
+    // Unmap the guard page. Any write to it will now cause a #PF.
+    VMemUnmap(guard_page_vaddr, PAGE_SIZE);
+
+    // Return the physical page to the system's page allocator.
+    if (paddr_guard) {
+        FreePage((void*)paddr_guard);
+    }
+
+    // IMPORTANT: The stack pointer must start at the TOP of the allocated region.
+    // The top is the base address + the total size allocated.
+    uint64_t stack_top = base_addr + total_size;
+
+    return (void*)stack_top;
+}
+
+void VMemFreeStack(void* stack_top, uint64_t size) {
+    if (!stack_top || size == 0) return;
+
+    uint64_t stack_size = PAGE_ALIGN_UP(size);
+    uint64_t total_size = stack_size + PAGE_SIZE;
+
+    // Re-calculate the original base address of the allocation.
+    uint64_t top_addr = (uint64_t)stack_top;
+    uint64_t base_addr = top_addr - total_size;
+
+    // The guard page is already unmapped. VMemFree will handle the virtual space.
+    // We just need to free the original allocation block.
+    VMemFree((void*)base_addr, total_size);
+}
+
+void VMemDumpFreeList(void) {
+    irq_flags_t flags = SpinLockIrqSave(&vmem_lock);
+    PrintKernel("[VMEM] Free List Dump:\n");
+    VMemFreeBlock* current = kernel_space.free_list;
+    if (!current) {
+        PrintKernel("  <Empty>\n");
+    }
+    int i = 0;
+    while(current) {
+        PrintKernel("  ["); PrintKernelInt(i++); PrintKernel("] Base: 0x");
+        PrintKernelHex(current->base);
+        PrintKernel(", Size: "); PrintKernelInt(current->size / 1024); PrintKernel(" KB\n");
+        current = current->next;
+    }
+    SpinUnlockIrqRestore(&vmem_lock, flags);
 }

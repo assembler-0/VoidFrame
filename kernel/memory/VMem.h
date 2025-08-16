@@ -1,6 +1,6 @@
 /**
  * @file VMem.h
- * @brief Virtual Memory Manager Header - FIXED VERSION
+ * @brief Virtual Memory Manager Header - ENHANCED VERSION
  */
 
 #ifndef VMEM_H
@@ -62,16 +62,25 @@
 #define VALIDATE_PTR(ptr) do { if (!(ptr)) return NULL; } while(0)
 
 #define VMEM_GUARD_PAGES    1  // Add guard pages around allocations
-#define GUARD_PAGE_PATTERN  0xDEADBEEFDEADBEEFULL
+
+/**
+ * @brief Represents a block of free virtual address space.
+ */
+typedef struct VMemFreeBlock {
+    uint64_t base;
+    uint64_t size;
+    struct VMemFreeBlock* next;
+} VMemFreeBlock;
 
 /**
  * @brief Virtual address space structure
  */
 typedef struct {
     uint64_t* pml4;          /**< Physical address of PML4 table */
-    uint64_t next_vaddr;     /**< Next virtual address for allocation */
+    uint64_t next_vaddr;     /**< Next virtual address for bump allocation */
     uint64_t used_pages;     /**< Number of pages currently allocated */
     uint64_t total_mapped;   /**< Total bytes mapped in this space */
+    VMemFreeBlock* free_list;/**< Head of the free list for VA space recycling */
 } VirtAddrSpace;
 
 /**
@@ -95,7 +104,8 @@ typedef enum {
     VMEM_ERROR_INVALID_ADDR = -2,
     VMEM_ERROR_ALREADY_MAPPED = -3,
     VMEM_ERROR_NOT_MAPPED = -4,
-    VMEM_ERROR_ALIGN = -5
+    VMEM_ERROR_ALIGN = -5,
+    VMEM_ERROR_NO_VSPACE = -6,
 } VMem_Result;
 
 // Core virtual memory functions
@@ -106,12 +116,18 @@ int VMemMap(uint64_t vaddr, uint64_t paddr, uint64_t flags);
 int VMemUnmap(uint64_t vaddr, uint64_t size);
 void PrintVMemStats(void);
 void VMemMapKernel(uint64_t kernel_phys_start, uint64_t kernel_phys_end);
+
+// Safer allocation with unmapped guard pages
+void* VMemAllocWithGuards(uint64_t size);
+void VMemFreeWithGuards(void* ptr, uint64_t size);
+
+// VMem stack allocation
+void* VMemAllocStack(uint64_t size);
+void VMemFreeStack(void* stack_top, uint64_t size);
+
 // MMIO-specific mapping functions (bypass RAM validation for hardware registers)
 int VMemMapMMIO(uint64_t vaddr, uint64_t paddr, uint64_t size, uint64_t flags);
 void VMemUnmapMMIO(uint64_t vaddr, uint64_t size);
-
-void* VMemAllocWithGuards(uint64_t size);
-void VMemFreeWithGuards(void* ptr, uint64_t size);
 
 // Page table management functions
 uint64_t* VMemGetPageTable(uint64_t* pml4, uint64_t vaddr, int level, int create);
@@ -133,5 +149,6 @@ uint64_t VMemGetPML4PhysAddr(void);
 // Debug functions
 void VMemDumpPageTable(uint64_t vaddr);
 void VMemValidatePageTable(uint64_t* pml4);
+void VMemDumpFreeList(void);
 
 #endif // VMEM_H
