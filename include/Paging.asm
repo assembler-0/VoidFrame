@@ -1,7 +1,6 @@
 section .text
-global EnablePagingAndJump
+global JumpToKernelHigherHalf
 
-EnablePagingAndJump:
-    mov cr3, rdi
-    mov rsp, rdx
-    jmp rsi
+JumpToKernelHigherHalf:
+    mov rsp, rsi
+    jmp rdi

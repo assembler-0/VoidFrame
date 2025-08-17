@@ -89,13 +89,13 @@ uint64_t AllocPageTable(const char* table_name) {
     return table_phys;
 }
 
-void BootstrapMapPage(uint64_t pml4_phys, uint64_t vaddr, uint64_t paddr, uint64_t flags) {
+void BootstrapMapPage(uint64_t pml4_phys, uint64_t vaddr, uint64_t paddr, uint64_t flags, bool allow_huge_page) {
     // Input validation
     if (!pml4_phys || (pml4_phys & 0xFFF)) PANIC("Invalid PML4 address");
-    if (vaddr & 0xFFF || paddr & 0xFFF) {
-        vaddr &= ~0xFFF;  // Page-align virtual address
-        paddr &= ~0xFFF;  // Page-align physical address
-    }
+
+    // NEW: Align addresses for huge page checks
+    const uint64_t vaddr_huge_aligned = vaddr & ~(HUGE_PAGE_SIZE - 1);
+    const uint64_t paddr_huge_aligned = paddr & ~(HUGE_PAGE_SIZE - 1);
 
     uint64_t* pml4 = (uint64_t*)pml4_phys;
 
@@ -120,10 +120,30 @@ void BootstrapMapPage(uint64_t pml4_phys, uint64_t vaddr, uint64_t paddr, uint64
     } else {
         pd_phys = pdpt[pdpt_idx] & PT_ADDR_MASK;
     }
-
-    // 3. Get/Create PT
     uint64_t* pd = (uint64_t*)pd_phys;
     const int pd_idx = (vaddr >> 21) & 0x1FF;
+
+    // NEW: Huge Page Mapping Logic
+    if (allow_huge_page && vaddr == vaddr_huge_aligned && paddr == paddr_huge_aligned) {
+        // This is a 2MB-aligned address, so we can use a huge page.
+        // The PD entry will point directly to the 2MB physical frame.
+        pd[pd_idx] = paddr | flags | PAGE_PRESENT | PAGE_LARGE;
+
+        // Progress update for huge pages (maps 2MB at a time)
+        static uint64_t huge_pages_mapped = 0;
+        huge_pages_mapped++;
+        if (huge_pages_mapped % 128 == 0) { // Print every 256MB
+            PrintKernelInt((huge_pages_mapped * HUGE_PAGE_SIZE) / (1024 * 1024));
+            PrintKernel("MB ");
+        }
+        return; // We are done, no need to create a PT
+    }
+
+    // --- Original 4KB Page Mapping Logic ---
+    vaddr &= ~0xFFF;
+    paddr &= ~0xFFF;
+
+    // 3. Get/Create PT
     uint64_t pt_phys;
     if (!(pd[pd_idx] & PAGE_PRESENT)) {
         pt_phys = AllocPageTable("PT");
@@ -136,7 +156,6 @@ void BootstrapMapPage(uint64_t pml4_phys, uint64_t vaddr, uint64_t paddr, uint64
     uint64_t* pt = (uint64_t*)pt_phys;
     const int pt_idx = (vaddr >> 12) & 0x1FF;
 
-    // NEW: Check for remapping
     if (pt[pt_idx] & PAGE_PRESENT) {
         uint64_t existing_paddr = pt[pt_idx] & PT_ADDR_MASK;
         if (existing_paddr != paddr) {
@@ -154,14 +173,7 @@ void BootstrapMapPage(uint64_t pml4_phys, uint64_t vaddr, uint64_t paddr, uint64
 
     static uint64_t pages_mapped = 0;
     pages_mapped++;
-
-    // Show progress every 64K pages (256MB)
-    if (pages_mapped % 65536 == 0) {
-        PrintKernelInt((pages_mapped * PAGE_SIZE) / (1024 * 1024));
-        PrintKernel("MB ");
-    }
-    // Show dots every 16K pages (64MB) for finer progress
-    else if (pages_mapped % 16384 == 0) {
+    if (pages_mapped % 16384 == 0) {
         PrintKernel(".");
     }
 }
@@ -421,82 +433,52 @@ static void PrintBootstrapSummary(void) {
 
 
 // Pre-eXecutionSystem 1
+// In Kernel.c
+
 void PXS1(const uint32_t info) {
-    int sret = SerialInit();
+    SerialInit(); // Keep serial for logging
 
-    if (sret != 0) {
-        PrintKernelWarning("[WARN] COM1 failed, probing other COM ports...\n");
-        if (SerialInitPort(COM2) != 0 && SerialInitPort(COM3) != 0 &&SerialInitPort(COM4) != 0) {
-            PrintKernelWarning("[WARN] No serial ports initialized. Continuing without serial.\n");
-        } else {
-            PrintKernelSuccess("System: Serial driver initialized on fallback port\n");
-        }
-    } else {
-        PrintKernelSuccess("System: Serial driver initialized on COM1\n");
-    }
-
+    // VBE and Console init are fine here
     if (VBEInit(info) != 0) {
         PrintKernelError("System: Failed to initialize VBE and graphical environment");
     }
-
-    PrintKernel("System: Starting Console...\n");
     ConsoleInit();
-    PrintKernelSuccess("System: Console initialized\n");
-
     VBEShowSplash();
     ClearScreen();
 
     PrintKernel("System: Parsing MULTIBOOT2 info...\n");
     ParseMultibootInfo(info);
-    PrintKernelSuccess("System: MULTIBOOT2 info parsed\n");
 
-    PrintKernel("System: Initializing memory...\n");
+    PrintKernel("System: Initializing physical memory manager...\n");
     MemoryInit(g_multiboot_info_addr);
-    PrintKernelSuccess("System: Memory initialized\n");
 
-    // Create new PML4 with memory validation (ensure identity-mapped physical page)
-    void* pml4_phys = NULL;
-    for (int attempt = 0; attempt < 64; attempt++) {
-        void* candidate = AllocPage();
-        if (!candidate) break;
-        if ((uint64_t)candidate < IDENTITY_MAP_SIZE) { pml4_phys = candidate; break; }
-        FreePage(candidate);
-    }
-    if (!pml4_phys) PANIC("Failed to allocate PML4 in identity-mapped memory");
-
-    FastZeroPage(pml4_phys);
-    uint64_t pml4_addr = (uint64_t)pml4_phys;
-
-    PrintKernelSuccess("System: Bootstrap: Identity mapping...\n");
-
-    for (uint64_t paddr = 0; paddr < IDENTITY_MAP_SIZE; paddr += PAGE_SIZE) {
-        BootstrapMapPage(pml4_addr, paddr, paddr, PAGE_WRITABLE);
-
-        if (paddr / PAGE_SIZE % 32768 == 0) {
-            PrintKernel(".");
-        }
-    }
+    PrintKernelSuccess("System: Bootstrap paging already configured by bootloader.\n");
+    uint64_t pml4_addr = ReadCr3(); // Get the PML4 from the bootloader
+    PrintKernel("Info: PML4 is at physical address 0x");
+    PrintKernelHex(pml4_addr);
     PrintKernel("\n");
 
-    PrintKernelSuccess("System: Bootstrap: Mapping kernel...\n");
+    PrintKernel("System: Mapping kernel to higher half...\n");
     uint64_t kernel_start = (uint64_t)_kernel_phys_start & ~0xFFF;
     uint64_t kernel_end = ((uint64_t)_kernel_phys_end + 0xFFF) & ~0xFFF;
     for (uint64_t paddr = kernel_start; paddr < kernel_end; paddr += PAGE_SIZE) {
-        BootstrapMapPage(pml4_addr, paddr + KERNEL_VIRTUAL_OFFSET, paddr, PAGE_WRITABLE);
+        // Use the EXISTING pml4_addr from CR3
+        BootstrapMapPage(pml4_addr, paddr + KERNEL_VIRTUAL_OFFSET, paddr, PAGE_WRITABLE, false);
     }
 
-    PrintKernelSuccess("System: Bootstrap: Mapping kernel stack...\n");
+    PrintKernel("System: Mapping kernel stack to higher half...\n");
     uint64_t stack_phys_start = (uint64_t)kernel_stack & ~0xFFF;
     uint64_t stack_phys_end = ((uint64_t)kernel_stack + KERNEL_STACK_SIZE + 0xFFF) & ~0xFFF;
-
     for (uint64_t paddr = stack_phys_start; paddr < stack_phys_end; paddr += PAGE_SIZE) {
-        BootstrapMapPage(pml4_addr, paddr + KERNEL_VIRTUAL_OFFSET, paddr, PAGE_WRITABLE);
+        // Use the EXISTING pml4_addr from CR3
+        BootstrapMapPage(pml4_addr, paddr + KERNEL_VIRTUAL_OFFSET, paddr, PAGE_WRITABLE, false);
     }
 
-    PrintKernelSuccess("System: Page tables prepared. Switching to virtual addressing...\n");
+    PrintKernel("System: Switching to higher half...\n");
     const uint64_t new_stack_top = ((uint64_t)kernel_stack + KERNEL_VIRTUAL_OFFSET) + KERNEL_STACK_SIZE;
     const uint64_t higher_half_entry = (uint64_t)&KernelMainHigherHalf + KERNEL_VIRTUAL_OFFSET;
-    EnablePagingAndJump(pml4_addr, higher_half_entry, new_stack_top);
+
+    JumpToKernelHigherHalf(higher_half_entry, new_stack_top);
 }
 
 static void IRQUnmaskCoreSystems() {

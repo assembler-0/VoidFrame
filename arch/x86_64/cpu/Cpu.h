@@ -23,6 +23,12 @@ typedef struct Registers {
     uint64_t rsp, ss;
 } __attribute__((packed)) Registers;
 
+static inline uint64_t ReadCr3(void) {
+    uint64_t cr3_val;
+    asm volatile("mov %%cr3, %0" : "=r"(cr3_val));
+    return cr3_val;
+}
+
 void CpuInit(void);
 CpuFeatures* GetCpuFeatures(void);
 

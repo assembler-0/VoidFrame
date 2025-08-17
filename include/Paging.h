@@ -1,3 +1,3 @@
 #pragma once
 #include "stdint.h"
-void EnablePagingAndJump(uint64_t pml4_phys_addr, uint64_t jump_to_addr, uint64_t stack);
+extern void JumpToKernelHigherHalf(uint64_t entry_point, uint64_t new_stack_top);

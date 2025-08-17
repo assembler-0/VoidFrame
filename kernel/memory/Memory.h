@@ -17,14 +17,16 @@ typedef struct MemoryStats {
 
 
 #define PAGE_SIZE 4096
+#define HUGE_PAGE_SIZE (2 * 1024 * 1024) // ADDED: For clarity in calculations
+
 extern uint64_t total_pages;
 
 int MemoryInit(uint32_t multiboot_info_addr);
 
 void* AllocPage(void);
 void FreePage(void* page);
-void* AllocHugePages(uint64_t num_pages);  // Allocate contiguous 2MB pages
-void FreeHugePages(void* pages, uint64_t num_pages);
+void* AllocHugePages(uint64_t num_pages);
+void FreeHugePages(void* pages, uint64_t num_pages); // ADDED: Matching declaration for the new function
 
 // Misc.
 void GetDetailedMemoryStats(MemoryStats* stats);

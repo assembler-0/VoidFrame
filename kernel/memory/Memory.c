@@ -162,7 +162,7 @@ int MemoryInit(uint32_t multiboot_info_addr) {
         MarkPageUsed(i);
     }
 
-    // 3. (Optional but good) Reserve the memory used by the multiboot info
+    // Reserve the memory used by the multiboot info
     // itself
     const uint64_t mb_info_start_page = multiboot_info_addr / PAGE_SIZE;
     const uint64_t mb_info_end_page = (multiboot_info_addr + total_multiboot_size + PAGE_SIZE - 1) / PAGE_SIZE;
@@ -368,3 +368,43 @@ void GetDetailedMemoryStats(MemoryStats* stats) {
     SpinUnlockIrqRestore(&memory_lock, flags);
 }
 
+void FreeHugePages(void* pages, uint64_t num_pages) {
+    if (!pages || num_pages == 0) {
+        PrintKernelError("[MEMORY] FreeHugePages: NULL pointer or zero pages\n");
+        return;
+    }
+
+    uint64_t addr = (uint64_t)pages;
+    if (addr % HUGE_PAGE_SIZE != 0) {
+        PrintKernelError("[MEMORY] FreeHugePages: Unaligned address ");
+        PrintKernelHex(addr); PrintKernel("\n");
+        return;
+    }
+
+    uint64_t start_page_idx = addr / PAGE_SIZE;
+    uint64_t pages_per_huge = HUGE_PAGE_SIZE / PAGE_SIZE;
+    uint64_t total_to_free = num_pages * pages_per_huge;
+
+    irq_flags_t flags = SpinLockIrqSave(&memory_lock);
+
+    for (uint64_t i = 0; i < total_to_free; i++) {
+        uint64_t current_page_idx = start_page_idx + i;
+        if (current_page_idx >= total_pages) break; // Bounds check
+
+        if (IsPageFree(current_page_idx)) {
+            // Freeing a page that is already free can indicate a serious bug
+            PrintKernelError("[MEMORY] Double free detected in FreeHugePages at page ");
+            PrintKernelInt(current_page_idx); PrintKernel("\n");
+        } else {
+            MarkPageFree(current_page_idx);
+        }
+    }
+
+    // Update hint
+    if (start_page_idx < next_free_hint) {
+        next_free_hint = start_page_idx;
+    }
+
+    free_count++; // Count this as one logical free operation
+    SpinUnlockIrqRestore(&memory_lock, flags);
+}

@@ -22,7 +22,7 @@
 #define PAGE_NOCACHE        0x010
 #define PAGE_ACCESSED       0x020
 #define PAGE_DIRTY          0x040
-#define PAGE_LARGE          0x080
+#define PAGE_LARGE          0x080 // (1ULL << 7)
 #define PAGE_GLOBAL         0x100
 #define PAGE_NX             0x8000000000000000ULL
 
