@@ -28,8 +28,11 @@ c_flags = [
     '-nostdlib',
     '-fno-builtin',
     '-ffreestanding',
+    '-mno-red-zone',
+    '-fno-pie',
+    '-fno-pic',
+    '-mcmodel=kernel',
     '-fstack-protector-strong',
-    '-ffast-math'
 ]
 
 # Assembly flags
