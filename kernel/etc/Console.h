@@ -28,8 +28,6 @@
 #define VGA_COLOR_ERROR     VGA_COLOR_LIGHT_RED
 #define VGA_COLOR_WARNING   VGA_COLOR_LIGHT_YELLOW
 
-
-
 #include "stdint.h"
 // Console state
 typedef struct {
@@ -43,7 +41,6 @@ typedef enum {
   INIT_SUCCESS = 0,
   INIT_ERROR_GDT,
   INIT_ERROR_IDT,
-// INIT_ERROR_SYSCALL removed -- syscall-less kernel
   INIT_ERROR_PIC,
   INIT_ERROR_MEMORY,
   INIT_ERROR_PROCESS,
@@ -68,5 +65,10 @@ void PrintKernelF(const char* format, ...);
 void SerialWriteF(const char* format, ...);
 void PrintKernelErrorF(const char* format, ...);
 void PrintKernelWarningF(const char* format, ...);
+
+// save a bit of time
+__attribute__((always_inline)) inline void PrintNewline(void) {
+    PrintKernel("\n");
+}
 
 #endif // VOIDFRAME_CONSOLE_H

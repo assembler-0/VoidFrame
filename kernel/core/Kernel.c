@@ -690,4 +690,5 @@ void KernelMainHigherHalf(void) {
     while (1) { // redundant but added for worst case scenario, should not reach here
         Yield();
     }
+    __builtin_unreachable();
 }

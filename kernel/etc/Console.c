@@ -1,9 +1,6 @@
-// kernel/etc/Console.c - PATCHED VERSION WITH VBE SUPPORT
 #include "Console.h"
-
 #include "Format.h"
 #include "Io.h"
-#include "LPT/LPT.h"
 #include "Serial.h"
 #include "Spinlock.h"
 #include "VBEConsole.h"
@@ -33,9 +30,6 @@ ConsoleT console = {
 };
 
 static volatile int lock = 0;
-
-static uint32_t vbe_fg_color = 0xFFFFFF;  // White
-static uint32_t vbe_bg_color = 0x000000;  // Black
 
 // Initialize console - auto-detect VBE or VGA
 void ConsoleInit(void) {
