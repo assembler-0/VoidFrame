@@ -374,17 +374,17 @@ static void ValidateMemoryLayout(void) {
 
     if ((stack_start >= kernel_start && stack_start < kernel_end) ||
         (stack_end > kernel_start && stack_end <= kernel_end)) {
-        PrintKernelWarning("[WARNING] Stack overlaps with kernel code\n");
-        }
+        PrintKernelWarning("Stack overlaps with kernel code\n");
+    }
 
     // NEW: Check multiboot info location
     if (g_multiboot_info_addr >= kernel_start && g_multiboot_info_addr < kernel_end) {
-        PrintKernelWarning("[WARNING] Multiboot info overlaps with kernel\n");
+        PrintKernelWarning("Multiboot info overlaps with kernel\n");
     }
 
     // NEW: Validate virtual address space boundaries
     if (VIRT_ADDR_SPACE_START >= KERNEL_SPACE_START) {
-        PrintKernelError("[ERROR] Virtual address space overlaps with kernel space\n");
+        PrintKernelError("Virtual address space overlaps with kernel space\n");
     }
 
     PrintKernelSuccess("System: Memory layout validated\n");

@@ -1161,7 +1161,7 @@ Process* GetProcessByPid(uint32_t pid) {
 
 
 static void DynamoX(void) {
-    PrintKernel("DynamoX: DynamoX v0.2 Enhanced starting...\n");
+    PrintKernel("DynamoX: DynamoX v0.2 starting...\n");
 
     typedef struct {
         uint16_t min_freq;
@@ -1214,7 +1214,6 @@ static void DynamoX(void) {
     uint32_t consecutive_low_load = 0;
 
     while (1) {
-        CleanupTerminatedProcesses();
         uint64_t current_time = GetSystemTicks();
         uint64_t time_delta = current_time - last_sample_time;
 
@@ -1410,7 +1409,8 @@ static void DynamoX(void) {
             last_sample_time = current_time;
             last_context_switches = context_switches;
         }
-
+        CleanupTerminatedProcesses();
+        CheckResourceLeaks();
         Yield();
     }
 }

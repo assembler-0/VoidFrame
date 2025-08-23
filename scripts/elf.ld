@@ -1,8 +1,6 @@
 ENTRY(_start)
 
 SECTIONS {
-    /* Load in higher half kernel space - after your kernel */
-    /* If kernel is at 0xFFFFFFFF80000000, load process at +8MB offset */
     . = 0xFFFFFFFF80800000;  /* Kernel base + 8MB */
 
     .text ALIGN(4K) : {
