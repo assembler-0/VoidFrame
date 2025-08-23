@@ -1,7 +1,8 @@
 #include "InterruptController.h"
 #include "APIC.h"
-#include "Pic.h"
 #include "Console.h"
+#include "Io.h"
+#include "Pic.h"
 
 static interrupt_controller_t current_controller = INTC_PIC;
 static int apic_available = 0;
@@ -13,6 +14,7 @@ void InterruptControllerInstall(void) {
     if (ApicDetect()) {
         apic_available = 1;
         ApicInstall();
+        PICMaskAll();
         current_controller = INTC_APIC;
         PrintKernelSuccess("IC: Using APIC interrupt controller\n");
     } else {
@@ -47,15 +49,16 @@ void IC_disable_irq(uint8_t irq_line) {
     }
 }
 
-void InterruptControllerSendEOI(void) {
+void InterruptControllerSendEOI(uint64_t interrupt_number) {
     switch (current_controller) {
         case INTC_APIC:
             ApicSendEOI();
             break;
         case INTC_PIC:
-        default:
-            // PIC EOI is handled directly in interrupt handler
-            // via outb(0x20, 0x20) / outb(0xA0, 0x20)
+            if (interrupt_number >= 40) {
+                outb(0xA0, 0x20); // EOI to slave PIC
+            }
+            outb(0x20, 0x20); // EOI to master PIC
             break;
     }
 }

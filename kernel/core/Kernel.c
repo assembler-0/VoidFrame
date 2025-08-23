@@ -7,6 +7,7 @@
 #include "ISA.h"
 #include "Ide.h"
 #include "Idt.h"
+#include "Io.h"
 #include "KernelHeap.h"
 #include "LPT/LPT.h"
 #include "MemOps.h"
@@ -640,15 +641,16 @@ static InitResultT PXS2(void) {
     LPT_Init();
     PrintKernelSuccess("System: LPT Driver initialized\n");
 
-    // NEW: Final memory health check
     PrintKernel("Info: Final memory health check...\n");
     GetDetailedMemoryStats(&stats);
     if (stats.fragmentation_score > 50) {
         PrintKernelWarning("[WARN] High memory fragmentation detected\n");
     }
 
+    // Unmask IRQs
     IRQUnmaskCoreSystems();
 
+    // Memory protection
     StackGuardInit();
     SetupMemoryProtection();
 
@@ -685,7 +687,7 @@ void KernelMainHigherHalf(void) {
     PrintKernelSuccess("System: Kernel initialization complete\n");
     PrintKernelSuccess("System: Initializing interrupts...\n");
 
-    asm volatile("sti");
+    sti();
 
     while (1) { // redundant but added for worst case scenario, should not reach here
         Yield();

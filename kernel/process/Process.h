@@ -11,7 +11,7 @@
 
 // Core Queue Configuration
 #define MAX_PRIORITY_LEVELS 5           // Reduced from 6 - fewer levels = better cache locality
-#define RT_PRIORITY_THRESHOLD 3         // Increased RT levels for better interactive response
+#define RT_PRIORITY_THRESHOLD 0         // Increased RT levels for better interactive response
 #define MAX_PROCESSES 64                // Keep as is
 
 // Quantum Management - EXPONENTIAL GROWTH for better differentiation
@@ -97,6 +97,7 @@
 #define FXP_SHIFT 10 // Use 10 bits for the fractional part
 #define FXP_SCALE (1 << FXP_SHIFT) // Scaling factor = 1024
 
+#define SMOOTHING_FACTOR 2         // Average over 4 samples (1/4 new, 3/4 old)
 #define SAMPLING_INTERVAL 25       // 2x faster sampling (was 50)
 #define HZ_PER_PROCESS 50          // More responsive per-process scaling (was 30)
 #define QUEUE_PRESSURE_FACTOR 20   // Stronger pressure response

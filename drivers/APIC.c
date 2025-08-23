@@ -1,6 +1,6 @@
 #include "APIC.h"
 #include "Console.h"
-
+#include "Io.h"
 // APIC base address (will be detected from MSR)
 static volatile uint32_t* apic_base = NULL;
 static volatile uint32_t* ioapic_base = NULL;
@@ -9,26 +9,6 @@ static uint32_t ioapic_max_redirections = 0;
 
 // IRQ masking state (same as PIC for compatibility)
 static uint32_t irq_mask = 0xFFFFFFFF; // All masked initially
-
-// CPUID detection
-static inline void cpuid(uint32_t leaf, uint32_t* eax, uint32_t* ebx, uint32_t* ecx, uint32_t* edx) {
-    __asm__ volatile("cpuid"
-                     : "=a"(*eax), "=b"(*ebx), "=c"(*ecx), "=d"(*edx)
-                     : "a"(leaf));
-}
-
-// MSR access
-static inline uint64_t rdmsr(uint32_t msr) {
-    uint32_t low, high;
-    __asm__ volatile("rdmsr" : "=a"(low), "=d"(high) : "c"(msr));
-    return ((uint64_t)high << 32) | low;
-}
-
-static inline void wrmsr(uint32_t msr, uint64_t value) {
-    uint32_t low = value & 0xFFFFFFFF;
-    uint32_t high = value >> 32;
-    __asm__ volatile("wrmsr" :: "a"(low), "d"(high), "c"(msr));
-}
 
 int ApicDetect(void) {
     uint32_t eax, ebx, ecx, edx;

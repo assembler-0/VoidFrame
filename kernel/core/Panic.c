@@ -1,5 +1,5 @@
 #include "Panic.h"
-
+#include "Io.h"
 // The ONLY necessary includes for display are now Console and Serial
 #include "Console.h"
 #include "KernelHeap.h"
@@ -61,7 +61,7 @@ static void U32ToDecStr(uint32_t value, char* buffer) {
 // --- High-Level Panic Screen Composition ---
 
 void __attribute__((noreturn)) KernelPanicHandler(const char* message, uint64_t error_code, PanicContext* ctx) {
-    asm volatile("cli");
+    cli();
     ClearScreen();
     ConsoleSetColor(VGA_COLOR_WHITE);
 
@@ -253,7 +253,7 @@ static inline uint64_t __get_rip(void) {
 }
 
 void __attribute__((noreturn)) PanicFromInterrupt(const char* message, Registers* regs) {
-    asm volatile("cli");
+   cli();
     PanicContext ctx = {0};
     ctx.rip = regs->rip;
     ctx.rsp = regs->rsp;
@@ -266,7 +266,7 @@ void __attribute__((noreturn)) PanicFromInterrupt(const char* message, Registers
 }
 
 void __attribute__((noreturn)) Panic(const char* message) {
-    asm volatile("cli");
+   cli();
     PanicContext ctx = {0};
     ctx.rip = __get_rip();
     asm volatile("movq %%rsp, %0" : "=r"(ctx.rsp));
@@ -275,7 +275,7 @@ void __attribute__((noreturn)) Panic(const char* message) {
 }
 
 void __attribute__((noreturn)) PanicWithCode(const char* message, uint64_t error_code) {
-    asm volatile("cli");
+   cli();
     PanicContext ctx = {0};
     ctx.rip = __get_rip();
     asm volatile("movq %%rsp, %0" : "=r"(ctx.rsp));
@@ -284,7 +284,7 @@ void __attribute__((noreturn)) PanicWithCode(const char* message, uint64_t error
 }
 
 void __attribute__((noreturn)) PanicWithContext(const char* message, uint64_t error_code, const char* function, const char* file, int line) {
-    asm volatile("cli");
+   cli();
     PanicContext ctx = {0};
     ctx.rip = __get_rip();
     asm volatile("movq %%rsp, %0" : "=r"(ctx.rsp));

@@ -15,7 +15,7 @@ void InterruptControllerEnable(void);
 void InterruptControllerDisable(void);
 void IC_enable_irq(uint8_t irq_line);
 void IC_disable_irq(uint8_t irq_line);
-void InterruptControllerSendEOI(void);
+void InterruptControllerSendEOI(uint64_t interrupt_number);
 void InterruptControllerSetTimer(uint32_t frequency_hz);
 
 // Query functions
