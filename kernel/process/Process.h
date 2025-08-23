@@ -226,18 +226,13 @@ uint32_t CreateProcess(void (*entry_point)(void));
 Process* GetCurrentProcess(void);
 Process* GetProcessByPid(uint32_t pid);
 void CleanupTerminatedProcesses(void);
-
-// Legacy scheduler functions (can be removed after migration)
-void RequestSchedule();
-int ShouldSchedule();
 void Yield(void);
-void ScheduleFromInterrupt(Registers* regs);
 
 // New scheduler functions
 void InitScheduler(void);
 void AddToScheduler(uint32_t slot);
 void RemoveFromScheduler(uint32_t slot);
-void FastSchedule(struct Registers* regs);
+void FastSchedule(Registers* regs);
 void ProcessBlocked(uint32_t slot);
 void DumpSchedulerState(void);
 

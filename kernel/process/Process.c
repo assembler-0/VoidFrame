@@ -75,6 +75,10 @@ static int FastCLZ(const uint64_t value) {
     return __builtin_clzll(value);
 }
 
+static void RequestSchedule(void) {
+    need_schedule = 1;
+}
+
 static uint64_t SecureHash(const void* data, const uint64_t len, uint64_t salt) {
     const uint8_t* bytes = data;
     uint64_t hash = salt;
@@ -167,7 +171,7 @@ static int ValidateToken(const SecurityToken* token, uint32_t pid_to_check) {
     return (diff | magic_diff) == 0 ? 1 : 0;
 }
 
-void TerminateProcess(uint32_t pid, TerminationReason reason, uint32_t exit_code) {
+static void TerminateProcess(uint32_t pid, TerminationReason reason, uint32_t exit_code) {
     irq_flags_t flags = SpinLockIrqSave(&scheduler_lock);
     Process* proc = GetProcessByPid(pid);
     if (UNLIKELY(!proc || proc->state == PROC_DYING ||
@@ -690,7 +694,7 @@ static inline int AstraPreflightCheck(uint32_t slot) {
     // it's a huge red flag that it may have tampered with its own privilege level.
     if (UNLIKELY(proc->privilege_level == PROC_PRIV_SYSTEM &&
                  !(proc->token.flags & (PROC_FLAG_SUPERVISOR | PROC_FLAG_CRITICAL | PROC_FLAG_IMMUNE)))) {
-        PrintKernelError("[AS-PREFLIGHT] Illicit SYSTized EM privilege detected for PID: ");
+        PrintKernelError("[AS-PREFLIGHT] Illicit SYSTEM privilege detected for PID: ");
         PrintKernelInt(proc->pid);
         PrintKernelError("\n");
         ASTerminate(proc->pid, "Unauthorized privilege escalation");
@@ -915,18 +919,6 @@ void ProcessBlocked(uint32_t slot) {
     }
 }
 
-int ShouldSchedule(void) {
-    if (need_schedule) {
-        need_schedule = 0;
-        return 1;
-    }
-    return 0;
-}
-
-void RequestSchedule(void) {
-    need_schedule = 1;
-}
-
 void Yield() {
     irq_flags_t flags = SpinLockIrqSave(&scheduler_lock);
     Process* current = GetCurrentProcess();
@@ -947,13 +939,13 @@ void ProcessExitStub() {
 
     // Use the safe termination function
     TerminateProcess(current->pid, TERM_NORMAL, 0);
-    // Should not reach here, but just in case
     while (1) {
         __asm__ __volatile__("hlt");
     }
+    __builtin_unreachable();
 }
 
-uint32_t CreateSecureProcess(void (*entry_point)(void), uint8_t privilege, uint32_t initial_flags) {
+static uint32_t CreateSecureProcess(void (*entry_point)(void), uint8_t privilege, uint32_t initial_flags) {
     irq_flags_t flags = SpinLockIrqSave(&scheduler_lock);
     if (UNLIKELY(!entry_point)) {
         SpinUnlockIrqRestore(&scheduler_lock, flags);
@@ -1096,11 +1088,6 @@ uint32_t CreateProcess(void (*entry_point)(void)) {
     return CreateSecureProcess(entry_point, PROC_PRIV_USER, 0);
 }
 
-
-void ScheduleFromInterrupt(Registers* regs) {
-    FastSchedule(regs);
-}
-
 void CleanupTerminatedProcesses(void) {
     irq_flags_t flags = SpinLockIrqSave(&scheduler_lock);
     // Process a limited number per call to avoid long interrupt delays
@@ -1173,7 +1160,7 @@ Process* GetProcessByPid(uint32_t pid) {
 }
 
 
-void DynamoX(void) {
+static void DynamoX(void) {
     PrintKernel("DynamoX: DynamoX v0.2 Enhanced starting...\n");
 
     typedef struct {
@@ -1428,7 +1415,7 @@ void DynamoX(void) {
     }
 }
 
-void Astra(void) {
+static void Astra(void) {
     PrintKernelSuccess("Astra: Astra initializing...\n");
     Process* current = GetCurrentProcess();
 
@@ -1771,34 +1758,4 @@ void GetProcessStats(uint32_t pid, uint32_t* cpu_time, uint32_t* io_ops, uint32_
     if (io_ops) *io_ops = proc->io_operations;
     if (preemptions) *preemptions = proc->preemption_count;
     ReadUnlock(&process_table_rwlock);
-}
-
-// Force priority boost for a specific process (for testing/debugging)
-void BoostProcessPriority(uint32_t pid) {
-    irq_flags_t flags = SpinLockIrqSave(&scheduler_lock);
-    
-    Process* proc = GetProcessByPid(pid);
-    if (!proc || proc->state == PROC_TERMINATED) {
-        SpinUnlockIrqRestore(&scheduler_lock, flags);
-        return;
-    }
-    
-    // Remove from current queue if scheduled
-    if (proc->scheduler_node) {
-        RemoveFromScheduler(proc - processes);
-    }
-    
-    // Boost to highest non-RT priority for user processes
-    if (proc->privilege_level == PROC_PRIV_SYSTEM) {
-        proc->priority = 0;
-    } else {
-        proc->priority = RT_PRIORITY_THRESHOLD;
-    }
-    
-    // Re-add to scheduler if ready
-    if (proc->state == PROC_READY) {
-        AddToScheduler(proc - processes);
-    }
-    
-    SpinUnlockIrqRestore(&scheduler_lock, flags);
 }

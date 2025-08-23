@@ -54,7 +54,7 @@ void PrintKernelError(const char* str);
 void PrintKernelWarning(const char* str);
 void PrintKernelHex(uint64_t num);
 void PrintKernel(const char* str);
-void PrintKernelChar(const char c);
+void PrintKernelChar(char c);
 void PrintKernelInt(int64_t num);
 void PrintKernelAt(const char* str, uint32_t line, uint32_t col);
 void ClearScreen();
@@ -67,7 +67,7 @@ void PrintKernelErrorF(const char* format, ...);
 void PrintKernelWarningF(const char* format, ...);
 
 // save a bit of time
-__attribute__((always_inline)) inline void PrintNewline(void) {
+static inline __attribute__((always_inline)) void PrintNewline(void) {
     PrintKernel("\n");
 }
 

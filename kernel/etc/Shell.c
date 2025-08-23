@@ -150,16 +150,24 @@ void ArpRequestTestProcess() {
     Rtl8139_SendPacket(&packet, packet_size);
 }
 
-static void ARPtest() {
+static void ClearHandler(const char * args) {
+    (void)args;
+    ClearScreen();
+}
+
+static void ARPTestHandler(const char * args) {
+    (void)args;
     CreateProcess(ArpRequestTestProcess);
 }
 
-static void Version() {
+static void VersionHandler(const char * args) {
+    (void)args;
     PrintKernelSuccess("VoidFrame v0.0.1-beta\n");
     PrintKernelSuccess("VoidFrame Shell v0.0.1-beta\n");
 }
 
-static void show_help() {
+static void HelpHandler(const char * args) {
+    (void)args;
     PrintKernelSuccess("VoidFrame Shell Commands:\n");
     PrintKernel("  help           - Show this help\n");
     PrintKernel("  ps             - List processes\n");
@@ -318,13 +326,13 @@ static void SetfreqHandler(const char * args) {
         KernelFree(freq_str);
         return;
     }
-    const uint16_t freq = atoi(freq_str);
-    if (freq <= 0) {
+    int freq_i = atoi(freq_str);
+    if (freq_i < 19 || freq_i > 65535) {
         PrintKernel("Usage: setfreq <hz>\n");
         KernelFree(freq_str);
         return;
     }
-    PitSetFrequency(freq);
+    PitSetFrequency((uint16_t)freq_i);
     KernelFree(freq_str);
 }
 
@@ -455,9 +463,8 @@ static void LsHandler(const char * args) {
         char full_path[256];
         ResolvePath(path, full_path, 256);
         VfsListDir(full_path);
-        KernelFree(path);
     }
-    KernelFree(path);
+    if (path) KernelFree(path);
 }
 
 static void CatHandler(const char * args) {
@@ -472,7 +479,7 @@ static void CatHandler(const char * args) {
     uint8_t* file_buffer = KernelMemoryAlloc(4096);
     if (!file_buffer) {
         PrintKernel("cat: out of memory\n");
-        KernelFree(file_buffer);
+        KernelFree(file);
         return;
     }
     int bytes = VfsReadFile(full_path, file_buffer, 4095);
@@ -510,7 +517,9 @@ static void MkdirHandler(const char * args) {
 static void FileSizeHandler(const char * args) {
     char* filename = GetArg(args, 1);
     if (filename) {
-        const uint64_t size = VfsGetFileSize(filename);
+        char full_path[256];
+        ResolvePath(filename, full_path, 256);
+        const uint64_t size = VfsGetFileSize(full_path);
         PrintKernel("File size: ");
         PrintKernelInt((uint32_t)size);
         PrintKernel(" bytes\n");
@@ -654,7 +663,7 @@ static void FstestHandler(const char * args) {
 }
 
 static const ShellCommand commands[] = {
-    {"help", show_help},
+    {"help", HelpHandler},
     {"ps", PSHandler},
     {"sched", SchedHandler},
     {"perf", PerfHandler},
@@ -670,10 +679,10 @@ static const ShellCommand commands[] = {
     {"lspci", LsPCIHandler},
     {"lsusb", LsUSBHandler},
     {"lsisa", LsISAHandler},
-    {"arptest", ARPtest},
+    {"arptest", ARPTestHandler},
     {"elfload", ElfloadHandler},
     {"vmemfreelist", VmemFreeListHandler},
-    {"clear", ClearScreen},
+    {"clear", ClearHandler},
     {"cd", CdHandler},
     {"pwd", PwdHandler},
     {"ls", LsHandler},
@@ -686,7 +695,7 @@ static const ShellCommand commands[] = {
     {"rm", RmHandler},
     {"echo", EchoHandler},
     {"edit", EditHandler},
-    {"ver", Version},
+    {"ver", VersionHandler},
     {"fstest", FstestHandler}
 };
 
