@@ -502,9 +502,10 @@ void AddToScheduler(uint32_t slot) {
     proc->priority = priority;
     proc->base_priority = priority; // Remember original
     proc->last_scheduled_tick = MLFQscheduler.tick_counter;
-    
+
     EnQueue(&MLFQscheduler.queues[priority], slot);
     MLFQscheduler.active_bitmap |= (1U << priority);
+    if (priority < RT_PRIORITY_THRESHOLD) MLFQscheduler.rt_bitmap |= (1U << priority);
     MLFQscheduler.total_processes++;
 }
 
@@ -639,10 +640,8 @@ static void SmartAging(void) {
                 
                 queue->count--;
                 
-                // To prevent starvation, user processes must be boosted
-                // to the highest priority (0) to guarantee they get to run. Boosting
-                // them to a lower priority was ineffective.
-                uint32_t new_priority = 0;
+                // IF NONE OTHER THAN 0, breaks
+                uint32_t new_priority = RT_PRIORITY_THRESHOLD;
 
                 proc->priority = new_priority;
                 proc->last_scheduled_tick = current_tick;
