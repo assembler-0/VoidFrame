@@ -97,6 +97,7 @@
 #define FXP_SHIFT 10 // Use 10 bits for the fractional part
 #define FXP_SCALE (1 << FXP_SHIFT) // Scaling factor = 1024
 
+#define SMOOTHING_FACTOR 2         // Average over 4 samples (1/4 new, 3/4 old)
 #define SAMPLING_INTERVAL 25       // 2x faster sampling (was 50)
 #define HZ_PER_PROCESS 50          // More responsive per-process scaling (was 30)
 #define QUEUE_PRESSURE_FACTOR 20   // Stronger pressure response

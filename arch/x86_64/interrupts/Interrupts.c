@@ -1,11 +1,11 @@
 #include "Interrupts.h"
 #include "Console.h"
 #include "Ide.h"
-#include "Io.h"
+#include "MemOps.h"
 #include "PS2.h"
 #include "Panic.h"
+#include "Pic.h"
 #include "Process.h"
-#include "MemOps.h"
 
 // The C-level interrupt handler, called from the assembly stub
 void InterruptHandler(Registers* regs) {
@@ -15,50 +15,43 @@ void InterruptHandler(Registers* regs) {
     switch (regs->interrupt_number) {
         case 32: // Timer interrupt (IRQ 0)
             FastSchedule(regs);
-            outb(0x20, 0x20); // EOI to master PIC
+            PICSendEOI(regs->interrupt_number);
             return;
 
         case 33: // Keyboard interrupt (IRQ 1)
             KeyboardHandler();
-            outb(0x20, 0x20); // EOI to master PIC
+            PICSendEOI(regs->interrupt_number);
+            return;
+
+        case 34:
+            PICSendEOI(regs->interrupt_number);
             return;
 
         case 44: // mouse (IRQ 12)
             MouseHandler();
-            outb(0xA0, 0x20);  // EOI to slave PIC
-            outb(0x20, 0x20); // EOI to master PIC
+            PICSendEOI(regs->interrupt_number);
             return;
 
         case 46: // IDE Primary (IRQ 14)
             IDEPrimaryIRQH();
-            outb(0xA0, 0x20); // EOI to slave PIC
-            outb(0x20, 0x20); // EOI to master PIC
+            PICSendEOI(regs->interrupt_number);
             return;
 
         case 47: // IDE Secondary (IRQ 15)
             IDESecondaryIRQH();
-            outb(0xA0, 0x20); // EOI to slave PIC
-            outb(0x20, 0x20); // EOI to master PIC
+            PICSendEOI(regs->interrupt_number);
             return;
 
         // Handle other hardware interrupts (34-45)
-        case 34 ... 43: case 45: // passthrough
+        case 35 ... 43: case 45: // passthrough
             PrintKernelWarning("[IRQ] Unhandled hardware interrupt: ");
             PrintKernelInt(regs->interrupt_number - 32);
             PrintKernelWarning("\n");
-
-            // Send EOI to the appropriate PIC
-            if (regs->interrupt_number >= 40) {
-                outb(0xA0, 0x20); // EOI to slave PIC
-            }
-            outb(0x20, 0x20); // EOI to master PIC
+            PICSendEOI(regs->interrupt_number);
             return;
     }
 
     // Handle CPU exceptions (0-31)
-
-    // Buffer for creating descriptive panic messages.
-    // Made static to reside in .bss rather than on a potentially corrupt stack.
     static char panic_message[256];
 
     switch (regs->interrupt_number) {
@@ -70,6 +63,15 @@ void InterruptHandler(Registers* regs) {
             strcat(panic_message, rip_str);
             PanicFromInterrupt(panic_message, regs);
             break;
+        }
+
+        case 8:
+        {
+            char rip_str[20];
+            htoa(regs->rip, rip_str);
+            strcpy(panic_message, "Double Fault at ");
+            strcat(panic_message, rip_str);
+            PanicFromInterrupt(panic_message, regs);
         }
 
         case 13: // General Protection Fault

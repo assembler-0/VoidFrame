@@ -426,24 +426,21 @@ void InitScheduler(void) {
 
     // Initialize with smart quantum allocation
     for (int i = 0; i < MAX_PRIORITY_LEVELS; i++) {
+        // This block had a redundant inner if and a misplaced else clause.
         if (i < RT_PRIORITY_THRESHOLD) {
-            // Real-time queues get larger quantums
-            if (i < RT_PRIORITY_THRESHOLD) {
-                MLFQscheduler.queues[i].quantum = QUANTUM_BASE << (RT_PRIORITY_THRESHOLD - i);
-                if (MLFQscheduler.queues[i].quantum > QUANTUM_MAX) {
-                    MLFQscheduler.queues[i].quantum = QUANTUM_MAX;
-                }
-            } else {
-                MLFQscheduler.queues[i].quantum = QUANTUM_BASE >> ((i - RT_PRIORITY_THRESHOLD) * QUANTUM_DECAY_SHIFT);
-                if (MLFQscheduler.queues[i].quantum < QUANTUM_MIN) {
-                    MLFQscheduler.queues[i].quantum = QUANTUM_MIN;
-                }
+            // Real-time queues get larger quantums for higher priority (lower i)
+            MLFQscheduler.queues[i].quantum = QUANTUM_BASE << (RT_PRIORITY_THRESHOLD - i);
+            if (MLFQscheduler.queues[i].quantum > QUANTUM_MAX) {
+                MLFQscheduler.queues[i].quantum = QUANTUM_MAX;
             }
             MLFQscheduler.rt_bitmap |= (1U << i);
         } else {
-            // Regular queues use exponential decay
             MLFQscheduler.queues[i].quantum = QUANTUM_BASE >> ((i - RT_PRIORITY_THRESHOLD) * QUANTUM_DECAY_SHIFT);
+            if (MLFQscheduler.queues[i].quantum < QUANTUM_MIN) {
+                MLFQscheduler.queues[i].quantum = QUANTUM_MIN;
+            }
         }
+
         MLFQscheduler.queues[i].head = NULL;
         MLFQscheduler.queues[i].tail = NULL;
         MLFQscheduler.queues[i].count = 0;
@@ -758,6 +755,12 @@ void FastSchedule(struct Registers* regs) {
         }
         old_proc->cpu_burst_history[0] = cpu_burst;
         old_proc->cpu_time_accumulated += cpu_burst;
+
+        if (UNLIKELY(!ValidateToken(&old_proc->token, old_proc->pid))) {
+            // This process ran and its token is now corrupt. Terminate immediately.
+            ASTerminate(old_proc->pid, "Post-execution token corruption");
+            goto select_next; // Don't re-queue a corrupt process
+        }
 
         FastMemcpy(&old_proc->context, regs, sizeof(struct Registers));
 
@@ -1359,6 +1362,9 @@ static void DynamoX(void) {
 
             if (new_freq < effective_min) new_freq = effective_min;
             if (new_freq > effective_max) new_freq = effective_max;
+
+            uint32_t smoothing_factor = SMOOTHING_FACTOR; // Average over 4 samples (1/4 new, 3/4 old)
+            new_freq = (new_freq + (controller.current_freq << smoothing_factor) - controller.current_freq) >> smoothing_factor;
 
             // Enhanced hysteresis with stability consideration
             uint32_t change_threshold = (controller.stability_counter > STABILITY_REQUIREMENT) ?

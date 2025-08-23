@@ -59,6 +59,16 @@ void PIC_disable_irq(uint8_t irq_line) {
     pic_write_mask();
 }
 
+void PICMaskAll() {
+    s_irq_mask = 0xFFFF;
+    pic_write_mask();
+}
+
+void PICSendEOI(uint64_t interrupt_number) {
+    if (interrupt_number >= 40) outb(PIC2_COMMAND, 0x20);
+    outb(PIC1_COMMAND, 0x20);
+}
+
 void PicInstall() {
     // Standard initialization sequence
     outb(PIC1_COMMAND, ICW1_INIT | ICW1_ICW4);

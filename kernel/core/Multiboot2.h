@@ -1,8 +1,8 @@
 #ifndef MB2_H
 #define MB2_H
 #include "stdint.h"
-#define MULTIBOOT2_MAGIC_HEADER        0xE85250D6  // in your boot.asm
-#define MULTIBOOT2_BOOTLOADER_MAGIC    0x36D76289  // passed to your kernel
+#define MULTIBOOT2_MAGIC_HEADER        0xE85250D6
+#define MULTIBOOT2_BOOTLOADER_MAGIC    0x36D76289
 #define MULTIBOOT2_TAG_TYPE_END        0
 #define MULTIBOOT2_TAG_TYPE_CMDLINE    1
 #define MULTIBOOT2_TAG_TYPE_BOOTLOADER_NAME 2
