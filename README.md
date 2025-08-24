@@ -1,126 +1,44 @@
-# [VoidFrame] - a syscall-less microkernel 💫
+# [VoidFrame] - a syscall-less monolithic kernel 💫
 
-> A fast, simple, secure 64-bit microkernel written in C and assembly. With modern capabilities.
-
----
-
-- Roadmap: [here!](docs/ROADMAP.md)
-- How to build: [here!](docs/BUILD.md)
+> A fast, simple, secure 64-bit monolithic written in C and assembly. With modern capabilities.
 
 ---
 
-### Project Structure 
+- Roadmap/Features: [here!](docs/ROADMAP.md)
+- Structure: [here!](docs/STRUCTURE.md)
+- How it works: [here!](docs/STARTUP.md)
+
+---
+
+## About
+
+VoidFrame is a 64-bit syscall-less **monolithic** kernel designed for the x86_64 architecture written in C and assembly (nasm).
+This kernel was intended and targeted for people who want to learn about operating systems and want to make a piece of their own.
+As the designer of this kernel, I wanted to make something that is simple, fast, secure and easy to understand.
+Which obviously means that it is not a perfect kernel. And it breaks all the time.
+But I have tried my hardest to bring many security features to the kernel.
+If you were to come across a bug, feel free to open an issue. Fork the repo and make a pull request.
+It would be amazing if you could contribute to this project!
+
+## Prerequisites
+
+- meson >= 1.0.0
+- ninja >= 1.11
+- clang >= 18.0.0 (or any C-compliant compiler)
+- nasm >= 2.16
+- qemu >= 7.0.0
+- mkfs.fat (dosfstools)
+- grub-mkrescue
+    - Note: depending on your distro, grub-mkrescue may require xorriso and mtools packages.
+
+### Quickstart
+```bash
+git clone https://github.com/assembler-0/VoidFrame.git
+cd VoidFrame
+meson setup build
+cd build
+ninja
+ninja img && ninja mkfs # Optional
+ninja run
 ```
-VoidFrame/
-├── arch/x86_64/             # Architechture specific code
-│   ├── asm/                 
-│   │   └── pxs.asm          
-│   ├── cpu/                 
-│   │   ├── Cpu.h            
-│   │   └── Cpu.c            
-│   ├── gdt/                 
-│   │   ├── GdtTssFlush.asm  
-│   │   ├── Gdt.h            
-│   │   └── Gdt.c            
-│   ├── idt/                 
-│   │   ├── IdtLoad.asm      
-│   │   ├── Ide.h            
-│   │   └── Ide.c            
-│   └── interrupts/          
-│       ├── Interrupts.asm   
-│       ├── Interrupts.c     
-│       └── Interrupts.h     
-├── drivers/                  # Drivers code
-│   ├── ethernet/       
-│   │   ├── Packet.h             
-│   │   ├── RTL8139.h             
-│   │   └── RTL8139.c          
-│   ├── PCI/                 
-│   │   ├── PCI.h            
-│   │   └── PCI.c            
-│   ├── RTC/                 
-│   │   ├── Rtc.h            
-│   │   └── Rtc.c            
-│   ├── xHCI/                 
-│   │   ├── xHCI.h            
-│   │   └── xHCI.c  
-│   ├── Ide.h           
-│   ├── Ide.c           
-│   ├── Pic.h            
-│   ├── Pic.c            
-│   ├── PS2.h             
-│   ├── PS2.c                         
-│   ├── Serial.c       
-│   ├── Serial.c       
-│   ├── VesaBIOSExtension.c       
-│   └── VesaBIOSExtension.h    
-├── fs/       
-│   ├── FAT12.h                # Filesystems  
-│   ├── FAT12.c           
-│   ├── Fs.h            
-│   ├── Fs.c            
-│   ├── FsUtils.h             
-│   ├── FsUtils.c                         
-│   ├── VFS.c       
-│   └── VFS.h    
-├── include/                   # Common includes
-│   ├── Font.h           
-│   ├── Io.h            
-│   ├── Paging.h             
-│   ├── Paging.asm            
-│   ├── stdbool.h            
-│   ├── stdint.h            
-│   ├── stddef.h            
-│   ├── stdlib.h            
-│   └── stdarg.h     
-├── kernel/                    # Kernel core
-│   ├── atomic/                # Atomic operations
-│   │   ├── Atomics.c               
-│   │   ├── Atomics.h               
-│   │   └── Spilock.h          
-│   ├── core/                  # Entry point
-│   │   ├── Kernel.h            
-│   │   ├── Kernel.c            
-│   │   ├── Panic.c            
-│   │   ├── Panic.c            
-│   │   └── Multiboot2.h            
-│   ├── elf/                   # ELF loader
-│   │   ├── ELFloader.c  
-│   │   └── ElFloader.h            
-│   ├── etc/                   # Misc. files
-│   │   ├── Console.c      
-│   │   ├── Console.h      
-│   │   ├── Editor.h            
-│   │   ├── Editor.c            
-│   │   ├── Shell.c            
-│   │   ├── Shell.h            
-│   │   ├── StringOps.c            
-│   │   ├── StringOps.h            
-│   │   ├── VBEConsole.c            
-│   │   └── VBEConsole.h     
-│   ├── ipc/                  # IPC related files  
-│   │   ├── Ipc.c                
-│   │   └── Ipc.h         
-│   ├── memory/               # Physical and Virtual memory manager  
-│   │   ├── KernelHeap.c      
-│   │   ├── KernelHeap.h      
-│   │   ├── MemOps.h      
-│   │   ├── MemOps.c      
-│   │   ├── Memory.h            
-│   │   ├── Memory.c            
-│   │   ├── MemoryPool.c            
-│   │   ├── MemoryPool.h            
-│   │   ├── StackGuard.c            
-│   │   ├── StackGuard.h                        
-│   │   ├── VMem.c            
-│   │   └── VMem.h    
-│   └── process/              # MLFQ scheduler  
-│       ├── Process.c     
-│       └── Process.h            
-├── scripts/       
-│   └── elf.ld               
-├── linker.ld         
-├── grub.cfg                   
-├── meson.build        
-└── ...                      
-```
+

@@ -15,15 +15,6 @@ static int cursor_pos = 0;
 static char current_filename[128];
 static int dirty = 0;
 
-// Helpers to compute line/column information
-static int EditorGetLineCount(void) {
-    int lines = 1;
-    for (int i = 0; i < buffer_size; i++) {
-        if (buffer[i] == '\n') lines++;
-    }
-    return lines;
-}
-
 static int EditorFindLineStart(int target_line) {
     if (target_line <= 1) return 0;
     int line = 1;
@@ -89,7 +80,7 @@ static void EditorRefresh(void) {
     PrintKernel("VoidFrame Editor - ");
     PrintKernel(current_filename);
     if (dirty) PrintKernel(" *");
-    PrintKernel(" (Ctrl+S=Save, Ctrl+Q=Quit)\n");
+    PrintKernel(" (Ctrl+S=Save, Ctrl+Q=Quit, Ctrl+A: Cursor left, Ctrl+D: Cursor right)\n");
     PrintKernel("----------------------------------------\n");
     
     // Print buffer content with line numbers and cursor

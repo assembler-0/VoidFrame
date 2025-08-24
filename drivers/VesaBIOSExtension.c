@@ -57,7 +57,7 @@ void delay(uint32_t count) {
 }
 
 int VBEInit(uint32_t multiboot_info_addr) {
-    SerialWrite("[VESA]: Parsing Multiboot2 info...\n");
+    SerialWrite("VESA: Parsing Multiboot2 info...\n");
     uint8_t *tag_ptr = (uint8_t*)(multiboot_info_addr + 8);
 
     while (1) {

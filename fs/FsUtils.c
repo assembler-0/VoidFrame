@@ -1,5 +1,6 @@
 #include "FsUtils.h"
 #include "Console.h"
+#include "Fs.h"
 
 int FsCat(const char* path) {
     int fd = FsOpen(path, FS_READ);
