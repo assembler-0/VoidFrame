@@ -820,6 +820,19 @@ int Fat12DeleteFile(const char* path) {
     return 0;
 }
 
+uint64_t Fat12GetFileSize(const char* path) {
+    if (!path) return 0;
+
+    uint16_t parent_cluster;
+    uint32_t entry_sector;
+    int entry_offset;
+
+    Fat12DirEntry* entry = Fat12FindEntry(path, &parent_cluster, &entry_sector, &entry_offset);
+    if (!entry || (entry->attr & FAT12_ATTR_DIRECTORY)) return 0;
+
+    return entry->file_size;
+}
+
 int Fat12ListRoot(void) {
     uint32_t root_sectors = (volume.boot.root_entries * 32 + 511) / 512;
 

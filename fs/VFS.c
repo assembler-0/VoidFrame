@@ -315,12 +315,7 @@ uint64_t VfsGetFileSize(const char* path) {
         case VFS_FAT12: {
             extern int fat12_initialized;
             if (!fat12_initialized) return 0;
-            // assume
-            char test_buffer[1];
-            int result = Fat12ReadFile(local_path, test_buffer, 1);
-            if (result < 0) return 0; // File doesn't exist
-
-            return 1024 * 1024;
+            return  Fat12GetFileSize(local_path);
 
         }
 
