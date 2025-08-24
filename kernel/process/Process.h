@@ -119,7 +119,7 @@ typedef struct {
 } __attribute__((packed)) SecurityToken;
 
 typedef enum {
-    PROC_TERMINATED = 0,  // IMPORTANT: Keep this as 0 since your code expects it
+    PROC_TERMINATED = 0,  // IMPORTANT: Keep this as 0
     PROC_READY,
     PROC_RUNNING,
     PROC_BLOCKED,

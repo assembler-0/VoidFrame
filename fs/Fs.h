@@ -9,6 +9,10 @@
 #define MAX_OPEN_FILES 32
 #define MAX_FS_NODES 128
 
+#define SEEK_SET 0 // Seek from the beginning of the file
+#define SEEK_CUR 1 // Seek from the current position
+#define SEEK_END 2 // Seek from the end of the file
+
 typedef enum {
     FS_FILE,
     FS_DIRECTORY
@@ -30,6 +34,7 @@ typedef struct FsNode {
     struct FsNode* parent;
     struct FsNode* children;
     struct FsNode* next_sibling;
+    struct FsNode* prev_sibling;
     uint32_t node_id;
 } FsNode;
 
@@ -52,7 +57,7 @@ int FsOpen(const char* path, FsOpenFlags flags);
 int FsClose(int fd);
 int FsRead(int fd, void* buffer, size_t size);
 int FsWrite(int fd, const void* buffer, size_t size);
-int FsSeek(int fd, uint64_t position);
+int FsSeek(int fd, int offset, int whence);
 
 // Directory operations
 int FsMkdir(const char* path);

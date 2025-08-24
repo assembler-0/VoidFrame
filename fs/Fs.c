@@ -60,7 +60,6 @@ int FsInit(void) {
     
     // Create standard directories
     FsCreateNode("System", FS_DIRECTORY, root_node);
-    FsCreateNode("Core", FS_DIRECTORY, root_node);
     FsCreateNode("Tmp", FS_DIRECTORY, root_node);
     FsCreateNode("Home", FS_DIRECTORY, root_node);
     
@@ -94,6 +93,7 @@ FsNode* FsCreateNode(const char* name, FsNodeType type, FsNode* parent) {
             sibling = sibling->next_sibling;
         }
         sibling->next_sibling = node;
+        node->prev_sibling = sibling;
     }
     
     return node;
@@ -107,64 +107,94 @@ FsNode* FsFind(const char* path) {
     }
     SerialWrite(path);
     SerialWrite("\n");
-    
-    if (!root_node) {
-        SerialWrite("[FS] root_node is NULL!\n");
-        return NULL;
-    }
-    
+
+    if (!root_node) return NULL;
+
+    // Start from the root node
+    FsNode* current = root_node;
+
+    // If the path is just "/", we're already there.
     if (path[0] == '/' && path[1] == '\0') {
-        SerialWrite("[FS] Returning root node\n");
         return root_node;
     }
-    
-    FsNode* current = root_node;
+
+    // We start parsing from the first character after the initial '/'
+    const char* p = path + 1;
     char name_buf[MAX_FILENAME];
-    int name_idx = 0;
-    
-    for (int i = 1; path[i]; i++) {
-        if (path[i] == '/' || path[i + 1] == '\0') {
-            if (path[i] != '/') {
-                name_buf[name_idx++] = path[i];
+
+    while (*p) {
+        // Skip any leading slashes
+        while (*p == '/') p++;
+        if (*p == '\0') break; // Handle trailing slashes like /System/
+
+        // Extract the next path component
+        int i = 0;
+        while (*p && *p != '/' && i < MAX_FILENAME - 1) {
+            name_buf[i++] = *p++;
+        }
+        name_buf[i] = '\0';
+
+        // --- NEW LOGIC FOR . and .. ---
+        if (FastStrCmp(name_buf, ".") == 0) {
+            continue; // '.' means the current directory, so we do nothing.
+        }
+        if (FastStrCmp(name_buf, "..") == 0) {
+            if (current->parent) {
+                current = current->parent; // Go up to the parent.
             }
-            name_buf[name_idx] = '\0';
-            
-            if (name_idx == 0) continue;
-            
-            SerialWrite("[FS] Looking for child: ");
+            continue; // Move to the next path component.
+        }
+        // --- END NEW LOGIC ---
+
+        // Search for the component in the current node's children
+        FsNode* child = current->children;
+        while (child) {
+            if (FastStrCmp(child->name, name_buf) == 0) {
+                current = child;
+                break;
+            }
+            child = child->next_sibling;
+        }
+
+        // If child is NULL here, the component wasn't found
+        if (!child) {
+            SerialWrite("[FS] Path component not found: ");
             SerialWrite(name_buf);
             SerialWrite("\n");
-            
-            FsNode* child = current->children;
-            while (child) {
-                SerialWrite("[FS] Checking child at: 0x");
-                SerialWriteHex((uint64_t)child);
-                SerialWrite(" name: ");
-                if (child->name) {
-                    SerialWrite(child->name);
-                } else {
-                    SerialWrite("NULL");
-                }
-                SerialWrite("\n");
-                
-                if (FastStrCmp(child->name, name_buf) == 0) {
-                    SerialWrite("[FS] Found match!\n");
-                    current = child;
-                    break;
-                }
-                child = child->next_sibling;
-            }
-            
-            if (!child) return NULL;
-            name_idx = 0;
-        } else {
-            if (name_idx < MAX_FILENAME - 1) {
-                name_buf[name_idx++] = path[i];
-            }
+            return NULL;
         }
     }
     
     return current;
+}
+
+int FsSeek(int fd, int offset, int whence) {
+    FileHandle* handle = GetHandle(fd);
+    if (!handle) return -1;
+
+    FsNode* node = handle->node;
+    if (!node) return -1;
+
+    uint64_t new_pos;
+
+    if (whence == SEEK_SET) {
+        new_pos = offset;
+    } else if (whence == SEEK_CUR) {
+        new_pos = handle->position + offset;
+    } else if (whence == SEEK_END) {
+        new_pos = node->size + offset;
+    } else {
+        return -1; // Invalid whence
+    }
+
+    // Ensure the new position is within the file bounds.
+    // Note: Some systems allow seeking past the end for writing. We'll keep it simple.
+    if (new_pos < 0 || new_pos > node->size) {
+        return -1; // Out of bounds
+    }
+
+    handle->position = new_pos;
+    return handle->position;
 }
 
 int FsOpen(const char* path, FsOpenFlags flags) {
@@ -316,16 +346,16 @@ int FsDelete(const char* path) {
     
     // Remove from parent's children list
     FsNode* parent = node->parent;
-    if (parent->children == node) {
-        parent->children = node->next_sibling;
+
+    if (node->prev_sibling) {
+        node->prev_sibling->next_sibling = node->next_sibling;
     } else {
-        FsNode* sibling = parent->children;
-        while (sibling && sibling->next_sibling != node) {
-            sibling = sibling->next_sibling;
-        }
-        if (sibling) {
-            sibling->next_sibling = node->next_sibling;
-        }
+        // This was the first child
+        parent->children = node->next_sibling;
+    }
+
+    if (node->next_sibling) {
+        node->next_sibling->prev_sibling = node->prev_sibling;
     }
     
     // Free file data if it exists

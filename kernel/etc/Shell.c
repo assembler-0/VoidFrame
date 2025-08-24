@@ -22,6 +22,7 @@
 #include "VMem.h"
 #include "stdlib.h"
 #include "xHCI/xHCI.h"
+#include "FsUtils.h"
 
 static char command_buffer[256];
 static int cmd_pos = 0;
@@ -85,36 +86,8 @@ static char* GetArg(const char* cmd, int arg_num) {
     return NULL;
 }
 
-static void ResolvePath(const char* input, char* output, int max_len) {
-    if (!input || !output) return;
-
-    if (input[0] == '/') {
-        // Absolute path
-        int len = 0;
-        while (input[len] && len < max_len - 1) {
-            output[len] = input[len];
-            len++;
-        }
-        output[len] = '\0';
-    } else {
-        // Relative path - combine with current directory
-        int curr_len = 0;
-        while (current_dir[curr_len] && curr_len < max_len - 1) {
-            output[curr_len] = current_dir[curr_len];
-            curr_len++;
-        }
-
-        if (curr_len > 0 && current_dir[curr_len - 1] != '/' && curr_len < max_len - 1) {
-            output[curr_len++] = '/';
-        }
-
-        int input_len = 0;
-        while (input[input_len] && curr_len + input_len < max_len - 1) {
-            output[curr_len + input_len] = input[input_len];
-            input_len++;
-        }
-        output[curr_len + input_len] = '\0';
-    }
+static void ResolvePath(const char* input, char* output, int max_len) { // wrapper
+    return ResolveSystemPath(current_dir, input, output, max_len);
 }
 
 void ArpRequestTestProcess() {
