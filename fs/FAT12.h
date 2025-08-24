@@ -69,3 +69,4 @@ int Fat12ListRoot(void);
 int Fat12GetCluster(uint16_t cluster, uint8_t* buffer);
 int Fat12IsDirectory(const char* path);
 int Fat12ListDirectory(const char* path);
+uint64_t Fat12GetFileSize(const char* path);

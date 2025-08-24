@@ -202,7 +202,7 @@ run_target('run',
 )
 
 run_target('img',
-           command : ['qemu-img', 'create',  '-f', 'raw', 'VoidFrameDisk.img', '1440K']
+           command : ['qemu-img', 'create',  '-f', 'raw', 'VoidFrameDisk.img', '256M']
 )
 
 run_target('mkfs',

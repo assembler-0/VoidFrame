@@ -208,6 +208,7 @@ static void HelpHandler(const char * args) {
     PrintKernel("  rm <file>      - Remove file or empty directory\n");
     PrintKernel("  echo <text> <file> - Write text to file\n");
     PrintKernel("  fstest         - Run filesystem tests\n");
+    PrintKernel("  size <file>    - Get size of <file> in bytes\n");
 }
 
 static void PSHandler(const char * args) {
@@ -668,6 +669,21 @@ static void FstestHandler(const char * args) {
     PrintKernel("VFS: Filesystem tests completed\n");
 }
 
+static void SizeHandler(const char * args) {
+    char* name = GetArg(args, 1);
+    if (name) {
+        char full_path[256];
+        ResolvePath(name, full_path, 256);
+        const uint64_t size = VfsGetFileSize(full_path);
+        PrintKernelInt((uint32_t)size);
+        PrintKernel(" bytes\n");
+        KernelFree(name);
+    } else {
+        PrintKernel("Usage: size <filename>\n");
+        KernelFree(name);
+    }
+}
+
 static const ShellCommand commands[] = {
     {"help", HelpHandler},
     {"ps", PSHandler},
@@ -702,7 +718,8 @@ static const ShellCommand commands[] = {
     {"echo", EchoHandler},
     {"edit", EditHandler},
     {"ver", VersionHandler},
-    {"fstest", FstestHandler}
+    {"fstest", FstestHandler},
+    {"size", SizeHandler},
 };
 
 static void ExecuteCommand(const char* cmd) {
