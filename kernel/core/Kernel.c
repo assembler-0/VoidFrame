@@ -501,7 +501,7 @@ void PXS1(const uint32_t info) {
 }
 
 static void IRQUnmaskCoreSystems() {
-    PrintKernel("Unmasking IRQs...");
+    PrintKernel("Unmasking IRQs...\n");
     PIC_enable_irq(0);
     PIC_enable_irq(1);
     PIC_enable_irq(12);

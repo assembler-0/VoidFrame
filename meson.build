@@ -8,7 +8,7 @@ project('voidframe', 'c',
         ]
 )
 
-nasm = find_program('nasm')
+nasm = find_program('nasm', required : true)
 grub_mkrescue = find_program('grub-mkrescue')
 qemu_img  = find_program('qemu-img', required : true)
 mkfs_fat  = find_program('mkfs.fat', required : true)
@@ -32,7 +32,12 @@ c_flags = [
     '-fno-pie',
     '-fno-pic',
     '-mcmodel=kernel',
+    '-fcf-protection=full',
     '-fstack-protector-strong',
+    '-D_FORTIFY_SOURCE=2',
+    '-Wall',
+    '-Wpedantic',
+    '-Wextra',
 ]
 
 # Assembly flags
@@ -117,8 +122,8 @@ c_sources = [
 ]
 
 obj_sources = [
-	src_root + '/kernel/etc/objects/splash1.o',
-	src_root + '/kernel/etc/objects/panic.o',
+    src_root + '/kernel/etc/objects/splash1.o',
+    src_root + '/kernel/etc/objects/panic.o',
 ]
 
 # Build include flags
@@ -169,7 +174,7 @@ iso = custom_target('VoidFrame.iso',
                         'mkdir -p isodir/boot/grub && ' +
                         'cp voidframe.krnl isodir/boot/voidframe.krnl && ' +
                         'cp ' + meson.current_source_dir() + '/grub.cfg isodir/boot/grub/grub.cfg && ' +
-                        grub_mkrescue.full_path() + ' -o VoidFrame.iso isodir'
+                        grub_mkrescue.full_path() + ' --modules="multiboot2 part_msdos fat" --fonts="" --locales=""' + ' -o VoidFrame.iso isodir'
                     ],
                     depends : kernel,
                     build_by_default : true
@@ -180,9 +185,10 @@ run_target('run',
            command : ['qemu-system-x86_64',
                       '-cpu', 'max',
                       '-cdrom', 'VoidFrame.iso',
-                      '-serial', 'stdio' ,
+                      '-debugcon', 'file:bootstrap.log',
+                      '-serial', 'stdio',
                       '-no-reboot','-no-shutdown',
-                      '-m', '1G',
+                      '-m', '4G',
                       '-drive', 'file=VoidFrameDisk.img,format=raw,if=ide',
                       '-boot', 'd',
                       '-device', 'rtl8139',
@@ -196,9 +202,9 @@ run_target('run',
 )
 
 run_target('img',
-          command : ['qemu-img', 'create',  '-f', 'raw', 'VoidFrameDisk.img', '1440K']
+           command : ['qemu-img', 'create',  '-f', 'raw', 'VoidFrameDisk.img', '1440K']
 )
 
 run_target('mkfs',
-          command : ['mkfs.fat', '-F',  '12', 'VoidFrameDisk.img']
+           command : ['mkfs.fat', '-F',  '12', 'VoidFrameDisk.img']
 )

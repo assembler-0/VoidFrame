@@ -79,7 +79,7 @@ start:
 
     ; Setup temporary stack
     mov esp, stack_top
-
+    debug_print 'K'
     ; Check and enable CPU features
     call check_and_enable_features
     debug_print 'F' ; Features Enabled/Checked
@@ -100,6 +100,7 @@ start:
     mov ecx, 4096 * 6 ; 6 pages to clear (PML4, PDP, PD1, PD2, PD3, PD4)
     xor eax, eax
     rep stosb
+    debug_print 'Z' ; Page Tables Zeroed
 
     ; Set CR3 to the physical address of the PML4 table.
     ; Because we're identity mapping, the virtual address is the physical address.
@@ -182,11 +183,7 @@ start:
     ; Jump to long mode
     jmp gdt64.code:long_mode
 
-; -----------------------------------------------------------
-; check_and_enable_features:
-;   Checks for CPUID support and enables common/critical CPU features
-;   like SSE/SSE2 and No-Execute (NX) if available.
-; -----------------------------------------------------------
+
 check_and_enable_features:
     ; Test for CPUID capability (ID bit in EFLAGS)
     pushfd
@@ -289,10 +286,11 @@ long_mode:
     mov rsi, [multiboot_info]  ; EBX holds info pointer, but could be 64-bit, so use RSI
 
     debug_print '9' ; Calling Kernel
-    ; Jump to the C kernel
     call KernelMain
 
     ; If the kernel ever returns, hang the system
+    debug_print 'R'
+    debug_print '!'
 .halt:
     cli
     hlt
