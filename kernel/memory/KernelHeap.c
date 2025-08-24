@@ -2,6 +2,7 @@
 #include "Console.h"
 #include "MemOps.h"
 #include "MemPool.h"
+#include "Panic.h"
 #include "Spinlock.h"
 #include "VMem.h"
 
@@ -45,7 +46,7 @@ static size_t peak_allocated = 0;
 static FastCache fast_caches[NUM_SIZE_CLASSES];
 
 // Validation level (can be reduced in production)
-static int validation_level = 1; // 0=none, 1=basic, 2=full
+static volatile int validation_level = 1; // 0=none, 1=basic, 2=full
 
 // Simple checksum for header integrity
 static uint32_t ComputeChecksum(HeapBlock* block) {
@@ -136,6 +137,7 @@ static inline void UpdateChecksum(HeapBlock* block) {
 
 // Pop block from fast cache
 static HeapBlock* FastCachePop(int size_class) {
+    ASSERT(__sync_fetch_and_add(&kheap_lock, 0) != 0);
     FastCache* cache = &fast_caches[size_class];
     if (!cache->free_list) return NULL;
 
@@ -151,6 +153,7 @@ static HeapBlock* FastCachePop(int size_class) {
 
 // Push block to fast cache (if not full)
 static void FastCachePush(HeapBlock* block, int size_class) {
+    ASSERT(__sync_fetch_and_add(&kheap_lock, 0) != 0);
     FastCache* cache = &fast_caches[size_class];
     if (cache->count >= FAST_CACHE_SIZE) return; // Cache full
 

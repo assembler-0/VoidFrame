@@ -168,33 +168,31 @@ FsNode* FsFind(const char* path) {
     return current;
 }
 
-int FsSeek(int fd, int offset, int whence) {
+int64_t FsSeek(int fd, int64_t offset, int whence) {
     FileHandle* handle = GetHandle(fd);
     if (!handle) return -1;
-
     FsNode* node = handle->node;
     if (!node) return -1;
-
-    uint64_t new_pos;
-
+    int64_t new_pos;
     if (whence == SEEK_SET) {
         new_pos = offset;
     } else if (whence == SEEK_CUR) {
-        new_pos = handle->position + offset;
+        // compute in signed domain to detect negative results
+        int64_t cur = (int64_t)handle->position;
+        new_pos = cur + offset;
     } else if (whence == SEEK_END) {
-        new_pos = node->size + offset;
+        int64_t end = (int64_t)node->size;
+        new_pos = end + offset;
     } else {
         return -1; // Invalid whence
     }
-
-    // Ensure the new position is within the file bounds.
-    // Note: Some systems allow seeking past the end for writing. We'll keep it simple.
-    if (new_pos < 0 || new_pos > node->size) {
+    // Ensure the new position is within the file bounds [0, size].
+    // Note: We currently disallow seeking past EOF.
+    if (new_pos < 0 || (uint64_t)new_pos > node->size) {
         return -1; // Out of bounds
     }
-
-    handle->position = new_pos;
-    return handle->position;
+    handle->position = (uint64_t)new_pos;
+    return new_pos;
 }
 
 int FsOpen(const char* path, FsOpenFlags flags) {

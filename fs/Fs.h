@@ -57,7 +57,7 @@ int FsOpen(const char* path, FsOpenFlags flags);
 int FsClose(int fd);
 int FsRead(int fd, void* buffer, size_t size);
 int FsWrite(int fd, const void* buffer, size_t size);
-int FsSeek(int fd, int offset, int whence);
+int64_t FsSeek(int fd, int64_t offset, int whence);
 
 // Directory operations
 int FsMkdir(const char* path);

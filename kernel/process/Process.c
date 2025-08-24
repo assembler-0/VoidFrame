@@ -641,7 +641,7 @@ static void SmartAging(void) {
                 queue->count--;
                 
                 // IF NONE OTHER THAN 0, breaks
-                uint32_t new_priority = RT_PRIORITY_THRESHOLD;
+                uint32_t new_priority = 0;
 
                 proc->priority = new_priority;
                 proc->last_scheduled_tick = current_tick;

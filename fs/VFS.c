@@ -120,6 +120,10 @@ const char* VfsStripMount(const char* path, VfsMountStruct* mount) {
         return "/";
     }
 
+    if (*local_path_start != '/') {
+        return path; // Return original path as fallback
+    }
+
     return local_path_start;
 }
 

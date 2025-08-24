@@ -26,6 +26,11 @@ static inline void __attribute__((always_inline)) ResolveSystemPath(const char* 
         return;
     }
 
+    // Validate capacity: need at least room for "/" and NUL
+    if (max_len <= 1) {
+        if (output && max_len > 0) output[0] = '\0';
+        return;
+    }
     // A temporary buffer to hold the full, unprocessed path
     char full_path[max_len];
 
@@ -40,13 +45,18 @@ static inline void __attribute__((always_inline)) ResolveSystemPath(const char* 
 
         // Add a separating slash if needed.
         if (current_len > 1 && full_path[current_len - 1] != '/') {
-            strcat(full_path, "/");
+            if (current_len + 1 < max_len) {
+                full_path[current_len++] = '/';
+                full_path[current_len] = '\0';
+            }
         } else if (current_len == 0) {
-            // This case should not happen if current_dir is always absolute.
-             strcat(full_path, "/");
+            // Defensive: ensure absolute root
+            full_path[0] = '/';
+            full_path[1] = '\0';
+            current_len = 1;
         }
-
-        strcat(full_path, input);
+        // Append input within remaining capacity
+        FastStrCopy(full_path + current_len, input, (int)(max_len - current_len));
     }
 
     // 2. Process the path using a stack-like approach for components.
