@@ -11,7 +11,7 @@
 
 // Core Queue Configuration
 #define MAX_PRIORITY_LEVELS 5           // Reduced from 6 - fewer levels = better cache locality
-#define RT_PRIORITY_THRESHOLD 0         // Increased RT levels for better interactive response
+#define RT_PRIORITY_THRESHOLD 3         // Increased RT levels for better interactive response
 #define MAX_PROCESSES 64                // Keep as is
 
 // Quantum Management - EXPONENTIAL GROWTH for better differentiation
@@ -119,7 +119,7 @@ typedef struct {
 } __attribute__((packed)) SecurityToken;
 
 typedef enum {
-    PROC_TERMINATED = 0,  // IMPORTANT: Keep this as 0 since your code expects it
+    PROC_TERMINATED = 0,  // IMPORTANT: Keep this as 0
     PROC_READY,
     PROC_RUNNING,
     PROC_BLOCKED,

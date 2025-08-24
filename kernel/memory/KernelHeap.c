@@ -2,6 +2,7 @@
 #include "Console.h"
 #include "MemOps.h"
 #include "MemPool.h"
+#include "Panic.h"
 #include "Spinlock.h"
 #include "VMem.h"
 
@@ -21,65 +22,99 @@ typedef struct HeapBlock {
 #define HEAP_ALIGN       8
 #define MAX_ALLOC_SIZE   (1ULL << 30)  // 1GB limit
 
+// Small allocation optimization
+#define SMALL_ALLOC_THRESHOLD 256
+#define NUM_SIZE_CLASSES 8
+#define FAST_CACHE_SIZE 16
+
+// Size classes for small allocations (32, 48, 64, 96, 128, 192, 256)
+static const size_t size_classes[NUM_SIZE_CLASSES] = {
+    32, 48, 64, 96, 128, 192, 256, 512
+};
+
+// Fast allocation cache for each size class
+typedef struct {
+    HeapBlock* free_list;
+    int count;
+} FastCache;
+
 // Global state
 static HeapBlock* heap_head = NULL;
 static volatile int kheap_lock = 0;
 static size_t total_allocated = 0;
 static size_t peak_allocated = 0;
+static FastCache fast_caches[NUM_SIZE_CLASSES];
 
-// Simple checksum for header integrity (exclude volatile fields)
+// Validation level (can be reduced in production)
+static volatile int validation_level = 1; // 0=none, 1=basic, 2=full
+
+// Simple checksum for header integrity
 static uint32_t ComputeChecksum(HeapBlock* block) {
     return (uint32_t)((uintptr_t)block ^ block->magic ^ block->size);
 }
 
-// Unified block validation with detailed error reporting
-static int ValidateBlock(HeapBlock* block, const char* operation) {
+// Fast validation (only checks magic)
+static inline int ValidateBlockFast(HeapBlock* block) {
+    return block && (block->magic == HEAP_MAGIC_ALLOC || block->magic == HEAP_MAGIC_FREE);
+}
+
+// Full validation with detailed error reporting
+static int ValidateBlockFull(HeapBlock* block, const char* operation) {
     if (!block) {
         PrintKernelError("[HEAP] NULL block in "); PrintKernel(operation);
         return 0;
     }
 
-    // Check magic number
     if (block->magic != HEAP_MAGIC_ALLOC && block->magic != HEAP_MAGIC_FREE) {
-        PrintKernelError("[HEAP] Invalid magic "); PrintKernelHex(block->magic);
-        PrintKernelError(" at "); PrintKernelHex((uint64_t)block);
-        PrintKernelError(" during "); PrintKernel(operation); PrintKernel("\n");
+        PrintKernelError("[HEAP] Invalid magic during "); PrintKernel(operation); PrintKernel("\n");
         return 0;
     }
 
-    // Check size bounds
     if (block->size == 0 || block->size > MAX_ALLOC_SIZE) {
-        PrintKernelError("[HEAP] Invalid size "); PrintKernelInt(block->size);
-        PrintKernelError(" at "); PrintKernelHex((uint64_t)block);
-        PrintKernelError(" during "); PrintKernel(operation); PrintKernel("\n");
+        PrintKernelError("[HEAP] Invalid size during "); PrintKernel(operation); PrintKernel("\n");
         return 0;
     }
 
-    // Verify checksum
-    uint32_t expected = ComputeChecksum(block);
-    if (block->checksum != expected) {
-        PrintKernelError("[HEAP] Checksum mismatch at "); PrintKernelHex((uint64_t)block);
-        PrintKernelError(" during "); PrintKernel(operation);
-        PrintKernelError(" (got "); PrintKernelHex(block->checksum);
-        PrintKernelError(", expected "); PrintKernelHex(expected); PrintKernel(")\n");
-        return 0;
+    if (validation_level > 1) {
+        uint32_t expected = ComputeChecksum(block);
+        if (block->checksum != expected) {
+            PrintKernelError("[HEAP] Checksum mismatch during "); PrintKernel(operation); PrintKernel("\n");
+            return 0;
+        }
     }
 
     return 1;
 }
 
+// Adaptive validation
+static inline int ValidateBlock(HeapBlock* block, const char* operation) {
+    if (validation_level == 0) return 1;
+    if (validation_level == 1) return ValidateBlockFast(block);
+    return ValidateBlockFull(block, operation);
+}
+
+// Get size class index for small allocations
+static int GetSizeClass(size_t size) {
+    for (int i = 0; i < NUM_SIZE_CLASSES; i++) {
+        if (size <= size_classes[i]) {
+            return i;
+        }
+    }
+    return -1; // Not a small allocation
+}
+
 // Unified size alignment
-static size_t AlignSize(size_t size) {
+static inline size_t AlignSize(size_t size) {
     return (size + HEAP_ALIGN - 1) & ~(HEAP_ALIGN - 1);
 }
 
 // Get user data pointer from block
-static void* BlockToUser(HeapBlock* block) {
+static inline void* BlockToUser(HeapBlock* block) {
     return (uint8_t*)block + sizeof(HeapBlock);
 }
 
 // Get block from user pointer
-static HeapBlock* UserToBlock(void* ptr) {
+static inline HeapBlock* UserToBlock(void* ptr) {
     return (HeapBlock*)((uint8_t*)ptr - sizeof(HeapBlock));
 }
 
@@ -88,16 +123,66 @@ static void InitBlock(HeapBlock* block, size_t size, int is_free) {
     block->magic = is_free ? HEAP_MAGIC_FREE : HEAP_MAGIC_ALLOC;
     block->size = size;
     block->is_free = is_free ? 1 : 0;
-    block->checksum = ComputeChecksum(block);
+    if (validation_level > 1) {
+        block->checksum = ComputeChecksum(block);
+    }
 }
 
 // Update checksum after modifying stable fields
-static void UpdateChecksum(HeapBlock* block) {
-    block->checksum = ComputeChecksum(block);
+static inline void UpdateChecksum(HeapBlock* block) {
+    if (validation_level > 1) {
+        block->checksum = ComputeChecksum(block);
+    }
 }
 
-// Best-fit allocation for better memory utilization
-static HeapBlock* FindBestFreeBlock(size_t size) {
+// Pop block from fast cache
+static HeapBlock* FastCachePop(int size_class) {
+    ASSERT(__sync_fetch_and_add(&kheap_lock, 0) != 0);
+    FastCache* cache = &fast_caches[size_class];
+    if (!cache->free_list) return NULL;
+
+    HeapBlock* block = cache->free_list;
+    cache->free_list = block->next;
+    cache->count--;
+
+    // Clear linkage
+    block->next = NULL;
+    block->prev = NULL;
+    return block;
+}
+
+// Push block to fast cache (if not full)
+static void FastCachePush(HeapBlock* block, int size_class) {
+    ASSERT(__sync_fetch_and_add(&kheap_lock, 0) != 0);
+    FastCache* cache = &fast_caches[size_class];
+    if (cache->count >= FAST_CACHE_SIZE) return; // Cache full
+
+    block->next = cache->free_list;
+    block->prev = NULL;
+    if (cache->free_list) cache->free_list->prev = block;
+    cache->free_list = block;
+    cache->count++;
+}
+
+// Optimized free block search with early termination
+static HeapBlock* FindFreeBlock(size_t size) {
+    // For small allocations, do a quick scan for exact/close fits
+    if (size <= SMALL_ALLOC_THRESHOLD) {
+        HeapBlock* first_fit = NULL;
+        int blocks_scanned = 0;
+
+        for (HeapBlock* block = heap_head; block && blocks_scanned < 32; block = block->next, blocks_scanned++) {
+            if (block->is_free && block->size >= size) {
+                if (block->size <= size * 2) { // Close fit
+                    return block;
+                }
+                if (!first_fit) first_fit = block; // Remember first fit
+            }
+        }
+        return first_fit;
+    }
+
+    // For larger allocations, do best-fit search
     HeapBlock* best = NULL;
     size_t best_size = MAX_ALLOC_SIZE;
 
@@ -105,9 +190,7 @@ static HeapBlock* FindBestFreeBlock(size_t size) {
         if (block->is_free && block->size >= size && block->size < best_size) {
             best = block;
             best_size = block->size;
-
-            // Perfect fit - no need to continue
-            if (block->size == size) break;
+            if (block->size == size) break; // Perfect fit
         }
     }
     return best;
@@ -117,12 +200,11 @@ static HeapBlock* FindBestFreeBlock(size_t size) {
 static void SplitBlock(HeapBlock* block, size_t needed_size) {
     size_t remaining = block->size - needed_size;
 
-    // Only split if remainder is worth it (header + minimum size)
+    // Only split if remainder is worth it
     if (remaining < sizeof(HeapBlock) + MIN_BLOCK_SIZE) {
         return;
     }
 
-    // Create new block from remainder
     HeapBlock* new_block = (HeapBlock*)((uint8_t*)BlockToUser(block) + needed_size);
     InitBlock(new_block, remaining - sizeof(HeapBlock), 1);
 
@@ -155,21 +237,20 @@ static HeapBlock* CreateNewBlock(size_t size) {
     return block;
 }
 
-// Coalesce adjacent free blocks
+// Coalesce adjacent free blocks (optimized)
 static void CoalesceWithAdjacent(HeapBlock* block) {
-    // Merge with next block if it's free
+    // Merge with next blocks
     while (block->next && block->next->is_free) {
         HeapBlock* next = block->next;
-        if (!ValidateBlock(next, "coalesce")) break;
+        if (!ValidateBlockFast(next)) break;
 
         block->size += sizeof(HeapBlock) + next->size;
         block->next = next->next;
         if (next->next) next->next->prev = block;
-
         UpdateChecksum(block);
     }
 
-    // Let previous block merge with this one if it's free
+    // Let previous block merge with this one
     if (block->prev && block->prev->is_free) {
         CoalesceWithAdjacent(block->prev);
     }
@@ -179,36 +260,60 @@ void KernelHeapInit() {
     heap_head = NULL;
     total_allocated = 0;
     peak_allocated = 0;
-    PrintKernelSuccess("[HEAP] Kernel Heap Initialized\n");
+
+    // Initialize fast caches
+    for (int i = 0; i < NUM_SIZE_CLASSES; i++) {
+        fast_caches[i].free_list = NULL;
+        fast_caches[i].count = 0;
+    }
+    // change as needed
+    KernelHeapSetValidationLevel(KHEAP_VALIDATION_BASIC);
 }
 
 void* KernelMemoryAlloc(size_t size) {
-    // Input validation
-
     if (size == 0 || size > MAX_ALLOC_SIZE) {
-        PrintKernelWarning("[HEAP] Ignoring invalid size: "); PrintKernelInt(size);
-        PrintKernel("\n");
         return NULL;
     }
 
     size = AlignSize(size);
     if (size < MIN_BLOCK_SIZE) size = MIN_BLOCK_SIZE;
 
+    // Fast path for small allocations
+    int size_class = GetSizeClass(size);
+    if (size_class >= 0) {
+        size_t actual_size = size_classes[size_class];
+
+        irq_flags_t flags = SpinLockIrqSave(&kheap_lock);
+
+        // Try fast cache first
+        HeapBlock* block = FastCachePop(size_class);
+        if (block) {
+            InitBlock(block, actual_size, 0);
+            total_allocated += actual_size;
+            if (total_allocated > peak_allocated) {
+                peak_allocated = total_allocated;
+            }
+            SpinUnlockIrqRestore(&kheap_lock, flags);
+            return BlockToUser(block);
+        }
+
+        SpinUnlockIrqRestore(&kheap_lock, flags);
+        size = actual_size; // Use size class size
+    }
+
+    // Standard allocation path
     irq_flags_t flags = SpinLockIrqSave(&kheap_lock);
 
-    // Try to find existing free block
-    HeapBlock* block = FindBestFreeBlock(size);
+    HeapBlock* block = FindFreeBlock(size);
     if (block) {
         if (!ValidateBlock(block, "alloc_reuse")) {
             SpinUnlockIrqRestore(&kheap_lock, flags);
             return NULL;
         }
 
-        // Split if block is much larger than needed
         SplitBlock(block, size);
         InitBlock(block, size, 0);
     } else {
-        // Create new block
         block = CreateNewBlock(size);
         if (!block) {
             SpinUnlockIrqRestore(&kheap_lock, flags);
@@ -216,7 +321,6 @@ void* KernelMemoryAlloc(size_t size) {
         }
     }
 
-    // Update statistics
     total_allocated += size;
     if (total_allocated > peak_allocated) {
         peak_allocated = total_allocated;
@@ -227,7 +331,6 @@ void* KernelMemoryAlloc(size_t size) {
 }
 
 void* KernelAllocate(size_t num, size_t size) {
-    // Check for overflow
     if (num && size > MAX_ALLOC_SIZE / num) {
         return NULL;
     }
@@ -253,20 +356,17 @@ void* KernelReallocate(void* ptr, size_t size) {
     }
 
     if (block->is_free) {
-        PrintKernelError("[HEAP] Realloc of freed memory at ");
-        PrintKernelHex((uint64_t)ptr); PrintKernel("\n");
+        PrintKernelError("[HEAP] Realloc of freed memory\n");
         return NULL;
     }
 
     size_t old_size = block->size;
     size_t aligned_size = AlignSize(size);
 
-    // If new size fits in current block, just return it
     if (aligned_size <= old_size) {
-        return ptr;
+        return ptr; // Fits in current block
     }
 
-    // Allocate new block and copy data
     void* new_ptr = KernelMemoryAlloc(size);
     if (!new_ptr) return NULL;
 
@@ -278,30 +378,45 @@ void* KernelReallocate(void* ptr, size_t size) {
 void KernelFree(void* ptr) {
     if (!ptr) return;
 
-    irq_flags_t flags = SpinLockIrqSave(&kheap_lock);
-
     HeapBlock* block = UserToBlock(ptr);
     if (!ValidateBlock(block, "free")) {
+        return;
+    }
+
+    if (block->is_free) {
+        PrintKernelError("[HEAP] Double free detected\n");
+        return;
+    }
+
+    size_t size = block->size;
+
+    // Fast path for small allocations
+    int size_class = GetSizeClass(size);
+    if (size_class >= 0 && size == size_classes[size_class]) {
+        // Security: zero user data
+        FastMemset(ptr, 0, size);
+
+        irq_flags_t flags = SpinLockIrqSave(&kheap_lock);
+
+        InitBlock(block, size, 1);
+        total_allocated -= size;
+
+        // Try to cache the block
+        FastCachePush(block, size_class);
+
         SpinUnlockIrqRestore(&kheap_lock, flags);
         return;
     }
 
-    // Check for double free
-    if (block->is_free) {
-        SpinUnlockIrqRestore(&kheap_lock, flags);
-        PrintKernelError("[HEAP] Double free at ");
-        PrintKernelHex((uint64_t)ptr); PrintKernel("\n");
-        return;
-    }
+    // Standard free path
+    irq_flags_t flags = SpinLockIrqSave(&kheap_lock);
 
     // Security: zero user data
-    FastMemset(ptr, 0, block->size);
+    FastMemset(ptr, 0, size);
 
-    // Mark as free and update statistics
-    InitBlock(block, block->size, 1);
-    total_allocated -= block->size;
+    InitBlock(block, size, 1);
+    total_allocated -= size;
 
-    // Coalesce with adjacent free blocks
     CoalesceWithAdjacent(block);
 
     SpinUnlockIrqRestore(&kheap_lock, flags);
@@ -309,15 +424,13 @@ void KernelFree(void* ptr) {
 
 void PrintHeapStats(void) {
     const irq_flags_t flags = SpinLockIrqSave(&kheap_lock);
+
     size_t free_blocks = 0, used_blocks = 0;
     size_t free_bytes = 0, used_bytes = 0;
-    size_t corrupted = 0;
+    size_t cached_blocks = 0;
 
     for (HeapBlock* block = heap_head; block; block = block->next) {
-        if (!ValidateBlock(block, "stats")) {
-            corrupted++;
-            continue;
-        }
+        if (!ValidateBlock(block, "stats")) continue;
 
         if (block->is_free) {
             free_blocks++;
@@ -328,12 +441,37 @@ void PrintHeapStats(void) {
         }
     }
 
+    // Count cached blocks
+    for (int i = 0; i < NUM_SIZE_CLASSES; i++) {
+        cached_blocks += fast_caches[i].count;
+    }
+
     SpinUnlockIrqRestore(&kheap_lock, flags);
 
     PrintKernel("[HEAP] Blocks: "); PrintKernelInt(used_blocks);
-    PrintKernel(" used, "); PrintKernelInt(free_blocks); PrintKernel(" free\n");
+    PrintKernel(" used, "); PrintKernelInt(free_blocks); PrintKernel(" free, ");
+    PrintKernelInt(cached_blocks); PrintKernel(" cached\n");
     PrintKernel("[HEAP] Memory: "); PrintKernelInt(used_bytes);
     PrintKernel(" used, "); PrintKernelInt(free_bytes); PrintKernel(" free\n");
-    PrintKernel("[HEAP] Peak allocated: "); PrintKernelInt(peak_allocated);
-    PrintKernel(", corrupted blocks: "); PrintKernelInt(corrupted); PrintKernel("\n");
+    PrintKernel("[HEAP] Peak allocated: "); PrintKernelInt(peak_allocated); PrintKernel("\n");
+}
+
+void KernelHeapSetValidationLevel(int level) {
+    validation_level = (level < 0) ? 0 : (level > 2) ? 2 : level;
+}
+
+// Flush fast caches (useful for debugging or low-memory situations)
+void KernelHeapFlushCaches(void) {
+    irq_flags_t flags = SpinLockIrqSave(&kheap_lock);
+
+    for (int i = 0; i < NUM_SIZE_CLASSES; i++) {
+        while (fast_caches[i].free_list) {
+            HeapBlock* block = FastCachePop(i);
+            if (block) {
+                CoalesceWithAdjacent(block);
+            }
+        }
+    }
+
+    SpinUnlockIrqRestore(&kheap_lock, flags);
 }

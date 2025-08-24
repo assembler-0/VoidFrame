@@ -613,9 +613,8 @@ static InitResultT PXS2(void) {
 
     // NEW: Check if huge pages should be enabled
     PrintKernel("Info: Checking huge page support...\n");
-    if (CheckHugePageSupport()) {
-        PrintKernelSuccess("System: Huge pages available\n");
-    }
+    if (CheckHugePageSupport()) PrintKernelSuccess("System: Huge pages available\n");
+
 
     PrintKernel("Info: Initializing ISA bus...\n");
     IsaInitBus();
@@ -668,7 +667,7 @@ void KernelMain(const uint32_t magic, const uint32_t info) {
     console.buffer = (volatile uint16_t*)VGA_BUFFER_ADDR;
 
     ClearScreen();
-    PrintKernelSuccess("System: VoidFrame Kernel - Version 0.0.1-beta2 loaded\n");
+    PrintKernelSuccess("System: VoidFrame Kernel - Version 0.0.1-beta5 loaded\n");
     PrintKernel("Magic: ");
     PrintKernelHex(magic);
     PrintKernel(", Info: ");
@@ -679,7 +678,7 @@ void KernelMain(const uint32_t magic, const uint32_t info) {
 }
 
 void KernelMainHigherHalf(void) {
-    PrintKernelSuccess("System: Successfully jumped to higher half. Virtual memory is active.\n");
+    PrintKernelSuccess("System: Successfully jumped to higher half.\n");
 
     // Initialize core systems
     PXS2();

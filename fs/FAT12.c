@@ -4,7 +4,6 @@
 #include "KernelHeap.h"
 #include "MemOps.h"
 #include "MemPool.h"
-#include "Serial.h"
 #include "StringOps.h"
 
 static Fat12Volume volume;
@@ -269,6 +268,103 @@ static Fat12DirEntry* Fat12FindEntry(const char* path, uint16_t* parent_cluster,
     return NULL;
 }
 
+static int Fat12FindDirectoryEntry(uint16_t parent_cluster, const char* fat_name, uint32_t* out_sector, int* out_offset) {
+    *out_sector = 0;
+    *out_offset = -1;
+
+    // Case 1: Search the Root Directory
+    if (parent_cluster == 0) {
+        uint32_t root_sectors = (volume.boot.root_entries * 32 + 511) / 512;
+        for (uint32_t sector_idx = 0; sector_idx < root_sectors; sector_idx++) {
+            uint32_t current_lba = volume.root_sector + sector_idx;
+            if (IdeReadSector(volume.drive, current_lba, sector_buffer) != IDE_OK) return -1;
+
+            Fat12DirEntry* entries = (Fat12DirEntry*)sector_buffer;
+            for (int i = 0; i < 16; i++) {
+                uint8_t first_char = entries[i].name[0];
+                if (first_char == 0x00 || first_char == 0xE5) {
+                    if (*out_offset == -1) { // Found the first free entry
+                        *out_sector = current_lba;
+                        *out_offset = i;
+                    }
+                } else if (!(entries[i].attr & FAT12_ATTR_VOLUME_ID)) {
+                    if (FastMemcmp(entries[i].name, fat_name, 11) == 0) {
+                        return -1; // Name collision
+                    }
+                }
+            }
+        }
+        return (*out_offset == -1) ? -1 : 0; // Return -1 if root is full
+    }
+
+    // Case 2: Search a Subdirectory (Cluster Chain)
+    uint16_t current_cluster = parent_cluster;
+    uint16_t previous_cluster = 0;
+    uint32_t cluster_bytes = volume.boot.sectors_per_cluster * 512;
+    uint8_t* cluster_buffer = KernelMemoryAlloc(cluster_bytes);
+    if (!cluster_buffer) return -1;
+
+    while (current_cluster < 0xFF8) {
+        if (Fat12GetCluster(current_cluster, cluster_buffer) != 0) {
+            KernelFree(cluster_buffer);
+            return -1;
+        }
+
+        Fat12DirEntry* entries = (Fat12DirEntry*)cluster_buffer;
+        int entries_per_cluster = cluster_bytes / 32;
+
+        for (int i = 0; i < entries_per_cluster; i++) {
+            uint8_t first_char = entries[i].name[0];
+            if (first_char == 0x00 || first_char == 0xE5) {
+                if (*out_offset == -1) { // Found the first free slot
+                    *out_sector = volume.data_sector + ((current_cluster - 2) * volume.boot.sectors_per_cluster) + (i * 32) / 512;
+                    *out_offset = (i * 32) % 512 / 32;
+                }
+            } else if (!(entries[i].attr & FAT12_ATTR_VOLUME_ID)) {
+                if (FastMemcmp(entries[i].name, fat_name, 11) == 0) {
+                    KernelFree(cluster_buffer);
+                    return -1; // Name collision
+                }
+            }
+        }
+        previous_cluster = current_cluster;
+        current_cluster = Fat12GetNextCluster(current_cluster);
+    }
+
+    // If we've found a free spot already, we're done
+    if (*out_offset != -1) {
+        KernelFree(cluster_buffer);
+        return 0;
+    }
+
+    // If we get here, the directory is full. We need to extend it.
+    uint16_t new_cluster = Fat12FindFreeCluster();
+    if (new_cluster == 0) {
+        KernelFree(cluster_buffer);
+        return -1; // No free clusters on disk
+    }
+
+    // Link the last cluster of the directory to the new one
+    Fat12SetFatEntry(previous_cluster, new_cluster);
+    Fat12SetFatEntry(new_cluster, FAT12_CLUSTER_EOF);
+
+    // The free entry is the very first one in this new cluster
+    *out_sector = volume.data_sector + ((new_cluster - 2) * volume.boot.sectors_per_cluster);
+    *out_offset = 0;
+
+    // We must clear the new cluster on disk to ensure it's full of 0x00
+    FastMemset(cluster_buffer, 0, cluster_bytes);
+    for (int i = 0; i < volume.boot.sectors_per_cluster; i++) {
+        if (IdeWriteSector(volume.drive, *out_sector + i, cluster_buffer + (i * 512)) != IDE_OK) {
+            KernelFree(cluster_buffer);
+            return -1;
+        }
+    }
+
+    KernelFree(cluster_buffer);
+    return 0;
+}
+
 // NEW: Check if a path is a directory
 int Fat12IsDirectory(const char* path) {
     if (!path) return 0;
@@ -286,9 +382,6 @@ int Fat12IsDirectory(const char* path) {
     return (entry->attr & FAT12_ATTR_DIRECTORY) ? 1 : 0;
 }
 
-// NEW: List directory contents (works for any directory)
-
-// This is the MODIFIED Fat12ListDirectory
 int Fat12ListDirectory(const char* path) {
     if (!path) return -1;
 
@@ -331,8 +424,6 @@ int Fat12ListDirectory(const char* path) {
             if ((uint8_t)current_entry->name[0] == 0x00) break;
             if ((uint8_t)current_entry->name[0] == 0xE5) continue;
             if (current_entry->attr & FAT12_ATTR_VOLUME_ID) continue;
-            if (current_entry->name[0] == '.' && current_entry->name[1] == ' ' && current_entry->ext[0] == ' ') continue;
-            if (current_entry->name[0] == '.' && current_entry->name[1] == '.' && current_entry->name[2] == ' ') continue;
 
             // (Printing logic is the same)
             PrintKernel("  ");
@@ -364,81 +455,55 @@ int Fat12ListDirectory(const char* path) {
     return 0;
 }
 
-
 int Fat12CreateDir(const char* path) {
     if (!path || path[0] != '/') return -1;
 
-    // Extract parent directory and directory name
     char parent_path[256];
     char dir_name[256];
-
-    // Find last slash
     int last_slash = -1;
+
+    // --- (The path parsing logic at the top remains the same) ---
     for (int i = FastStrlen(path, 256) - 1; i >= 0; i--) {
         if (path[i] == '/') {
             last_slash = i;
             break;
         }
     }
+    if (last_slash == -1) return -1; // Invalid path
 
-    if (last_slash <= 0) {
-        // Creating in root
+    if (last_slash == 0) {
         FastStrCopy(parent_path, "/", 256);
-        FastStrCopy(dir_name, path + 1, 256);
     } else {
-        // Extract parent path and name
         FastMemcpy(parent_path, path, last_slash);
         parent_path[last_slash] = 0;
-        FastStrCopy(dir_name, path + last_slash + 1, 256);
     }
+    FastStrCopy(dir_name, path + last_slash + 1, 256);
 
     // Convert directory name to FAT format
     char fat_name[11];
     Fat12ConvertFilename(dir_name, fat_name);
 
-    // Find parent directory
-    uint16_t parent_cluster = 0;
+    // Find parent directory to get its starting cluster
+    uint16_t parent_cluster = 0; // Default to root
     if (FastStrCmp(parent_path, "/") != 0) {
-        uint16_t temp_parent;
-        uint32_t temp_sector;
-        int temp_offset;
-        Fat12DirEntry* parent_entry = Fat12FindEntry(parent_path, &temp_parent, &temp_sector, &temp_offset);
-        if (!parent_entry || !(parent_entry->attr & FAT12_ATTR_DIRECTORY)) return -1;
+        uint16_t temp_parent_cluster;
+        uint32_t temp_entry_sector;
+        int temp_entry_offset;
+        Fat12DirEntry* parent_entry = Fat12FindEntry(parent_path, &temp_parent_cluster, &temp_entry_sector, &temp_entry_offset);
+        if (!parent_entry || !(parent_entry->attr & FAT12_ATTR_DIRECTORY)) {
+            return -1; // Parent not found or is not a directory
+        }
         parent_cluster = parent_entry->cluster_low;
     }
 
-    // Check if directory already exists and find free entry
-    // For simplicity, let's assume we're creating in root for now
-    // Full implementation would need to handle subdirectories
-    if (parent_cluster != 0) {
-        // TODO: Handle creating directories in subdirectories
-        return -1;
+    // ---- THIS IS THE REPLACEMENT LOGIC ----
+    // Use our new helper to find a free spot in the parent (root or subdir)
+    uint32_t entry_sector_lba;
+    int entry_offset;
+    if (Fat12FindDirectoryEntry(parent_cluster, fat_name, &entry_sector_lba, &entry_offset) != 0) {
+        return -1; // Parent directory is full or name already exists
     }
-
-    // Original root directory creation logic
-    uint32_t root_sectors = (volume.boot.root_entries * 32 + 511) / 512;
-    uint32_t entry_sector_lba = 0;
-    int entry_offset = -1;
-
-    for (uint32_t sector_idx = 0; sector_idx < root_sectors; sector_idx++) {
-        uint32_t current_lba = volume.root_sector + sector_idx;
-        if (IdeReadSector(volume.drive, current_lba, sector_buffer) != IDE_OK) return -1;
-
-        Fat12DirEntry* entries = (Fat12DirEntry*)sector_buffer;
-        for (int i = 0; i < 16; i++) {
-            uint8_t first_char = entries[i].name[0];
-            if (first_char == 0x00 || first_char == 0xE5) {
-                if (entry_offset == -1) {
-                    entry_sector_lba = current_lba;
-                    entry_offset = i;
-                }
-            } else if (FastMemcmp(entries[i].name, fat_name, 11) == 0) {
-                return -1; // Directory/file with that name already exists
-            }
-        }
-    }
-
-    if (entry_offset == -1) return -1; // Root directory is full
+    // ---- END REPLACEMENT LOGIC ----
 
     // Allocate a cluster for the new directory's data
     uint16_t new_cluster = Fat12FindFreeCluster();
@@ -446,11 +511,10 @@ int Fat12CreateDir(const char* path) {
 
     Fat12SetFatEntry(new_cluster, FAT12_CLUSTER_EOF);
 
-    // Create '.' and '..' entries and write to cluster
+    // Create '.' and '..' entries and write to the new cluster
     uint32_t cluster_size_bytes = volume.boot.sectors_per_cluster * 512;
     uint8_t* cluster_buffer = KernelMemoryAlloc(cluster_size_bytes);
     if (!cluster_buffer) return -1;
-
     FastMemset(cluster_buffer, 0, cluster_size_bytes);
 
     // Create the '.' entry (points to itself)
@@ -464,9 +528,10 @@ int Fat12CreateDir(const char* path) {
     Fat12DirEntry* dotdot_entry = dot_entry + 1;
     FastMemcpy(dotdot_entry->name, "..         ", 11);
     dotdot_entry->attr = FAT12_ATTR_DIRECTORY;
-    dotdot_entry->cluster_low = parent_cluster; // 0 for root directory's parent
+    dotdot_entry->cluster_low = parent_cluster; // <-- This now correctly points to the real parent cluster
     dotdot_entry->file_size = 0;
 
+    // --- (The rest of the function remains the same) ---
     // Write the new directory's data cluster to disk
     uint32_t data_lba = volume.data_sector + ((new_cluster - 2) * volume.boot.sectors_per_cluster);
     for (int i = 0; i < volume.boot.sectors_per_cluster; i++) {
@@ -543,10 +608,9 @@ int Fat12CreateFile(const char* filename) {
 int Fat12WriteFile(const char* path, const void* buffer, uint32_t size) {
     if (!path) return -1;
 
-    // Extract parent directory and filename
+    // --- (Path parsing logic remains the same) ---
     char parent_path[256];
     char filename[256];
-
     int last_slash = -1;
     for (int i = FastStrlen(path, 256) - 1; i >= 0; i--) {
         if (path[i] == '/') {
@@ -554,63 +618,54 @@ int Fat12WriteFile(const char* path, const void* buffer, uint32_t size) {
             break;
         }
     }
+    if (last_slash == -1) return -1;
 
-    if (last_slash <= 0) {
-        // Creating in root
+    if (last_slash == 0) {
         FastStrCopy(parent_path, "/", 256);
-        FastStrCopy(filename, path + 1, 256);
     } else {
         FastMemcpy(parent_path, path, last_slash);
         parent_path[last_slash] = 0;
-        FastStrCopy(filename, path + last_slash + 1, 256);
     }
+    FastStrCopy(filename, path + last_slash + 1, 256);
 
-    // For now, only support root directory files
+    // Find parent directory cluster
+    uint16_t parent_cluster = 0;
     if (FastStrCmp(parent_path, "/") != 0) {
-        return -1; // TODO: Support subdirectory file creation
+        uint16_t temp_parent_cluster;
+        uint32_t temp_entry_sector;
+        int temp_entry_offset;
+        Fat12DirEntry* parent_entry = Fat12FindEntry(parent_path, &temp_parent_cluster, &temp_entry_sector, &temp_entry_offset);
+        if (!parent_entry || !(parent_entry->attr & FAT12_ATTR_DIRECTORY)) return -1;
+        parent_cluster = parent_entry->cluster_low;
     }
 
-    // Use original implementation for root directory
     char fat_name[11];
     Fat12ConvertFilename(filename, fat_name);
 
-    uint32_t root_sectors = (volume.boot.root_entries * 32 + 511) / 512;
-    uint32_t free_sector_lba = 0;
-    int free_entry_idx = -1;
+    // ---- REPLACEMENT LOGIC for finding existing/free entry ----
     uint32_t entry_sector = 0;
     int entry_offset = -1;
-    Fat12DirEntry* existing_entry = NULL;
+    uint16_t existing_file_cluster = 0; // To store cluster if we are overwriting
 
-    // Find existing entry or a free one
-    for (uint32_t sector_idx = 0; sector_idx < root_sectors; sector_idx++) {
-        uint32_t current_sector = volume.root_sector + sector_idx;
-        if (IdeReadSector(volume.drive, current_sector, sector_buffer) != IDE_OK) return -1;
+    // Instead of using the helper, we integrate the logic here to handle both
+    // finding an existing entry and finding a free one.
 
-        Fat12DirEntry* entries = (Fat12DirEntry*)sector_buffer;
-        for (int i = 0; i < 16; i++) {
-            uint8_t first_char = entries[i].name[0];
-            if (first_char == 0x00 || first_char == 0xE5) {
-                if (free_entry_idx == -1) {
-                    free_sector_lba = current_sector;
-                    free_entry_idx = i;
-                }
-            } else if (!(entries[i].attr & FAT12_ATTR_VOLUME_ID)) {
-                if (FastMemcmp(entries[i].name, fat_name, 11) == 0) {
-                    if (entries[i].attr & FAT12_ATTR_DIRECTORY) return -1;
-                    entry_sector = current_sector;
-                    entry_offset = i;
-                    existing_entry = &entries[i];
-                    goto found_entry;
-                }
-            }
+    // First, try to find an existing entry to overwrite
+    uint16_t temp_parent_cluster;
+    uint32_t temp_entry_sector;
+    int temp_entry_offset;
+    Fat12DirEntry* existing_entry = Fat12FindEntry(path, &temp_parent_cluster, &temp_entry_sector, &temp_entry_offset);
+
+    if (existing_entry) {
+        if (existing_entry->attr & FAT12_ATTR_DIRECTORY) return -1; // Cannot overwrite a directory
+        entry_sector = temp_entry_sector;
+        entry_offset = temp_entry_offset;
+        existing_file_cluster = existing_entry->cluster_low;
+    } else {
+        // File doesn't exist, so find a free entry to create it
+        if (Fat12FindDirectoryEntry(parent_cluster, fat_name, &entry_sector, &entry_offset) != 0) {
+            return -1; // No free space in parent directory
         }
-    }
-found_entry:
-
-    if (entry_offset == -1) {
-        if (free_entry_idx == -1) return -1;
-        entry_sector = free_sector_lba;
-        entry_offset = free_entry_idx;
     }
 
     if (IdeReadSector(volume.drive, entry_sector, sector_buffer) != IDE_OK) return -1;
@@ -618,7 +673,7 @@ found_entry:
 
     // If overwriting, clear the old cluster chain
     if (existing_entry) {
-        uint16_t cluster = existing_entry->cluster_low;
+        uint16_t cluster = existing_file_cluster;
         while (cluster >= 2 && cluster < 0xFF8) {
             uint16_t next_cluster = Fat12GetNextCluster(cluster);
             Fat12SetFatEntry(cluster, FAT12_CLUSTER_FREE);
@@ -765,8 +820,6 @@ int Fat12DeleteFile(const char* path) {
     return 0;
 }
 
-// Keep original functions for backward compatibility
-// THIS IS THE NEW, CORRECTED Fat12ListRoot
 int Fat12ListRoot(void) {
     uint32_t root_sectors = (volume.boot.root_entries * 32 + 511) / 512;
 

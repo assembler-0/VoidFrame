@@ -120,6 +120,10 @@ const char* VfsStripMount(const char* path, VfsMountStruct* mount) {
         return "/";
     }
 
+    if (*local_path_start != '/') {
+        return path; // Return original path as fallback
+    }
+
     return local_path_start;
 }
 
@@ -192,7 +196,6 @@ int VfsListDir(const char* path) {
         case VFS_FAT12: {
             extern int fat12_initialized;
             if (!fat12_initialized) return -1;
-            // Use new directory listing function that supports any directory
             return Fat12ListDirectory(local_path);
         }
     }

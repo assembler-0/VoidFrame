@@ -22,6 +22,7 @@
 #include "VMem.h"
 #include "stdlib.h"
 #include "xHCI/xHCI.h"
+#include "FsUtils.h"
 
 static char command_buffer[256];
 static int cmd_pos = 0;
@@ -85,7 +86,11 @@ static char* GetArg(const char* cmd, int arg_num) {
     return NULL;
 }
 
-static void ResolvePath(const char* input, char* output, int max_len) {
+static void ResolvePath(const char* input, char* output, int max_len) { // wrapper
+    ResolveSystemPath(current_dir, input, output, max_len);
+}
+
+static void ResolvePathOLD(const char* input, char* output, int max_len) {
     if (!input || !output) return;
 
     if (input[0] == '/') {
@@ -116,6 +121,7 @@ static void ResolvePath(const char* input, char* output, int max_len) {
         output[curr_len + input_len] = '\0';
     }
 }
+
 
 void ArpRequestTestProcess() {
     FullArpPacket packet;
@@ -534,12 +540,12 @@ static void ElfloadHandler(const char * args) {
     char* name = GetArg(args, 1);
     if (name) {
         char full_path[256];
-        ResolvePath(name, full_path, 256);
+        ResolvePathOLD(name, full_path, 256);
 
         const ElfLoadOptions opts = {
             .privilege_level = PROC_PRIV_USER,
             .security_flags = 0,
-            .max_memory = 16 * 1024 * 1024, // 16MB limit
+            .max_memory = 16 * 1024 * 1024,
             .process_name = full_path
         };
 

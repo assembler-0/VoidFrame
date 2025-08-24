@@ -56,8 +56,6 @@ void delay(uint32_t count) {
     }
 }
 
-// In VesaBIOSExtension.c
-
 int VBEInit(uint32_t multiboot_info_addr) {
     SerialWrite("[VESA]: Parsing Multiboot2 info...\n");
     uint8_t *tag_ptr = (uint8_t*)(multiboot_info_addr + 8);
@@ -225,8 +223,6 @@ void VBEDrawChar(uint32_t x, uint32_t y, char c, uint32_t fg_color, uint32_t bg_
         int byte_index = row * ((FONT_WIDTH + 7) / 8); // Number of bytes per row
 
         for (int col = 0; col < FONT_WIDTH; col++) {
-            // For 8-bit wide fonts, we only need the first byte of each row
-            // For 16-bit wide fonts, we'd need to handle multiple bytes
             int bit_position = 7 - (col % 8); // MSB first
 
             if ((glyph[byte_index + (col / 8)] >> bit_position) & 1) {
