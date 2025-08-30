@@ -9,9 +9,4 @@ int FastMemcmp(const void* ptr1, const void* ptr2, uint64_t size);
 void FastZeroPage(void* page);
 void* memset(void* dest, int value, unsigned long size);
 
-void strcpy(char* dest, const char* src);
-void strcat(char* dest, const char* src);
-void htoa(uint64_t n, char* buffer);
-void itoa(uint64_t n, char* buffer);
-
 #endif

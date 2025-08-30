@@ -6,7 +6,8 @@
 
 typedef enum {
     VFS_RAMFS = 0,
-    VFS_FAT12 = 1
+    VFS_FAT12 = 1,
+    VFS_FAT16 = 2
 } VfsType;
 
 typedef struct {

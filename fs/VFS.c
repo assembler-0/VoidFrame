@@ -1,10 +1,10 @@
 #include "VFS.h"
 #include "Console.h"
 #include "FAT12.h"
-#include "Fs.h"
 #include "MemOps.h"
-#include "StringOps.h"
 #include "Serial.h"
+#include "StringOps.h"
+#include "VFRFS.h"
 
 #define VFS_MAX_PATH_LEN 256
 

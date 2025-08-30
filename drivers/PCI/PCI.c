@@ -1,8 +1,7 @@
 #include "PCI/PCI.h"
-
 #include "Console.h"
 #include "Io.h"
-#include "VesaBIOSExtension.h"
+#include "Cpu.h"
 #include "stdbool.h"
 #include "stdint.h"
 

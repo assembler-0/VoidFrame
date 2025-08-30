@@ -1,6 +1,9 @@
 #include "VesaBIOSExtension.h"
+
+#include "Cpu.h"
 #include "Font.h"
 #include "MemOps.h"
+#include "Multiboot2.h"
 #include "Serial.h"
 #include "stdint.h"
 #include "stdlib.h"
@@ -21,51 +24,19 @@ const uint32_t* panic_images[] = {
 
 const unsigned int num_panic_images = sizeof(panic_images) / sizeof(uint32_t*);
 
-// Multiboot2 tag types
-#define MULTIBOOT_TAG_FRAMEBUFFER 8
-#define MULTIBOOT_TAG_VBE         7
-
-typedef struct {
-    uint32_t type;
-    uint32_t size;
-} multiboot_tag_t;
-
-typedef struct {
-    multiboot_tag_t tag;
-    uint64_t framebuffer_addr;
-    uint32_t framebuffer_pitch;
-    uint32_t framebuffer_width;
-    uint32_t framebuffer_height;
-    uint8_t  framebuffer_bpp;
-    uint8_t  framebuffer_type;
-    uint16_t  reserved;
-    uint8_t  framebuffer_red_field_position;
-    uint8_t  framebuffer_red_mask_size;
-    uint8_t  framebuffer_green_field_position;
-    uint8_t  framebuffer_green_mask_size;
-    uint8_t  framebuffer_blue_field_position;
-    uint8_t  framebuffer_blue_mask_size;
-} multiboot_tag_framebuffer_t;
-
 vbe_info_t vbe_info = {0};
 static int vbe_initialized = 0;
-
-void delay(uint32_t count) {
-    while (count--) {
-        __asm__ volatile("nop");
-    }
-}
 
 int VBEInit(uint32_t multiboot_info_addr) {
     SerialWrite("VESA: Parsing Multiboot2 info...\n");
     uint8_t *tag_ptr = (uint8_t*)(multiboot_info_addr + 8);
 
     while (1) {
-        multiboot_tag_t *tag = (multiboot_tag_t*)tag_ptr;
+        struct MultibootTag *tag = (struct MultibootTag*)tag_ptr;
         if (tag->type == 0) break; // End tag
 
         if (tag->type == MULTIBOOT_TAG_FRAMEBUFFER) {
-            multiboot_tag_framebuffer_t *fb_tag = (multiboot_tag_framebuffer_t*)tag;
+            MultibootTagFramebuffer *fb_tag = (MultibootTagFramebuffer*)tag;
 
             // --- Store all the info ---
             vbe_info.framebuffer = (volatile uint32_t*)(uintptr_t)fb_tag->framebuffer_addr;
@@ -323,7 +294,7 @@ void VBEShowSplash(void) {
             }
         }
     }
-    delay(500000000);
+    delay(7000000000);
 }
 
 void VBEShowPanic(void) {

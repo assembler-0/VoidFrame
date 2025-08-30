@@ -1,6 +1,5 @@
 #include "Cpu.h"
-#include "Console.h" // For logging output
-#include "Panic.h" // For ASSERT
+#include "Console.h"
 #include "stdbool.h"
 
 static CpuFeatures cpu_features = {0};

@@ -38,7 +38,7 @@ cd VoidFrame
 meson setup build
 cd build
 ninja
-ninja img && ninja mkfs # Optional
+ninja img # Optional
 ninja run
 ```
 

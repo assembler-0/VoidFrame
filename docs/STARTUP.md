@@ -29,7 +29,7 @@
 - **Note**: If the kernel is run with `-debugcon stdio`, string: `1KCSWF23Z456789` will be expected at stdio, any missing characters will identify a major issue.
 
 #### C-level Bootstrap: (PXS1 & PXS2)
-- **Purpose**: Initialize core kernel subsystems and jump to higher half
+- **Purpose**: Initialize core kernel subsystems and jump to the higher half
 - **Location**: `kernel/core`
 - **Key files**: `Kernel.c`
 
@@ -104,7 +104,7 @@
 
 6. **After Startup**
     - After the kernel has started and all core subsystems are ready
-    - 3 System processes are created:
+    - Three (default) System processes are created:
       - `PID 0`: Idle process (runs when no other process is ready)
       - `PID 1`: Astra (Security agent of the kernel)
       - `PID 2`: VoidFrame Shell

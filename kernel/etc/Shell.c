@@ -24,6 +24,9 @@
 #include "xHCI/xHCI.h"
 #include "FsUtils.h"
 
+#define DATE __DATE__
+#define TIME __TIME__
+
 static char command_buffer[256];
 static int cmd_pos = 0;
 static char current_dir[256] = "/";
@@ -86,42 +89,9 @@ static char* GetArg(const char* cmd, int arg_num) {
     return NULL;
 }
 
-static void ResolvePath(const char* input, char* output, int max_len) { // wrapper
-    ResolveSystemPath(current_dir, input, output, max_len);
+static void ResolvePath(const char* input, char* output, int max_len) {
+    ResolvePathH(current_dir, input, output, max_len);
 }
-
-static void ResolvePathOLD(const char* input, char* output, int max_len) {
-    if (!input || !output) return;
-
-    if (input[0] == '/') {
-        // Absolute path
-        int len = 0;
-        while (input[len] && len < max_len - 1) {
-            output[len] = input[len];
-            len++;
-        }
-        output[len] = '\0';
-    } else {
-        // Relative path - combine with current directory
-        int curr_len = 0;
-        while (current_dir[curr_len] && curr_len < max_len - 1) {
-            output[curr_len] = current_dir[curr_len];
-            curr_len++;
-        }
-
-        if (curr_len > 0 && current_dir[curr_len - 1] != '/' && curr_len < max_len - 1) {
-            output[curr_len++] = '/';
-        }
-
-        int input_len = 0;
-        while (input[input_len] && curr_len + input_len < max_len - 1) {
-            output[curr_len + input_len] = input[input_len];
-            input_len++;
-        }
-        output[curr_len + input_len] = '\0';
-    }
-}
-
 
 void ArpRequestTestProcess() {
     FullArpPacket packet;
@@ -168,7 +138,8 @@ static void ARPTestHandler(const char * args) {
 
 static void VersionHandler(const char * args) {
     (void)args;
-    PrintKernelSuccess("VoidFrame v0.0.1-beta\n");
+    PrintKernelSuccess("VoidFrame v0.0.1-beta5\n");
+    PrintKernelF("Built on %s at %s\n", DATE, TIME);
     PrintKernelSuccess("VoidFrame Shell v0.0.1-beta\n");
 }
 
@@ -542,7 +513,7 @@ static void ElfloadHandler(const char * args) {
     char* name = GetArg(args, 1);
     if (name) {
         char full_path[256];
-        ResolvePathOLD(name, full_path, 256);
+        ResolvePath(name, full_path, 256);
 
         const ElfLoadOptions opts = {
             .privilege_level = PROC_PRIV_USER,

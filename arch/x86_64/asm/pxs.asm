@@ -11,8 +11,8 @@ header_start:
 framebuffer_tag_start:
     dw 5        ; type = framebuffer
     dw 0        ; flags
-    dd 24 ; size
-    dd 800     ; width
+    dd 24       ; size
+    dd 800      ; width
     dd 600      ; height
     dd 32       ; depth (bits per pixel)
 framebuffer_tag_end:
@@ -306,7 +306,7 @@ pd_table3:  resb 4096
 pd_table4:  resb 4096
 
 align 16
-stack_bottom: resb 8192  ; 8KB stack
+stack_bottom: resb 16384  ; 16KB stack
 stack_top:
 
 section .data

@@ -1,7 +1,3 @@
-/*
- * stdint.h
- */
-
 #ifndef VOIDFRAME_STDINT_H
 #define VOIDFRAME_STDINT_H
 

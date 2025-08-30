@@ -1,10 +1,10 @@
-#include "Fs.h"
 #include "Console.h"
 #include "KernelHeap.h"
 #include "MemOps.h"
 #include "Process.h"
-#include "StringOps.h"
 #include "Serial.h"
+#include "StringOps.h"
+#include "VFRFS.h"
 
 static FsNode* root_node = NULL;
 static FileHandle file_handles[MAX_OPEN_FILES];
