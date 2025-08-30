@@ -166,7 +166,8 @@ void FastZeroPage(void* page) {
     CpuFeatures* features = GetCpuFeatures();
 
     if (features->avx2) {
-        // Use AVX2 for faster page zeroing
+        irq_flags_t irqf = save_irq_flags();
+        cli();
         __asm__ volatile("vpxor %%ymm0, %%ymm0, %%ymm0" ::: "ymm0");
 
         uint8_t* p = (uint8_t*)page;
@@ -175,9 +176,12 @@ void FastZeroPage(void* page) {
         }
 
         __asm__ volatile("vzeroupper" ::: "memory");
+        __asm__ volatile("sfence" ::: "memory");
+        restore_irq_flags(irqf);
     } else if (features->sse2) {
+        irq_flags_t irqf = save_irq_flags();
+        cli();
         __asm__ volatile("pxor %%xmm0, %%xmm0" ::: "xmm0");
-
         uint8_t* p = (uint8_t*)page;
         // Unroll for better performance
         for (int i = 0; i < 4096; i += 64) {
@@ -189,6 +193,8 @@ void FastZeroPage(void* page) {
                 : : "r"(p + i) : "memory"
             );
         }
+        __asm__ volatile("sfence" ::: "memory");
+        restore_irq_flags(irqf);
     } else {
         // Fallback to optimized memset
         FastMemset(page, 0, 4096);

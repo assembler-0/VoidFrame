@@ -79,7 +79,7 @@ void strcpy(char* dest, const char* src) {
                 const char* s = (const char*)(s64 - 1);
                 while ((*d++ = *s++));
                 return;
-                }
+            }
             *d64++ = val;
         }
         *(char*)d64 = '\0';

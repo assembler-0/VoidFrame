@@ -33,8 +33,7 @@ static inline uint64_t __attribute__((always_inline)) rdtsc(void) {
 }
 
 static inline void __attribute__((always_inline)) delay(uint64_t cycles) {
-    uint64_t start = rdtsc();
-    while (rdtsc() - start < cycles);
+    while (cycles--) __asm__ volatile ("nop");
 }
 
 #endif // CPU_H

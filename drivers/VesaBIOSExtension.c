@@ -294,7 +294,7 @@ void VBEShowSplash(void) {
             }
         }
     }
-    delay(5000000000);
+    delay(7000000000);
 }
 
 void VBEShowPanic(void) {

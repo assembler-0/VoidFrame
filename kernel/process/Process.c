@@ -1616,7 +1616,7 @@ int ProcessInit(void) {
     PrintKernel("System: Creating AS (Astra)...\n");
     uint32_t AS_pid = CreateSecureProcess(Astra, PROC_PRIV_SYSTEM, PROC_FLAG_CORE);
     if (!AS_pid) {
-#ifdef PANIC_ON_FALIURE
+#ifdef PANIC_ON_FAILURE
         PANIC("CRITICAL: Failed to create Astra");
 #else
         PrintKernelError("CRITICAL: Failed to create Astra\n");

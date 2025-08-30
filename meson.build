@@ -188,7 +188,8 @@ iso = custom_target('VoidFrame.iso',
 # Run target
 run_target('run',
            command : [qemu_system_x86_64.full_path(),
-                      '-cpu', 'max',
+                      '-cpu', 'host',
+                      '-enable-kvm',
                       '-cdrom', 'VoidFrame.iso',
                       '-debugcon', 'file:bootstrap.log',
                       '-serial', 'stdio',
@@ -207,7 +208,9 @@ run_target('run',
 )
 
 run_target('img',
-           command : [qemu_img.full_path(), 'create',  '-f', 'raw', 'VoidFrameDisk.img', '1440K', '&&',
-                      mkfs_fat.full_path(), '-F',  '12', 'VoidFrameDisk.img'
+               command : [
+                 'sh', '-c',
+                 qemu_img.full_path() + ' create -f raw VoidFrameDisk.img 1440K' + ' && ' +
+                 mkfs_fat.full_path() + ' -F 12 VoidFrameDisk.img'
            ]
 )
