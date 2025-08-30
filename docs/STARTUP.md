@@ -29,7 +29,7 @@
 - **Note**: If the kernel is run with `-debugcon stdio`, string: `1KCSWF23Z456789` will be expected at stdio, any missing characters will identify a major issue.
 
 #### C-level Bootstrap: (PXS1 & PXS2)
-- **Purpose**: Initialize core kernel subsystems and jump to higher half
+- **Purpose**: Initialize core kernel subsystems and jump to the higher half
 - **Location**: `kernel/core`
 - **Key files**: `Kernel.c`
 

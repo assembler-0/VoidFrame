@@ -2,7 +2,6 @@
 #include "Kernel.h"
 #include "Console.h"
 #include "FAT12.h"
-#include "Fs.h"
 #include "Gdt.h"
 #include "ISA.h"
 #include "Ide.h"
@@ -23,6 +22,7 @@
 #include "Serial.h"
 #include "Shell.h"
 #include "StackGuard.h"
+#include "VFRFS.h"
 #include "VFS.h"
 #include "VMem.h"
 #include "VesaBIOSExtension.h"
@@ -613,8 +613,8 @@ static InitResultT PXS2(void) {
 
     // NEW: Check if huge pages should be enabled
     PrintKernel("Info: Checking huge page support...\n");
-    if (CheckHugePageSupport()) PrintKernelSuccess("System: Huge pages available\n");
-
+    if (!CheckHugePageSupport()) PrintKernel("System: Huge pages not available\n");
+    PrintKernelSuccess("System: Huge pages available\n");
 
     PrintKernel("Info: Initializing ISA bus...\n");
     IsaInitBus();
@@ -691,5 +691,6 @@ void KernelMainHigherHalf(void) {
     while (1) { // redundant but added for worst case scenario, should not reach here
         Yield();
     }
+
     __builtin_unreachable();
 }

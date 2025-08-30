@@ -135,4 +135,44 @@ static inline void __attribute__((always_inline)) ResolveSystemPath(const char* 
     *out_ptr = '\0';
 }
 
+/**
+ * @brief Simple and working path resolver - just needs current_dir as parameter
+ *
+ * @param current_dir The current working directory
+ * @param input The path to resolve (can be absolute or relative)
+ * @param output Buffer to store the resolved path
+ * @param max_len Size of the output buffer
+ */
+static inline  void __attribute__((always_inline)) ResolvePathS(const char* current_dir, const char* input, char* output, int max_len) {
+    if (!input || !output) return;
+
+    if (input[0] == '/') {
+        // Absolute path
+        int len = 0;
+        while (input[len] && len < max_len - 1) {
+            output[len] = input[len];
+            len++;
+        }
+        output[len] = '\0';
+    } else {
+        // Relative path - combine with current directory
+        int curr_len = 0;
+        while (current_dir[curr_len] && curr_len < max_len - 1) {
+            output[curr_len] = current_dir[curr_len];
+            curr_len++;
+        }
+
+        if (curr_len > 0 && current_dir[curr_len - 1] != '/' && curr_len < max_len - 1) {
+            output[curr_len++] = '/';
+        }
+
+        int input_len = 0;
+        while (input[input_len] && curr_len + input_len < max_len - 1) {
+            output[curr_len + input_len] = input[input_len];
+            input_len++;
+        }
+        output[curr_len + input_len] = '\0';
+    }
+}
+
 #endif

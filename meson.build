@@ -1,5 +1,5 @@
 project('voidframe', 'c',
-        version : '0.0.1-alpha',
+        version : '0.0.1-beta5',
         default_options : [
             'c_std=c11',
             'optimization=2',
@@ -8,16 +8,19 @@ project('voidframe', 'c',
         ]
 )
 
+clang = find_program('clang', required : true)
+ld = find_program('ld', required : true)
 nasm = find_program('nasm', required : true)
 grub_mkrescue = find_program('grub-mkrescue')
-qemu_img  = find_program('qemu-img', required : true)
-mkfs_fat  = find_program('mkfs.fat', required : true)
+qemu_img  = find_program('qemu-img')
+mkfs_fat  = find_program('mkfs.fat')
+qemu_system_x86_64 = find_program('qemu-system-x86_64')
 
 # Source root
 src_root = './'
 arch_root = src_root + 'arch/x86_64'
 
-# Light optimization flags
+# C flags
 c_flags = [
     '-m64',
     '-O2',
@@ -97,8 +100,7 @@ c_sources = [
     src_root + '/kernel/atomic/Atomics.c',
     src_root + '/kernel/ipc/Ipc.c',
     src_root + '/kernel/elf/ELFloader.c',
-    src_root + '/fs/Fs.c',
-    src_root + '/fs/FsUtils.c',
+    src_root + '/fs/VFRFS.c',
     src_root + '/fs/FAT12.c',
     src_root + '/fs/VFS.c',
     src_root + '/drivers/Pic.c',
@@ -139,7 +141,7 @@ foreach asm_file : asm_sources
     asm_obj = custom_target('asm_' + obj_name,
                             input : asm_file,
                             output : obj_name,
-                            command : [nasm, asm_flags, '-o', '@OUTPUT@', '@INPUT@']
+                            command : [nasm.full_path(), asm_flags, '-o', '@OUTPUT@', '@INPUT@']
     )
     asm_objects += asm_obj
 endforeach
@@ -151,7 +153,7 @@ foreach c_file : c_sources
     c_obj = custom_target('c_' + obj_name,
                           input : c_file,
                           output : obj_name,
-                          command : ['clang', c_flags, inc_flags, '-c', '-o', '@OUTPUT@', '@INPUT@']
+                          command : [clang.full_path(), c_flags, inc_flags, '-c', '-o', '@OUTPUT@', '@INPUT@']
     )
     c_objects += c_obj
 endforeach
@@ -160,7 +162,7 @@ endforeach
 kernel = custom_target('voidframe.krnl',
                        input : asm_objects + c_objects + obj_sources,
                        output : 'voidframe.krnl',
-                       command : ['ld', '-T', meson.current_source_dir() + '/linker.ld', '-melf_x86_64', '--no-warn-rwx-segments', '-o', '@OUTPUT@'] + ['@INPUT@'],
+                       command : [ld.full_path(), '-T', meson.current_source_dir() + '/linker.ld', '-melf_x86_64', '--no-warn-rwx-segments', '-o', '@OUTPUT@'] + ['@INPUT@'],
                        build_by_default : true
 )
 
@@ -172,9 +174,11 @@ iso = custom_target('VoidFrame.iso',
                         'sh', '-c',
                         'cd ' + meson.current_build_dir() + ' && ' +
                         'mkdir -p isodir/boot/grub && ' +
+                        'mkdir -p isodir/EFI/BOOT && ' +
                         'cp voidframe.krnl isodir/boot/voidframe.krnl && ' +
                         'cp ' + meson.current_source_dir() + '/grub.cfg isodir/boot/grub/grub.cfg && ' +
-                        grub_mkrescue.full_path() + ' --modules="multiboot2 part_msdos fat" --fonts="" --locales=""' + ' -o VoidFrame.iso isodir'
+                        'cp ' + meson.current_source_dir() + '/grub.cfg isodir/EFI/BOOT/grub.cfg && ' +
+                        grub_mkrescue.full_path() + ' --modules="multiboot2 part_msdos part_gpt fat" --fonts="" --locales=""' + ' -o VoidFrame.iso isodir'
                     ],
                     depends : kernel,
                     build_by_default : true
@@ -182,7 +186,7 @@ iso = custom_target('VoidFrame.iso',
 
 # Run target
 run_target('run',
-           command : ['qemu-system-x86_64',
+           command : [qemu_system_x86_64.full_path(),
                       '-cpu', 'max',
                       '-cdrom', 'VoidFrame.iso',
                       '-debugcon', 'file:bootstrap.log',
@@ -202,9 +206,7 @@ run_target('run',
 )
 
 run_target('img',
-           command : ['qemu-img', 'create',  '-f', 'raw', 'VoidFrameDisk.img', '256M']
-)
-
-run_target('mkfs',
-           command : ['mkfs.fat', '-F',  '12', 'VoidFrameDisk.img']
+           command : [qemu_img.full_path(), 'create',  '-f', 'raw', 'VoidFrameDisk.img', '128M', '&&',
+                      mkfs_fat.full_path(), '-F',  '12', 'VoidFrameDisk.img'
+           ]
 )

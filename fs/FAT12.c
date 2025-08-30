@@ -153,7 +153,7 @@ int Fat12GetCluster(uint16_t cluster, uint8_t* buffer) {
     return 0;
 }
 
-// NEW: Parse path and find directory entry
+
 static Fat12DirEntry* Fat12FindEntry(const char* path, uint16_t* parent_cluster, uint32_t* entry_sector, int* entry_offset) {
     if (!path || path[0] != '/') return NULL;
 
@@ -216,7 +216,7 @@ static Fat12DirEntry* Fat12FindEntry(const char* path, uint16_t* parent_cluster,
             uint16_t cluster = current_cluster;
             uint32_t cluster_bytes = volume.boot.sectors_per_cluster * 512;
             uint8_t* cluster_buffer = KernelMemoryAlloc(cluster_bytes);
-            if (!cluster_buffer) return NULL;
+            if (!cluster_buffer) return NULL; // Critical: Check allocation
 
             while (cluster < 0xFF8 && !found) {
                 if (Fat12GetCluster(cluster, cluster_buffer) != 0) {
@@ -233,13 +233,16 @@ static Fat12DirEntry* Fat12FindEntry(const char* path, uint16_t* parent_cluster,
 
                     if (FastMemcmp(entries[i].name, fat_name, 11) == 0) {
                         found = &entries[i];
-                        // Calculate sector for this entry
-                        found_sector = volume.data_sector + ((cluster - 2) * volume.boot.sectors_per_cluster) + (i * 32) / 512;
-                        found_offset = (i * 32) % 512 / 32;
+                        // FIXED: Calculate sector correctly within the cluster
+                        int sector_in_cluster = (i * 32) / 512;
+                        found_sector = volume.data_sector + ((cluster - 2) * volume.boot.sectors_per_cluster) + sector_in_cluster;
+                        found_offset = ((i * 32) % 512) / 32;
                         break;
                     }
                 }
-                cluster = Fat12GetNextCluster(cluster);
+                if (!found) {
+                    cluster = Fat12GetNextCluster(cluster);
+                }
             }
             KernelFree(cluster_buffer);
         }
@@ -252,7 +255,8 @@ static Fat12DirEntry* Fat12FindEntry(const char* path, uint16_t* parent_cluster,
             *entry_sector = found_sector;
             *entry_offset = found_offset;
 
-            // Re-read the sector to return a valid pointer
+            // CRITICAL: Re-read the sector to return a valid pointer
+            // This ensures sector_buffer contains the correct data
             if (IdeReadSector(volume.drive, found_sector, sector_buffer) != IDE_OK) {
                 return NULL;
             }
@@ -272,34 +276,49 @@ static int Fat12FindDirectoryEntry(uint16_t parent_cluster, const char* fat_name
     *out_sector = 0;
     *out_offset = -1;
 
-    // Case 1: Search the Root Directory
+    // First check if file already exists (name collision)
     if (parent_cluster == 0) {
+        // Search root directory for existing file
         uint32_t root_sectors = (volume.boot.root_entries * 32 + 511) / 512;
         for (uint32_t sector_idx = 0; sector_idx < root_sectors; sector_idx++) {
             uint32_t current_lba = volume.root_sector + sector_idx;
-            if (IdeReadSector(volume.drive, current_lba, sector_buffer) != IDE_OK) return -1;
+            if (IdeReadSector(volume.drive, current_lba, sector_buffer) != IDE_OK) {
+                return -1;
+            }
 
             Fat12DirEntry* entries = (Fat12DirEntry*)sector_buffer;
             for (int i = 0; i < 16; i++) {
                 uint8_t first_char = entries[i].name[0];
-                if (first_char == 0x00 || first_char == 0xE5) {
-                    if (*out_offset == -1) { // Found the first free entry
+                if (first_char == 0x00) {
+                    // Found end of directory - this is our free slot if we haven't found one
+                    if (*out_offset == -1) {
                         *out_sector = current_lba;
                         *out_offset = i;
                     }
-                } else if (!(entries[i].attr & FAT12_ATTR_VOLUME_ID)) {
-                    if (FastMemcmp(entries[i].name, fat_name, 11) == 0) {
-                        return -1; // Name collision
+                    return 0; // Success - no collision, found free slot
+                }
+                if (first_char == 0xE5) {
+                    // Found deleted entry - mark as potential free slot
+                    if (*out_offset == -1) {
+                        *out_sector = current_lba;
+                        *out_offset = i;
                     }
+                    continue;
+                }
+                if (entries[i].attr & FAT12_ATTR_VOLUME_ID) continue;
+
+                // Check for name collision
+                if (FastMemcmp(entries[i].name, fat_name, 11) == 0) {
+                    return -2; // Name collision
                 }
             }
         }
-        return (*out_offset == -1) ? -1 : 0; // Return -1 if root is full
+        return (*out_offset == -1) ? -1 : 0; // -1 if root is full, 0 if found free slot
     }
 
-    // Case 2: Search a Subdirectory (Cluster Chain)
+    // Search subdirectory
     uint16_t current_cluster = parent_cluster;
-    uint16_t previous_cluster = 0;
+    uint16_t last_cluster = 0;
     uint32_t cluster_bytes = volume.boot.sectors_per_cluster * 512;
     uint8_t* cluster_buffer = KernelMemoryAlloc(cluster_bytes);
     if (!cluster_buffer) return -1;
@@ -315,51 +334,68 @@ static int Fat12FindDirectoryEntry(uint16_t parent_cluster, const char* fat_name
 
         for (int i = 0; i < entries_per_cluster; i++) {
             uint8_t first_char = entries[i].name[0];
-            if (first_char == 0x00 || first_char == 0xE5) {
-                if (*out_offset == -1) { // Found the first free slot
-                    *out_sector = volume.data_sector + ((current_cluster - 2) * volume.boot.sectors_per_cluster) + (i * 32) / 512;
-                    *out_offset = (i * 32) % 512 / 32;
+            if (first_char == 0x00) {
+                // End of directory - found free slot
+                if (*out_offset == -1) {
+                    int sector_in_cluster = (i * 32) / 512;
+                    *out_sector = volume.data_sector + ((current_cluster - 2) * volume.boot.sectors_per_cluster) + sector_in_cluster;
+                    *out_offset = ((i * 32) % 512) / 32;
                 }
-            } else if (!(entries[i].attr & FAT12_ATTR_VOLUME_ID)) {
-                if (FastMemcmp(entries[i].name, fat_name, 11) == 0) {
-                    KernelFree(cluster_buffer);
-                    return -1; // Name collision
+                KernelFree(cluster_buffer);
+                return 0; // Success
+            }
+            if (first_char == 0xE5) {
+                // Deleted entry - potential free slot
+                if (*out_offset == -1) {
+                    int sector_in_cluster = (i * 32) / 512;
+                    *out_sector = volume.data_sector + ((current_cluster - 2) * volume.boot.sectors_per_cluster) + sector_in_cluster;
+                    *out_offset = ((i * 32) % 512) / 32;
                 }
+                continue;
+            }
+            if (entries[i].attr & FAT12_ATTR_VOLUME_ID) continue;
+
+            // Check for name collision
+            if (FastMemcmp(entries[i].name, fat_name, 11) == 0) {
+                KernelFree(cluster_buffer);
+                return -2; // Name collision
             }
         }
-        previous_cluster = current_cluster;
+
+        last_cluster = current_cluster;
         current_cluster = Fat12GetNextCluster(current_cluster);
     }
 
-    // If we've found a free spot already, we're done
+    // If we found a free slot, use it
     if (*out_offset != -1) {
         KernelFree(cluster_buffer);
         return 0;
     }
 
-    // If we get here, the directory is full. We need to extend it.
+    // Directory is full - need to allocate new cluster
     uint16_t new_cluster = Fat12FindFreeCluster();
     if (new_cluster == 0) {
         KernelFree(cluster_buffer);
-        return -1; // No free clusters on disk
+        return -1; // No free clusters
     }
 
-    // Link the last cluster of the directory to the new one
-    Fat12SetFatEntry(previous_cluster, new_cluster);
+    // Link the new cluster
+    Fat12SetFatEntry(last_cluster, new_cluster);
     Fat12SetFatEntry(new_cluster, FAT12_CLUSTER_EOF);
 
-    // The free entry is the very first one in this new cluster
-    *out_sector = volume.data_sector + ((new_cluster - 2) * volume.boot.sectors_per_cluster);
-    *out_offset = 0;
-
-    // We must clear the new cluster on disk to ensure it's full of 0x00
+    // Clear the new cluster
     FastMemset(cluster_buffer, 0, cluster_bytes);
+    uint32_t new_cluster_lba = volume.data_sector + ((new_cluster - 2) * volume.boot.sectors_per_cluster);
     for (int i = 0; i < volume.boot.sectors_per_cluster; i++) {
-        if (IdeWriteSector(volume.drive, *out_sector + i, cluster_buffer + (i * 512)) != IDE_OK) {
+        if (IdeWriteSector(volume.drive, new_cluster_lba + i, cluster_buffer + (i * 512)) != IDE_OK) {
             KernelFree(cluster_buffer);
             return -1;
         }
     }
+
+    // Set the free entry location
+    *out_sector = new_cluster_lba;
+    *out_offset = 0;
 
     KernelFree(cluster_buffer);
     return 0;
@@ -601,25 +637,29 @@ int Fat12ReadFile(const char* path, void* buffer, uint32_t max_size) {
 }
 
 int Fat12CreateFile(const char* filename) {
-    return Fat12WriteFile(filename, NULL, 0);
+    if (!filename) return -1;
+    return Fat12WriteFile(filename, "", 0);
 }
 
-// Enhanced file write with path support
 int Fat12WriteFile(const char* path, const void* buffer, uint32_t size) {
     if (!path) return -1;
 
-    // --- (Path parsing logic remains the same) ---
+    // Parse path to get parent and filename
     char parent_path[256];
     char filename[256];
     int last_slash = -1;
-    for (int i = FastStrlen(path, 256) - 1; i >= 0; i--) {
+
+    int path_len = FastStrlen(path, 256);
+    for (int i = path_len - 1; i >= 0; i--) {
         if (path[i] == '/') {
             last_slash = i;
             break;
         }
     }
-    if (last_slash == -1) return -1;
 
+    if (last_slash == -1) return -1; // Invalid path
+
+    // Extract parent path and filename
     if (last_slash == 0) {
         FastStrCopy(parent_path, "/", 256);
     } else {
@@ -628,52 +668,54 @@ int Fat12WriteFile(const char* path, const void* buffer, uint32_t size) {
     }
     FastStrCopy(filename, path + last_slash + 1, 256);
 
-    // Find parent directory cluster
-    uint16_t parent_cluster = 0;
-    if (FastStrCmp(parent_path, "/") != 0) {
-        uint16_t temp_parent_cluster;
-        uint32_t temp_entry_sector;
-        int temp_entry_offset;
-        Fat12DirEntry* parent_entry = Fat12FindEntry(parent_path, &temp_parent_cluster, &temp_entry_sector, &temp_entry_offset);
-        if (!parent_entry || !(parent_entry->attr & FAT12_ATTR_DIRECTORY)) return -1;
-        parent_cluster = parent_entry->cluster_low;
-    }
-
+    // Convert filename to FAT format
     char fat_name[11];
     Fat12ConvertFilename(filename, fat_name);
 
-    // ---- REPLACEMENT LOGIC for finding existing/free entry ----
-    uint32_t entry_sector = 0;
-    int entry_offset = -1;
-    uint16_t existing_file_cluster = 0; // To store cluster if we are overwriting
+    // Find parent directory cluster
+    uint16_t parent_cluster = 0; // Root by default
+    if (FastStrCmp(parent_path, "/") != 0) {
+        uint16_t temp_parent, temp_sector;
+        int temp_offset;
+        Fat12DirEntry* parent_entry = Fat12FindEntry(parent_path, &temp_parent, &temp_sector, &temp_offset);
+        if (!parent_entry || !(parent_entry->attr & FAT12_ATTR_DIRECTORY)) {
+            return -1; // Parent doesn't exist or isn't a directory
+        }
+        parent_cluster = parent_entry->cluster_low;
+    }
 
-    // Instead of using the helper, we integrate the logic here to handle both
-    // finding an existing entry and finding a free one.
+    // Check if file already exists
+    uint16_t existing_parent;
+    uint32_t existing_sector;
+    int existing_offset;
+    Fat12DirEntry* existing_entry = Fat12FindEntry(path, &existing_parent, &existing_sector, &existing_offset);
 
-    // First, try to find an existing entry to overwrite
-    uint16_t temp_parent_cluster;
-    uint32_t temp_entry_sector;
-    int temp_entry_offset;
-    Fat12DirEntry* existing_entry = Fat12FindEntry(path, &temp_parent_cluster, &temp_entry_sector, &temp_entry_offset);
+    uint32_t entry_sector;
+    int entry_offset;
+    uint16_t old_cluster = 0;
 
     if (existing_entry) {
-        if (existing_entry->attr & FAT12_ATTR_DIRECTORY) return -1; // Cannot overwrite a directory
-        entry_sector = temp_entry_sector;
-        entry_offset = temp_entry_offset;
-        existing_file_cluster = existing_entry->cluster_low;
+        // File exists - overwrite it
+        if (existing_entry->attr & FAT12_ATTR_DIRECTORY) {
+            return -1; // Cannot overwrite directory
+        }
+        entry_sector = existing_sector;
+        entry_offset = existing_offset;
+        old_cluster = existing_entry->cluster_low;
     } else {
-        // File doesn't exist, so find a free entry to create it
-        if (Fat12FindDirectoryEntry(parent_cluster, fat_name, &entry_sector, &entry_offset) != 0) {
-            return -1; // No free space in parent directory
+        // File doesn't exist - find free directory entry
+        int result = Fat12FindDirectoryEntry(parent_cluster, fat_name, &entry_sector, &entry_offset);
+        if (result == -2) {
+            return -1; // This shouldn't happen since Fat12FindEntry didn't find it
+        }
+        if (result != 0) {
+            return -1; // Error finding free entry
         }
     }
 
-    if (IdeReadSector(volume.drive, entry_sector, sector_buffer) != IDE_OK) return -1;
-    Fat12DirEntry* target_entry = &((Fat12DirEntry*)sector_buffer)[entry_offset];
-
-    // If overwriting, clear the old cluster chain
-    if (existing_entry) {
-        uint16_t cluster = existing_file_cluster;
+    // Clear old cluster chain if overwriting
+    if (old_cluster >= 2 && old_cluster < 0xFF8) {
+        uint16_t cluster = old_cluster;
         while (cluster >= 2 && cluster < 0xFF8) {
             uint16_t next_cluster = Fat12GetNextCluster(cluster);
             Fat12SetFatEntry(cluster, FAT12_CLUSTER_FREE);
@@ -681,32 +723,34 @@ int Fat12WriteFile(const char* path, const void* buffer, uint32_t size) {
         }
     }
 
+    // Allocate clusters for new file data
     uint16_t start_cluster = 0;
-    uint32_t cluster_bytes = volume.boot.sectors_per_cluster * 512;
-
     if (size > 0) {
-        if (volume.boot.sectors_per_cluster == 0 || volume.boot.sectors_per_cluster > 8) return -1;
-        uint16_t current_cluster = Fat12FindFreeCluster();
-        if (current_cluster == 0) return -1;
-        start_cluster = current_cluster;
+        uint32_t cluster_bytes = volume.boot.sectors_per_cluster * 512;
+        uint32_t clusters_needed = (size + cluster_bytes - 1) / cluster_bytes;
 
+        uint16_t current_cluster = Fat12FindFreeCluster();
+        if (current_cluster == 0) return -1; // No free clusters
+
+        start_cluster = current_cluster;
         uint32_t bytes_written = 0;
         const uint8_t* buf_ptr = (const uint8_t*)buffer;
 
-        while (bytes_written < size) {
-            uint32_t to_write = size - bytes_written;
-            if (to_write > cluster_bytes) to_write = cluster_bytes;
-
+        for (uint32_t cluster_idx = 0; cluster_idx < clusters_needed; cluster_idx++) {
+            // Prepare cluster data
             uint8_t* cluster_buf = KernelMemoryAlloc(cluster_bytes);
             if (!cluster_buf) return -1;
+
             FastMemset(cluster_buf, 0, cluster_bytes);
-            if (to_write > 0) {
+            uint32_t to_write = (size - bytes_written > cluster_bytes) ? cluster_bytes : size - bytes_written;
+            if (buffer && to_write > 0) {
                 FastMemcpy(cluster_buf, buf_ptr + bytes_written, to_write);
             }
 
-            uint32_t lba = volume.data_sector + ((current_cluster - 2) * volume.boot.sectors_per_cluster);
+            // Write cluster to disk
+            uint32_t cluster_lba = volume.data_sector + ((current_cluster - 2) * volume.boot.sectors_per_cluster);
             for (int i = 0; i < volume.boot.sectors_per_cluster; i++) {
-                if (IdeWriteSector(volume.drive, lba + i, cluster_buf + (i * 512)) != IDE_OK) {
+                if (IdeWriteSector(volume.drive, cluster_lba + i, cluster_buf + (i * 512)) != IDE_OK) {
                     KernelFree(cluster_buf);
                     return -1;
                 }
@@ -714,31 +758,39 @@ int Fat12WriteFile(const char* path, const void* buffer, uint32_t size) {
             KernelFree(cluster_buf);
             bytes_written += to_write;
 
-            if (bytes_written < size) {
+            // Link to next cluster or mark as EOF
+            if (cluster_idx < clusters_needed - 1) {
                 uint16_t next_cluster = Fat12FindFreeCluster();
                 if (next_cluster == 0) return -1;
                 Fat12SetFatEntry(current_cluster, next_cluster);
                 current_cluster = next_cluster;
             } else {
-                Fat12SetFatEntry(current_cluster, 0xFFF);
+                Fat12SetFatEntry(current_cluster, FAT12_CLUSTER_EOF);
             }
         }
     }
 
-    // Update directory entry metadata
-    if (!existing_entry) {
-        FastMemcpy(target_entry->name, fat_name, 11);
-        target_entry->attr = FAT12_ATTR_ARCHIVE;
-        target_entry->create_time = 0;
-        target_entry->create_date = 0;
-        target_entry->cluster_high = 0;
+    // Update directory entry
+    if (IdeReadSector(volume.drive, entry_sector, sector_buffer) != IDE_OK) {
+        return -1;
     }
-    target_entry->file_size = size;
-    target_entry->cluster_low = start_cluster;
 
-    // Write the updated directory sector and FAT back to disk
-    if (IdeWriteSector(volume.drive, entry_sector, sector_buffer) != IDE_OK) return -1;
-    if (Fat12WriteFat() != 0) return -1;
+    Fat12DirEntry* dir_entry = &((Fat12DirEntry*)sector_buffer)[entry_offset];
+    FastMemcpy(dir_entry->name, fat_name, 11);
+    dir_entry->attr = FAT12_ATTR_ARCHIVE;
+    dir_entry->file_size = size;
+    dir_entry->cluster_low = start_cluster;
+    dir_entry->cluster_high = 0;
+
+    // Write directory entry back
+    if (IdeWriteSector(volume.drive, entry_sector, sector_buffer) != IDE_OK) {
+        return -1;
+    }
+
+    // Write FAT table
+    if (Fat12WriteFat() != 0) {
+        return -1;
+    }
 
     return size;
 }
