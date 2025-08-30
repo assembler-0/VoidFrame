@@ -614,7 +614,7 @@ static InitResultT PXS2(void) {
     // NEW: Check if huge pages should be enabled
     PrintKernel("Info: Checking huge page support...\n");
     if (!CheckHugePageSupport()) PrintKernel("System: Huge pages not available\n");
-    PrintKernelSuccess("System: Huge pages available\n");
+    else PrintKernelSuccess("System: Huge pages available\n");
 
     PrintKernel("Info: Initializing ISA bus...\n");
     IsaInitBus();

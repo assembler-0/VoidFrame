@@ -59,7 +59,6 @@ static void U32ToDecStr(uint32_t value, char* buffer) {
 }
 
 // --- High-Level Panic Screen Composition ---
-
 void __attribute__((noreturn)) KernelPanicHandler(const char* message, uint64_t error_code, PanicContext* ctx) {
     cli();
     ClearScreen();
@@ -77,8 +76,6 @@ void __attribute__((noreturn)) KernelPanicHandler(const char* message, uint64_t 
     if (use_vbe_graphics) {
         // Pure VBE graphics path - show panic image ONLY
         VBEShowPanic();
-
-        delay(600000000); // to give "real" look
         PrintKernel("[FATAL] - [KERNEL PANIC] - ");
         if (message) PrintKernel(message);
         else PrintKernel("No message provided.");

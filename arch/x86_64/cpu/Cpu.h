@@ -26,4 +26,15 @@ typedef struct Registers {
 void CpuInit(void);
 CpuFeatures* GetCpuFeatures(void);
 
+static inline uint64_t __attribute__((always_inline)) rdtsc(void) {
+    uint32_t lo, hi;
+    __asm__ volatile ("rdtsc" : "=a"(lo), "=d"(hi));
+    return ((uint64_t)hi << 32) | lo;
+}
+
+static inline void __attribute__((always_inline)) delay(uint64_t cycles) {
+    uint64_t start = rdtsc();
+    while (rdtsc() - start < cycles);
+}
+
 #endif // CPU_H

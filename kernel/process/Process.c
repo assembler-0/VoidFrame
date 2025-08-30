@@ -97,7 +97,7 @@ static uint64_t CalculateSecureChecksum(const SecurityToken* token, uint32_t pid
     return base_hash ^ pid_hash;
 }
 
-static inline int FindFreeSlotFast(void) {
+static inline int __attribute__((always_inline)) FindFreeSlotFast(void) {
    if (UNLIKELY(active_process_bitmap == ~1ULL)) { // All slots except 0 taken
         return -1;
     }
@@ -115,13 +115,13 @@ static inline int FindFreeSlotFast(void) {
     return slot;
 }
 
-static inline void FreeSlotFast(int slot) {
+static inline void __attribute__((always_inline)) FreeSlotFast(int slot) {
     if (LIKELY(slot > 0 && slot < 64)) {
         active_process_bitmap &= ~(1ULL << slot);
     }
 }
 
-static void AddToTerminationQueueAtomic(uint32_t slot) {
+static void __attribute__((visibility("hidden"))) AddToTerminationQueueAtomic(uint32_t slot) {
     uint32_t tail = term_queue_tail;
     uint32_t new_tail = (tail + 1) % MAX_PROCESSES;
 
@@ -135,7 +135,7 @@ static void AddToTerminationQueueAtomic(uint32_t slot) {
     AtomicInc(&term_queue_count);
 }
 
-static uint32_t RemoveFromTerminationQueueAtomic(void) {
+static uint32_t __attribute__((visibility("hidden"))) RemoveFromTerminationQueueAtomic(void) {
     if (UNLIKELY(term_queue_count == 0)) {
         return MAX_PROCESSES;
     }
@@ -154,7 +154,7 @@ uint64_t GetSystemTicks(void) {
     return MLFQscheduler.tick_counter;
 }
 
-static int ValidateToken(const SecurityToken* token, uint32_t pid_to_check) {
+static int __attribute__((visibility("hidden"))) ValidateToken(const SecurityToken* token, uint32_t pid_to_check) {
     if (UNLIKELY(!token)) {
         return 0;
     }
@@ -171,7 +171,7 @@ static int ValidateToken(const SecurityToken* token, uint32_t pid_to_check) {
     return (diff | magic_diff) == 0 ? 1 : 0;
 }
 
-static void TerminateProcess(uint32_t pid, TerminationReason reason, uint32_t exit_code) {
+static void __attribute__((visibility("hidden"))) TerminateProcess(uint32_t pid, TerminationReason reason, uint32_t exit_code) {
     irq_flags_t flags = SpinLockIrqSave(&scheduler_lock);
     Process* proc = GetProcessByPid(pid);
     if (UNLIKELY(!proc || proc->state == PROC_DYING ||
@@ -279,7 +279,7 @@ static void TerminateProcess(uint32_t pid, TerminationReason reason, uint32_t ex
 
 
 // AS's deadly termination function - bypasses all protections
-static void ASTerminate(uint32_t pid, const char* reason) {
+static void __attribute__((visibility("hidden"))) ASTerminate(uint32_t pid, const char* reason) {
     irq_flags_t flags = SpinLockIrqSave(&scheduler_lock);
     Process* proc = GetProcessByPid(pid);
 
@@ -319,7 +319,7 @@ static void ASTerminate(uint32_t pid, const char* reason) {
     SpinUnlockIrqRestore(&scheduler_lock, flags);
 }
 
-static void SecurityViolationHandler(uint32_t violator_pid, const char* reason) {
+static void __attribute__((visibility("hidden"))) SecurityViolationHandler(uint32_t violator_pid, const char* reason) {
     AtomicInc(&security_violation_count);
 
     PrintKernelError("Astra: Security breach by PID ");
@@ -340,7 +340,7 @@ void KillProcess(uint32_t pid) {
     TerminateProcess(pid, TERM_KILLED, 1);
 }
 
-void InitSchedulerNodePool(void) {
+static void InitSchedulerNodePool(void) {
     FastMemset(scheduler_node_pool, 0, sizeof(scheduler_node_pool));
     FastMemset(scheduler_node_pool_bitmap, 0, sizeof(scheduler_node_pool_bitmap));
 }
@@ -376,7 +376,7 @@ static void FreeSchedulerNode(SchedulerNode* node) {
     node->slot = 0;
 }
 
-static inline void EnQueue(PriorityQueue* q, uint32_t slot) {
+static inline void __attribute__((always_inline)) EnQueue(PriorityQueue* q, uint32_t slot) {
     SchedulerNode* node = AllocSchedulerNode();
     if (!node) return;  // Pool exhausted
 
@@ -395,7 +395,7 @@ static inline void EnQueue(PriorityQueue* q, uint32_t slot) {
     q->count++;
 }
 
-static inline uint32_t DeQueue(PriorityQueue* q) {
+static inline uint32_t __attribute__((always_inline)) DeQueue(PriorityQueue* q) {
     if (!q->head) return MAX_PROCESSES;
 
     SchedulerNode* node = q->head;
@@ -417,7 +417,7 @@ static inline uint32_t DeQueue(PriorityQueue* q) {
     return slot;
 }
 
-static inline int QueueEmpty(PriorityQueue* q) {
+static inline int __attribute__((always_inline)) QueueEmpty(PriorityQueue* q) {
     return q->count == 0;
 }
 
@@ -459,7 +459,7 @@ void InitScheduler(void) {
 }
 
 // Smart process classification and priority assignment
-static uint32_t ClassifyProcess(Process* proc) {
+static __attribute__((visibility("hidden"))) uint32_t ClassifyProcess(Process* proc) {
     // Real-time system processes get highest priority
     if (proc->privilege_level == PROC_PRIV_SYSTEM && 
         (proc->token.flags & PROC_FLAG_CRITICAL)) {
@@ -486,7 +486,7 @@ static uint32_t ClassifyProcess(Process* proc) {
     return MAX_PRIORITY_LEVELS - 1;
 }
 
-void AddToScheduler(uint32_t slot) {
+void __attribute__((visibility("hidden"))) AddToScheduler(uint32_t slot) {
     if (slot == 0) return;
 
     Process* proc = &processes[slot];
@@ -510,7 +510,7 @@ void AddToScheduler(uint32_t slot) {
 }
 
 // Remove process from scheduler
-void RemoveFromScheduler(uint32_t slot) {
+void __attribute__((visibility("hidden"))) RemoveFromScheduler(uint32_t slot) {
     if (slot == 0 || slot >= MAX_PROCESSES) return;
 
     if (processes[slot].pid == 0) return;
@@ -563,7 +563,7 @@ void RemoveFromScheduler(uint32_t slot) {
     FreeSchedulerNode(node);
 }
 
-static inline int FindBestQueue(void) {
+static inline int __attribute__((always_inline)) FindBestQueue(void) {
     if (MLFQscheduler.active_bitmap == 0) return -1;
 
     // Real-time queues always have absolute priority
@@ -672,7 +672,7 @@ static void SmartAging(void) {
 }
 
 
-static inline int AstraPreflightCheck(uint32_t slot) {
+static inline __attribute__((visibility("hidden"))) __attribute__((always_inline)) int AstraPreflightCheck(uint32_t slot) {
     if (slot == 0) return 1; // Idle process is always safe.
 
     Process* proc = &processes[slot];
@@ -947,7 +947,7 @@ void ProcessExitStub() {
     __builtin_unreachable();
 }
 
-static uint32_t CreateSecureProcess(void (*entry_point)(void), uint8_t privilege, uint32_t initial_flags) {
+static __attribute__((visibility("hidden"))) uint32_t CreateSecureProcess(void (*entry_point)(void), uint8_t privilege, uint32_t initial_flags) {
     irq_flags_t flags = SpinLockIrqSave(&scheduler_lock);
     if (UNLIKELY(!entry_point)) {
         SpinUnlockIrqRestore(&scheduler_lock, flags);
@@ -1162,7 +1162,7 @@ Process* GetProcessByPid(uint32_t pid) {
 }
 
 
-static void DynamoX(void) {
+static __attribute__((visibility("hidden"))) void DynamoX(void) {
     PrintKernel("DynamoX: DynamoX v0.2 starting...\n");
 
     typedef struct {
@@ -1616,18 +1616,21 @@ int ProcessInit(void) {
     PrintKernel("System: Creating AS (Astra)...\n");
     uint32_t AS_pid = CreateSecureProcess(Astra, PROC_PRIV_SYSTEM, PROC_FLAG_CORE);
     if (!AS_pid) {
-        PANIC("CRITICAL: Failed to create AS - system compromised");
+#ifdef PANIC_ON_FALIURE
+        PANIC("CRITICAL: Failed to create Astra");
+#else
+        PrintKernelError("CRITICAL: Failed to create Astra\n");
+#endif
     }
     PrintKernelSuccess("System: AS created with PID: ");
     PrintKernelInt(AS_pid);
     PrintKernel("\n");
 
-
     // Create shell process
     PrintKernel("System: Creating shell process...\n");
     uint32_t shell_pid = CreateSecureProcess(ShellProcess, PROC_PRIV_SYSTEM, PROC_FLAG_CORE);
     if (!shell_pid) {
-        PANIC("CRITICAL: Failed to create shell process");
+        PrintKernelError("CRITICAL: Failed to create shell process");
     }
     PrintKernelSuccess("System: Shell created with PID: ");
     PrintKernelInt(shell_pid);

@@ -104,7 +104,7 @@
 
 6. **After Startup**
     - After the kernel has started and all core subsystems are ready
-    - 3 System processes are created:
+    - Three (default) System processes are created:
       - `PID 0`: Idle process (runs when no other process is ready)
       - `PID 1`: Astra (Security agent of the kernel)
       - `PID 2`: VoidFrame Shell

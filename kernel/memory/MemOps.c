@@ -21,7 +21,7 @@ void* FastMemset(void* dest, int value, uint64_t size) {
         // Create 256-bit value
         uint64_t val64 = 0x0101010101010101ULL * val;
 
-        asm volatile(
+        __asm__ volatile(
             "vmovq %0, %%xmm0\n"
             "vpbroadcastq %%xmm0, %%ymm0\n"
             :
@@ -30,19 +30,19 @@ void* FastMemset(void* dest, int value, uint64_t size) {
         );
 
         while (size >= 32) {
-            asm volatile("vmovdqu %%ymm0, (%0)" : : "r"(d) : "memory");
+            __asm__ volatile("vmovdqu %%ymm0, (%0)" : : "r"(d) : "memory");
             d += 32;
             size -= 32;
         }
 
         // Clean up YMM registers
-        asm volatile("vzeroupper" ::: "memory");
+        __asm__ volatile("vzeroupper" ::: "memory");
     }
     else if (features->sse2 && size >= 16) {
         // Original SSE2 path with better value construction
         uint64_t val64 = 0x0101010101010101ULL * val;
 
-        asm volatile(
+        __asm__ volatile(
             "movq %0, %%xmm0\n"
             "punpcklqdq %%xmm0, %%xmm0\n"
             :
@@ -51,7 +51,7 @@ void* FastMemset(void* dest, int value, uint64_t size) {
         );
 
         while (size >= 16) {
-            asm volatile("movdqu %%xmm0, (%0)" : : "r"(d) : "memory");
+            __asm__ volatile("movdqu %%xmm0, (%0)" : : "r"(d) : "memory");
             d += 16;
             size -= 16;
         }
@@ -87,7 +87,7 @@ void* FastMemcpy(void* dest, const void* src, uint64_t size) {
         // AVX2 copy using an unaligned load and store for maximum safety.
         // We save and restore ymm7 to be invisible to the calling code.
         while (size >= 32) {
-            asm volatile(
+            __asm__ volatile(
                 "vmovdqu (%1), %%ymm7\n"  // Unaligned read from src
                 "vmovdqu %%ymm7, (%0)\n"  // Unaligned write to dest
                 :
@@ -101,7 +101,7 @@ void* FastMemcpy(void* dest, const void* src, uint64_t size) {
 
         // IMPORTANT: Clean up the AVX state to prevent performance issues
         // when mixing with older SSE code.
-        asm volatile("vzeroupper" ::: "memory");
+        __asm__ volatile("vzeroupper" ::: "memory");
     }
 
     else if (features->sse2 && size >= 16) {
@@ -109,7 +109,7 @@ void* FastMemcpy(void* dest, const void* src, uint64_t size) {
         irq_flags_t irqf = save_irq_flags();
         cli();
         while (size >= 16) {
-            asm volatile(
+            __asm__ volatile(
                 "movdqu (%1), %%xmm7\n"   // Unaligned read from src
                 "movdqu %%xmm7, (%0)\n"   // Unaligned write to dest
                 :
@@ -120,7 +120,7 @@ void* FastMemcpy(void* dest, const void* src, uint64_t size) {
             s += 16;
             size -= 16;
         }
-        asm volatile("sfence" ::: "memory");
+        __asm__ volatile("sfence" ::: "memory");
         restore_irq_flags(irqf);
     }
 
@@ -167,21 +167,21 @@ void FastZeroPage(void* page) {
 
     if (features->avx2) {
         // Use AVX2 for faster page zeroing
-        asm volatile("vpxor %%ymm0, %%ymm0, %%ymm0" ::: "ymm0");
+        __asm__ volatile("vpxor %%ymm0, %%ymm0, %%ymm0" ::: "ymm0");
 
         uint8_t* p = (uint8_t*)page;
         for (int i = 0; i < 4096; i += 32) {
-            asm volatile("vmovdqa %%ymm0, (%0)" : : "r"(p + i) : "memory");
+            __asm__ volatile("vmovdqa %%ymm0, (%0)" : : "r"(p + i) : "memory");
         }
 
-        asm volatile("vzeroupper" ::: "memory");
+        __asm__ volatile("vzeroupper" ::: "memory");
     } else if (features->sse2) {
-        asm volatile("pxor %%xmm0, %%xmm0" ::: "xmm0");
+        __asm__ volatile("pxor %%xmm0, %%xmm0" ::: "xmm0");
 
         uint8_t* p = (uint8_t*)page;
         // Unroll for better performance
         for (int i = 0; i < 4096; i += 64) {
-            asm volatile(
+            __asm__ volatile(
                 "movdqa %%xmm0, 0(%0)\n"
                 "movdqa %%xmm0, 16(%0)\n"
                 "movdqa %%xmm0, 32(%0)\n"

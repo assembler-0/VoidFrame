@@ -1,3 +1,4 @@
+// Generic FAT filesystem driver for FAT12/16
 #include "FAT12.h"
 #include "Console.h"
 #include "Ide.h"
@@ -675,9 +676,10 @@ int Fat12WriteFile(const char* path, const void* buffer, uint32_t size) {
     // Find parent directory cluster
     uint16_t parent_cluster = 0; // Root by default
     if (FastStrCmp(parent_path, "/") != 0) {
-        uint16_t temp_parent, temp_sector;
-        int temp_offset;
-        Fat12DirEntry* parent_entry = Fat12FindEntry(parent_path, &temp_parent, &temp_sector, &temp_offset);
+        uint16_t temp_parent;
+        uint32_t temp_entry_sector;
+        int temp_entry_offset;
+        Fat12DirEntry* parent_entry = Fat12FindEntry(parent_path, &temp_parent, &temp_entry_sector, &temp_entry_offset);
         if (!parent_entry || !(parent_entry->attr & FAT12_ATTR_DIRECTORY)) {
             return -1; // Parent doesn't exist or isn't a directory
         }

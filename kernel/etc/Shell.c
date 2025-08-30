@@ -90,7 +90,7 @@ static char* GetArg(const char* cmd, int arg_num) {
 }
 
 static void ResolvePath(const char* input, char* output, int max_len) {
-    return ResolvePathS(current_dir, input, output, max_len);
+    ResolvePathH(current_dir, input, output, max_len);
 }
 
 void ArpRequestTestProcess() {

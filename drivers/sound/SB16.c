@@ -1,6 +1,6 @@
 #include "SB16.h"
 #include "Io.h"
-#include "VesaBIOSExtension.h"
+#include "Cpu.h"
 #include "stdint.h"
 
 int SB16_Probe(uint16_t io_base) {
@@ -33,7 +33,7 @@ int SB16_Probe(uint16_t io_base) {
 }
 
 void SB16_Beep(uint16_t io_base) {
-    delay(10000);
+    delay(1000);
 
     dsp_write(io_base, 0xD1);  // Turn speaker on
     delay(1000);               // Small delay after speaker enable

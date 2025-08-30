@@ -2,7 +2,7 @@
 #include "Console.h"
 #include "MemOps.h"
 #include "VMem.h"
-#include "VesaBIOSExtension.h"
+#include "Cpu.h"
 
 // 5.4 - Operational Registers
 #define XHCI_OP_USBCMD  0x00 // USB Command Register

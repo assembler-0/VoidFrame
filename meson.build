@@ -38,6 +38,7 @@ c_flags = [
     '-fcf-protection=full',
     '-fstack-protector-strong',
     '-D_FORTIFY_SOURCE=2',
+    '-fvisibility=hidden',
     '-Wall',
     '-Wpedantic',
     '-Wextra',
@@ -206,7 +207,7 @@ run_target('run',
 )
 
 run_target('img',
-           command : [qemu_img.full_path(), 'create',  '-f', 'raw', 'VoidFrameDisk.img', '128M', '&&',
+           command : [qemu_img.full_path(), 'create',  '-f', 'raw', 'VoidFrameDisk.img', '1440K', '&&',
                       mkfs_fat.full_path(), '-F',  '12', 'VoidFrameDisk.img'
            ]
 )

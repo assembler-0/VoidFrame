@@ -57,6 +57,7 @@ const char* FastStrChr(const char* str, int c) {
 }
 
 void strcpy(char* dest, const char* src) {
+    if (!dest || !src) return;
     // Optimize for 64-bit aligned copies when possible
     if (((uintptr_t)dest & 7) == 0 && ((uintptr_t)src & 7) == 0) {
         uint64_t* d64 = (uint64_t*)dest;
@@ -89,12 +90,13 @@ void strcpy(char* dest, const char* src) {
 }
 
 void strcat(char* dest, const char* src) {
-    // Find end of dest string more efficiently
+    if (!dest || !src) return;
     while (*dest) dest++;
     strcpy(dest, src);  // Reuse optimized strcpy
 }
 
 void htoa(uint64_t n, char* buffer) {
+    if (!buffer) return;
     static const char hex_chars[16] = "0123456789ABCDEF";
     buffer[0] = '0';
     buffer[1] = 'x';
