@@ -46,11 +46,11 @@ static inline void restore_irq_flags(irq_flags_t flags) {
 }
 
 static inline void __attribute__((always_inline)) cli(void) {
-    __asm__ volatile("cli");
+    __asm__ volatile("cli" ::: "memory");
 }
 
 static inline void __attribute__((always_inline)) sti(void) {
-    __asm__ volatile("sti");
+    __asm__ volatile("sti" ::: "memory");
 }
 
 // CPUID detection

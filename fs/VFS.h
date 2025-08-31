@@ -1,4 +1,5 @@
 #pragma once
+#include "stdbool.h"
 #include "stdint.h"
 
 // VFS Mount Points
@@ -25,7 +26,7 @@ int VfsWriteFile(const char* path, const void* buffer, uint32_t size);
 int VfsListDir(const char* path);
 int VfsCreateFile(const char* path);
 int VfsCreateDir(const char* path);
-int VfsDelete(const char* path);
+int VfsDelete(const char* path, bool Recursive);
 int VfsIsDir(const char* path);
 uint64_t VfsGetFileSize(const char* path);
 // Internal

@@ -90,9 +90,7 @@ extern void isr76();
 extern void isr77();
 extern void isr78();
 extern void isr79();
-void isr80() {
-    PrintKernelWarning("WHO THE HELL MADE A SYSCALL?");
-}
+// extern void isr80();
 extern void isr81();
 extern void isr82();
 extern void isr83();
@@ -368,7 +366,7 @@ int IdtInstall() {
     IdtSetGate(77, (uint64_t)isr77, kernelCodeSegment, flags);
     IdtSetGate(78, (uint64_t)isr78, kernelCodeSegment, flags);
     IdtSetGate(79, (uint64_t)isr79, kernelCodeSegment, flags);
-    IdtSetGate(80, (uint64_t)isr80, kernelCodeSegment, flags);
+    // IdtSetGate(80, (uint64_t)isr80, kernelCodeSegment, flags);
     IdtSetGate(81, (uint64_t)isr81, kernelCodeSegment, flags);
     IdtSetGate(82, (uint64_t)isr82, kernelCodeSegment, flags);
     IdtSetGate(83, (uint64_t)isr83, kernelCodeSegment, flags);

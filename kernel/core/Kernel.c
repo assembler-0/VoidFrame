@@ -501,6 +501,68 @@ static void IRQUnmaskCoreSystems() {
     PrintKernelSuccess("System: IRQs unmasked\n");
 }
 
+
+void INITRD1() {
+    PrintKernel("INITRD: Creating rootfs on /...\n");
+    //======================================================================
+    // 1. Core Operating System - (Largely Read-Only at Runtime)
+    //======================================================================
+    FsMkdir("/System");
+    FsMkdir("/System/Kernel");      // Kernel executable, modules, and symbols
+    FsMkdir("/System/Boot");        // Bootloader and initial ramdisk images
+    FsMkdir("/System/Drivers");     // Core hardware drivers bundled with the OS
+    FsMkdir("/System/Libraries");   // Essential shared libraries (libc, etc.)
+    FsMkdir("/System/Services");    // Executables for core system daemons
+    FsMkdir("/System/Resources");   // System-wide resources like fonts, icons, etc.
+
+
+    //======================================================================
+    // 2. Variable Data and User Installations - (Read-Write)
+    //======================================================================
+    FsMkdir("/Data");
+    FsMkdir("/Data/Apps");          // User-installed applications reside here
+    FsMkdir("/Data/Config");        // System-wide configuration files
+    FsMkdir("/Data/Cache");         // System-wide caches
+    FsMkdir("/Data/Logs");          // System and application logs
+    FsMkdir("/Data/Spool");         // Spool directory for printing, mail, etc.
+    FsMkdir("/Data/Temp");          // Temporary files that should persist across reboots
+
+
+    //======================================================================
+    // 3. Hardware and Device Tree - (Virtual, managed by kernel)
+    //======================================================================
+    FsMkdir("/Devices");
+    FsMkdir("/Devices/Cpu");        // Info for each CPU core (cpuid, status, etc.)
+    FsMkdir("/Devices/Pci");        // Hierarchy of PCI/PCIe devices
+    FsMkdir("/Devices/Usb");        // Hierarchy of USB devices
+    FsMkdir("/Devices/Storage");    // Block devices like disks and partitions (hda, sda)
+    FsMkdir("/Devices/Input");      // Keyboards, mice, tablets
+    FsMkdir("/Devices/Gpu");        // Graphics processors
+    FsMkdir("/Devices/Net");        // Network interfaces (eth0, wlan0)
+    FsMkdir("/Devices/Acpi");       // ACPI tables and power information
+
+
+    //======================================================================
+    // 4. User Homes
+    //======================================================================
+    FsMkdir("/Users");
+    FsMkdir("/Users/Admin");        // Example administrator home
+    FsMkdir("/Users/Admin/Desktop");
+    FsMkdir("/Users/Admin/Documents");
+    FsMkdir("/Users/Admin/Downloads");
+
+
+    //======================================================================
+    // 5. Live System State - (In-memory tmpfs, managed by kernel)
+    //======================================================================
+    FsMkdir("/Runtime");
+    FsMkdir("/Runtime/Processes");  // A directory for each running process by PID
+    FsMkdir("/Runtime/Services");   // Status and control files for running services
+    FsMkdir("/Runtime/IPC");        // For sockets and other inter-process communication
+    FsMkdir("/Runtime/Mounts");     // Information on currently mounted filesystems
+    FsMkdir("/External");           // Mount points and block driver
+}
+
 // Pre-eXecutionSystem 2
 static InitResultT PXS2(void) {
     // CPU feature validation
@@ -584,17 +646,21 @@ static InitResultT PXS2(void) {
         if (Fat12Init(0) == 0) {
             PrintKernelSuccess("System: FAT12 Driver initialized\n");
         } else {
-            PrintKernelWarning("[WARN] FAT12 initialization failed\n");
+            PrintKernelWarning("FAT12 initialization failed\n");
         }
     } else {
-        PrintKernelWarning("[WARN] IDE initialization failed - no drives detected\n");
-        PrintKernelWarning("[WARN] Skipping FAT12 initialization\n");
+        PrintKernelWarning(" IDE initialization failed - no drives detected\n");
+        PrintKernelWarning(" Skipping FAT12 initialization\n");
     }
 
     // Initialize ram filesystem
     PrintKernel("Info: Initializing VFRFS...\n");
     FsInit();
     PrintKernelSuccess("System: VFRFS (VoidFrame RamFS) initialized\n");
+
+    // Initrd
+    INITRD1();
+    PrintKernelSuccess("System: INITRD (Stage 1) initialized\n");
 
     // Initialize VFS
     PrintKernel("Info: Initializing VFS...\n");

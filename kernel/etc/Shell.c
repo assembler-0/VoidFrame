@@ -1,7 +1,8 @@
 #include "Shell.h"
-#include "ELFloader.h"
 #include "Console.h"
+#include "ELFloader.h"
 #include "Editor.h"
+#include "FsUtils.h"
 #include "ISA.h"
 #include "KernelHeap.h"
 #include "LPT/LPT.h"
@@ -22,7 +23,6 @@
 #include "VMem.h"
 #include "stdlib.h"
 #include "xHCI/xHCI.h"
-#include "FsUtils.h"
 
 #define DATE __DATE__
 #define TIME __TIME__
@@ -176,7 +176,7 @@ static void HelpHandler(const char * args) {
     PrintKernel("  alloc <size>   - Allocate <size> bytes\n");
     PrintKernel("  panic <message>- Panic with <message>\n");
     PrintKernel("  kill <pid>     - Terminate process with pid <pid>\n");
-    PrintKernel("  rm <file>      - Remove file or empty directory\n");
+    PrintKernel("  rm <file> [-r] - Remove file(s) or directory\n");
     PrintKernel("  echo <text> <file> - Write text to file\n");
     PrintKernel("  fstest         - Run filesystem tests\n");
     PrintKernel("  size <file>    - Get size of <file> in bytes\n");
@@ -557,14 +557,18 @@ static void TouchHandler(const char * args) {
 
 static void RmHandler(const char * args) {
     char* name = GetArg(args, 1);
+    char* recursive = GetArg(args, 2);
     if (name) {
         char full_path[256];
         ResolvePath(name, full_path, 256);
-        if (VfsDelete(full_path) == 0) {
-            PrintKernel("Removed\n");
-        } else {
-            PrintKernel("Failed to remove (file not found or directory not empty)\n");
+        if (recursive && FastStrCmp(recursive, "-r") == 0) {
+            if (VfsDelete(full_path, true) == 0) PrintKernel("Removed\n");
+            else PrintKernel("Failed to remove (file not found or directory not empty)\n");
+            KernelFree(name);
+            return;
         }
+        if (VfsDelete(full_path, false) == 0) PrintKernel("Removed\n");
+        else PrintKernel("Failed to remove (file not found or directory not empty)\n");
         KernelFree(name);
     } else {
         PrintKernel("Usage: rm <filename>\n");
@@ -611,7 +615,7 @@ static void FstestHandler(const char * args) {
     (void)args;
     PrintKernel("VFS: Running filesystem tests...\n");
 
-    if (VfsCreateDir("/test") == 0) {
+    if (VfsCreateDir("/External/VFSystemDrive/test") == 0) {
         PrintKernel("VFS: Created /test directory\n");
     }
 
@@ -712,12 +716,10 @@ void PrintBrandString() {
 void PrintCpuInfo() {
     uint32_t eax, ebx, ecx, edx;
     cpuid(1, &eax, &ebx, &ecx, &edx);
-
     uint32_t family = (eax >> 8) & 0xF;
     uint32_t model = (eax >> 4) & 0xF;
     uint32_t stepping = eax & 0xF;
-
-    if (family == 0x6 || family == 0xF) {
+    if (family == 0xF) {
         uint32_t ext_family = (eax >> 20) & 0xFF;
         family += ext_family;
     }
@@ -725,7 +727,6 @@ void PrintCpuInfo() {
         uint32_t ext_model = (eax >> 16) & 0xF;
         model += (ext_model << 4);
     }
-
     PrintKernelF("CPU family:                      %u\n", family);
     PrintKernelF("Model:                           %u\n", model);
     PrintKernelF("Stepping:                        %u\n", stepping);
@@ -849,6 +850,67 @@ void LsCPUHandler(const char* args) {
     PrintFeatures();
 }
 
+void MkfsHandler(const char* args) {
+    (void)args;
+    PrintKernel("VFS: Creating roofs on /External/VFSystemDrive...\n");
+    //======================================================================
+    // 1. Core Operating System - (Largely Read-Only at Runtime)
+    //======================================================================
+    VfsCreateDir("/External/VFSystemDrive/System");
+    VfsCreateDir("/External/VFSystemDrive/System/Kernel");      // Kernel executable, modules, and symbols
+    VfsCreateDir("/External/VFSystemDrive/System/Boot");        // Bootloader and initial ramdisk images
+    VfsCreateDir("/External/VFSystemDrive/System/Drivers");     // Core hardware drivers bundled with the OS
+    VfsCreateDir("/External/VFSystemDrive/System/Libraries");   // Essential shared libraries (libc, etc.)
+    VfsCreateDir("/External/VFSystemDrive/System/Services");    // Executables for core system daemons
+    VfsCreateDir("/External/VFSystemDrive/System/Resources");   // System-wide resources like fonts, icons, etc.
+
+
+    //======================================================================
+    // 2. Variable Data and User Installations - (Read-Write)
+    //======================================================================
+    VfsCreateDir("/External/VFSystemDrive/Data");
+    VfsCreateDir("/External/VFSystemDrive/Data/Apps");          // User-installed applications reside here
+    VfsCreateDir("/External/VFSystemDrive/Data/Config");        // System-wide configuration files
+    VfsCreateDir("/External/VFSystemDrive/Data/Cache");         // System-wide caches
+    VfsCreateDir("/External/VFSystemDrive/Data/Logs");          // System and application logs
+    VfsCreateDir("/External/VFSystemDrive/Data/Spool");         // Spool directory for printing, mail, etc.
+    VfsCreateDir("/External/VFSystemDrive/Data/Temp");          // Temporary files that should persist across reboots
+
+
+    //======================================================================
+    // 3. Hardware and Device Tree - (Virtual, managed by kernel)
+    //======================================================================
+    VfsCreateDir("/External/VFSystemDrive/Devices");
+    VfsCreateDir("/External/VFSystemDrive/Devices/Cpu");        // Info for each CPU core (cpuid, status, etc.)
+    VfsCreateDir("/External/VFSystemDrive/Devices/Pci");        // Hierarchy of PCI/PCIe devices
+    VfsCreateDir("/External/VFSystemDrive/Devices/Usb");        // Hierarchy of USB devices
+    VfsCreateDir("/External/VFSystemDrive/Devices/Storage");    // Block devices like disks and partitions (hda, sda)
+    VfsCreateDir("/External/VFSystemDrive/Devices/Input");      // Keyboards, mice, tablets
+    VfsCreateDir("/External/VFSystemDrive/Devices/Gpu");        // Graphics processors
+    VfsCreateDir("/External/VFSystemDrive/Devices/Net");        // Network interfaces (eth0, wlan0)
+    VfsCreateDir("/External/VFSystemDrive/Devices/Acpi");       // ACPI tables and power information
+
+
+    //======================================================================
+    // 4. User Homes
+    //======================================================================
+    VfsCreateDir("/External/VFSystemDrive/Users");
+    VfsCreateDir("/External/VFSystemDrive/Users/Admin");        // Example administrator home
+    VfsCreateDir("/External/VFSystemDrive/Users/Admin/Desktop");
+    VfsCreateDir("/External/VFSystemDrive/Users/Admin/Documents");
+    VfsCreateDir("/External/VFSystemDrive/Users/Admin/Downloads");
+
+
+    //======================================================================
+    // 5. Live System State - (In-memory tmpfs, managed by kernel)
+    //======================================================================
+    VfsCreateDir("/External/VFSystemDrive/Runtime");
+    VfsCreateDir("/External/VFSystemDrive/Runtime/Processes");  // A directory for each running process by PID
+    VfsCreateDir("/External/VFSystemDrive/Runtime/Services");   // Status and control files for running services
+    VfsCreateDir("/External/VFSystemDrive/Runtime/IPC");        // For sockets and other inter-process communication
+    VfsCreateDir("/External/VFSystemDrive/Runtime/Mounts");     // Information on currently mounted filesystems
+}
+
 static const ShellCommand commands[] = {
     {"help", HelpHandler},
     {"ps", PSHandler},
@@ -887,6 +949,7 @@ static const ShellCommand commands[] = {
     {"size", SizeHandler},
     {"heapvallvl", KHeapValidationHandler},
     {"lscpu", LsCPUHandler},
+    {"mkfs", MkfsHandler},
 };
 
 static void ExecuteCommand(const char* cmd) {
