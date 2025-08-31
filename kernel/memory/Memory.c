@@ -6,7 +6,8 @@
 #include "VMem.h"
 
 // Max 4GB memory for now (1M pages)
-#define MAX_PAGES (4ULL * 1024 * 1024 * 1024 / PAGE_SIZE)
+#define MAX_PAGE_BUFFER_OVERHEAD (1024 * 1024) // 1MB
+#define MAX_PAGES ((4ULL * 1024 * 1024 * 1024 / PAGE_SIZE) + MAX_PAGE_BUFFER_OVERHEAD)
 #define MAX_BITMAP_SIZE (MAX_PAGES / 8)
 #define BITMAP_WORD_SIZE 64
 #define BITMAP_WORDS (MAX_BITMAP_SIZE / 8)

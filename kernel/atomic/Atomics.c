@@ -4,10 +4,10 @@
 
 #include "Atomics.h"
 void AtomicInc(volatile uint32_t* ptr) {
-    __asm__ volatile("lock incl %0" : "+m" (*ptr));
+    __asm__ volatile("lock incl %0" : "+m" (*ptr) :: "memory");
 }
 void AtomicDec(volatile uint32_t* ptr) {
-    __asm__ volatile("lock decl %0" : "+m" (*ptr));
+    __asm__ volatile("lock decl %0" : "+m" (*ptr) :: "memory");
 }
 int AtomicCmpxchg(volatile uint32_t* ptr, int expected, int desired) {
     int old;

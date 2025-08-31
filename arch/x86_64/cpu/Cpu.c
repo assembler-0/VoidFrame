@@ -19,6 +19,9 @@ void CpuInit(void) {
     __asm__ volatile("mov %%cr4, %0" : "=r"(cr4));
     cr4 |= (1 << 9);  // Set OSFXSR
     cr4 |= (1 << 10); // Set OSXMMEXCPT
+#ifndef VF_CONFIG_VM_HOST // for some reason, #UD occurs even if with -cpu max
+    cr4 |= (1 << 18); // Set OSXSAVE
+#endif
     __asm__ volatile("mov %0, %%cr4" :: "r"(cr4));
     PrintKernelSuccess("VMem: CPU: CR4 configured for SSE/SSE2.\n");
 
