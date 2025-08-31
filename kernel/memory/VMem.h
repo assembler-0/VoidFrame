@@ -41,13 +41,15 @@
 #define HUGE_PAGE_ALIGN_DOWN(addr) ((addr) & ~HUGE_PAGE_MASK)
 #define IS_HUGE_PAGE_ALIGNED(addr) (((addr) & HUGE_PAGE_MASK) == 0)
 
-// Virtual address space layout - FIXED
-#define KERNEL_VIRTUAL_OFFSET 0xFFFFFFFF80000000ULL
+// Virtual address space layout for Ring-0 Kernel
+// Kernel space is the top 1TB of the higher half (PML4 entries 510-511).
+// Heap space is the remaining ~126TB of the higher half.
+#define KERNEL_VIRTUAL_OFFSET 0xFFFFFE0000000000ULL
 #define KERNEL_VIRTUAL_BASE   KERNEL_VIRTUAL_OFFSET
 
 // Heap space layout - Non-overlapping canonical addresses
 #define VIRT_ADDR_SPACE_START 0xFFFF800000000000ULL
-#define VIRT_ADDR_SPACE_END   0xFFFFFFFF00000000ULL  // Leave gap before kernel
+#define VIRT_ADDR_SPACE_END   0xFFFFFE0000000000ULL  // End of heap, start of kernel
 #define KERNEL_SPACE_START    KERNEL_VIRTUAL_BASE    // Kernel starts here
 #define KERNEL_SPACE_END      0xFFFFFFFFFFFFFFFFULL  // Kernel ends at top
 

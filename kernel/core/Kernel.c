@@ -383,10 +383,7 @@ static void ValidateMemoryLayout(void) {
         PrintKernelWarning("Multiboot info overlaps with kernel\n");
     }
 
-    // NEW: Validate virtual address space boundaries
-    if (VIRT_ADDR_SPACE_START >= KERNEL_SPACE_START) {
-        PrintKernelError("Virtual address space overlaps with kernel space\n");
-    }
+    
 
     PrintKernelSuccess("System: Memory layout validated\n");
 }
@@ -632,9 +629,11 @@ static InitResultT PXS2(void) {
     Rtl8139_Init();
     PrintKernelSuccess("System: RTL8139 Driver initialized\n");
 
+#ifdef VF_CONFIG_ENABLE_XHCI
     PrintKernel("Info: Initializing xHCI...\n");
     xHCIInit();
     PrintKernelSuccess("System: xHCI initialized\n");
+#endif
 
     PrintKernel("Info: Initializing LPT Driver...\n");
     LPT_Init();

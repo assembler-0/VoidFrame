@@ -2,6 +2,8 @@
 // Created by Atheria on 7/15/25.
 //
 #include "VMem.h"
+
+#include "Atomics.h"
 #include "Console.h"
 #include "MemOps.h"
 #include "Memory.h"
@@ -62,7 +64,7 @@ void VMemInit(void) {
     InitFreeBlockPool();
     // Get current PML4 from CR3 (set by bootstrap)
     uint64_t pml4_phys_addr;
-    asm volatile("mov %%cr3, %0" : "=r"(pml4_phys_addr));
+    __asm__ volatile("mov %%cr3, %0" : "=r"(pml4_phys_addr));
     pml4_phys_addr &= ~0xFFF; // Clear flags
 
     // Initialize kernel space tracking
@@ -70,8 +72,7 @@ void VMemInit(void) {
     kernel_space.used_pages = 0;
     kernel_space.total_mapped = IDENTITY_MAP_SIZE;
     kernel_space.pml4 = (uint64_t*)pml4_phys_addr;
-    uint64_t kernel_size = (uint64_t)_kernel_phys_end - (uint64_t)_kernel_phys_start;
-    kernel_space.total_mapped += PAGE_ALIGN_UP(kernel_size);
+
     // Now test identity mapping
     if (VMemGetPhysAddr(0x100000) != 0x100000) {
         PANIC("Bootstrap identity mapping failed - VALIDATION FAILED");
@@ -143,10 +144,7 @@ int VMemMap(uint64_t vaddr, uint64_t paddr, uint64_t flags) {
         return VMEM_ERROR_INVALID_ADDR;
     }
 
-    // Validate virtual address range
-    if (vaddr < VIRT_ADDR_SPACE_START || vaddr >= VIRT_ADDR_SPACE_END) {
-        return VMEM_ERROR_INVALID_ADDR;
-    }
+    
 
     irq_flags_t irq_flags = SpinLockIrqSave(&vmem_lock);
 
@@ -275,9 +273,7 @@ void* VMemAlloc(uint64_t size) {
 
     // 2. If no suitable block found, use the bump allocator
     if (vaddr == 0) {
-        if (kernel_space.next_vaddr < VIRT_ADDR_SPACE_START) {
-            kernel_space.next_vaddr = VIRT_ADDR_SPACE_START;
-        }
+        
         if (kernel_space.next_vaddr + size > VIRT_ADDR_SPACE_END) {
             SpinUnlockIrqRestore(&vmem_lock, flags);
             return NULL; // Out of virtual address space
@@ -506,7 +502,7 @@ int VMemIsPageMapped(uint64_t vaddr) {
 }
 
 void VMemFlushTLB(void) {
-    asm volatile(
+    __asm__ volatile(
         "mov %%cr3, %%rax\n"
         "mov %%rax, %%cr3\n"
         ::: "rax", "memory"
@@ -514,7 +510,7 @@ void VMemFlushTLB(void) {
 }
 
 void VMemFlushTLBSingle(uint64_t vaddr) {
-    asm volatile("invlpg (%0)" :: "r"(vaddr) : "memory");
+    __asm__ volatile("invlpg (%0)" :: "r"(vaddr) : "memory");
     tlb_flushes++;
 }
 
@@ -599,10 +595,7 @@ int VMemMapMMIO(uint64_t vaddr, uint64_t paddr, uint64_t size, uint64_t flags) {
         return VMEM_ERROR_ALIGN;
     }
 
-    if (vaddr < VIRT_ADDR_SPACE_START || vaddr >= VIRT_ADDR_SPACE_END) {
-        PrintKernelError("VMemMapMMIO: ERROR - Virtual address out of range\n");
-        return VMEM_ERROR_INVALID_ADDR;
-    }
+    
 
     // Add MMIO-specific flags
     uint64_t mmio_flags = flags | PAGE_PRESENT | PAGE_NOCACHE | PAGE_WRITETHROUGH;

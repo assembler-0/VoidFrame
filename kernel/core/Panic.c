@@ -266,8 +266,8 @@ void __attribute__((noreturn)) Panic(const char* message) {
    cli();
     PanicContext ctx = {0};
     ctx.rip = __get_rip();
-    asm volatile("movq %%rsp, %0" : "=r"(ctx.rsp));
-    asm volatile("movq %%rbp, %0" : "=r"(ctx.rbp));
+    __asm__ volatile("movq %%rsp, %0" : "=r"(ctx.rsp));
+    __asm__ volatile("movq %%rbp, %0" : "=r"(ctx.rbp));
     KernelPanicHandler(message, PANIC_GENERAL, &ctx);
 }
 
@@ -275,8 +275,8 @@ void __attribute__((noreturn)) PanicWithCode(const char* message, uint64_t error
    cli();
     PanicContext ctx = {0};
     ctx.rip = __get_rip();
-    asm volatile("movq %%rsp, %0" : "=r"(ctx.rsp));
-    asm volatile("movq %%rbp, %0" : "=r"(ctx.rbp));
+    __asm__ volatile("movq %%rsp, %0" : "=r"(ctx.rsp));
+    __asm__ volatile("movq %%rbp, %0" : "=r"(ctx.rbp));
     KernelPanicHandler(message, error_code, &ctx);
 }
 
@@ -284,8 +284,8 @@ void __attribute__((noreturn)) PanicWithContext(const char* message, uint64_t er
    cli();
     PanicContext ctx = {0};
     ctx.rip = __get_rip();
-    asm volatile("movq %%rsp, %0" : "=r"(ctx.rsp));
-    asm volatile("movq %%rbp, %0" : "=r"(ctx.rbp));
+    __asm__ volatile("movq %%rsp, %0" : "=r"(ctx.rsp));
+    __asm__ volatile("movq %%rbp, %0" : "=r"(ctx.rbp));
     ctx.error_code = error_code;
     ctx.function = function;
     ctx.file = file;

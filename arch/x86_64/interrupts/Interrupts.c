@@ -87,7 +87,7 @@ void InterruptHandler(Registers* regs) {
         case 14: // Page Fault
         {
             uint64_t cr2;
-            asm volatile("mov %%cr2, %0" : "=r"(cr2));
+            __asm__ volatile("mov %%cr2, %0" : "=r"(cr2));
             char cr2_str[20], rip_str[20];
             htoa(cr2, cr2_str);
             htoa(regs->rip, rip_str);

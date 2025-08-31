@@ -1616,7 +1616,7 @@ int ProcessInit(void) {
     PrintKernel("System: Creating AS (Astra)...\n");
     uint32_t AS_pid = CreateSecureProcess(Astra, PROC_PRIV_SYSTEM, PROC_FLAG_CORE);
     if (!AS_pid) {
-#ifdef PANIC_ON_FAILURE
+#ifndef VF_CONFIG_PANIC_OVERRIDE
         PANIC("CRITICAL: Failed to create Astra");
 #else
         PrintKernelError("CRITICAL: Failed to create Astra\n");
@@ -1630,7 +1630,11 @@ int ProcessInit(void) {
     PrintKernel("System: Creating shell process...\n");
     uint32_t shell_pid = CreateSecureProcess(ShellProcess, PROC_PRIV_SYSTEM, PROC_FLAG_CORE);
     if (!shell_pid) {
-        PrintKernelError("CRITICAL: Failed to create shell process");
+#ifndef VF_CONFIG_PANIC_OVERRIDE
+        PANIC("CRITICAL: Failed to create shell process");
+#else
+        PrintKernelError("CRITICAL: Failed to create shell process\n");
+#endif
     }
     PrintKernelSuccess("System: Shell created with PID: ");
     PrintKernelInt(shell_pid);
