@@ -181,6 +181,7 @@ static void HelpHandler(const char * args) {
     PrintKernel("  fstest         - Run filesystem tests\n");
     PrintKernel("  size <file>    - Get size of <file> in bytes\n");
     PrintKernel("  heapvallvl <0/1/2>- Set kernel heap validation level\n");
+    PrintKernel("  lscpu          - List cpu features (CPUID)\n");
 }
 
 static void PSHandler(const char * args) {
@@ -678,6 +679,176 @@ static void KHeapValidationHandler(const char * args) {
     }
 }
 
+// Function to print the CPU vendor string
+void PrintVendorString() {
+    uint32_t eax, ebx, ecx, edx;
+    char vendor[13];
+
+    cpuid(0, &eax, &ebx, &ecx, &edx);
+    *(uint32_t*)(vendor) = ebx;
+    *(uint32_t*)(vendor + 4) = edx;
+    *(uint32_t*)(vendor + 8) = ecx;
+    vendor[12] = '\0';
+    PrintKernelF("Vendor ID:                       %s\n", vendor);
+}
+
+// Function to print the CPU brand string
+void PrintBrandString() {
+    uint32_t eax, ebx, ecx, edx;
+    char brand[49];
+
+    // Check for extended function support
+    cpuid(0x80000000, &eax, &ebx, &ecx, &edx);
+    if (eax >= 0x80000004) {
+        cpuid(0x80000002, (uint32_t*)(brand), (uint32_t*)(brand + 4), (uint32_t*)(brand + 8), (uint32_t*)(brand + 12));
+        cpuid(0x80000003, (uint32_t*)(brand + 16), (uint32_t*)(brand + 20), (uint32_t*)(brand + 24), (uint32_t*)(brand + 28));
+        cpuid(0x80000004, (uint32_t*)(brand + 32), (uint32_t*)(brand + 36), (uint32_t*)(brand + 40), (uint32_t*)(brand + 44));
+        brand[48] = '\0';
+        PrintKernelF("Model name:                      %s\n", brand);
+    }
+}
+
+// Function to print CPU family, model, and stepping
+void PrintCpuInfo() {
+    uint32_t eax, ebx, ecx, edx;
+    cpuid(1, &eax, &ebx, &ecx, &edx);
+
+    uint32_t family = (eax >> 8) & 0xF;
+    uint32_t model = (eax >> 4) & 0xF;
+    uint32_t stepping = eax & 0xF;
+
+    if (family == 0x6 || family == 0xF) {
+        uint32_t ext_family = (eax >> 20) & 0xFF;
+        family += ext_family;
+    }
+    if (family == 0x6 || family == 0xF) {
+        uint32_t ext_model = (eax >> 16) & 0xF;
+        model += (ext_model << 4);
+    }
+
+    PrintKernelF("CPU family:                      %u\n", family);
+    PrintKernelF("Model:                           %u\n", model);
+    PrintKernelF("Stepping:                        %u\n", stepping);
+}
+
+// Function to print CPU features
+void PrintFeatures() {
+    uint32_t eax, ebx, ecx, edx;
+    cpuid(1, &eax, &ebx, &ecx, &edx);
+
+    PrintKernelF("Flags:                           ");
+    if (edx & (1 << 0)) PrintKernelF("fpu ");
+    if (edx & (1 << 4)) PrintKernelF("tsc ");
+    if (edx & (1 << 8)) PrintKernelF("cx8 ");
+    if (edx & (1 << 15)) PrintKernelF("cmov ");
+    if (edx & (1 << 19)) PrintKernelF("clflush ");
+    if (edx & (1 << 23)) PrintKernelF("mmx ");
+    if (edx & (1 << 24)) PrintKernelF("fxsr ");
+    if (edx & (1 << 25)) PrintKernelF("sse ");
+    if (edx & (1 << 26)) PrintKernelF("sse2 ");
+    if (edx & (1 << 28)) PrintKernelF("htt ");
+
+    if (ecx & (1 << 0)) PrintKernelF("sse3 ");
+    if (ecx & (1 << 9)) PrintKernelF("ssse3 ");
+    if (ecx & (1 << 19)) PrintKernelF("sse4_1 ");
+    if (ecx & (1 << 20)) PrintKernelF("sse4_2 ");
+    if (ecx & (1 << 23)) PrintKernelF("popcnt ");
+    if (ecx & (1 << 25)) PrintKernelF("aes ");
+    if (ecx & (1 << 28)) PrintKernelF("avx ");
+
+    // Check for extended features
+    cpuid(0x80000000, &eax, &ebx, &ecx, &edx);
+    if (eax >= 0x80000001) {
+        cpuid(0x80000001, &eax, &ebx, &ecx, &edx);
+        if (edx & (1 << 29)) PrintKernelF("lm "); // Long Mode (x86-64)
+    }
+
+    PrintKernelF("\n");
+}
+
+// Function to print cache information
+void PrintCacheInfo() {
+    uint32_t eax, ebx, ecx, edx;
+    for (int i = 0; ; ++i) {
+        cpuid(4, &eax, &ebx, &ecx, &edx);
+        eax = i; // Subleaf
+        uint32_t cache_type = eax & 0x1F;
+
+        if (cache_type == 0) {
+            break;
+        }
+
+        uint32_t cache_level = (eax >> 5) & 0x7;
+        uint32_t ways = ((ebx >> 22) & 0x3FF) + 1;
+        uint32_t partitions = ((ebx >> 12) & 0x3FF) + 1;
+        uint32_t line_size = (ebx & 0xFFF) + 1;
+        uint32_t sets = ecx + 1;
+        uint32_t cache_size = ways * partitions * line_size * sets;
+
+        const char* type_str = "Unknown";
+        if(cache_type == 1) type_str = "Data";
+        if(cache_type == 2) type_str = "Instruction";
+        if(cache_type == 3) type_str = "Unified";
+
+        PrintKernelF("L%u cache (%s):                 %u KB\n", cache_level, type_str, cache_size / 1024);
+    }
+}
+
+// Function to print CPU topology
+void PrintTopology() {
+    uint32_t eax, ebx, ecx, edx;
+    uint32_t threads_per_core = 1;
+    uint32_t cores_per_socket = 1;
+
+    // Check for Hyper-Threading
+    cpuid(1, &eax, &ebx, &ecx, &edx);
+    if (edx & (1 << 28)) {
+        threads_per_core = (ebx >> 16) & 0xFF;
+    }
+
+    // Modern topology enumeration (Leaf 0xB)
+    cpuid(0xB, &eax, &ebx, &ecx, &edx);
+    if (ebx != 0) { // Check if leaf 0xB is supported
+        // Iterate through levels to find core and thread information
+        // This is a simplified approach. A full implementation would parse the x2APIC ID shifts.
+        // For simplicity, we'll rely on older methods for this example.
+    } else {
+        // Fallback for older CPUs
+        cpuid(4, &eax, &ebx, &ecx, &edx);
+        if (eax != 0) { // Check if leaf 4 is supported
+            cores_per_socket = ((eax >> 26) & 0x3F) + 1;
+        }
+    }
+
+
+    PrintKernelF("Thread(s) per core:              %u\n", threads_per_core);
+    PrintKernelF("Core(s) per socket:              %u\n", cores_per_socket);
+    PrintKernelF("Socket(s):                       1\n"); // Assuming a single socket for simplicity
+}
+
+void PrintCpuFrequency() {
+    uint32_t eax, ebx, ecx, edx;
+    cpuid(0x16, &eax, &ebx, &ecx, &edx);
+    if (eax != 0) {
+        PrintKernelF("CPU max MHz:                     %u\n", ebx);
+        PrintKernelF("CPU base MHz:                    %u\n", eax);
+        PrintKernelF("Bus (reference) MHz:             %u\n", ecx);
+    }
+}
+
+    
+// The main shell command function
+void LsCPUHandler(const char* args) {
+    (void)args;
+    PrintVendorString();
+    PrintBrandString();
+    PrintCpuInfo();
+    PrintTopology();
+    PrintCpuFrequency();
+    PrintCacheInfo();
+    PrintFeatures();
+}
+
 static const ShellCommand commands[] = {
     {"help", HelpHandler},
     {"ps", PSHandler},
@@ -715,6 +886,7 @@ static const ShellCommand commands[] = {
     {"fstest", FstestHandler},
     {"size", SizeHandler},
     {"heapvallvl", KHeapValidationHandler},
+    {"lscpu", LsCPUHandler},
 };
 
 static void ExecuteCommand(const char* cmd) {

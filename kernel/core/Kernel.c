@@ -680,7 +680,7 @@ void KernelMainHigherHalf(void) {
 
     sti();
 
-    while (1) { // redundant but added for worst case scenario, should not reach here
+    while (1) { // redundant but added for a worst case scenario, should not reach here (I have no idea why it stops going after sti)
         Yield();
     }
 
