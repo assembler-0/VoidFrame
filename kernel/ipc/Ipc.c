@@ -6,7 +6,7 @@
 void IpcSendMessage(uint32_t target_pid, const IpcMessage * msg) {
     ASSERT(msg != NULL);
 
-    Process* target = GetProcessByPid(target_pid);
+    ProcessControlBlock* target = GetProcessByPid(target_pid);
     if (!target) {
         // Handle error: target process not found
         return;
@@ -29,7 +29,7 @@ void IpcSendMessage(uint32_t target_pid, const IpcMessage * msg) {
 int IpcReceiveMessage(IpcMessage* msg_buffer) {
     ASSERT(msg_buffer != NULL);
 
-    Process* current = GetCurrentProcess();
+    ProcessControlBlock* current = GetCurrentProcess();
     MessageQueue* queue = &current->ipc_queue;
 
     while (queue->count == 0) {

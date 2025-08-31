@@ -12,7 +12,7 @@
 // Core Queue Configuration
 #define MAX_PRIORITY_LEVELS 5           // Reduced from 6 - fewer levels = better cache locality
 #define RT_PRIORITY_THRESHOLD 3         // Increased RT levels for better interactive response
-#define MAX_PROCESSES 64                // Keep as is
+#define MAX_PROCESSES 1024              // Keep as is
 
 // Quantum Management - EXPONENTIAL GROWTH for better differentiation
 #define QUANTUM_BASE 4                  // Slightly reduced base for better interactivity
@@ -166,7 +166,8 @@ typedef struct {
     ProcessContext context;
     SchedulerNode* scheduler_node;
     uint64_t creation_time;
-} Process;
+    char* ProcINFOPath;
+} ProcessControlBlock;
 
 typedef struct {
     SchedulerNode* head;
@@ -224,8 +225,8 @@ typedef struct {
 // Core process functions
 int ProcessInit(void);
 uint32_t CreateProcess(void (*entry_point)(void));
-Process* GetCurrentProcess(void);
-Process* GetProcessByPid(uint32_t pid);
+ProcessControlBlock* GetCurrentProcess(void);
+ProcessControlBlock* GetProcessByPid(uint32_t pid);
 void CleanupTerminatedProcesses(void);
 void Yield(void);
 

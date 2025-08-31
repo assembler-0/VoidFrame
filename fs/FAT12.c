@@ -842,18 +842,30 @@ int Fat12DeleteRecursive(const char* path) {
         return -1;
     }
 
+    uint16_t visited_clusters[256];
+    int visited_count = 0;
+
     // Walk through all clusters of this directory
     uint16_t current_cluster = dir_cluster;
     while (current_cluster >= 2 && current_cluster < 0xFF8) {
+        // Check for cycle
+        for (int v = 0; v < visited_count; v++) {
+            if (visited_clusters[v] == current_cluster) {
+                PrintKernel("Error: Cycle detected in cluster chain\n");
+                KernelFree(cluster_buffer);
+                return -1;
+            }
+        }
+        if (visited_count < 256) {
+            visited_clusters[visited_count++] = current_cluster;
+        }
         if (Fat12GetCluster(current_cluster, cluster_buffer) != 0) {
             KernelFree(cluster_buffer);
             PrintKernel("Error: Failed to read directory cluster\n");
             return -1;
         }
-
         Fat12DirEntry* entries = (Fat12DirEntry*)cluster_buffer;
         int entries_per_cluster = cluster_bytes / 32;
-
         for (int i = 0; i < entries_per_cluster; i++) {
             Fat12DirEntry* current_entry = &entries[i];
 
@@ -918,16 +930,11 @@ int Fat12DeleteRecursive(const char* path) {
                 return -1;
             }
         }
-
         current_cluster = Fat12GetNextCluster(current_cluster);
     }
 
     KernelFree(cluster_buffer);
-
-    // Now that all children are deleted, delete the empty directory itself
-    PrintKernel("Deleting empty directory: ");
-    PrintKernel(path);
-    PrintKernel("\n");
+    PrintKernel(".");
     return Fat12DeleteFile(path);
 }
 

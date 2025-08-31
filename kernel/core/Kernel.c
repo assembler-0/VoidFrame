@@ -507,45 +507,44 @@ void INITRD1() {
     //======================================================================
     // 1. Core Operating System - (Largely Read-Only at Runtime)
     //======================================================================
-    FsMkdir("/System");
-    FsMkdir("/System/Kernel");      // Kernel executable, modules, and symbols
-    FsMkdir("/System/Boot");        // Bootloader and initial ramdisk images
-    FsMkdir("/System/Drivers");     // Core hardware drivers bundled with the OS
-    FsMkdir("/System/Libraries");   // Essential shared libraries (libc, etc.)
-    FsMkdir("/System/Services");    // Executables for core system daemons
-    FsMkdir("/System/Resources");   // System-wide resources like fonts, icons, etc.
-
+    FsMkdir(SystemDir);
+    FsMkdir(SystemKernel);      // Kernel executable, modules, and symbols
+    FsMkdir(SystemBoot);        // Bootloader and initial ramdisk images
+    FsMkdir(SystemDrivers);     // Core hardware drivers bundled with the OS
+    FsMkdir(SystemLibraries);   // Essential shared libraries (libc, etc.)
+    FsMkdir(SystemServices);    // Executables for core system daemons
+    FsMkdir(SystemResources);   // System-wide resources like fonts, icons, etc.
 
     //======================================================================
     // 2. Variable Data and User Installations - (Read-Write)
     //======================================================================
-    FsMkdir("/Data");
-    FsMkdir("/Data/Apps");          // User-installed applications reside here
-    FsMkdir("/Data/Config");        // System-wide configuration files
-    FsMkdir("/Data/Cache");         // System-wide caches
-    FsMkdir("/Data/Logs");          // System and application logs
-    FsMkdir("/Data/Spool");         // Spool directory for printing, mail, etc.
-    FsMkdir("/Data/Temp");          // Temporary files that should persist across reboots
+    FsMkdir(DataDir);
+    FsMkdir(DataApps);          // User-installed applications reside here
+    FsMkdir(DataConfig);        // System-wide configuration files
+    FsMkdir(DataCache);         // System-wide caches
+    FsMkdir(DataLogs);          // System and application logs
+    FsMkdir(DataSpool);         // Spool directory for printing, mail, etc.
+    FsMkdir(DataTemp);          // Temporary files that should persist across reboots
 
 
     //======================================================================
     // 3. Hardware and Device Tree - (Virtual, managed by kernel)
     //======================================================================
-    FsMkdir("/Devices");
-    FsMkdir("/Devices/Cpu");        // Info for each CPU core (cpuid, status, etc.)
-    FsMkdir("/Devices/Pci");        // Hierarchy of PCI/PCIe devices
-    FsMkdir("/Devices/Usb");        // Hierarchy of USB devices
-    FsMkdir("/Devices/Storage");    // Block devices like disks and partitions (hda, sda)
-    FsMkdir("/Devices/Input");      // Keyboards, mice, tablets
-    FsMkdir("/Devices/Gpu");        // Graphics processors
-    FsMkdir("/Devices/Net");        // Network interfaces (eth0, wlan0)
-    FsMkdir("/Devices/Acpi");       // ACPI tables and power information
+    FsMkdir(DevicesDir);
+    FsMkdir(DevicesCpu);        // Info for each CPU core (cpuid, status, etc.)
+    FsMkdir(DevicesPci);        // Hierarchy of PCI/PCIe devices
+    FsMkdir(DevicesUsb);        // Hierarchy of USB devices
+    FsMkdir(DevicesStorage);    // Block devices like disks and partitions (hda, sda)
+    FsMkdir(DevicesInput);      // Keyboards, mice, tablets
+    FsMkdir(DevicesGpu);        // Graphics processors
+    FsMkdir(DevicesNet);        // Network interfaces (eth0, wlan0)
+    FsMkdir(DevicesAcpi);       // ACPI tables and power information
 
 
     //======================================================================
     // 4. User Homes
     //======================================================================
-    FsMkdir("/Users");
+    FsMkdir(UserDir);
     FsMkdir("/Users/Admin");        // Example administrator home
     FsMkdir("/Users/Admin/Desktop");
     FsMkdir("/Users/Admin/Documents");
@@ -555,12 +554,11 @@ void INITRD1() {
     //======================================================================
     // 5. Live System State - (In-memory tmpfs, managed by kernel)
     //======================================================================
-    FsMkdir("/Runtime");
-    FsMkdir("/Runtime/Processes");  // A directory for each running process by PID
-    FsMkdir("/Runtime/Services");   // Status and control files for running services
-    FsMkdir("/Runtime/IPC");        // For sockets and other inter-process communication
-    FsMkdir("/Runtime/Mounts");     // Information on currently mounted filesystems
-    FsMkdir("/External");           // Mount points and block driver
+    FsMkdir(RuntimeDir);
+    FsMkdir(RuntimeProcesses);  // A directory for each running process by PID
+    FsMkdir(RuntimeServices);   // Status and control files for running services
+    FsMkdir(RuntimeIPC);        // For sockets and other inter-process communication
+    FsMkdir(RuntimeMounts);     // Information on currently mounted filesystems
 }
 
 // Pre-eXecutionSystem 2
@@ -630,11 +628,6 @@ static InitResultT PXS2(void) {
     ShellInit();
     PrintKernelSuccess("System: Shell initialized\n");
 
-    // Initialize Process Management
-    PrintKernel("Info: Initializing process management...\n");
-    ProcessInit();
-    PrintKernelSuccess("System: Process management initialized\n");
-
     // Initialize IDE driver
     PrintKernel("Info: Initializing IDE driver...\n");
     const int ide_result = IdeInit();
@@ -671,6 +664,11 @@ static InitResultT PXS2(void) {
     PrintKernel("Info: Checking huge page support...\n");
     if (!CheckHugePageSupport()) PrintKernel("System: Huge pages not available\n");
     else PrintKernelSuccess("System: Huge pages available\n");
+
+    // Initialize Process Management
+    PrintKernel("Info: Initializing process management...\n");
+    ProcessInit();
+    PrintKernelSuccess("System: Process management initialized\n");
 
     PrintKernel("Info: Initializing ISA bus...\n");
     IsaInitBus();

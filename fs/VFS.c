@@ -1,6 +1,7 @@
 #include "VFS.h"
 #include "Console.h"
 #include "FAT12.h"
+#include "Format.h"
 #include "MemOps.h"
 #include "Serial.h"
 #include "StringOps.h"
@@ -59,10 +60,10 @@ int VfsInit(void) {
     extern int fat12_initialized;
     if (fat12_initialized) {
         PrintKernel("[VFS] Attempting FAT12 mount...\n");
-        int disk_result = VfsMount("/External/VFSystemDrive", VFS_FAT12, 0);
+        int disk_result = VfsMount(FormatS("%s/VFSystemDrive", DevicesStorage), VFS_FAT12, 0);
 
         if (disk_result == 0) {
-            SerialWrite("[VFS] FAT12 mounted at /External/VFSystemDrive\n");
+            SerialWriteF("[VFS] FAT12 mounted at %s/VFSystemDrive\n", DevicesStorage);
         } else {
             SerialWrite("[VFS] FAT12 mount failed\n");
         }

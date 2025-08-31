@@ -22,7 +22,6 @@ static void FsDeleteRecursiveI(FsNode* node);
 static FsNode* FsFindParent(const char* path, char* child_name_out);
 
 // --- Time placeholder ---
-// Replace with a call to your kernel's time source if available.
 static uint64_t GetCurrentTime(void) {
     return 0;
 }

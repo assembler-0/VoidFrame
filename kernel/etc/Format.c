@@ -1,9 +1,9 @@
 #include "Format.h"
-#include "../memory/MemOps.h"
 #include "StringOps.h"
 #include "stdarg.h"
 #include "stdint.h"
 
+static char output_buffer[CHAR_BUFF];
 
 void ParseFormatSpec(const char** fmt, FormatSpec* spec) {
     spec->width = 0;
@@ -178,7 +178,6 @@ void FormatCharacter(char* buffer, char c, FormatSpec* spec) {
 }
 
 char* Format(const char* format, va_list args) {
-    char output_buffer[CHAR_BUFF];
     output_buffer[0] = '\0';
 
     const char* f = format;

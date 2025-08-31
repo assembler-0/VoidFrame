@@ -120,7 +120,7 @@ uint32_t CreateProcessFromElf(const char* filename, const ElfLoadOptions* option
     }
 
     // Security check: Only system processes can create system processes
-    Process* creator = GetCurrentProcess();
+    ProcessControlBlock* creator = GetCurrentProcess();
     if (options->privilege_level == PROC_PRIV_SYSTEM &&
         creator->privilege_level != PROC_PRIV_SYSTEM) {
         PrintKernelError("ELF: Unauthorized attempt to create system process\n");

@@ -2,6 +2,7 @@
 #include "Atomics.h"
 #include "Console.h"
 #include "Cpu.h"
+#include "Format.h"
 #include "Io.h"
 #include "Ipc.h"
 #include "MemOps.h"
@@ -11,6 +12,7 @@
 #include "Shell.h"
 #include "Spinlock.h"
 #include "StackGuard.h"
+#include "VFS.h"
 #include "VMem.h"
 #include "stdbool.h"
 #include "stdlib.h"
@@ -33,7 +35,7 @@ static const uint64_t SECURITY_MAGIC = 0x5EC0DE4D41474943ULL;
 static const uint64_t SECURITY_SALT = 0xDEADBEEFCAFEBABEULL;
 static const uint32_t MAX_SECURITY_VIOLATIONS = SECURITY_VIOLATION_LIMIT;
 
-static Process processes[MAX_PROCESSES] ALIGNED_CACHE;
+static ProcessControlBlock processes[MAX_PROCESSES] ALIGNED_CACHE;
 static volatile uint32_t next_pid = 1;
 static uint64_t pid_bitmap[MAX_PROCESSES / 64 + 1] = {0};  // Track used PIDs
 static irq_flags_t pid_lock = 0;
@@ -173,14 +175,14 @@ static int __attribute__((visibility("hidden"))) ValidateToken(const SecurityTok
 
 static void __attribute__((visibility("hidden"))) TerminateProcess(uint32_t pid, TerminationReason reason, uint32_t exit_code) {
     irq_flags_t flags = SpinLockIrqSave(&scheduler_lock);
-    Process* proc = GetProcessByPid(pid);
+    ProcessControlBlock* proc = GetProcessByPid(pid);
     if (UNLIKELY(!proc || proc->state == PROC_DYING ||
                  proc->state == PROC_ZOMBIE || proc->state == PROC_TERMINATED)) {
         SpinUnlockIrqRestore(&scheduler_lock, flags);
         return;
     }
 
-    Process* caller = GetCurrentProcess();
+    ProcessControlBlock* caller = GetCurrentProcess();
 
     uint32_t slot = proc - processes;
 
@@ -275,13 +277,16 @@ static void __attribute__((visibility("hidden"))) TerminateProcess(uint32_t pid,
     }
 
     SpinUnlockIrqRestore(&scheduler_lock, flags);
+
+    if (proc->ProcINFOPath && VfsIsDir(proc->ProcINFOPath)) VfsDelete(proc->ProcINFOPath, true);
+    else PrintKernelWarning("ProcINFOPath invalid during termination\n");
 }
 
 
 // AS's deadly termination function - bypasses all protections
 static void __attribute__((visibility("hidden"))) ASTerminate(uint32_t pid, const char* reason) {
     irq_flags_t flags = SpinLockIrqSave(&scheduler_lock);
-    Process* proc = GetProcessByPid(pid);
+    ProcessControlBlock* proc = GetProcessByPid(pid);
 
     if (!proc || proc->state == PROC_TERMINATED) {
         SpinUnlockIrqRestore(&scheduler_lock, flags);
@@ -317,6 +322,9 @@ static void __attribute__((visibility("hidden"))) ASTerminate(uint32_t pid, cons
     }
 
     SpinUnlockIrqRestore(&scheduler_lock, flags);
+
+    if (proc->ProcINFOPath && VfsIsDir(proc->ProcINFOPath)) VfsDelete(proc->ProcINFOPath, true);
+    else PrintKernelWarning("ProcINFOPath invalid during termination");
 }
 
 static void __attribute__((visibility("hidden"))) SecurityViolationHandler(uint32_t violator_pid, const char* reason) {
@@ -459,7 +467,7 @@ void InitScheduler(void) {
 }
 
 // Smart process classification and priority assignment
-static __attribute__((visibility("hidden"))) uint32_t ClassifyProcess(Process* proc) {
+static __attribute__((visibility("hidden"))) uint32_t ClassifyProcess(ProcessControlBlock* proc) {
     // Real-time system processes get highest priority
     if (proc->privilege_level == PROC_PRIV_SYSTEM && 
         (proc->token.flags & PROC_FLAG_CRITICAL)) {
@@ -489,7 +497,7 @@ static __attribute__((visibility("hidden"))) uint32_t ClassifyProcess(Process* p
 void __attribute__((visibility("hidden"))) AddToScheduler(uint32_t slot) {
     if (slot == 0) return;
 
-    Process* proc = &processes[slot];
+    ProcessControlBlock* proc = &processes[slot];
     if (proc->state != PROC_READY) return;
 
     uint32_t priority = ClassifyProcess(proc);
@@ -619,7 +627,7 @@ static void SmartAging(void) {
         while (node) {
             SchedulerNode* next = node->next;
             uint32_t slot = node->slot;
-            Process* proc = &processes[slot];
+            ProcessControlBlock* proc = &processes[slot];
             
             uint64_t wait_time = current_tick - proc->last_scheduled_tick;
             
@@ -671,11 +679,15 @@ static void SmartAging(void) {
     }
 }
 
+static inline __attribute__((visibility("hidden"))) __attribute__((always_inline)) int ProcINFOPathValidation(const ProcessControlBlock * proc) {
+    if (FastStrCmp(proc->ProcINFOPath, FormatS("%s/%d", RuntimeProcesses, proc->pid)) != 0) return 0;
+    return 1;
+}
 
 static inline __attribute__((visibility("hidden"))) __attribute__((always_inline)) int AstraPreflightCheck(uint32_t slot) {
     if (slot == 0) return 1; // Idle process is always safe.
 
-    Process* proc = &processes[slot];
+    ProcessControlBlock* proc = &processes[slot];
 
     // This catches unauthorized modifications to the process state or flags.
     if (UNLIKELY(!ValidateToken(&proc->token, proc->pid))) {
@@ -694,6 +706,12 @@ static inline __attribute__((visibility("hidden"))) __attribute__((always_inline
         PrintKernelInt(proc->pid);
         PrintKernelError("\n");
         ASTerminate(proc->pid, "Unauthorized privilege escalation");
+        return 0; // Do not schedule this process.
+    }
+
+    if (ProcINFOPathValidation(proc) != 1) {
+        PrintKernelErrorF("[AS-PREFLIGHT] ProcINFOPath tampering detected for PID: %d (%s)\n", proc->pid, proc->ProcINFOPath);
+        ASTerminate(proc->pid, "ProcINFOPath tampering detected");
         return 0; // Do not schedule this process.
     }
 
@@ -734,7 +752,7 @@ void FastSchedule(struct Registers* regs) {
     }
 
     uint32_t old_slot = MLFQscheduler.current_running;
-    Process* old_proc = &processes[old_slot];
+    ProcessControlBlock* old_proc = &processes[old_slot];
     uint32_t cpu_burst = 0;
 
     // Handle currently running process
@@ -841,7 +859,7 @@ select_next:;
     current_process = next_slot;
 
     if (LIKELY(next_slot != 0)) {
-        Process* new_proc = &processes[next_slot];
+        ProcessControlBlock* new_proc = &processes[next_slot];
         new_proc->state = PROC_RUNNING;
         ready_process_bitmap &= ~(1ULL << next_slot);
 
@@ -881,7 +899,7 @@ select_next:;
 }
 
 void ProcessBlocked(uint32_t slot) {
-    Process* proc = &processes[slot];
+    ProcessControlBlock* proc = &processes[slot];
 
     // Track I/O operations for classification
     proc->io_operations++;
@@ -923,7 +941,7 @@ void ProcessBlocked(uint32_t slot) {
 
 void Yield() {
     irq_flags_t flags = SpinLockIrqSave(&scheduler_lock);
-    Process* current = GetCurrentProcess();
+    ProcessControlBlock* current = GetCurrentProcess();
     if (current) {
         current->state = PROC_READY;
     }
@@ -933,7 +951,7 @@ void Yield() {
 }
 
 void ProcessExitStub() {
-    Process* current = GetCurrentProcess();
+    ProcessControlBlock* current = GetCurrentProcess();
 
     PrintKernel("\nSystem: Process PID ");
     PrintKernelInt(current->pid);
@@ -954,7 +972,7 @@ static __attribute__((visibility("hidden"))) uint32_t CreateSecureProcess(void (
         PANIC("CreateSecureProcess: NULL entry point");
     }
 
-    Process* creator = GetCurrentProcess();
+    ProcessControlBlock* creator = GetCurrentProcess();
 
     if (privilege == PROC_PRIV_SYSTEM && creator->privilege_level != PROC_PRIV_SYSTEM) {
         PrintKernelError("[AS-API] Unauthorized privilege escalation attempt by PID: ");
@@ -1015,7 +1033,7 @@ static __attribute__((visibility("hidden"))) uint32_t CreateSecureProcess(void (
     }
 
     // Clear slot securely
-    FastMemset(&processes[slot], 0, sizeof(Process));
+    FastMemset(&processes[slot], 0, sizeof(ProcessControlBlock));
 
     // Allocate aligned stack
     void* stack = VMemAllocStack(STACK_SIZE);
@@ -1041,6 +1059,8 @@ static __attribute__((visibility("hidden"))) uint32_t CreateSecureProcess(void (
     processes[slot].io_operations = 0;
     processes[slot].preemption_count = 0;
     processes[slot].wait_time = 0;
+    processes[slot].ProcINFOPath = FormatS("%s/%d", RuntimeProcesses, new_pid);
+    if (VfsCreateDir(processes[slot].ProcINFOPath) != 0) PANIC("Failed to create process directory (ProcINFO)");
 
     // Initialize CPU burst history with reasonable defaults
     for (int i = 0; i < CPU_BURST_HISTORY; i++) {
@@ -1100,7 +1120,7 @@ void CleanupTerminatedProcesses(void) {
         uint32_t slot = RemoveFromTerminationQueueAtomic();
         if (slot >= MAX_PROCESSES) break;
 
-        Process* proc = &processes[slot];
+        ProcessControlBlock* proc = &processes[slot];
 
         // Double-check state
         if (proc->state != PROC_ZOMBIE) {
@@ -1129,7 +1149,7 @@ void CleanupTerminatedProcesses(void) {
 
         // Clear process structure - this will set state to PROC_TERMINATED (0)
         uint32_t pid_backup = proc->pid; // Keep for logging
-        FastMemset(proc, 0, sizeof(Process));
+        FastMemset(proc, 0, sizeof(ProcessControlBlock));
 
         // Free the slot
         FreeSlotFast(slot);
@@ -1143,14 +1163,14 @@ void CleanupTerminatedProcesses(void) {
     SpinUnlockIrqRestore(&scheduler_lock, flags);
 }
 
-Process* GetCurrentProcess(void) {
+ProcessControlBlock* GetCurrentProcess(void) {
     if (current_process >= MAX_PROCESSES) {
         PANIC("GetCurrentProcess: Invalid current process index");
     }
     return &processes[current_process];
 }
 
-Process* GetProcessByPid(uint32_t pid) {
+ProcessControlBlock* GetProcessByPid(uint32_t pid) {
     ReadLock(&process_table_rwlock);
     for (int i = 0; i < MAX_PROCESSES; i++) {
         if (processes[i].pid == pid && processes[i].state != PROC_TERMINATED) {
@@ -1422,7 +1442,7 @@ static __attribute__((visibility("hidden"))) void DynamoX(void) {
 
 static void Astra(void) {
     PrintKernelSuccess("Astra: Astra initializing...\n");
-    Process* current = GetCurrentProcess();
+    ProcessControlBlock* current = GetCurrentProcess();
 
     // register
     security_manager_pid = current->pid;
@@ -1473,7 +1493,7 @@ static void Astra(void) {
                 check_bitmap &= ~(1ULL << slot);
                 proc_scanned++;
 
-                const Process* proc = &processes[slot];
+                const ProcessControlBlock* proc = &processes[slot];
 
                 // THE CRITICAL CHECK: Is this process running as system without authorization?
                 if (proc->privilege_level == PROC_PRIV_SYSTEM &&
@@ -1505,7 +1525,7 @@ static void Astra(void) {
                 active_bitmap &= ~(1ULL << slot);
                 scanned++;
 
-                const Process* proc = &processes[slot];
+                const ProcessControlBlock* proc = &processes[slot];
                 if (proc->state == PROC_READY || proc->state == PROC_RUNNING) {
                     if (proc->pid != security_manager_pid && // Don't check AS itself
                             UNLIKELY(!ValidateToken(&proc->token, proc->pid))) {
@@ -1562,7 +1582,7 @@ static void Astra(void) {
             // A serious threat was detected. Terminate all non-critical, non-immune processes.
             PrintKernelError("Astra: DEFCON 2: High threat detected. Initiating selective lockdown.\n");
             for (int i = 1; i < MAX_PROCESSES; i++) {
-                Process* p = &processes[i];
+                ProcessControlBlock* p = &processes[i];
                 if (p->pid != 0 && p->pid != security_manager_pid &&
                     p->state != PROC_TERMINATED &&
                     !(p->token.flags & (PROC_FLAG_CRITICAL | PROC_FLAG_IMMUNE)))
@@ -1586,19 +1606,20 @@ static void Astra(void) {
 }
 
 int ProcessInit(void) {
-    FastMemset(processes, 0, sizeof(Process) * MAX_PROCESSES);
+    FastMemset(processes, 0, sizeof(ProcessControlBlock) * MAX_PROCESSES);
 
     // Initialize scheduler first to get a valid tick counter
     InitScheduler();
-
+    InitSchedulerNodePool();
     // Initialize idle process
-    Process* idle_proc = &processes[0];
+    ProcessControlBlock* idle_proc = &processes[0];
     idle_proc->pid = 0;
     idle_proc->state = PROC_RUNNING;
     idle_proc->privilege_level = PROC_PRIV_SYSTEM;
     idle_proc->scheduler_node = NULL;
     idle_proc->creation_time = GetSystemTicks();
-
+    idle_proc->ProcINFOPath = FormatS("%s/%d", RuntimeServices, idle_proc->pid);
+    if (VfsCreateDir(idle_proc->ProcINFOPath) != 0) PANIC("Failed to create ProcINFO directory");
     // Securely initialize the token for the Idle Process
     SecurityToken* token = &idle_proc->token;
     token->magic = SECURITY_MAGIC;
@@ -1698,7 +1719,7 @@ void ListProcesses(void) {
     
     for (int i = 0; i < MAX_PROCESSES; i++) {
         if (i == 0 || processes[i].pid != 0) {
-            const Process* p = &processes[i];
+            const ProcessControlBlock* p = &processes[i];
             uint32_t cpu_percent = (uint32_t)((p->cpu_time_accumulated * 100) / total_cpu_time);
 
             PrintKernelInt(p->pid);
@@ -1758,7 +1779,7 @@ void DumpSchedulerState(void) {
 // Get detailed process scheduling information
 void GetProcessStats(uint32_t pid, uint32_t* cpu_time, uint32_t* io_ops, uint32_t* preemptions) {
     ReadLock(&process_table_rwlock);
-    Process* proc = GetProcessByPid(pid);
+    ProcessControlBlock* proc = GetProcessByPid(pid);
     if (!proc) {
         if (cpu_time) *cpu_time = 0;
         if (io_ops) *io_ops = 0;

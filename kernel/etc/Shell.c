@@ -615,7 +615,7 @@ static void FstestHandler(const char * args) {
     (void)args;
     PrintKernel("VFS: Running filesystem tests...\n");
 
-    if (VfsCreateDir("/External/VFSystemDrive/test") == 0) {
+    if (VfsCreateDir("/Devices/Storage/VFSystemDrive/test") == 0) {
         PrintKernel("VFS: Created /test directory\n");
     }
 
@@ -852,63 +852,72 @@ void LsCPUHandler(const char* args) {
 
 void MkfsHandler(const char* args) {
     (void)args;
-    PrintKernel("VFS: Creating roofs on /External/VFSystemDrive...\n");
+    PrintKernel("VFS: Creating roofs on /Devices/Storage/VFSystemDrive...\n");
     //======================================================================
     // 1. Core Operating System - (Largely Read-Only at Runtime)
     //======================================================================
-    VfsCreateDir("/External/VFSystemDrive/System");
-    VfsCreateDir("/External/VFSystemDrive/System/Kernel");      // Kernel executable, modules, and symbols
-    VfsCreateDir("/External/VFSystemDrive/System/Boot");        // Bootloader and initial ramdisk images
-    VfsCreateDir("/External/VFSystemDrive/System/Drivers");     // Core hardware drivers bundled with the OS
-    VfsCreateDir("/External/VFSystemDrive/System/Libraries");   // Essential shared libraries (libc, etc.)
-    VfsCreateDir("/External/VFSystemDrive/System/Services");    // Executables for core system daemons
-    VfsCreateDir("/External/VFSystemDrive/System/Resources");   // System-wide resources like fonts, icons, etc.
+    VfsCreateDir("/Devices/Storage/VFSystemDrive/System");
+    VfsCreateDir("/Devices/Storage/VFSystemDrive/System/Kernel");      // Kernel executable, modules, and symbols
+    VfsCreateDir("/Devices/Storage/VFSystemDrive/System/Boot");        // Bootloader and initial ramdisk images
+    VfsCreateDir("/Devices/Storage/VFSystemDrive/System/Drivers");     // Core hardware drivers bundled with the OS
+    VfsCreateDir("/Devices/Storage/VFSystemDrive/System/Libraries");   // Essential shared libraries (libc, etc.)
+    VfsCreateDir("/Devices/Storage/VFSystemDrive/System/Services");    // Executables for core system daemons
+    VfsCreateDir("/Devices/Storage/VFSystemDrive/System/Resources");   // System-wide resources like fonts, icons, etc.
 
 
     //======================================================================
     // 2. Variable Data and User Installations - (Read-Write)
     //======================================================================
-    VfsCreateDir("/External/VFSystemDrive/Data");
-    VfsCreateDir("/External/VFSystemDrive/Data/Apps");          // User-installed applications reside here
-    VfsCreateDir("/External/VFSystemDrive/Data/Config");        // System-wide configuration files
-    VfsCreateDir("/External/VFSystemDrive/Data/Cache");         // System-wide caches
-    VfsCreateDir("/External/VFSystemDrive/Data/Logs");          // System and application logs
-    VfsCreateDir("/External/VFSystemDrive/Data/Spool");         // Spool directory for printing, mail, etc.
-    VfsCreateDir("/External/VFSystemDrive/Data/Temp");          // Temporary files that should persist across reboots
+    VfsCreateDir("/Devices/Storage/VFSystemDrive/Data");
+    VfsCreateDir("/Devices/Storage/VFSystemDrive/Data/Apps");          // User-installed applications reside here
+    VfsCreateDir("/Devices/Storage/VFSystemDrive/Data/Config");        // System-wide configuration files
+    VfsCreateDir("/Devices/Storage/VFSystemDrive/Data/Cache");         // System-wide caches
+    VfsCreateDir("/Devices/Storage/VFSystemDrive/Data/Logs");          // System and application logs
+    VfsCreateDir("/Devices/Storage/VFSystemDrive/Data/Spool");         // Spool directory for printing, mail, etc.
+    VfsCreateDir("/Devices/Storage/VFSystemDrive/Data/Temp");          // Temporary files that should persist across reboots
 
 
     //======================================================================
     // 3. Hardware and Device Tree - (Virtual, managed by kernel)
     //======================================================================
-    VfsCreateDir("/External/VFSystemDrive/Devices");
-    VfsCreateDir("/External/VFSystemDrive/Devices/Cpu");        // Info for each CPU core (cpuid, status, etc.)
-    VfsCreateDir("/External/VFSystemDrive/Devices/Pci");        // Hierarchy of PCI/PCIe devices
-    VfsCreateDir("/External/VFSystemDrive/Devices/Usb");        // Hierarchy of USB devices
-    VfsCreateDir("/External/VFSystemDrive/Devices/Storage");    // Block devices like disks and partitions (hda, sda)
-    VfsCreateDir("/External/VFSystemDrive/Devices/Input");      // Keyboards, mice, tablets
-    VfsCreateDir("/External/VFSystemDrive/Devices/Gpu");        // Graphics processors
-    VfsCreateDir("/External/VFSystemDrive/Devices/Net");        // Network interfaces (eth0, wlan0)
-    VfsCreateDir("/External/VFSystemDrive/Devices/Acpi");       // ACPI tables and power information
+    VfsCreateDir("/Devices/Storage/VFSystemDrive/Devices");
+    VfsCreateDir("/Devices/Storage/VFSystemDrive/Devices/Cpu");        // Info for each CPU core (cpuid, status, etc.)
+    VfsCreateDir("/Devices/Storage/VFSystemDrive/Devices/Pci");        // Hierarchy of PCI/PCIe devices
+    VfsCreateDir("/Devices/Storage/VFSystemDrive/Devices/Usb");        // Hierarchy of USB devices
+    VfsCreateDir("/Devices/Storage/VFSystemDrive/Devices/Storage");    // Block devices like disks and partitions (hda, sda)
+    VfsCreateDir("/Devices/Storage/VFSystemDrive/Devices/Input");      // Keyboards, mice, tablets
+    VfsCreateDir("/Devices/Storage/VFSystemDrive/Devices/Gpu");        // Graphics processors
+    VfsCreateDir("/Devices/Storage/VFSystemDrive/Devices/Net");        // Network interfaces (eth0, wlan0)
+    VfsCreateDir("/Devices/Storage/VFSystemDrive/Devices/Acpi");       // ACPI tables and power information
 
 
     //======================================================================
     // 4. User Homes
     //======================================================================
-    VfsCreateDir("/External/VFSystemDrive/Users");
-    VfsCreateDir("/External/VFSystemDrive/Users/Admin");        // Example administrator home
-    VfsCreateDir("/External/VFSystemDrive/Users/Admin/Desktop");
-    VfsCreateDir("/External/VFSystemDrive/Users/Admin/Documents");
-    VfsCreateDir("/External/VFSystemDrive/Users/Admin/Downloads");
+    VfsCreateDir("/Devices/Storage/VFSystemDrive/Users");
+    VfsCreateDir("/Devices/Storage/VFSystemDrive/Users/Admin");        // Example administrator home
+    VfsCreateDir("/Devices/Storage/VFSystemDrive/Users/Admin/Desktop");
+    VfsCreateDir("/Devices/Storage/VFSystemDrive/Users/Admin/Documents");
+    VfsCreateDir("/Devices/Storage/VFSystemDrive/Users/Admin/Downloads");
 
 
     //======================================================================
     // 5. Live System State - (In-memory tmpfs, managed by kernel)
     //======================================================================
-    VfsCreateDir("/External/VFSystemDrive/Runtime");
-    VfsCreateDir("/External/VFSystemDrive/Runtime/Processes");  // A directory for each running process by PID
-    VfsCreateDir("/External/VFSystemDrive/Runtime/Services");   // Status and control files for running services
-    VfsCreateDir("/External/VFSystemDrive/Runtime/IPC");        // For sockets and other inter-process communication
-    VfsCreateDir("/External/VFSystemDrive/Runtime/Mounts");     // Information on currently mounted filesystems
+    VfsCreateDir("/Devices/Storage/VFSystemDrive/Runtime");
+    VfsCreateDir("/Devices/Storage/VFSystemDrive/Runtime/Processes");  // A directory for each running process by PID
+    VfsCreateDir("/Devices/Storage/VFSystemDrive/Runtime/Services");   // Status and control files for running services
+    VfsCreateDir("/Devices/Storage/VFSystemDrive/Runtime/IPC");        // For sockets and other inter-process communication
+    VfsCreateDir("/Devices/Storage/VFSystemDrive/Runtime/Mounts");     // Information on currently mounted filesystems
+}
+
+void nothing(void) {
+    while (1) Yield();
+}
+
+void TestHandler(const char* args) {
+    (void)args;
+    CreateProcess(nothing);
 }
 
 static const ShellCommand commands[] = {
@@ -950,6 +959,7 @@ static const ShellCommand commands[] = {
     {"heapvallvl", KHeapValidationHandler},
     {"lscpu", LsCPUHandler},
     {"mkfs", MkfsHandler},
+    {"test", TestHandler}, // internal uses
 };
 
 static void ExecuteCommand(const char* cmd) {
