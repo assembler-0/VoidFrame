@@ -6,11 +6,11 @@
 #include "Memory.h"
 #include "Serial.h"
 
+#include "MemOps.h"
 #include "Process.h" // For Registers struct in PanicFromInterrupt
 #include "VMem.h"
-#include "VesaBIOSExtension.h"
+#include "Vesa.h"
 #include "stdint.h"
-#include "MemOps.h"
 // --- Panic Context Structure (Unchanged) ---
 typedef struct {
     uint64_t rip;

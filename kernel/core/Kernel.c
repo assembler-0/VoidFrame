@@ -25,7 +25,7 @@
 #include "VFRFS.h"
 #include "VFS.h"
 #include "VMem.h"
-#include "VesaBIOSExtension.h"
+#include "Vesa.h"
 #include "ethernet/RTL8139.h"
 #include "stdbool.h"
 #include "stdint.h"

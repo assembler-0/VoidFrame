@@ -2,7 +2,7 @@
 
 #include "Console.h"
 #include "MemOps.h"
-#include "VesaBIOSExtension.h"
+#include "Vesa.h"
 #include "stdint.h"
 
 // Full screen console using 800x600

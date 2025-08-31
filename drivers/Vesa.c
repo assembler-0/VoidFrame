@@ -1,4 +1,4 @@
-#include "VesaBIOSExtension.h"
+#include "Vesa.h"
 
 #include "Cpu.h"
 #include "Font.h"

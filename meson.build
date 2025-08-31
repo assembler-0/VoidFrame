@@ -108,7 +108,7 @@ c_sources = [
     src_root + '/drivers/Serial.c',
     src_root + '/drivers/PS2.c',
     src_root + '/drivers/Ide.c',
-    src_root + '/drivers/VesaBIOSExtension.c',
+    src_root + '/drivers/Vesa.c',
     src_root + '/drivers/PCI/PCI.c',
     src_root + '/drivers/RTC/Rtc.c',
     src_root + '/drivers/ethernet/RTL8139.c',
