@@ -10,7 +10,7 @@
 // Get CPU timestamp counter
 static inline uint64_t get_cycles(void) {
     uint32_t low, high;
-    asm volatile("rdtsc" : "=a"(low), "=d"(high));
+    __asm__ volatile("rdtsc" : "=a"(low), "=d"(high));
     return ((uint64_t)high << 32) | low;
 }
 

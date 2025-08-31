@@ -129,6 +129,17 @@ obj_sources = [
     src_root + '/kernel/etc/objects/panic.o',
 ]
 
+vf_config_flags =  [
+    '-DVF_CONFIG_ENABLE_XHCI',
+    '-DVF_CONFIG_VM_HOST',
+#    '-DVF_CONFIG_PANIC_OVERRIDE',
+]
+
+cfg_flags = []
+foreach flag : vf_config_flags
+    cfg_flags += flag
+endforeach
+
 # Build include flags
 inc_flags = []
 foreach inc : inc_dirs
@@ -154,7 +165,7 @@ foreach c_file : c_sources
     c_obj = custom_target('c_' + obj_name,
                           input : c_file,
                           output : obj_name,
-                          command : [clang.full_path(), c_flags, inc_flags, '-c', '-o', '@OUTPUT@', '@INPUT@']
+                          command : [clang.full_path(), c_flags, inc_flags, cfg_flags, '-c', '-o', '@OUTPUT@', '@INPUT@']
     )
     c_objects += c_obj
 endforeach

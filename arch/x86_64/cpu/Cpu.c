@@ -16,16 +16,19 @@ void CpuInit(void) {
     // The OS must set CR4.OSFXSR (bit 9) and CR4.OSXMMEXCPT (bit 10)
     // to indicate that it supports FXSAVE/FXRSTOR and can handle SSE exceptions.
     uint64_t cr4;
-    asm volatile("mov %%cr4, %0" : "=r"(cr4));
+    __asm__ volatile("mov %%cr4, %0" : "=r"(cr4));
     cr4 |= (1 << 9);  // Set OSFXSR
     cr4 |= (1 << 10); // Set OSXMMEXCPT
-    asm volatile("mov %0, %%cr4" :: "r"(cr4));
+#ifndef VF_CONFIG_VM_HOST // for some reason, #UD occurs even if with -cpu max
+    cr4 |= (1 << 18); // Set OSXSAVE
+#endif
+    __asm__ volatile("mov %0, %%cr4" :: "r"(cr4));
     PrintKernelSuccess("VMem: CPU: CR4 configured for SSE/SSE2.\n");
 
     // --- Step 2: Detect basic features and OSXSAVE support with CPUID ---
     // CPUID Leaf 1 provides basic feature flags.
     eax = 1;
-    asm volatile("cpuid" : "+a"(eax), "=b"(ebx), "=c"(ecx), "=d"(edx));
+    __asm__ volatile("cpuid" : "+a"(eax), "=b"(ebx), "=c"(ecx), "=d"(edx));
 
     cpu_features.sse = (edx >> 25) & 1;
     cpu_features.sse2 = (edx >> 26) & 1;
@@ -46,7 +49,7 @@ void CpuInit(void) {
     // The OS must set bits 1 (SSE state) and 2 (AVX state) in XCR0.
     // This is done using the XSETBV instruction.
     uint64_t xcr0 = (1 << 1) | (1 << 2); // Enable SSE and AVX state saving
-    asm volatile("xsetbv" :: "c"(0), "a"((uint32_t)xcr0), "d"((uint32_t)(xcr0 >> 32)));
+    __asm__ volatile("xsetbv" :: "c"(0), "a"((uint32_t)xcr0), "d"((uint32_t)(xcr0 >> 32)));
     PrintKernelSuccess("VMem: CPU: XCR0 configured for AVX.\n");
 
     // --- Step 4: Now that AVX is enabled, detect AVX and AVX2 features ---
@@ -56,7 +59,7 @@ void CpuInit(void) {
     // CPUID Leaf 7, Sub-leaf 0, EBX bit 5 for AVX2
     eax = 7;
     uint32_t subleaf = 0; // Must set ECX to 0 for the main sub-leaf
-    asm volatile("cpuid" : "+a"(eax), "=b"(ebx), "+c"(subleaf), "=d"(edx));
+    __asm__ volatile("cpuid" : "+a"(eax), "=b"(ebx), "+c"(subleaf), "=d"(edx));
     cpu_features.avx2 = (ebx >> 5) & 1;
 
     // --- Final Report ---
