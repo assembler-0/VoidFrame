@@ -56,6 +56,13 @@ const char* FastStrChr(const char* str, int c) {
     return NULL;
 }
 
+void strncpy(char* dest, const char* src, size_t max_len) {
+    if (!dest || !src) return;
+    size_t i = 0;
+    for (; i + 1 < max_len && src[i]; i++) dest[i] = src[i];
+    dest[i] = '\0';
+}
+
 void strcpy(char* dest, const char* src) {
     if (!dest || !src) return;
     // Optimize for 64-bit aligned copies when possible

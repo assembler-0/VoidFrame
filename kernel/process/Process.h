@@ -166,7 +166,8 @@ typedef struct {
     ProcessContext context;
     SchedulerNode* scheduler_node;
     uint64_t creation_time;
-} Process;
+    char* ProcINFOPath;
+} ProcessControlBlock;
 
 typedef struct {
     SchedulerNode* head;
@@ -224,8 +225,8 @@ typedef struct {
 // Core process functions
 int ProcessInit(void);
 uint32_t CreateProcess(void (*entry_point)(void));
-Process* GetCurrentProcess(void);
-Process* GetProcessByPid(uint32_t pid);
+ProcessControlBlock* GetCurrentProcess(void);
+ProcessControlBlock* GetProcessByPid(uint32_t pid);
 void CleanupTerminatedProcesses(void);
 void Yield(void);
 

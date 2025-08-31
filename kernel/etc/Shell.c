@@ -1,7 +1,8 @@
 #include "Shell.h"
-#include "ELFloader.h"
 #include "Console.h"
+#include "ELFloader.h"
 #include "Editor.h"
+#include "FsUtils.h"
 #include "ISA.h"
 #include "KernelHeap.h"
 #include "LPT/LPT.h"
@@ -22,7 +23,6 @@
 #include "VMem.h"
 #include "stdlib.h"
 #include "xHCI/xHCI.h"
-#include "FsUtils.h"
 
 #define DATE __DATE__
 #define TIME __TIME__
@@ -176,11 +176,12 @@ static void HelpHandler(const char * args) {
     PrintKernel("  alloc <size>   - Allocate <size> bytes\n");
     PrintKernel("  panic <message>- Panic with <message>\n");
     PrintKernel("  kill <pid>     - Terminate process with pid <pid>\n");
-    PrintKernel("  rm <file>      - Remove file or empty directory\n");
+    PrintKernel("  rm <file> [-r] - Remove file(s) or directory\n");
     PrintKernel("  echo <text> <file> - Write text to file\n");
     PrintKernel("  fstest         - Run filesystem tests\n");
     PrintKernel("  size <file>    - Get size of <file> in bytes\n");
     PrintKernel("  heapvallvl <0/1/2>- Set kernel heap validation level\n");
+    PrintKernel("  lscpu          - List cpu features (CPUID)\n");
 }
 
 static void PSHandler(const char * args) {
@@ -556,14 +557,18 @@ static void TouchHandler(const char * args) {
 
 static void RmHandler(const char * args) {
     char* name = GetArg(args, 1);
+    char* recursive = GetArg(args, 2);
     if (name) {
         char full_path[256];
         ResolvePath(name, full_path, 256);
-        if (VfsDelete(full_path) == 0) {
-            PrintKernel("Removed\n");
-        } else {
-            PrintKernel("Failed to remove (file not found or directory not empty)\n");
+        if (recursive && FastStrCmp(recursive, "-r") == 0) {
+            if (VfsDelete(full_path, true) == 0) PrintKernel("Removed\n");
+            else PrintKernel("Failed to remove (file not found or directory not empty)\n");
+            KernelFree(name);
+            return;
         }
+        if (VfsDelete(full_path, false) == 0) PrintKernel("Removed\n");
+        else PrintKernel("Failed to remove (file not found or directory not empty)\n");
         KernelFree(name);
     } else {
         PrintKernel("Usage: rm <filename>\n");
@@ -610,7 +615,7 @@ static void FstestHandler(const char * args) {
     (void)args;
     PrintKernel("VFS: Running filesystem tests...\n");
 
-    if (VfsCreateDir("/test") == 0) {
+    if (VfsCreateDir("/Devices/Storage/VFSystemDrive/test") == 0) {
         PrintKernel("VFS: Created /test directory\n");
     }
 
@@ -678,6 +683,243 @@ static void KHeapValidationHandler(const char * args) {
     }
 }
 
+// Function to print the CPU vendor string
+void PrintVendorString() {
+    uint32_t eax, ebx, ecx, edx;
+    char vendor[13];
+
+    cpuid(0, &eax, &ebx, &ecx, &edx);
+    *(uint32_t*)(vendor) = ebx;
+    *(uint32_t*)(vendor + 4) = edx;
+    *(uint32_t*)(vendor + 8) = ecx;
+    vendor[12] = '\0';
+    PrintKernelF("Vendor ID:                       %s\n", vendor);
+}
+
+// Function to print the CPU brand string
+void PrintBrandString() {
+    uint32_t eax, ebx, ecx, edx;
+    char brand[49];
+
+    // Check for extended function support
+    cpuid(0x80000000, &eax, &ebx, &ecx, &edx);
+    if (eax >= 0x80000004) {
+        cpuid(0x80000002, (uint32_t*)(brand), (uint32_t*)(brand + 4), (uint32_t*)(brand + 8), (uint32_t*)(brand + 12));
+        cpuid(0x80000003, (uint32_t*)(brand + 16), (uint32_t*)(brand + 20), (uint32_t*)(brand + 24), (uint32_t*)(brand + 28));
+        cpuid(0x80000004, (uint32_t*)(brand + 32), (uint32_t*)(brand + 36), (uint32_t*)(brand + 40), (uint32_t*)(brand + 44));
+        brand[48] = '\0';
+        PrintKernelF("Model name:                      %s\n", brand);
+    }
+}
+
+// Function to print CPU family, model, and stepping
+void PrintCpuInfo() {
+    uint32_t eax, ebx, ecx, edx;
+    cpuid(1, &eax, &ebx, &ecx, &edx);
+    uint32_t family = (eax >> 8) & 0xF;
+    uint32_t model = (eax >> 4) & 0xF;
+    uint32_t stepping = eax & 0xF;
+    if (family == 0xF) {
+        uint32_t ext_family = (eax >> 20) & 0xFF;
+        family += ext_family;
+    }
+    if (family == 0x6 || family == 0xF) {
+        uint32_t ext_model = (eax >> 16) & 0xF;
+        model += (ext_model << 4);
+    }
+    PrintKernelF("CPU family:                      %u\n", family);
+    PrintKernelF("Model:                           %u\n", model);
+    PrintKernelF("Stepping:                        %u\n", stepping);
+}
+
+// Function to print CPU features
+void PrintFeatures() {
+    uint32_t eax, ebx, ecx, edx;
+    cpuid(1, &eax, &ebx, &ecx, &edx);
+
+    PrintKernelF("Flags:                           ");
+    if (edx & (1 << 0)) PrintKernelF("fpu ");
+    if (edx & (1 << 4)) PrintKernelF("tsc ");
+    if (edx & (1 << 8)) PrintKernelF("cx8 ");
+    if (edx & (1 << 15)) PrintKernelF("cmov ");
+    if (edx & (1 << 19)) PrintKernelF("clflush ");
+    if (edx & (1 << 23)) PrintKernelF("mmx ");
+    if (edx & (1 << 24)) PrintKernelF("fxsr ");
+    if (edx & (1 << 25)) PrintKernelF("sse ");
+    if (edx & (1 << 26)) PrintKernelF("sse2 ");
+    if (edx & (1 << 28)) PrintKernelF("htt ");
+
+    if (ecx & (1 << 0)) PrintKernelF("sse3 ");
+    if (ecx & (1 << 9)) PrintKernelF("ssse3 ");
+    if (ecx & (1 << 19)) PrintKernelF("sse4_1 ");
+    if (ecx & (1 << 20)) PrintKernelF("sse4_2 ");
+    if (ecx & (1 << 23)) PrintKernelF("popcnt ");
+    if (ecx & (1 << 25)) PrintKernelF("aes ");
+    if (ecx & (1 << 28)) PrintKernelF("avx ");
+
+    // Check for extended features
+    cpuid(0x80000000, &eax, &ebx, &ecx, &edx);
+    if (eax >= 0x80000001) {
+        cpuid(0x80000001, &eax, &ebx, &ecx, &edx);
+        if (edx & (1 << 29)) PrintKernelF("lm "); // Long Mode (x86-64)
+    }
+
+    PrintKernelF("\n");
+}
+
+// Function to print cache information
+void PrintCacheInfo() {
+    uint32_t eax, ebx, ecx, edx;
+    for (int i = 0; ; ++i) {
+        cpuid(4, &eax, &ebx, &ecx, &edx);
+        eax = i; // Subleaf
+        uint32_t cache_type = eax & 0x1F;
+
+        if (cache_type == 0) {
+            break;
+        }
+
+        uint32_t cache_level = (eax >> 5) & 0x7;
+        uint32_t ways = ((ebx >> 22) & 0x3FF) + 1;
+        uint32_t partitions = ((ebx >> 12) & 0x3FF) + 1;
+        uint32_t line_size = (ebx & 0xFFF) + 1;
+        uint32_t sets = ecx + 1;
+        uint32_t cache_size = ways * partitions * line_size * sets;
+
+        const char* type_str = "Unknown";
+        if(cache_type == 1) type_str = "Data";
+        if(cache_type == 2) type_str = "Instruction";
+        if(cache_type == 3) type_str = "Unified";
+
+        PrintKernelF("L%u cache (%s):                 %u KB\n", cache_level, type_str, cache_size / 1024);
+    }
+}
+
+// Function to print CPU topology
+void PrintTopology() {
+    uint32_t eax, ebx, ecx, edx;
+    uint32_t threads_per_core = 1;
+    uint32_t cores_per_socket = 1;
+
+    // Check for Hyper-Threading
+    cpuid(1, &eax, &ebx, &ecx, &edx);
+    if (edx & (1 << 28)) {
+        threads_per_core = (ebx >> 16) & 0xFF;
+    }
+
+    // Modern topology enumeration (Leaf 0xB)
+    cpuid(0xB, &eax, &ebx, &ecx, &edx);
+    if (ebx != 0) { // Check if leaf 0xB is supported
+        // Iterate through levels to find core and thread information
+        // This is a simplified approach. A full implementation would parse the x2APIC ID shifts.
+        // For simplicity, we'll rely on older methods for this example.
+    } else {
+        // Fallback for older CPUs
+        cpuid(4, &eax, &ebx, &ecx, &edx);
+        if (eax != 0) { // Check if leaf 4 is supported
+            cores_per_socket = ((eax >> 26) & 0x3F) + 1;
+        }
+    }
+
+
+    PrintKernelF("Thread(s) per core:              %u\n", threads_per_core);
+    PrintKernelF("Core(s) per socket:              %u\n", cores_per_socket);
+    PrintKernelF("Socket(s):                       1\n"); // Assuming a single socket for simplicity
+}
+
+void PrintCpuFrequency() {
+    uint32_t eax, ebx, ecx, edx;
+    cpuid(0x16, &eax, &ebx, &ecx, &edx);
+    if (eax != 0) {
+        PrintKernelF("CPU max MHz:                     %u\n", ebx);
+        PrintKernelF("CPU base MHz:                    %u\n", eax);
+        PrintKernelF("Bus (reference) MHz:             %u\n", ecx);
+    }
+}
+
+    
+// The main shell command function
+void LsCPUHandler(const char* args) {
+    (void)args;
+    PrintVendorString();
+    PrintBrandString();
+    PrintCpuInfo();
+    PrintTopology();
+    PrintCpuFrequency();
+    PrintCacheInfo();
+    PrintFeatures();
+}
+
+void MkfsHandler(const char* args) {
+    (void)args;
+    PrintKernel("VFS: Creating roofs on /Devices/Storage/VFSystemDrive...\n");
+    //======================================================================
+    // 1. Core Operating System - (Largely Read-Only at Runtime)
+    //======================================================================
+    VfsCreateDir("/Devices/Storage/VFSystemDrive/System");
+    VfsCreateDir("/Devices/Storage/VFSystemDrive/System/Kernel");      // Kernel executable, modules, and symbols
+    VfsCreateDir("/Devices/Storage/VFSystemDrive/System/Boot");        // Bootloader and initial ramdisk images
+    VfsCreateDir("/Devices/Storage/VFSystemDrive/System/Drivers");     // Core hardware drivers bundled with the OS
+    VfsCreateDir("/Devices/Storage/VFSystemDrive/System/Libraries");   // Essential shared libraries (libc, etc.)
+    VfsCreateDir("/Devices/Storage/VFSystemDrive/System/Services");    // Executables for core system daemons
+    VfsCreateDir("/Devices/Storage/VFSystemDrive/System/Resources");   // System-wide resources like fonts, icons, etc.
+
+
+    //======================================================================
+    // 2. Variable Data and User Installations - (Read-Write)
+    //======================================================================
+    VfsCreateDir("/Devices/Storage/VFSystemDrive/Data");
+    VfsCreateDir("/Devices/Storage/VFSystemDrive/Data/Apps");          // User-installed applications reside here
+    VfsCreateDir("/Devices/Storage/VFSystemDrive/Data/Config");        // System-wide configuration files
+    VfsCreateDir("/Devices/Storage/VFSystemDrive/Data/Cache");         // System-wide caches
+    VfsCreateDir("/Devices/Storage/VFSystemDrive/Data/Logs");          // System and application logs
+    VfsCreateDir("/Devices/Storage/VFSystemDrive/Data/Spool");         // Spool directory for printing, mail, etc.
+    VfsCreateDir("/Devices/Storage/VFSystemDrive/Data/Temp");          // Temporary files that should persist across reboots
+
+
+    //======================================================================
+    // 3. Hardware and Device Tree - (Virtual, managed by kernel)
+    //======================================================================
+    VfsCreateDir("/Devices/Storage/VFSystemDrive/Devices");
+    VfsCreateDir("/Devices/Storage/VFSystemDrive/Devices/Cpu");        // Info for each CPU core (cpuid, status, etc.)
+    VfsCreateDir("/Devices/Storage/VFSystemDrive/Devices/Pci");        // Hierarchy of PCI/PCIe devices
+    VfsCreateDir("/Devices/Storage/VFSystemDrive/Devices/Usb");        // Hierarchy of USB devices
+    VfsCreateDir("/Devices/Storage/VFSystemDrive/Devices/Storage");    // Block devices like disks and partitions (hda, sda)
+    VfsCreateDir("/Devices/Storage/VFSystemDrive/Devices/Input");      // Keyboards, mice, tablets
+    VfsCreateDir("/Devices/Storage/VFSystemDrive/Devices/Gpu");        // Graphics processors
+    VfsCreateDir("/Devices/Storage/VFSystemDrive/Devices/Net");        // Network interfaces (eth0, wlan0)
+    VfsCreateDir("/Devices/Storage/VFSystemDrive/Devices/Acpi");       // ACPI tables and power information
+
+
+    //======================================================================
+    // 4. User Homes
+    //======================================================================
+    VfsCreateDir("/Devices/Storage/VFSystemDrive/Users");
+    VfsCreateDir("/Devices/Storage/VFSystemDrive/Users/Admin");        // Example administrator home
+    VfsCreateDir("/Devices/Storage/VFSystemDrive/Users/Admin/Desktop");
+    VfsCreateDir("/Devices/Storage/VFSystemDrive/Users/Admin/Documents");
+    VfsCreateDir("/Devices/Storage/VFSystemDrive/Users/Admin/Downloads");
+
+
+    //======================================================================
+    // 5. Live System State - (In-memory tmpfs, managed by kernel)
+    //======================================================================
+    VfsCreateDir("/Devices/Storage/VFSystemDrive/Runtime");
+    VfsCreateDir("/Devices/Storage/VFSystemDrive/Runtime/Processes");  // A directory for each running process by PID
+    VfsCreateDir("/Devices/Storage/VFSystemDrive/Runtime/Services");   // Status and control files for running services
+    VfsCreateDir("/Devices/Storage/VFSystemDrive/Runtime/IPC");        // For sockets and other inter-process communication
+    VfsCreateDir("/Devices/Storage/VFSystemDrive/Runtime/Mounts");     // Information on currently mounted filesystems
+}
+
+void nothing(void) {
+    while (1) Yield();
+}
+
+void TestHandler(const char* args) {
+    (void)args;
+    CreateProcess(nothing);
+}
+
 static const ShellCommand commands[] = {
     {"help", HelpHandler},
     {"ps", PSHandler},
@@ -715,6 +957,9 @@ static const ShellCommand commands[] = {
     {"fstest", FstestHandler},
     {"size", SizeHandler},
     {"heapvallvl", KHeapValidationHandler},
+    {"lscpu", LsCPUHandler},
+    {"mkfs", MkfsHandler},
+    {"test", TestHandler}, // internal uses
 };
 
 static void ExecuteCommand(const char* cmd) {

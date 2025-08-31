@@ -25,7 +25,7 @@
 #include "VFRFS.h"
 #include "VFS.h"
 #include "VMem.h"
-#include "VesaBIOSExtension.h"
+#include "Vesa.h"
 #include "ethernet/RTL8139.h"
 #include "stdbool.h"
 #include "stdint.h"
@@ -501,6 +501,66 @@ static void IRQUnmaskCoreSystems() {
     PrintKernelSuccess("System: IRQs unmasked\n");
 }
 
+
+void INITRD1() {
+    PrintKernel("INITRD: Creating rootfs on /...\n");
+    //======================================================================
+    // 1. Core Operating System - (Largely Read-Only at Runtime)
+    //======================================================================
+    FsMkdir(SystemDir);
+    FsMkdir(SystemKernel);      // Kernel executable, modules, and symbols
+    FsMkdir(SystemBoot);        // Bootloader and initial ramdisk images
+    FsMkdir(SystemDrivers);     // Core hardware drivers bundled with the OS
+    FsMkdir(SystemLibraries);   // Essential shared libraries (libc, etc.)
+    FsMkdir(SystemServices);    // Executables for core system daemons
+    FsMkdir(SystemResources);   // System-wide resources like fonts, icons, etc.
+
+    //======================================================================
+    // 2. Variable Data and User Installations - (Read-Write)
+    //======================================================================
+    FsMkdir(DataDir);
+    FsMkdir(DataApps);          // User-installed applications reside here
+    FsMkdir(DataConfig);        // System-wide configuration files
+    FsMkdir(DataCache);         // System-wide caches
+    FsMkdir(DataLogs);          // System and application logs
+    FsMkdir(DataSpool);         // Spool directory for printing, mail, etc.
+    FsMkdir(DataTemp);          // Temporary files that should persist across reboots
+
+
+    //======================================================================
+    // 3. Hardware and Device Tree - (Virtual, managed by kernel)
+    //======================================================================
+    FsMkdir(DevicesDir);
+    FsMkdir(DevicesCpu);        // Info for each CPU core (cpuid, status, etc.)
+    FsMkdir(DevicesPci);        // Hierarchy of PCI/PCIe devices
+    FsMkdir(DevicesUsb);        // Hierarchy of USB devices
+    FsMkdir(DevicesStorage);    // Block devices like disks and partitions (hda, sda)
+    FsMkdir(DevicesInput);      // Keyboards, mice, tablets
+    FsMkdir(DevicesGpu);        // Graphics processors
+    FsMkdir(DevicesNet);        // Network interfaces (eth0, wlan0)
+    FsMkdir(DevicesAcpi);       // ACPI tables and power information
+
+
+    //======================================================================
+    // 4. User Homes
+    //======================================================================
+    FsMkdir(UserDir);
+    FsMkdir("/Users/Admin");        // Example administrator home
+    FsMkdir("/Users/Admin/Desktop");
+    FsMkdir("/Users/Admin/Documents");
+    FsMkdir("/Users/Admin/Downloads");
+
+
+    //======================================================================
+    // 5. Live System State - (In-memory tmpfs, managed by kernel)
+    //======================================================================
+    FsMkdir(RuntimeDir);
+    FsMkdir(RuntimeProcesses);  // A directory for each running process by PID
+    FsMkdir(RuntimeServices);   // Status and control files for running services
+    FsMkdir(RuntimeIPC);        // For sockets and other inter-process communication
+    FsMkdir(RuntimeMounts);     // Information on currently mounted filesystems
+}
+
 // Pre-eXecutionSystem 2
 static InitResultT PXS2(void) {
     // CPU feature validation
@@ -568,11 +628,6 @@ static InitResultT PXS2(void) {
     ShellInit();
     PrintKernelSuccess("System: Shell initialized\n");
 
-    // Initialize Process Management
-    PrintKernel("Info: Initializing process management...\n");
-    ProcessInit();
-    PrintKernelSuccess("System: Process management initialized\n");
-
     // Initialize IDE driver
     PrintKernel("Info: Initializing IDE driver...\n");
     const int ide_result = IdeInit();
@@ -584,17 +639,21 @@ static InitResultT PXS2(void) {
         if (Fat12Init(0) == 0) {
             PrintKernelSuccess("System: FAT12 Driver initialized\n");
         } else {
-            PrintKernelWarning("[WARN] FAT12 initialization failed\n");
+            PrintKernelWarning("FAT12 initialization failed\n");
         }
     } else {
-        PrintKernelWarning("[WARN] IDE initialization failed - no drives detected\n");
-        PrintKernelWarning("[WARN] Skipping FAT12 initialization\n");
+        PrintKernelWarning(" IDE initialization failed - no drives detected\n");
+        PrintKernelWarning(" Skipping FAT12 initialization\n");
     }
 
     // Initialize ram filesystem
     PrintKernel("Info: Initializing VFRFS...\n");
     FsInit();
     PrintKernelSuccess("System: VFRFS (VoidFrame RamFS) initialized\n");
+
+    // Initrd
+    INITRD1();
+    PrintKernelSuccess("System: INITRD (Stage 1) initialized\n");
 
     // Initialize VFS
     PrintKernel("Info: Initializing VFS...\n");
@@ -605,6 +664,11 @@ static InitResultT PXS2(void) {
     PrintKernel("Info: Checking huge page support...\n");
     if (!CheckHugePageSupport()) PrintKernel("System: Huge pages not available\n");
     else PrintKernelSuccess("System: Huge pages available\n");
+
+    // Initialize Process Management
+    PrintKernel("Info: Initializing process management...\n");
+    ProcessInit();
+    PrintKernelSuccess("System: Process management initialized\n");
 
     PrintKernel("Info: Initializing ISA bus...\n");
     IsaInitBus();
@@ -680,7 +744,7 @@ void KernelMainHigherHalf(void) {
 
     sti();
 
-    while (1) { // redundant but added for worst case scenario, should not reach here
+    while (1) { // redundant but added for a worst case scenario, should not reach here (I have no idea why it stops going after sti)
         Yield();
     }
 

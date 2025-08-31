@@ -17,4 +17,12 @@ typedef struct {
 
 char* Format(const char* format, va_list args) ;
 
+static inline char * FormatS(const char* format, ...) {
+    va_list args;
+    va_start(args, format);
+    char* formatted = Format(format, args);
+    va_end(args);
+    return formatted;
+}
+
 #endif // VOIDFRAME_FORMAT_H

@@ -4,7 +4,7 @@
 #include "Serial.h"
 #include "Spinlock.h"
 #include "VBEConsole.h"
-#include "VesaBIOSExtension.h"
+#include "Vesa.h"
 #include "stdarg.h"
 #include "stdbool.h"
 #include "stdint.h"

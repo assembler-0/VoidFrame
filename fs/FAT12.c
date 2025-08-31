@@ -797,6 +797,147 @@ int Fat12WriteFile(const char* path, const void* buffer, uint32_t size) {
     return size;
 }
 
+int Fat12DeleteRecursive(const char* path) {
+    if (!path) return -1;
+
+    // Check if the path exists
+    uint16_t parent_cluster;
+    uint32_t entry_sector;
+    int entry_offset;
+
+    Fat12DirEntry* entry = Fat12FindEntry(path, &parent_cluster, &entry_sector, &entry_offset);
+    if (!entry) {
+        PrintKernel("Error: Path not found: ");
+        PrintKernel(path);
+        PrintKernel("\n");
+        return -1;
+    }
+
+    // If it's not a directory, just delete the file
+    if (!(entry->attr & FAT12_ATTR_DIRECTORY)) {
+        PrintKernel("Deleting file: ");
+        PrintKernel(path);
+        PrintKernel("\n");
+        return Fat12DeleteFile(path);
+    }
+
+    // It's a directory - we need to recursively delete its contents
+    PrintKernel("Recursively deleting directory: ");
+    PrintKernel(path);
+    PrintKernel("\n");
+
+    uint16_t dir_cluster = entry->cluster_low;
+
+    // Handle root directory (cannot be deleted)
+    if (dir_cluster == 0 || FastStrCmp(path, "/") == 0) {
+        PrintKernel("Error: Cannot delete root directory\n");
+        return -1;
+    }
+
+    // Allocate buffer for reading directory clusters
+    uint32_t cluster_bytes = volume.boot.sectors_per_cluster * 512;
+    uint8_t* cluster_buffer = KernelMemoryAlloc(cluster_bytes);
+    if (!cluster_buffer) {
+        PrintKernel("Error: Failed to allocate memory for directory traversal\n");
+        return -1;
+    }
+
+    uint16_t visited_clusters[256];
+    int visited_count = 0;
+
+    // Walk through all clusters of this directory
+    uint16_t current_cluster = dir_cluster;
+    while (current_cluster >= 2 && current_cluster < 0xFF8) {
+        // Check for cycle
+        for (int v = 0; v < visited_count; v++) {
+            if (visited_clusters[v] == current_cluster) {
+                PrintKernel("Error: Cycle detected in cluster chain\n");
+                KernelFree(cluster_buffer);
+                return -1;
+            }
+        }
+        if (visited_count < 256) {
+            visited_clusters[visited_count++] = current_cluster;
+        }
+        if (Fat12GetCluster(current_cluster, cluster_buffer) != 0) {
+            KernelFree(cluster_buffer);
+            PrintKernel("Error: Failed to read directory cluster\n");
+            return -1;
+        }
+        Fat12DirEntry* entries = (Fat12DirEntry*)cluster_buffer;
+        int entries_per_cluster = cluster_bytes / 32;
+        for (int i = 0; i < entries_per_cluster; i++) {
+            Fat12DirEntry* current_entry = &entries[i];
+
+            // End of directory entries
+            if ((uint8_t)current_entry->name[0] == 0x00) {
+                break;
+            }
+
+            // Skip deleted entries
+            if ((uint8_t)current_entry->name[0] == 0xE5) {
+                continue;
+            }
+
+            // Skip volume ID entries
+            if (current_entry->attr & FAT12_ATTR_VOLUME_ID) {
+                continue;
+            }
+
+            // Skip . and .. entries
+            if (FastMemcmp(current_entry->name, ".          ", 11) == 0 ||
+                FastMemcmp(current_entry->name, "..         ", 11) == 0) {
+                continue;
+            }
+
+            // Build the full path for this entry
+            char child_path[256];
+            FastMemset(child_path, 0, sizeof(child_path));
+
+            // Copy parent path
+            int path_len = FastStrlen(path, 255);
+            FastMemcpy(child_path, path, path_len);
+
+            // Add slash if needed
+            if (path_len > 1 && child_path[path_len - 1] != '/') {
+                child_path[path_len] = '/';
+                path_len++;
+            }
+
+            // Add filename
+            int name_pos = 0;
+            for (int j = 0; j < 8 && current_entry->name[j] != ' '; j++) {
+                child_path[path_len + name_pos] = current_entry->name[j];
+                name_pos++;
+            }
+
+            // Add extension if present
+            if (current_entry->ext[0] != ' ') {
+                child_path[path_len + name_pos] = '.';
+                name_pos++;
+                for (int j = 0; j < 3 && current_entry->ext[j] != ' '; j++) {
+                    child_path[path_len + name_pos] = current_entry->ext[j];
+                    name_pos++;
+                }
+            }
+
+            // Recursively delete this entry
+            if (Fat12DeleteRecursive(child_path) != 0) {
+                KernelFree(cluster_buffer);
+                PrintKernel("Error: Failed to delete child: ");
+                PrintKernel(child_path);
+                PrintKernel("\n");
+                return -1;
+            }
+        }
+        current_cluster = Fat12GetNextCluster(current_cluster);
+    }
+
+    KernelFree(cluster_buffer);
+    PrintKernel(".");
+    return Fat12DeleteFile(path);
+}
+
 // Enhanced file/directory deletion with path support
 int Fat12DeleteFile(const char* path) {
     if (!path) return -1;

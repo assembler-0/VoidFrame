@@ -45,12 +45,12 @@ static inline void restore_irq_flags(irq_flags_t flags) {
     __asm__ volatile("pushq %0\n\tpopfq" : : "r"(flags));
 }
 
-static inline void cli(void) {
-    __asm__ volatile("cli");
+static inline void __attribute__((always_inline)) cli(void) {
+    __asm__ volatile("cli" ::: "memory");
 }
 
-static inline void sti(void) {
-    __asm__ volatile("sti");
+static inline void __attribute__((always_inline)) sti(void) {
+    __asm__ volatile("sti" ::: "memory");
 }
 
 // CPUID detection

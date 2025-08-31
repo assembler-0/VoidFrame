@@ -42,7 +42,7 @@ VoidFrame/
 │   ├── PS2.c                         
 │   ├── Serial.c       
 │   ├── Serial.c       
-│   ├── VesaBIOSExtension.c       
+│   ├── Vesa.c       
 │   └── VesaBIOSExtension.h    
 ├── fs/       
 │   ├── FAT12.h                # Filesystems  

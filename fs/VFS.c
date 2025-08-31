@@ -1,10 +1,12 @@
 #include "VFS.h"
 #include "Console.h"
 #include "FAT12.h"
+#include "Format.h"
 #include "MemOps.h"
 #include "Serial.h"
 #include "StringOps.h"
 #include "VFRFS.h"
+#include "stdbool.h"
 
 #define VFS_MAX_PATH_LEN 256
 
@@ -58,10 +60,10 @@ int VfsInit(void) {
     extern int fat12_initialized;
     if (fat12_initialized) {
         PrintKernel("[VFS] Attempting FAT12 mount...\n");
-        int disk_result = VfsMount("/Persistent", VFS_FAT12, 0);
+        int disk_result = VfsMount(FormatS("%s/VFSystemDrive", DevicesStorage), VFS_FAT12, 0);
 
         if (disk_result == 0) {
-            SerialWrite("[VFS] FAT12 mounted at /Persistent\n");
+            SerialWriteF("[VFS] FAT12 mounted at %s/VFSystemDrive\n", DevicesStorage);
         } else {
             SerialWrite("[VFS] FAT12 mount failed\n");
         }
@@ -247,7 +249,7 @@ int VfsCreateDir(const char* path) {
     return -1;
 }
 
-int VfsDelete(const char* path) {
+int VfsDelete(const char* path, bool Recursive) {
     VfsMountStruct* mount = VfsFindMount(path);
     if (!mount) return -1;
 
@@ -256,11 +258,13 @@ int VfsDelete(const char* path) {
     switch (mount->type) {
         case VFS_RAMFS:
             if (FastStrlen(local_path, 2) == 0) return -1;
+            if (Recursive) return FsDeleteRecursive(local_path);
             return FsDelete(local_path);
         case VFS_FAT12:
             if (FastStrlen(local_path, 2) == 0) return -1;
             extern int fat12_initialized;
             if (!fat12_initialized) return -1;
+            if (Recursive) return Fat12DeleteRecursive(local_path);
             return Fat12DeleteFile(local_path);
     }
 
@@ -367,7 +371,7 @@ int VfsWriteFile(const char* path, const void* buffer, uint32_t size) {
             if (!fat12_initialized) return -1;
             return Fat12WriteFile(local_path, buffer, size);
     }
-    
+
     return -1;
 }
 

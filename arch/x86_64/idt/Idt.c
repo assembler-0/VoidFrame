@@ -1,4 +1,6 @@
 #include "Idt.h"
+
+#include "Console.h"
 #include "Kernel.h"
 #define IDT_ENTRIES 256
 
