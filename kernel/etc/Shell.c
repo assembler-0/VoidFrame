@@ -1,6 +1,8 @@
 #include "Shell.h"
+
 #include "../../mm/KernelHeap.h"
 #include "../../mm/PMem.h"
+#include "Cerberus.h"
 #include "Console.h"
 #include "ELFloader.h"
 #include "Editor.h"
@@ -135,6 +137,7 @@ static void ClearHandler(const char * args) {
 
 static void ARPTestHandler(const char * args) {
     (void)args;
+    
     CreateProcess(ArpRequestTestProcess);
 }
 
@@ -221,6 +224,7 @@ static void MemstatHandler(const char * args) {
 
 static void LsPCIHandler(const char * args) {
     (void)args;
+    
     CreateProcess(PciEnumerate);
 }
 
@@ -262,6 +266,8 @@ static void PanicHandler(const char * args) {
 }
 
 static void LsUSBHandler(const char * args) {
+    (void)args;
+    
     CreateProcess(xHCIEnumerate);
 }
 

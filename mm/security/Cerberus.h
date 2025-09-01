@@ -66,7 +66,9 @@ void CerberusUnregisterProcess(uint32_t pid);
 void CerberusPreScheduleCheck(uint32_t pid);
 void CerberusTick(void);
 int CerberusAnalyzeFault(uint64_t fault_addr, uint64_t error_code, uint32_t pid, uint64_t rip);
+#ifdef VF_CONFIG_CERBERUS_THREAT_REPORTING
 void CerberusReportThreat(uint32_t pid, MemorySecurityViolation violation);
+#endif
 void CerberusDumpStats(void);
 
 // Memory tracking

@@ -411,15 +411,23 @@ The following functions and commands provide interfaces to the process managemen
   - The kernel build options and flags are as follow (modify as needed)
       ```jetbrainsmeson
       vf_config_flags =  [
-          '-DVF_CONFIG_ENABLE_XHCI',             # Enable xHCI driver
-          '-DVF_CONFIG_VM_HOST',                 # Enable support VM host (aka still run with failing features chekcs)
-          '-DVF_CONFIG_PROCINFO_CREATE_DEFAULT', # Create /Runtime/Processes/<pid> by default
-          '-DVF_CONFIG_USE_VFSHELL',             # Enable VFShell
-          '-DVF_CONFIG_USE_DYNAMOX',             # Enable DynamoX
-          '-DVF_CONFIG_USE_ASTRA',               # Enable Astra
-          '-DVF_CONFIG_USE_CERBERUS',            # Enable Cerberus (memory protection)
-          '-DVF_CONFIG_PANIC_OVERRIDE',          # Ignore many panics (sometimes it gets quite annoying)
+        '-DVF_CONFIG_ENABLE_XHCI',
+        '-DVF_CONFIG_ENABLE_VIRTIO',
+        '-DVF_CONFIG_ENABLE_ISA',
+        '-DVF_CONFIG_ENABLE_LPT',
+        '-DVF_CONFIG_ENABLE_PCI',
+        '-DVF_CONFIG_ENABLE_PS2',
+        '-DVF_CONFIG_ENABLE_INITRD',
+        '-DVF_CONFIG_ENABLE_IDE',
+        '-DVF_CONFIG_ENFORCE_MEMORY_PROTECTION',
+        '-DVF_CONFIG_VM_HOST',
+        '-DVF_CONFIG_MLFQ_SCHED',
+        '-DVF_CONFIG_PROCINFO_CREATE_DEFAULT',
+        '-DVF_CONFIG_USE_VFSHELL',
+        '-DVF_CONFIG_USE_DYNAMOX',
+        '-DVF_CONFIG_USE_ASTRA',
+       #    '-DVF_CONFIG_USE_CERBERUS',
+       #    '-DVF_CONFIG_PANIC_OVERRIDE',
       ]
       ```
-    Quite simple, isn't it?
 > assembler-0 @ voidframe-kernel - 11:54 01/09/2025

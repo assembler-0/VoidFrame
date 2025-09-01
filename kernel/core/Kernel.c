@@ -564,11 +564,10 @@ void INITRD1() {
 
 // Pre-eXecutionSystem 2
 static InitResultT PXS2(void) {
+#ifndef VF_CONFIG_VM_HOST
     // CPU feature validation
     CPUFeatureValidation();
-
-    // Memory safety validation
-    ValidateMemoryLayout();
+#endif
 
     // Print bootstrap summary
     PrintBootstrapSummary();
@@ -619,16 +618,21 @@ static InitResultT PXS2(void) {
     PitInstall();
     PrintKernelSuccess("System: PIC & PIT initialized\n");
 
+#ifdef VF_CONFIG_ENABLE_PS2
     // Initialize keyboard
     PrintKernel("Info: Initializing keyboard...\n");
     PS2Init();
     PrintKernelSuccess("System: Keyboard initialized\n");
+#endif
 
+#ifdef VF_CONFIG_USE_VFSHELL
     // Initialize shell
     PrintKernel("Info: Initializing shell...\n");
     ShellInit();
     PrintKernelSuccess("System: Shell initialized\n");
+#endif
 
+#ifdef VF_CONFIG_ENABLE_IDE
     // Initialize IDE driver
     PrintKernel("Info: Initializing IDE driver...\n");
     const int ide_result = IdeInit();
@@ -646,31 +650,39 @@ static InitResultT PXS2(void) {
         PrintKernelWarning(" IDE initialization failed - no drives detected\n");
         PrintKernelWarning(" Skipping FAT12 initialization\n");
     }
+#endif
 
     // Initialize ram filesystem
     PrintKernel("Info: Initializing VFRFS...\n");
     FsInit();
     PrintKernelSuccess("System: VFRFS (VoidFrame RamFS) initialized\n");
 
+#ifdef VF_CONFIG_ENABLE_INITRD
     // Initrd
     INITRD1();
     PrintKernelSuccess("System: INITRD (Stage 1) initialized\n");
+#endif
 
     // Initialize VFS
     PrintKernel("Info: Initializing VFS...\n");
     VfsInit();
     PrintKernelSuccess("System: VFS initialized\n");
 
-    // NEW: Check if huge pages should be enabled
+#ifdef VF_CONFIG_ENFORCE_MEMORY_PROTECTION
+    ValidateMemoryLayout();
     PrintKernel("Info: Checking huge page support...\n");
     if (!CheckHugePageSupport()) PrintKernel("System: Huge pages not available\n");
     else PrintKernelSuccess("System: Huge pages available\n");
+#endif
 
+#ifdef VF_CONFIG_MLFQ_SCHED
     // Initialize Process Management
     PrintKernel("Info: Initializing process management...\n");
     ProcessInit();
     PrintKernelSuccess("System: Process management initialized\n");
+#endif
 
+#ifdef VF_CONFIG_ENABLE_ISA
     PrintKernel("Info: Initializing ISA bus...\n");
     IsaInitBus();
     PrintKernelSuccess("System: ISA bus initialized\n");
@@ -678,7 +690,9 @@ static InitResultT PXS2(void) {
     PrintKernel("Info: Scanning ISA devices...\n");
     IsaAutoDetect();
     IsaPrintDevices();
+#endif
 
+#ifdef VF_CONFIG_ENABLE_PCI
     PrintKernel("Info: Scanning PCI devices...\n");
     PciEnumerate();
     PrintKernelSuccess("System: PCI devices scanned\n");
@@ -686,6 +700,7 @@ static InitResultT PXS2(void) {
     PrintKernel("Info: Initializing RTL8139 Driver...\n");
     Rtl8139_Init();
     PrintKernelSuccess("System: RTL8139 Driver initialized\n");
+#endif
 
 #ifdef VF_CONFIG_ENABLE_XHCI
     PrintKernel("Info: Initializing xHCI...\n");
@@ -693,23 +708,25 @@ static InitResultT PXS2(void) {
     PrintKernelSuccess("System: xHCI initialized\n");
 #endif
 
+#ifdef VF_CONFIG_ENABLE_LPT
     PrintKernel("Info: Initializing LPT Driver...\n");
     LPT_Init();
     PrintKernelSuccess("System: LPT Driver initialized\n");
+#endif
 
+#ifdef VF_CONFIG_ENFORCE_MEMORY_PROTECTION
     PrintKernel("Info: Final memory health check...\n");
     GetDetailedMemoryStats(&stats);
     if (stats.fragmentation_score > 50) {
         PrintKernelWarning("[WARN] High memory fragmentation detected\n");
     }
-
-    // Unmask IRQs
-    IRQUnmaskCoreSystems();
-
     // Memory protection
     StackGuardInit();
     SetupMemoryProtection();
+#endif
 
+    // Unmask IRQs
+    IRQUnmaskCoreSystems();
     return INIT_SUCCESS;
 }
 
