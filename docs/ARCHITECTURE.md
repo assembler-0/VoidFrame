@@ -1,4 +1,4 @@
-# The VoidFrame monolithic kernel 💫
+# The VoidFrame monolithic kernel 💫 v0.0.1-beta5.3
 
 ## Table of Contents
 
@@ -314,7 +314,40 @@ Astra runs in a continuous loop, performing a series of checks:
 
 Before the scheduler context-switches to a process, it performs a final, lightweight security check. This check validates the process's token and verifies its privilege flags one last time, ensuring that a compromised process is never allowed to run on the CPU.
 
-### 7. Dynamic Performance Controller: DynamoX
+### 7. Cerberus: Memory Security Agent
+
+While Astra ensures the logical integrity of processes, **Cerberus** acts as the kernel's dedicated memory security guard. Its mission is to detect, classify, and mitigate common and dangerous memory corruption vulnerabilities in real-time. It is enabled via the `VF_CONFIG_USE_CERBERUS` flag and integrates deeply with the process scheduler and memory managers.
+
+Cerberus operates on multiple defensive fronts:
+
+#### Proactive Memory Tracking
+
+1.  **Stack Canary Protection**: To protect against stack buffer overflows (a common attack vector), Cerberus automatically installs a "canary"—a known secret value—at the end of a process's stack when it's registered. Before the scheduler switches to a process, Cerberus checks if this canary is intact. If the value has been overwritten, it signifies a buffer overflow, and a `MEM_VIOLATION_CANARY_CORRUPT` violation is logged.
+
+2.  **Allocation Monitoring**: Cerberus maintains a record of all active memory allocations for monitored processes (`CerberusTrackAlloc`). When memory is freed (`CerberusTrackFree`), Cerberus validates the operation. If a process attempts to free a memory address that isn't actively allocated to it, Cerberus flags it as a potential "double-free" or an attempt to free invalid memory, logging a `MEM_VIOLATION_DOUBLE_FREE`.
+
+#### Reactive Fault Analysis
+
+When a critical memory fault (e.g., a page fault) occurs, Cerberus intercepts the event before it panics the kernel. It analyzes the context of the fault to determine its likely cause, translating a generic CPU exception into a specific security event.
+
+| Violation Type                   | Heuristic / Cause                                                         |
+|:---------------------------------|:--------------------------------------------------------------------------|
+| `MEM_VIOLATION_USE_AFTER_FREE`   | Accessing a `NULL` or very low memory address (`< 0x1000`).               |
+| `MEM_VIOLATION_BUFFER_OVERFLOW`  | Writing to a page that is not present in memory.                          |
+| `MEM_VIOLATION_STACK_CORRUPTION` | Attempting to execute code from a non-executable page (NX bit violation). |
+| `MEM_VIOLATION_BOUNDS_CHECK`     | A user-mode process attempting to access kernel space memory.             |
+
+#### Integration with the Scheduler and Astra
+
+Cerberus's true strength comes from its integration with the rest of the system:
+
+*   **Pre-emptive Threat Mitigation**: The `CerberusPreScheduleCheck` function is called just before a process is scheduled to run. If a process has been marked as `is_compromised` (either due to a canary failure or by exceeding its violation threshold), Cerberus will **block the process from ever running again**. This prevents a corrupted process from doing further damage.
+*   **Violation Threshold**: Cerberus tracks the number of violations per process. If a process accumulates too many violations (`CERBERUS_VIOLATION_THRESHOLD`), it is automatically flagged as compromised, even if the individual violations were not critical.
+*   **Threat Escalation**: When a significant threat is confirmed, `CerberusReportThreat` formats a detailed message and sends it to **Astra** via a VFS file. This allows Astra to take higher-level action, such as shutting down related processes or increasing the system-wide threat level.
+
+By combining proactive checks with intelligent fault analysis, Cerberus provides a robust defense-in-depth security layer, making the entire system more resilient to memory-based attacks.
+
+### 8. Dynamic Performance Controller: DynamoX
 
 DynamoX is a system process that intelligently manages the CPU's operational frequency (simulated via the PIT timer) to deliver performance when needed and conserve power when the system is idle.
 
@@ -389,4 +422,4 @@ The following functions and commands provide interfaces to the process managemen
       ]
       ```
     Quite simple, isn't it?
-> assembler-0 @ voidframe-kernel - 7:05 31/08/2025
+> assembler-0 @ voidframe-kernel - 11:54 01/09/2025

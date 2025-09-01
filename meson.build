@@ -1,5 +1,5 @@
 project('voidframe', 'c',
-        version : '0.0.1-beta5',
+        version : '0.0.1-beta5.3',
         default_options : [
             'c_std=c11',
             'optimization=2',
@@ -140,7 +140,7 @@ vf_config_flags =  [
     '-DVF_CONFIG_USE_VFSHELL',
     '-DVF_CONFIG_USE_DYNAMOX',
     '-DVF_CONFIG_USE_ASTRA',
-#    '-DVF_CONFIG_USE_CERBERUS',
+    '-DVF_CONFIG_USE_CERBERUS',
 #    '-DVF_CONFIG_PANIC_OVERRIDE',
 ]
 
