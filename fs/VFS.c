@@ -331,7 +331,29 @@ uint64_t VfsGetFileSize(const char* path) {
 int VfsIsFile(const char* path) {
     VfsMountStruct* mount = VfsFindMount(path);
     if (!mount) return 0;
-    return 1;
+
+    const char* local_path = VfsStripMount(path, mount);
+    if (!local_path) return 0;
+
+    switch (mount->type) {
+        case VFS_RAMFS: {
+            if (FastStrlen(local_path, 2) == 0) local_path = "/";
+            FsNode* node = FsFind(local_path);
+            return node && node->type == FS_FILE;
+        }
+        case VFS_FAT12: {
+            extern int fat12_initialized;
+            if (!fat12_initialized) return 0;
+            if (Fat12IsDirectory(local_path)) return 0;
+            uint64_t size = Fat12GetFileSize(local_path);
+            if (size > 0) return 1;
+            char test_buffer[1];
+            int read_result = Fat12ReadFile(local_path, test_buffer, 1);
+            return read_result >= 0;
+        }
+    }
+
+    return 0;
 }
 
 int VfsIsDir(const char* path) {

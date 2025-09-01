@@ -134,6 +134,7 @@ obj_sources = [
 vf_config_flags =  [
     '-DVF_CONFIG_ENABLE_XHCI',
     '-DVF_CONFIG_VM_HOST',
+    '-DVF_CONFIG_PROCINFO_CREATE_DEFAULT',
 #    '-DVF_CONFIG_PANIC_OVERRIDE',
 ]
 

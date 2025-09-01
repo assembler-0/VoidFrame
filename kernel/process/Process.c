@@ -1,5 +1,5 @@
 #include "Process.h"
-#include "../../mm/MemOps.h"
+#include "MemOps.h"
 #include "Atomics.h"
 #include "Console.h"
 #include "Cpu.h"
@@ -1044,7 +1044,6 @@ static __attribute__((visibility("hidden"))) uint32_t CreateSecureProcess(void (
     }
 
     // Initialize process with enhanced security and scheduling data
-
     processes[slot].pid = new_pid;
     processes[slot].state = PROC_READY;
     processes[slot].stack = stack;
@@ -1061,8 +1060,9 @@ static __attribute__((visibility("hidden"))) uint32_t CreateSecureProcess(void (
     processes[slot].wait_time = 0;
     processes[slot].ProcINFOPath = FormatS("%s/%d", RuntimeProcesses, new_pid);
 
+#ifdef VF_CONFIG_PROCINFO_CREATE_DEFAULT
     if (VfsCreateDir(processes[slot].ProcINFOPath) != 0) PANIC("Failed to create process directory (ProcINFO)");
-
+#endif
     // Initialize CPU burst history with reasonable defaults
     for (int i = 0; i < CPU_BURST_HISTORY; i++) {
         processes[slot].cpu_burst_history[i] = QUANTUM_BASE / 2;
@@ -1447,8 +1447,9 @@ static void Astra(void) {
     // register
     security_manager_pid = current->pid;
 
-    // const char* astra_path = FormatS("%s/astra", current->ProcINFOPath);
-    // if (VfsCreateFile(astra_path) != 0) PANIC("Failed to create Astra process info file");
+    char astra_path[1024];
+    FormatA(astra_path, sizeof(astra_path), "%s/astra", current->ProcINFOPath);
+    if (VfsCreateFile(astra_path) != 0) PANIC("Failed to create Astra process info file");
 
     // Create system tracer with enhanced security
     CreateSecureProcess(DynamoX, PROC_PRIV_SYSTEM, PROC_FLAG_CORE);
@@ -1515,7 +1516,20 @@ static void Astra(void) {
             }
         }
 
-        // if (VfsIsFile(astra_path) != 1) PANIC("Cannot access Astra process info file");
+        if (!VfsIsFile(astra_path)) PANIC("Cannot access Astra process info file");
+
+        // once every 1000 ticks
+        if (current_tick % 1000 == 0) {
+            char buff[1];
+            VfsReadFile(astra_path, buff, sizeof(buff));
+            switch (buff[0]) {
+                case 'p': PANIC("Astra: CRITICAL: Manual panic triggered via ProcINFO\n"); break;
+                case 't': threat_level += 100; break; // for fun
+                case 'k': ASTerminate(current->pid, "ProcINFO"); break;
+                case 'a': CreateSecureProcess(Astra, PROC_PRIV_SYSTEM, PROC_FLAG_CORE); break;
+                default: break;
+            }
+        }
 
         // 1. Token integrity verification
         if (current_tick - last_integrity_scan >= 50) {
