@@ -284,7 +284,7 @@ static void __attribute__((visibility("hidden"))) TerminateProcess(uint32_t pid,
 #ifdef VF_CONFIG_USE_CERBERUS
     CerberusUnregisterProcess(proc->pid);
 #endif
-    if (proc->ProcINFOPath && VfsIsDir(proc->ProcINFOPath)) VfsDelete(proc->ProcINFOPath, true);
+    if (proc->ProcessRuntimePath && VfsIsDir(proc->ProcessRuntimePath)) VfsDelete(proc->ProcessRuntimePath, true);
     else PrintKernelWarning("ProcINFOPath invalid during termination\n");
 }
 
@@ -329,7 +329,7 @@ static void __attribute__((visibility("hidden"))) ASTerminate(uint32_t pid, cons
 
     SpinUnlockIrqRestore(&scheduler_lock, flags);
 
-    if (proc->ProcINFOPath && VfsIsDir(proc->ProcINFOPath)) VfsDelete(proc->ProcINFOPath, true);
+    if (proc->ProcessRuntimePath && VfsIsDir(proc->ProcessRuntimePath)) VfsDelete(proc->ProcessRuntimePath, true);
     else PrintKernelWarning("ProcINFOPath invalid during termination");
 }
 
@@ -686,7 +686,7 @@ static void SmartAging(void) {
 }
 
 static inline __attribute__((visibility("hidden"))) __attribute__((always_inline)) int ProcINFOPathValidation(const ProcessControlBlock * proc) {
-    if (FastStrCmp(proc->ProcINFOPath, FormatS("%s/%d", RuntimeProcesses, proc->pid)) != 0) return 0;
+    if (FastStrCmp(proc->ProcessRuntimePath, FormatS("%s/%d", RuntimeProcesses, proc->pid)) != 0) return 0;
     return 1;
 }
 
@@ -716,7 +716,7 @@ static inline __attribute__((visibility("hidden"))) __attribute__((always_inline
     }
 
     if (ProcINFOPathValidation(proc) != 1) {
-        PrintKernelErrorF("[AS-PREFLIGHT] ProcINFOPath tampering detected for PID: %d (%s)\n", proc->pid, proc->ProcINFOPath);
+        PrintKernelErrorF("[AS-PREFLIGHT] ProcINFOPath tampering detected for PID: %d (%s)\n", proc->pid, proc->ProcessRuntimePath);
         ASTerminate(proc->pid, "ProcINFOPath tampering detected");
         return 0; // Do not schedule this process.
     }
@@ -1071,16 +1071,16 @@ static __attribute__((visibility("hidden"))) uint32_t CreateSecureProcess(void (
     processes[slot].io_operations = 0;
     processes[slot].preemption_count = 0;
     processes[slot].wait_time = 0;
-    processes[slot].ProcINFOPath = FormatS("%s/%d", RuntimeProcesses, new_pid);
+    processes[slot].ProcessRuntimePath = FormatS("%s/%d", RuntimeProcesses, new_pid);
 
 #ifdef VF_CONFIG_USE_CERBERUS
     CerberusRegisterProcess(new_pid, (uint64_t)stack, STACK_SIZE);
 #endif
 
 #ifdef VF_CONFIG_PROCINFO_CREATE_DEFAULT
-    if (!VfsIsDir(processes[slot].ProcINFOPath)) {
-        int rc = VfsCreateDir(processes[slot].ProcINFOPath);
-        if (rc != 0 && !VfsIsDir(processes[slot].ProcINFOPath)) {
+    if (!VfsIsDir(processes[slot].ProcessRuntimePath)) {
+        int rc = VfsCreateDir(processes[slot].ProcessRuntimePath);
+        if (rc != 0 && !VfsIsDir(processes[slot].ProcessRuntimePath)) {
             PrintKernelError("ProcINFO: failed to create dir for PID ");
             PrintKernelInt(processes[slot].pid);
             PrintKernel("\n");
@@ -1472,7 +1472,7 @@ static void Astra(void) {
     // register
     security_manager_pid = current->pid;
 
-    FormatA(astra_path, sizeof(astra_path), "%s/astra", current->ProcINFOPath);
+    FormatA(astra_path, sizeof(astra_path), "%s/astra", current->ProcessRuntimePath);
     if (VfsCreateFile(astra_path) != 0) PANIC("Failed to create Astra process info file");
 
     PrintKernelSuccess("Astra: Astra active.\n");
@@ -1664,8 +1664,8 @@ int ProcessInit(void) {
     idle_proc->privilege_level = PROC_PRIV_SYSTEM;
     idle_proc->scheduler_node = NULL;
     idle_proc->creation_time = GetSystemTicks();
-    idle_proc->ProcINFOPath = FormatS("%s/%d", RuntimeServices, idle_proc->pid);
-    if (VfsCreateDir(idle_proc->ProcINFOPath) != 0) PANIC("Failed to create ProcINFO directory");
+    idle_proc->ProcessRuntimePath = FormatS("%s/%d", RuntimeServices, idle_proc->pid);
+    if (VfsCreateDir(idle_proc->ProcessRuntimePath) != 0) PANIC("Failed to create ProcINFO directory");
     // Securely initialize the token for the Idle Process
     SecurityToken* token = &idle_proc->token;
     token->magic = SECURITY_MAGIC;

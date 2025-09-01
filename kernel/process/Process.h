@@ -166,7 +166,7 @@ typedef struct {
     ProcessContext context;
     SchedulerNode* scheduler_node;
     uint64_t creation_time;
-    char* ProcINFOPath;
+    char* ProcessRuntimePath;
 } ProcessControlBlock;
 
 typedef struct {
