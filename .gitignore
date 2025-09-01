@@ -7,3 +7,4 @@ Makefile
 CMakeLists.txt
 *build*
 target
+.venv
