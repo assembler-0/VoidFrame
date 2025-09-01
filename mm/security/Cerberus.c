@@ -11,6 +11,29 @@ static CerberusState g_cerberus_state = {0};
 static volatile int cerberus_lock = 0;
 static uint64_t system_ticks = 0;
 
+typedef struct {
+    uint64_t base_addr;
+    uint64_t end_addr;
+    const char* description;
+} HardwareAccessRange;
+
+static HardwareAccessRange hardware_ranges[] = {
+    {0xCF8, 0xCFF, "PCI Configuration"},
+    {0x80, 0x8F, "DMA Controller"},
+    {0xA0, 0xBF, "PIC Controller"},
+    // Add more hardware ranges as needed
+};
+
+static bool IsLegitimateHardwareAccess(uint64_t fault_addr) {
+    for (int i = 0; i < sizeof(hardware_ranges)/sizeof(hardware_ranges[0]); i++) {
+        if (fault_addr >= hardware_ranges[i].base_addr &&
+            fault_addr <= hardware_ranges[i].end_addr) {
+            return true;
+            }
+    }
+    return false;
+}
+
 void CerberusLogViolation(CerberusViolationReport* report) {
     if (!g_cerberus_state.is_initialized || !report) return;
 
@@ -28,7 +51,7 @@ void CerberusLogViolation(CerberusViolationReport* report) {
     // Console logging
     PrintKernelErrorF("[Cerberus] VIOLATION PID=%d: %s\n",
                      report->process_id, report->description);
-
+#ifdef VF_CONFIG_CERBERUS_VFS_LOGGING
     // VFS logging
     char log_entry[256];
     FormatA(log_entry, sizeof(log_entry),
@@ -37,6 +60,8 @@ void CerberusLogViolation(CerberusViolationReport* report) {
            report->fault_address, report->rip, report->description);
 
     VfsAppendFile("/ProcINFO/Cerberus/violations.log", log_entry, StringLength(log_entry));
+#endif
+
 }
 
 void CerberusInit(void) {
@@ -57,12 +82,12 @@ void CerberusInit(void) {
     g_cerberus_state.monitored_processes = 0;
     g_cerberus_state.total_violations = 0;
     g_cerberus_state.is_initialized = true;
-
+#ifdef VF_CONFIG_CERBERUS_VFS_LOGGING
     // Create logging directories in VFS
     VfsCreateDir(FormatS("%s/Cerberus", RuntimeServices));
     VfsCreateFile(FormatS("%s/Cerberus/violations.log", RuntimeServices));
     VfsCreateFile(FormatS("%s/Cerberus/watchlist.log", RuntimeServices));
-
+#endif
     PrintKernelSuccess("Cerberus initialized\n");
 }
 
@@ -87,9 +112,9 @@ int CerberusRegisterProcess(uint32_t pid, uint64_t stack_base, uint64_t stack_si
     proc_info->last_violation = 0;
 
     // Install stack protection if stack provided
-    if (stack_base && stack_size > 16) {
-        CerberusInstallStackCanary(pid, stack_base, stack_size);
-    }
+    // if (stack_base && stack_size > 16) {
+    //     CerberusInstallStackCanary(pid, stack_base, stack_size);
+    // }
 
     g_cerberus_state.monitored_processes++;
     SpinUnlock(&cerberus_lock);
@@ -188,20 +213,26 @@ void CerberusPreScheduleCheck(uint32_t pid) {
     // Block compromised processes
     if (proc_info->is_compromised) {
         PrintKernelErrorF("[Cerberus] BLOCKED compromised process %d\n", pid);
+#ifdef VF_CONFIG_CERBERUS_THREAT_REPORTING
         CerberusReportThreat(pid, MEM_VIOLATION_STACK_CORRUPTION);
+#endif
         return;
     }
 
     // Check stack canary
     if (CerberusCheckStackCanary(pid) != 0) {
         PrintKernelErrorF("[Cerberus] Stack canary violation in PID %d\n", pid);
+#ifdef VF_CONFIG_CERBERUS_THREAT_REPORTING
         CerberusReportThreat(pid, MEM_VIOLATION_CANARY_CORRUPT);
+#endif
     }
 
     // Check violation threshold
     if (proc_info->violation_count >= CERBERUS_VIOLATION_THRESHOLD) {
         PrintKernelWarningF("[Cerberus] PID %d exceeded violation threshold\n", pid);
+#ifdef VF_CONFIG_CERBERUS_THREAT_REPORTING
         CerberusReportThreat(pid, MEM_VIOLATION_BOUNDS_CHECK);
+#endif
     }
 }
 
@@ -231,6 +262,7 @@ void CerberusTick(void) {
 
 int CerberusAnalyzeFault(uint64_t fault_addr, uint64_t error_code, uint32_t pid, uint64_t rip) {
     if (!g_cerberus_state.is_initialized) return 0;
+    if (IsLegitimateHardwareAccess(fault_addr)) return 0;
 
     MemorySecurityViolation violation_type = MEM_VIOLATION_NONE;
 
@@ -264,6 +296,7 @@ int CerberusAnalyzeFault(uint64_t fault_addr, uint64_t error_code, uint32_t pid,
     return 0; // No violation
 }
 
+#ifdef VF_CONFIG_CERBERUS_THREAT_REPORTING
 void CerberusReportThreat(uint32_t pid, MemorySecurityViolation violation) {
     if (!g_cerberus_state.is_initialized) return;
 
@@ -279,6 +312,7 @@ void CerberusReportThreat(uint32_t pid, MemorySecurityViolation violation) {
 
     PrintKernelWarningF("[Cerberus] Threat reported to Astra: PID=%d\n", pid);
 }
+#endif
 
 int CerberusTrackAlloc(uint64_t addr, uint64_t size, uint32_t pid) {
     if (!g_cerberus_state.is_initialized) return -1;

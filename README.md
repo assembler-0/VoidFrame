@@ -39,6 +39,7 @@ meson setup build
 cd build
 ninja
 ninja img # Optional
+ninja virtio-img # Optional
 ninja run
 ```
 

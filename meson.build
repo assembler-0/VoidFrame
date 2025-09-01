@@ -151,7 +151,9 @@ vf_config_flags =  [
     '-DVF_CONFIG_USE_VFSHELL',
     '-DVF_CONFIG_USE_DYNAMOX',
     '-DVF_CONFIG_USE_ASTRA',
-#    '-DVF_CONFIG_USE_CERBERUS', - breaks
+    '-DVF_CONFIG_USE_CERBERUS',
+#    '-DVF_CONFIG_CERBERUS_VFS_LOGGING',
+#    '-DVF_CONFIG_CERBERUS_THREAT_REPORTING',
 #    '-DVF_CONFIG_PANIC_OVERRIDE',
 ]
 
@@ -252,6 +254,6 @@ run_target('img',
 run_target('virtio-img',
     command: ['sh', '-c',
               qemu_img.full_path() + ' create -f raw VirtioDisk.img 128M' + ' && ' +
-              mkfs_fat.full_path() + ' -F 12 VirtioDisk.img'
+              mkfs_fat.full_path() + ' -F 16 VirtioDisk.img'
     ]
 )

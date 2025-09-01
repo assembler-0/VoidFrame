@@ -62,7 +62,7 @@ int WalkStack(uint64_t rbp, uint64_t rip, StackFrame* frames, int max_frames) {
 
 void AnalyzePageFault(uint64_t cr2, uint64_t error_code, FaultContext* ctx) {
     ctx->fault_address = cr2;
-    
+
     // Decode page fault error code bits
     bool present = (error_code & 0x1) != 0;
     bool write = (error_code & 0x2) != 0;

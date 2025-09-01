@@ -72,7 +72,7 @@ struct VirtqDesc {
 
 struct VirtqAvail {
     uint16_t flags;
-    uint32_t idx;   // Where the driver puts the next descriptor index (u32 for atomics)
+    uint16_t idx;
     uint16_t ring[]; // Array of descriptor indices
 } __attribute__((packed));
 

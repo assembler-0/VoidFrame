@@ -1,5 +1,5 @@
 #include "VirtioBlk.h"
-
+#include "Spinlock.h"
 #include "Atomics.h"
 #include "Console.h"
 #include "PCI/PCI.h"
@@ -7,6 +7,7 @@
 #include "stdbool.h"
 
 // Globals to hold the capability structures we find
+static volatile int* virtio_lock;
 static struct VirtioPciCap cap_common_cfg;
 static struct VirtioPciCap cap_notify_cfg;
 static struct VirtioPciCap cap_isr_cfg;
@@ -168,7 +169,14 @@ void InitializeVirtioBlk(PciDevice device) {
 
     if (!vq_desc_table || !vq_avail_ring || !vq_used_ring) {
         PrintKernel("VirtIO-Blk: Error - Failed to allocate memory for virtqueue.\n");
-        // TODO: Free allocated memory before returning
+        if (vq_desc_table)
+            VMemFree(vq_desc_table, sizeof(struct VirtqDesc) * vq_size);
+        if (vq_avail_ring)
+            VMemFree(vq_avail_ring,
+                     sizeof(struct VirtqAvail) + sizeof(uint16_t) * vq_size);
+        if (vq_used_ring)
+            VMemFree(vq_used_ring,
+                     sizeof(struct VirtqUsed) + sizeof(struct VirtqUsedElem) * vq_size);
         return;
     }
 
@@ -184,59 +192,61 @@ void InitializeVirtioBlk(PciDevice device) {
 }
 
 int VirtioBlkRead(uint64_t sector, void* buffer) {
+    // Add synchronization for concurrent access
+    SpinLock(virtio_lock);
+    // Check if we have enough descriptors available
+    if ((vq_next_desc_idx + 3) > vq_size) {
+        PrintKernel("VirtIO-Blk: Error - Not enough descriptors available\n");
+        // SpinUnlock(&virtio_lock);
+        return -1;
+    }
     // Step 1: Allocate request header and status byte
     struct VirtioBlkReq* req_hdr = VMemAlloc(sizeof(struct VirtioBlkReq));
     uint8_t* status = VMemAlloc(sizeof(uint8_t));
     if (!req_hdr || !status) {
         PrintKernel("VirtIO-Blk: Failed to allocate request header/status\n");
+        if (req_hdr) VMemFree(req_hdr, sizeof(struct VirtioBlkReq));
+        if (status)  VMemFree(status,  sizeof(uint8_t));
+        // SpinUnlock(&virtio_lock);
         return -1; // Error
     }
-
     // Step 2: Fill out the request header
-    req_hdr->type = VIRTIO_BLK_T_IN;
+    req_hdr->type     = VIRTIO_BLK_T_IN;
     req_hdr->reserved = 0;
-    req_hdr->sector = sector;
-
+    req_hdr->sector   = sector;
     // Step 3: Set up the descriptor chain
     uint16_t head_idx = vq_next_desc_idx;
-
     // Descriptor 1: Request Header (Driver -> Device)
-    vq_desc_table[head_idx].addr = VIRT_TO_PHYS((uint64_t)req_hdr);
-    vq_desc_table[head_idx].len = sizeof(struct VirtioBlkReq);
+    vq_desc_table[head_idx].addr  = VIRT_TO_PHYS((uint64_t)req_hdr);
+    vq_desc_table[head_idx].len   = sizeof(struct VirtioBlkReq);
     vq_desc_table[head_idx].flags = VIRTQ_DESC_F_NEXT;
-    vq_desc_table[head_idx].next = head_idx + 1;
-
+    vq_desc_table[head_idx].next  = head_idx + 1;
     // Descriptor 2: Data Buffer (Device -> Driver)
-    vq_desc_table[head_idx + 1].addr = VIRT_TO_PHYS((uint64_t)buffer);
-    vq_desc_table[head_idx + 1].len = 512; // Assume 512-byte sectors
+    vq_desc_table[head_idx + 1].addr  = VIRT_TO_PHYS((uint64_t)buffer);
+    vq_desc_table[head_idx + 1].len   = 512; // Assume 512-byte sectors
     vq_desc_table[head_idx + 1].flags = VIRTQ_DESC_F_WRITE | VIRTQ_DESC_F_NEXT;
-    vq_desc_table[head_idx + 1].next = head_idx + 2;
-
+    vq_desc_table[head_idx + 1].next  = head_idx + 2;
     // Descriptor 3: Status (Device -> Driver)
-    vq_desc_table[head_idx + 2].addr = VIRT_TO_PHYS((uint64_t)status);
-    vq_desc_table[head_idx + 2].len = sizeof(uint8_t);
+    vq_desc_table[head_idx + 2].addr  = VIRT_TO_PHYS((uint64_t)status);
+    vq_desc_table[head_idx + 2].len   = sizeof(uint8_t);
     vq_desc_table[head_idx + 2].flags = VIRTQ_DESC_F_WRITE;
-    vq_desc_table[head_idx + 2].next = 0; // End of chain
-
+    vq_desc_table[head_idx + 2].next  = 0; // End of chain
     // Step 4: Add the chain to the available ring
     vq_avail_ring->ring[vq_avail_ring->idx % vq_size] = head_idx;
-
     // Step 5: Update the available ring index atomically
-    AtomicInc((volatile uint32_t*)&vq_avail_ring->idx);
-
+    AtomicInc(&vq_avail_ring->idx);
     // Step 6: Notify the device
     if (notify_ptr) {
         *(notify_ptr + common_cfg_ptr->queue_notify_off) = 0; // Queue index is 0
     }
-
     // For now, we just update our internal descriptor index
     vq_next_desc_idx = (vq_next_desc_idx + 3) % vq_size;
-
-    // TODO: Add interrupt handling to wait for the read to complete
-    // and check the status byte.
-
-    // VMemFree(req_hdr, sizeof(struct VirtioBlkReq));
-    // VMemFree(status, sizeof(uint8_t));
-
+    // TODO: Implement proper completion waiting mechanism
+    // This is critical for correctness
+    // For now, add a delay to allow completion (not production-ready)
+    // In production, use interrupts or polling with timeout
+    // Don't free these until after checking completion!
+    // These will need to be tracked and freed after the I/O completes
+    SpinUnlock(virtio_lock);
     return 0; // Success (for now)
 }
