@@ -1,5 +1,5 @@
-#ifndef PROCESS_H
-#define PROCESS_H
+#ifndef VF_MLFQ_SCHED_H
+#define VF_MLFQ_SCHED_H
 
 #include "stdint.h"
 #include "Ipc.h"
@@ -116,7 +116,7 @@ typedef struct {
     uint8_t  flags;
     uint64_t creation_tick;
     uint64_t checksum;
-} __attribute__((packed)) SecurityToken;
+} __attribute__((packed)) MLFQSecurityToken;
 
 typedef enum {
     PROC_TERMINATED = 0,  // IMPORTANT: Keep this as 0
@@ -125,7 +125,7 @@ typedef enum {
     PROC_BLOCKED,
     PROC_ZOMBIE,        // New: Waiting for cleanup
     PROC_DYING          // New: In process of termination
-} ProcessState;
+} MLFQProcessState;
 
 typedef enum {
     TERM_NORMAL = 0,    // Normal exit
@@ -133,7 +133,7 @@ typedef enum {
     TERM_CRASHED,       // Crashed/exception
     TERM_SECURITY,      // Security violation
     TERM_RESOURCE       // Resource exhaustion
-} TerminationReason;
+} MLFQTerminationReason;
 // Use the same structure for context switching to avoid mismatches
 typedef Registers ProcessContext;
 
@@ -141,11 +141,11 @@ typedef struct SchedulerNode {
     uint32_t slot;
     struct SchedulerNode* next;
     struct SchedulerNode* prev;
-} SchedulerNode;
+} MLFQSchedulerNode;
 
 typedef struct {
     uint32_t pid;
-    ProcessState state;
+    MLFQProcessState state;
     void* stack;
     uint8_t priority;
     uint8_t base_priority;      // Original priority for reset
@@ -157,29 +157,29 @@ typedef struct {
     uint64_t cpu_time_accumulated;
     uint64_t last_scheduled_tick;
     uint64_t wait_time;         // Time spent waiting
-    TerminationReason term_reason;
+    MLFQTerminationReason term_reason;
     uint32_t exit_code;
     uint64_t termination_time;
     uint32_t parent_pid;
-    SecurityToken token;
+    MLFQSecurityToken token;
     MessageQueue ipc_queue;
     ProcessContext context;
-    SchedulerNode* scheduler_node;
+    MLFQSchedulerNode* scheduler_node;
     uint64_t creation_time;
     char* ProcessRuntimePath;
-} ProcessControlBlock;
+} MLFQProcessControlBlock;
 
 typedef struct {
-    SchedulerNode* head;
-    SchedulerNode* tail;
+    MLFQSchedulerNode* head;
+    MLFQSchedulerNode* tail;
     uint32_t count;
     uint32_t quantum;           // Time quantum for this priority level
     uint32_t total_wait_time;   // Aggregate wait time for aging
     uint32_t avg_cpu_burst;     // Average CPU burst for this level
-} PriorityQueue;
+} MLFQPriorityQueue;
 
 typedef struct {
-    PriorityQueue queues[MAX_PRIORITY_LEVELS];
+    MLFQPriorityQueue queues[MAX_PRIORITY_LEVELS];
     uint32_t current_running;
     uint32_t tick_counter;
     uint32_t quantum_remaining;
@@ -189,7 +189,7 @@ typedef struct {
     uint32_t total_processes;   // Total active processes
     uint64_t load_average;      // System load average
     uint32_t context_switch_overhead; // Measured overhead
-} Scheduler;
+} MlfqScheduler;
 
 typedef struct {
     uint64_t timestamp;
@@ -197,14 +197,14 @@ typedef struct {
     uint16_t frequency;
     uint32_t context_switches;
     uint32_t avg_latency;
-} FrequencyHistory;
+} MLFQFrequencyHistory;
 
 #define FREQ_HISTORY_SIZE 32
 #define PREDICTION_WINDOW 10
 
 // Advanced PIT frequency controller
 typedef struct {
-    FrequencyHistory history[FREQ_HISTORY_SIZE];
+    MLFQFrequencyHistory history[FREQ_HISTORY_SIZE];
     uint32_t history_index;
     uint16_t min_freq;
     uint16_t max_freq;
@@ -223,28 +223,23 @@ typedef struct {
 } PITController;
 
 // Core process functions
-int ProcessInit(void);
-uint32_t CreateProcess(void (*entry_point)(void));
-ProcessControlBlock* GetCurrentProcess(void);
-ProcessControlBlock* GetProcessByPid(uint32_t pid);
-void CleanupTerminatedProcesses(void);
-void Yield(void);
+int MLFQSchedInit(void);
+uint32_t MLFQCreateProcess(void (*entry_point)(void));
+MLFQProcessControlBlock* MLFQGetCurrentProcess(void);
+MLFQProcessControlBlock* MLFQGetCurrentProcessByPID(uint32_t pid);
+void MLFQCleanupTerminatedProcess(void);
+void MLFQYield(void);
 
-// New scheduler functions
-void InitScheduler(void);
-void AddToScheduler(uint32_t slot);
-void RemoveFromScheduler(uint32_t slot);
-void FastSchedule(Registers* regs);
-void ProcessBlocked(uint32_t slot);
-void DumpSchedulerState(void);
+void MLFQScheule(Registers* regs);
+void MLFQDumpSchedulerState(void);
 
 // Security functions
-uint64_t GetSystemTicks(void);
-void ListProcesses(void);
-void GetProcessStats(uint32_t pid, uint32_t* cpu_time, uint32_t* io_ops, uint32_t* preemptions);
-void BoostProcessPriority(uint32_t pid);
-void KillProcess(uint32_t pid);
+uint64_t MLFQGetSystemTicks(void);
+void MLFQListProcesses(void);
+void MLFQGetProcessStats(uint32_t pid, uint32_t* cpu_time, uint32_t* io_ops, uint32_t* preemptions);
+void MLFQBoostProcessPriority(uint32_t pid);
+void MLFQKillProcess(uint32_t pid);
 
 // DEBUG
-void DumpPerformanceStats(void);
+void MLFQDumpPerformanceStats(void);
 #endif

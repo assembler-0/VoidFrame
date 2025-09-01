@@ -4,7 +4,7 @@
 #include "PS2.h"
 #include "Panic.h"
 #include "Pic.h"
-#include "Process.h"
+#include "MLFQ.h"
 #include "StackTrace.h"
 
 // The C-level interrupt handler, called from the assembly stub
@@ -14,7 +14,7 @@ void InterruptHandler(Registers* regs) {
     // Handle hardware interrupts first
     switch (regs->interrupt_number) {
         case 32: // Timer interrupt (IRQ 0)
-            FastSchedule(regs);
+            MLFQScheule(regs);
             PICSendEOI(regs->interrupt_number);
             return;
 

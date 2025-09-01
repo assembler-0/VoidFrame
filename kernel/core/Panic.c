@@ -8,7 +8,7 @@
 
 #include "../../mm/MemOps.h"
 #include "../../mm/VMem.h"
-#include "Process.h" // For Registers struct in PanicFromInterrupt
+#include "MLFQ.h" // For Registers struct in PanicFromInterrupt
 #include "Vesa.h"
 #include "stdint.h"
 // --- Panic Context Structure (Unchanged) ---
@@ -130,8 +130,8 @@ void __attribute__((noreturn)) KernelPanicHandler(const char* message, uint64_t 
             }
             PrintKernel("[SYSTEM INFORMATION]\n");
             PrintKernel("----------------------\n");
-            DumpSchedulerState();
-            DumpPerformanceStats();
+            MLFQDumpSchedulerState();
+            MLFQDumpPerformanceStats();
 
             MemoryStats stats;
             GetDetailedMemoryStats(&stats);
@@ -214,8 +214,8 @@ void __attribute__((noreturn)) KernelPanicHandler(const char* message, uint64_t 
             PrintKernelAt("\b\b", line++, col1);
         }
 
-        DumpSchedulerState();
-        DumpPerformanceStats();
+        MLFQDumpSchedulerState();
+        MLFQDumpPerformanceStats();
 
         MemoryStats stats;
         GetDetailedMemoryStats(&stats);

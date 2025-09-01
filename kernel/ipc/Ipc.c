@@ -1,14 +1,14 @@
 #include "Ipc.h"
 #include "../../mm/MemOps.h"
 #include "Panic.h"
-#include "Process.h"
+#include "MLFQ.h"
 
 void IpcSendMessage(uint32_t target_pid, const IpcMessage * msg) {
     ASSERT(msg != NULL);
 
-    ProcessControlBlock* target = GetProcessByPid(target_pid);
+    MLFQProcessControlBlock* target = MLFQGetCurrentProcessByPID(target_pid);
     if (!target) {
-        // Handle error: target process not found
+        // Handle error: target sched not found
         return;
     }
 
@@ -29,12 +29,12 @@ void IpcSendMessage(uint32_t target_pid, const IpcMessage * msg) {
 int IpcReceiveMessage(IpcMessage* msg_buffer) {
     ASSERT(msg_buffer != NULL);
 
-    ProcessControlBlock* current = GetCurrentProcess();
+    MLFQProcessControlBlock* current = MLFQGetCurrentProcess();
     MessageQueue* queue = &current->ipc_queue;
 
     while (queue->count == 0) {
         current->state = PROC_BLOCKED;
-        Yield();
+        MLFQYield();
     }
     FastMemcpy(msg_buffer, &queue->messages[queue->head], sizeof(IpcMessage));
     queue->head = (queue->head + 1) % MAX_MESSAGES;

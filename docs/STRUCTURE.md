@@ -97,7 +97,7 @@ VoidFrame/
 │   │   └── Ipc.h         
 │   └── process/              # MLFQ scheduler  
 │       ├── Process.c     
-│       └── Process.h    
+│       └── MLFQ.h    
 ├── mm/                       # Physical and Virtual memory manager  
 │   ├── KernelHeap.c      
 │   ├── KernelHeap.h      

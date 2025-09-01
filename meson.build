@@ -53,7 +53,7 @@ inc_dirs = [
     src_root + '/kernel/atomic',
     src_root + '/kernel/core',
     src_root + '/kernel/ipc',
-    src_root + '/kernel/process',
+    src_root + '/kernel/sched',
     src_root + '/kernel/etc',
     src_root + '/kernel/elf',
     src_root + '/kernel/graphics',
@@ -88,7 +88,7 @@ asm_sources = [
 c_sources = [
     src_root + '/kernel/core/Kernel.c',
     src_root + '/kernel/core/Panic.c',
-    src_root + '/kernel/process/Process.c',
+    src_root + '/kernel/sched/MLFQ.c',
     src_root + '/kernel/etc/Shell.c',
     src_root + '/kernel/etc/Console.c',
     src_root + '/kernel/etc/Format.c',

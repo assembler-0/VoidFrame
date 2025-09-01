@@ -1,10 +1,9 @@
 // VoidFrame Kernel Entry File
 #include "Kernel.h"
-
-#include "../../mm/KernelHeap.h"
-#include "../../mm/MemOps.h"
-#include "../../mm/PMem.h"
-#include "../../mm/StackGuard.h"
+#include "KernelHeap.h"
+#include "MemOps.h"
+#include "PMem.h"
+#include "StackGuard.h"
 #include "Cerberus.h"
 #include "Console.h"
 #include "FAT12.h"
@@ -20,7 +19,7 @@
 #include "PS2.h"
 #include "Panic.h"
 #include "Pic.h"
-#include "Process.h"
+#include "MLFQ.h"
 #include "Serial.h"
 #include "Shell.h"
 #include "Switch.h"
@@ -556,9 +555,9 @@ void INITRD1() {
     // 5. Live System State - (In-memory tmpfs, managed by kernel)
     //======================================================================
     FsMkdir(RuntimeDir);
-    FsMkdir(RuntimeProcesses);  // A directory for each running process by PID
+    FsMkdir(RuntimeProcesses);  // A directory for each running sched by PID
     FsMkdir(RuntimeServices);   // Status and control files for running services
-    FsMkdir(RuntimeIPC);        // For sockets and other inter-process communication
+    FsMkdir(RuntimeIPC);        // For sockets and other inter-sched communication
     FsMkdir(RuntimeMounts);     // Information on currently mounted filesystems
 }
 
@@ -677,8 +676,8 @@ static InitResultT PXS2(void) {
 
 #ifdef VF_CONFIG_MLFQ_SCHED
     // Initialize Process Management
-    PrintKernel("Info: Initializing process management...\n");
-    ProcessInit();
+    PrintKernel("Info: Initializing sched management...\n");
+    MLFQSchedInit();
     PrintKernelSuccess("System: Process management initialized\n");
 #endif
 
@@ -763,7 +762,7 @@ void KernelMainHigherHalf(void) {
     sti();
 
     while (1) { // redundant but added for a worst case scenario, should not reach here (I have no idea why it stops going after sti)
-        Yield();
+        MLFQYield();
     }
 
     __builtin_unreachable();

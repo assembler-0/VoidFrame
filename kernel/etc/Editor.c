@@ -3,7 +3,7 @@
 #include "KernelHeap.h"
 #include "PS2.h"
 #include "MemOps.h"
-#include "Process.h"
+#include "MLFQ.h"
 #include "StringOps.h"
 #include "VFS.h"
 
@@ -47,7 +47,7 @@ static void EditorGotoLinePrompt(void) {
     char input[12];
     int len = 0;
     while (1) {
-        while (!HasInput()) { Yield(); }
+        while (!HasInput()) { MLFQYield(); }
         char c = GetChar();
         if (c == '\n' || c == '\r') {
             break;
@@ -236,7 +236,7 @@ void EditorOpen(const char* filename) {
         EditorRefresh();
         
         while (!HasInput()) {
-            Yield();
+            MLFQYield();
         }
         
         char c = GetChar();
@@ -249,7 +249,7 @@ void EditorOpen(const char* filename) {
         if (c == 17) { // Ctrl+Q
             if (dirty) {
                 PrintKernel("\nUnsaved changes! Press Ctrl+Q again to quit.\n");
-                while (!HasInput()) Yield();
+                while (!HasInput()) MLFQYield();
                 if (GetChar() != 17) continue;
             }
             break;

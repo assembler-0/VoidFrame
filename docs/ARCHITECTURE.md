@@ -163,7 +163,7 @@
 
 The `ProcessControlBlock` is the fundamental data structure that represents a process in the kernel. It stores all essential information required to manage and schedule the process.
 
-**File:** `Process.h`
+**File:** `MLFQ.h`
 
 ```c
 typedef struct {
@@ -213,7 +213,7 @@ typedef struct {
 
 A process transitions through several states from its creation to its termination.
 
-**File:** `Process.h`
+**File:** `MLFQ.h`
 
 *   **`PROC_READY`**: The process is ready to run and is waiting in a scheduler queue for its turn on the CPU.
 *   **`PROC_RUNNING`**: The process is currently executing on the CPU.
@@ -265,7 +265,7 @@ Termination is a robust, multi-stage process designed to be safe and secure.
 
 The kernel employs a Multi-Level Feedback Queue (MLFQ) scheduler, a highly adaptive algorithm designed to achieve low latency for interactive tasks and high throughput for batch tasks.
 
-**File:** `Process.c`, `Process.h`
+**File:** `Process.c`, `MLFQ.h`
 
 #### Architecture
 
@@ -375,7 +375,7 @@ The following functions and commands provide interfaces to the process managemen
 |:-----------------------------|:---------------------------------------------------------------------------------------------------------------------------------|
 | `CreateProcess(entry_point)` | Creates a new user-level process. A simplified wrapper around `CreateSecureProcess`.                                             |
 | `KillProcess(pid)`           | Safely requests the termination of a process with the given PID.                                                                 |
-| `Yield()`                    | A cooperative function that allows a process to voluntarily give up the remainder of its time slice and trigger the scheduler.   |
+| `MLFQYield()`                    | A cooperative function that allows a process to voluntarily give up the remainder of its time slice and trigger the scheduler.   |
 | `GetProcessByPid(pid)`       | Retrieves a pointer to the PCB for a given PID.                                                                                  |
 | `ListProcesses()`            | A shell/debug command that prints a formatted list of all active processes, including their PID, state, priority, and CPU usage. |
 | `DumpSchedulerState()`       | A debug command that prints detailed internal statistics about the scheduler, including queue depths and load.                   |

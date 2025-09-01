@@ -1,7 +1,7 @@
 #include "Console.h"
 #include "KernelHeap.h"
 #include "MemOps.h"
-#include "Process.h"
+#include "MLFQ.h"
 #include "StringOps.h"
 #include "VFRFS.h"
 
@@ -206,7 +206,7 @@ int FsOpen(const char* path, FsOpenFlags flags) {
     handle->node = node;
     handle->position = (flags & FS_APPEND) ? node->size : 0;
     handle->flags = flags;
-    handle->owner_pid = GetCurrentProcess()->pid;
+    handle->owner_pid = MLFQGetCurrentProcess()->pid;
 
     return handle->fd;
 }

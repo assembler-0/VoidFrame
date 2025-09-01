@@ -81,7 +81,7 @@ int CerberusRegisterProcess(uint32_t pid, uint64_t stack_base, uint64_t stack_si
         return 0; // Already registered
     }
 
-    // Initialize process monitoring
+    // Initialize sched monitoring
     proc_info->process_id = pid;
     proc_info->is_monitored = true;
     proc_info->is_compromised = false;
@@ -112,7 +112,7 @@ void CerberusUnregisterProcess(uint32_t pid) {
         proc_info->is_monitored = false;
         g_cerberus_state.monitored_processes--;
 
-        // Remove all watch regions for this process
+        // Remove all watch regions for this sched
         for (int i = 0; i < CERBERUS_MAX_WATCH_REGIONS; i++) {
             CerberusWatchRegion* region = &g_cerberus_state.watch_regions[i];
             if (region->is_active && region->process_id == pid) {
@@ -189,7 +189,7 @@ void CerberusPreScheduleCheck(uint32_t pid) {
 
     // Block compromised processes
     if (proc_info->is_compromised) {
-        PrintKernelErrorF("[Cerberus] BLOCKED compromised process %d\n", pid);
+        PrintKernelErrorF("[Cerberus] BLOCKED compromised sched %d\n", pid);
 #ifdef VF_CONFIG_CERBERUS_THREAT_REPORTING
         CerberusReportThreat(pid, MEM_VIOLATION_STACK_CORRUPTION);
 #endif

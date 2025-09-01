@@ -4,14 +4,14 @@
 #include "../../mm/VMem.h"
 #include "Console.h"
 #include "Panic.h"
-#include "Process.h"
+#include "MLFQ.h"
 #include "StackGuard.h"
 #include "VFS.h"
 
 // Default maximum ELF file size (4MB)
 #define MAX_ELF_FILE_SIZE (4 * 1024 * 1024)
 
-// Default process memory limit (16MB)
+// Default sched memory limit (16MB)
 #define DEFAULT_PROCESS_MEMORY_LIMIT (16 * 1024 * 1024)
 
 static int ValidateElfHeader(const ElfHeader* header, uint64_t file_size) {
@@ -120,10 +120,10 @@ uint32_t CreateProcessFromElf(const char* filename, const ElfLoadOptions* option
     }
 
     // Security check: Only system processes can create system processes
-    ProcessControlBlock* creator = GetCurrentProcess();
+    MLFQProcessControlBlock* creator = MLFQGetCurrentProcess();
     if (options->privilege_level == PROC_PRIV_SYSTEM &&
         creator->privilege_level != PROC_PRIV_SYSTEM) {
-        PrintKernelError("ELF: Unauthorized attempt to create system process\n");
+        PrintKernelError("ELF: Unauthorized attempt to create system sched\n");
         return 0;
     }
 
@@ -169,7 +169,7 @@ uint32_t CreateProcessFromElf(const char* filename, const ElfLoadOptions* option
     const ElfHeader* header = (const ElfHeader*)elf_data;
     PrintKernelSuccess("ELF: Header validation passed\n");
 
-    // 5. Calculate required memory for process
+    // 5. Calculate required memory for sched
     uint64_t process_memory_size = CalculateProcessMemorySize(header, elf_data);
     if (process_memory_size == 0) {
         PrintKernelError("ELF: No loadable segments found\n");
@@ -187,10 +187,10 @@ uint32_t CreateProcessFromElf(const char* filename, const ElfLoadOptions* option
         return 0;
     }
 
-    // 6. Allocate protected memory for process image
+    // 6. Allocate protected memory for sched image
     void* process_memory = VMemAllocWithGuards(process_memory_size);
     if (!process_memory) {
-        PrintKernelError("ELF: Failed to allocate process memory\n");
+        PrintKernelError("ELF: Failed to allocate sched memory\n");
         VMemFreeWithGuards(elf_data, file_size);
         return 0;
     }
@@ -262,8 +262,8 @@ uint32_t CreateProcessFromElf(const char* filename, const ElfLoadOptions* option
 
     void* adjusted_entry = (uint8_t*)process_memory + (entry_point - base_vaddr);
 
-    // 9. Create process with enhanced security
-    uint32_t pid = CreateProcess(
+    // 9. Create sched with enhanced security
+    uint32_t pid = MLFQCreateProcess(
         (void (*)(void))adjusted_entry
     );
 
@@ -271,7 +271,7 @@ uint32_t CreateProcessFromElf(const char* filename, const ElfLoadOptions* option
     VMemFreeWithGuards(elf_data, file_size);
 
     if (pid == 0) {
-        PrintKernelError("ELF: Failed to create process\n");
+        PrintKernelError("ELF: Failed to create sched\n");
         VMemFreeWithGuards(process_memory, process_memory_size);
         return 0;
     }
