@@ -11,29 +11,6 @@ static CerberusState g_cerberus_state = {0};
 static volatile int cerberus_lock = 0;
 static uint64_t system_ticks = 0;
 
-typedef struct {
-    uint64_t base_addr;
-    uint64_t end_addr;
-    const char* description;
-} HardwareAccessRange;
-
-static HardwareAccessRange hardware_ranges[] = {
-    {0xCF8, 0xCFF, "PCI Configuration"},
-    {0x80, 0x8F, "DMA Controller"},
-    {0xA0, 0xBF, "PIC Controller"},
-    // Add more hardware ranges as needed
-};
-
-static bool IsLegitimateHardwareAccess(uint64_t fault_addr) {
-    for (int i = 0; i < sizeof(hardware_ranges)/sizeof(hardware_ranges[0]); i++) {
-        if (fault_addr >= hardware_ranges[i].base_addr &&
-            fault_addr <= hardware_ranges[i].end_addr) {
-            return true;
-            }
-    }
-    return false;
-}
-
 void CerberusLogViolation(CerberusViolationReport* report) {
     if (!g_cerberus_state.is_initialized || !report) return;
 
@@ -262,7 +239,6 @@ void CerberusTick(void) {
 
 int CerberusAnalyzeFault(uint64_t fault_addr, uint64_t error_code, uint32_t pid, uint64_t rip) {
     if (!g_cerberus_state.is_initialized) return 0;
-    if (IsLegitimateHardwareAccess(fault_addr)) return 0;
 
     MemorySecurityViolation violation_type = MEM_VIOLATION_NONE;
 
