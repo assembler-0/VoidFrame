@@ -1,11 +1,11 @@
 #include "Interrupts.h"
 #include "Console.h"
 #include "Ide.h"
-#include "MemOps.h"
 #include "PS2.h"
 #include "Panic.h"
 #include "Pic.h"
 #include "Process.h"
+#include "StackTrace.h"
 
 // The C-level interrupt handler, called from the assembly stub
 void InterruptHandler(Registers* regs) {
@@ -55,48 +55,20 @@ void InterruptHandler(Registers* regs) {
     static char panic_message[256];
 
     switch (regs->interrupt_number) {
-        case 6: // Invalid Opcode
-        {
-            char rip_str[20];
-            htoa(regs->rip, rip_str);
-            strcpy(panic_message, "Invalid Opcode at ");
-            strcat(panic_message, rip_str);
-            PanicFromInterrupt(panic_message, regs);
-            break;
-        }
-
-        case 8:
-        {
-            char rip_str[20];
-            htoa(regs->rip, rip_str);
-            strcpy(panic_message, "Double Fault at ");
-            strcat(panic_message, rip_str);
-            PanicFromInterrupt(panic_message, regs);
-        }
-
+        case 6:  // Invalid Opcode
+        case 8:  // Double Fault
         case 13: // General Protection Fault
-        {
-            char ec_str[20];
-            htoa(regs->error_code, ec_str);
-            strcpy(panic_message, "General Protection Fault. Selector: ");
-            strcat(panic_message, ec_str);
-            PanicFromInterrupt(panic_message, regs);
-            break;
-        }
-
         case 14: // Page Fault
         {
-            uint64_t cr2;
-            __asm__ volatile("mov %%cr2, %0" : "=r"(cr2));
-            char cr2_str[20], rip_str[20];
-            htoa(cr2, cr2_str);
-            htoa(regs->rip, rip_str);
+            // Perform deep fault analysis
+            FaultContext ctx = {0};
+            AnalyzeFault(regs, &ctx);
 
-            strcpy(panic_message, "Page Fault accessing ");
-            strcat(panic_message, cr2_str);
-            strcat(panic_message, " from instruction at ");
-            strcat(panic_message, rip_str);
-            PanicFromInterrupt(panic_message, regs);
+            // Print detailed information
+            PrintDetailedFaultInfo(&ctx, regs);
+            delay(100000000);
+            // Still panic, but now with much more info
+            PanicFromInterrupt(ctx.fault_reason, regs);
             break;
         }
 

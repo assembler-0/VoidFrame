@@ -1,7 +1,7 @@
 #include "ISA.h"
+#include "../../mm/KernelHeap.h"
 #include "Console.h"
 #include "Io.h"
-#include "KernelHeap.h"
 #include "Pic.h"
 #include "SB16.h"
 #include "VMem.h"

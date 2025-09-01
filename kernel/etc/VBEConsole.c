@@ -1,7 +1,7 @@
 #include "VBEConsole.h"
 
+#include "../../mm/MemOps.h"
 #include "Console.h"
-#include "MemOps.h"
 #include "Vesa.h"
 #include "stdint.h"
 

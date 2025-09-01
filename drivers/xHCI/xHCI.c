@@ -1,7 +1,7 @@
 #include "xHCI.h"
+#include "../../mm/MemOps.h"
+#include "../../mm/VMem.h"
 #include "Console.h"
-#include "MemOps.h"
-#include "VMem.h"
 #include "Cpu.h"
 
 // 5.4 - Operational Registers

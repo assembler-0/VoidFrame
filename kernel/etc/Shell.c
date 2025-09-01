@@ -1,13 +1,14 @@
 #include "Shell.h"
+#include "../../mm/KernelHeap.h"
+#include "../../mm/PMem.h"
 #include "Console.h"
 #include "ELFloader.h"
 #include "Editor.h"
+#include "Format.h"
 #include "FsUtils.h"
 #include "ISA.h"
-#include "KernelHeap.h"
 #include "LPT/LPT.h"
 #include "MemOps.h"
-#include "Memory.h"
 #include "PCI/PCI.h"
 #include "PS2.h"
 #include "Packet.h"
@@ -18,6 +19,7 @@
 #include "RTL8139.h"
 #include "SB16.h"
 #include "Serial.h"
+#include "StackTrace.h"
 #include "StringOps.h"
 #include "VFS.h"
 #include "VMem.h"
@@ -246,12 +248,17 @@ static void AllocHandler(const char * args) {
 
 static void PanicHandler(const char * args) {
     char* str = GetArg(args, 1);
+    Registers * regs = {0};
     if (!str) {
         PrintKernel("Usage: panic <message>\n");
         KernelFree(str);
         return;
     }
-    PANIC(str);
+    FaultContext ctx = {0};
+    ctx.fault_reason = str;
+    PrintDetailedFaultInfo(&ctx, regs);
+    delay(10000000);
+    PanicFromInterrupt(ctx.fault_reason, regs);
 }
 
 static void LsUSBHandler(const char * args) {

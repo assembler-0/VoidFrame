@@ -2,11 +2,10 @@
 // Created by Atheria on 7/15/25.
 //
 #include "VMem.h"
-
 #include "Atomics.h"
 #include "Console.h"
 #include "MemOps.h"
-#include "Memory.h"
+#include "PMem.h"
 #include "Panic.h"
 #include "Spinlock.h"
 
@@ -330,7 +329,7 @@ void VMemFree(void* vaddr, uint64_t size) {
 
     VMemFreeBlock* new_block = AllocFreeBlock();
     if (!new_block) { // Should be rare, but possible
-        PANIC("VMemFree: Out of free list nodes!");
+        PANIC("VMemFree: Out of free list nodes");
         SpinUnlockIrqRestore(&vmem_lock, flags);
         return;
     }

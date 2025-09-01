@@ -1,8 +1,8 @@
 #include "VFS.h"
+#include "../mm/MemOps.h"
 #include "Console.h"
 #include "FAT12.h"
 #include "Format.h"
-#include "MemOps.h"
 #include "Serial.h"
 #include "StringOps.h"
 #include "VFRFS.h"
@@ -11,6 +11,7 @@
 #define VFS_MAX_PATH_LEN 256
 
 static VfsMountStruct mounts[VFS_MAX_MOUNTS];
+int IsVFSInitialized = 0;
 
 int VfsMount(const char* path, VfsType type, uint8_t drive) {
     for (int i = 0; i < VFS_MAX_MOUNTS; i++) {
@@ -72,7 +73,20 @@ int VfsInit(void) {
     }
 
     PrintKernelSuccess("[VFS] Virtual File System initialized\n");
+    IsVFSInitialized = 1;
     return 0;
+}
+
+int VfsAppendFile(const char* path, const void* buffer, uint32_t size) {
+    // Get file size first
+    uint32_t current_size = VfsGetFileSize(path);
+    if (current_size == 0) {
+        // File doesn't exist or is empty, just write
+        return VfsWriteFile(path, buffer, size);
+    }
+
+    // For now, just overwrite (proper append would need filesystem support)
+    return VfsWriteFile(path, buffer, size);
 }
 
 VfsMountStruct* VfsFindMount(const char* path) {
@@ -130,7 +144,6 @@ const char* VfsStripMount(const char* path, VfsMountStruct* mount) {
 }
 
 int VfsReadFile(const char* path, void* buffer, uint32_t max_size) {
-    SerialWrite("[VFS] VfsReadFile called\n");
     if (!path || !buffer || max_size == 0) {
         SerialWrite("[VFS] Invalid parameters\n");
         return -1;
@@ -327,6 +340,34 @@ uint64_t VfsGetFileSize(const char* path) {
             SerialWrite("[VFS] VfsGetFileSize: Unknown filesystem type\n");
             return 0;
     }
+}
+
+int VfsIsFile(const char* path) {
+    VfsMountStruct* mount = VfsFindMount(path);
+    if (!mount) return 0;
+
+    const char* local_path = VfsStripMount(path, mount);
+    if (!local_path) return 0;
+
+    switch (mount->type) {
+        case VFS_RAMFS: {
+            if (FastStrlen(local_path, 2) == 0) local_path = "/";
+            FsNode* node = FsFind(local_path);
+            return node && node->type == FS_FILE;
+        }
+        case VFS_FAT12: {
+            extern int fat12_initialized;
+            if (!fat12_initialized) return 0;
+            if (Fat12IsDirectory(local_path)) return 0;
+            uint64_t size = Fat12GetFileSize(local_path);
+            if (size > 0) return 1;
+            char test_buffer[1];
+            int read_result = Fat12ReadFile(local_path, test_buffer, 1);
+            return read_result >= 0;
+        }
+    }
+
+    return 0;
 }
 
 int VfsIsDir(const char* path) {

@@ -77,8 +77,8 @@
 
 ## 📁 Filesystem & I/O
 
-- [ ] Initrd loading
-- [ ] Basic filesystem parsing (e.g., tarfs or ext2-lite)
+- [x] Initrd loading
+- [x] Basic filesystem parsing (e.g., tarfs or ext2-lite)
 - [x] Read/write file API (`fs_open()`, etc.)
 - [x] VFS layer (optional)
 - [ ] Device files (`/dev/null`, `/dev/tty0`, etc.)
@@ -111,7 +111,6 @@
 - [ ] Loadable GUI modules
 - [ ] Virtual terminal switching (`tty0`, `tty1`)
 - [ ] Profiling support (ticks per process)
-- [ ] Syscall tracing / log
 - [ ] Live module patching
 
 ---

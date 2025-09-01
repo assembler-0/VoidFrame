@@ -1,6 +1,6 @@
 /**
  * @file VMem.h
- * @brief Virtual Memory Manager Header - ENHANCED VERSION
+ * @brief Virtual Memory Manager Header
  */
 
 #ifndef VMEM_H
@@ -17,7 +17,6 @@
 // Page table entry flags
 #define PAGE_PRESENT        0x001
 #define PAGE_WRITABLE       0x002
-#define PAGE_USER           0x004
 #define PAGE_WRITETHROUGH   0x008
 #define PAGE_NOCACHE        0x010
 #define PAGE_ACCESSED       0x020
@@ -91,8 +90,6 @@ typedef struct {
 typedef enum {
     VMEM_READ       = PAGE_PRESENT,
     VMEM_WRITE      = PAGE_PRESENT | PAGE_WRITABLE,
-    VMEM_USER       = PAGE_PRESENT | PAGE_USER,
-    VMEM_USER_WRITE = PAGE_PRESENT | PAGE_WRITABLE | PAGE_USER,
     VMEM_NOCACHE    = PAGE_PRESENT | PAGE_NOCACHE,
     VMEM_GLOBAL     = PAGE_PRESENT | PAGE_GLOBAL
 } VMem_Flags;

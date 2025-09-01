@@ -36,6 +36,10 @@ VoidFrame/
 │   │   └── xHCI.c  
 │   ├── Ide.h           
 │   ├── Ide.c           
+│   ├── APIC.h            
+│   ├── APIC.c            
+│   ├── InterruptController.h            
+│   ├── InterruptController.h            
 │   ├── Pic.h            
 │   ├── Pic.c            
 │   ├── PS2.h             
@@ -43,7 +47,7 @@ VoidFrame/
 │   ├── Serial.c       
 │   ├── Serial.c       
 │   ├── Vesa.c       
-│   └── VesaBIOSExtension.h    
+│   └── Vesa.h    
 ├── fs/       
 │   ├── FAT12.h                # Filesystems  
 │   ├── FAT12.c           
@@ -56,7 +60,7 @@ VoidFrame/
 ├── include/                   # Common includes
 │   ├── Font.h           
 │   ├── Io.h            
-│   ├── Paging.h             
+│   ├── Switch.h             
 │   ├── Paging.asm            
 │   ├── stdbool.h            
 │   ├── stdint.h            
@@ -91,22 +95,22 @@ VoidFrame/
 │   ├── ipc/                  # IPC related files  
 │   │   ├── Ipc.c                
 │   │   └── Ipc.h         
-│   ├── memory/               # Physical and Virtual memory manager  
-│   │   ├── KernelHeap.c      
-│   │   ├── KernelHeap.h      
-│   │   ├── MemOps.h      
-│   │   ├── MemOps.c      
-│   │   ├── Memory.h            
-│   │   ├── Memory.c            
-│   │   ├── MemoryPool.c            
-│   │   ├── MemoryPool.h            
-│   │   ├── StackGuard.c            
-│   │   ├── StackGuard.h                        
-│   │   ├── VMem.c            
-│   │   └── VMem.h    
 │   └── process/              # MLFQ scheduler  
 │       ├── Process.c     
-│       └── Process.h            
+│       └── Process.h    
+├── mm/                       # Physical and Virtual memory manager  
+│   ├── KernelHeap.c      
+│   ├── KernelHeap.h      
+│   ├── MemOps.h      
+│   ├── MemOps.c      
+│   ├── PMem.h            
+│   ├── PMem.c            
+│   ├── MemoryPool.c            
+│   ├── MemoryPool.h            
+│   ├── StackGuard.c            
+│   ├── StackGuard.h                        
+│   ├── VMem.c            
+│   └── VMem.h            
 ├── scripts/       
 │   └── elf.ld               
 ├── linker.ld         

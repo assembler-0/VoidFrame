@@ -1,5 +1,8 @@
 #include "Process.h"
 #include "Atomics.h"
+#ifdef VF_CONFIG_USE_CERBERUS
+#include "Cerberus.h"
+#endif
 #include "Console.h"
 #include "Cpu.h"
 #include "Format.h"
@@ -68,6 +71,7 @@ static uint64_t context_switches = 0;
 static uint64_t scheduler_calls = 0;
 
 extern uint16_t PIT_FREQUENCY_HZ;
+char astra_path[1024];
 
 static int FastFFS(const uint64_t value) {
     return __builtin_ctzll(value);
@@ -277,7 +281,9 @@ static void __attribute__((visibility("hidden"))) TerminateProcess(uint32_t pid,
     }
 
     SpinUnlockIrqRestore(&scheduler_lock, flags);
-
+#ifdef VF_CONFIG_USE_CERBERUS
+    CerberusUnregisterProcess(proc->pid);
+#endif
     if (proc->ProcINFOPath && VfsIsDir(proc->ProcINFOPath)) VfsDelete(proc->ProcINFOPath, true);
     else PrintKernelWarning("ProcINFOPath invalid during termination\n");
 }
@@ -725,7 +731,12 @@ void FastSchedule(struct Registers* regs) {
 
     AtomicInc(&scheduler_calls);
     AtomicInc(&MLFQscheduler.tick_counter);
-
+#ifdef VF_CONFIG_USE_CERBERUS
+    static uint64_t cerberus_tick_counter = 0;
+    if (++cerberus_tick_counter % 10 == 0) {
+        CerberusTick();
+    }
+#endif
     // FIXED: Less frequent fairness boosting to prevent chaos
     if (UNLIKELY(MLFQscheduler.tick_counter % FAIRNESS_BOOST_ACTUAL_INTERVAL == 0)) {
         // Boost processes that haven't run recently
@@ -844,7 +855,9 @@ select_next:;
         next_slot = 0; // Nothing is ready, select idle process.
     } else {
         next_slot = DeQueue(&MLFQscheduler.queues[next_priority]);
-
+#ifdef VF_CONFIG_USE_CERBERUS
+        CerberusPreScheduleCheck(next_slot);
+#endif
         if (UNLIKELY(!AstraPreflightCheck(next_slot))) {
             goto select_next;
         }
@@ -1044,7 +1057,6 @@ static __attribute__((visibility("hidden"))) uint32_t CreateSecureProcess(void (
     }
 
     // Initialize process with enhanced security and scheduling data
-
     processes[slot].pid = new_pid;
     processes[slot].state = PROC_READY;
     processes[slot].stack = stack;
@@ -1060,8 +1072,22 @@ static __attribute__((visibility("hidden"))) uint32_t CreateSecureProcess(void (
     processes[slot].preemption_count = 0;
     processes[slot].wait_time = 0;
     processes[slot].ProcINFOPath = FormatS("%s/%d", RuntimeProcesses, new_pid);
-    if (VfsCreateDir(processes[slot].ProcINFOPath) != 0) PANIC("Failed to create process directory (ProcINFO)");
 
+#ifdef VF_CONFIG_USE_CERBERUS
+    CerberusRegisterProcess(new_pid, (uint64_t)stack, STACK_SIZE);
+#endif
+
+#ifdef VF_CONFIG_PROCINFO_CREATE_DEFAULT
+    if (!VfsIsDir(processes[slot].ProcINFOPath)) {
+        int rc = VfsCreateDir(processes[slot].ProcINFOPath);
+        if (rc != 0 && !VfsIsDir(processes[slot].ProcINFOPath)) {
+            PrintKernelError("ProcINFO: failed to create dir for PID ");
+            PrintKernelInt(processes[slot].pid);
+            PrintKernel("\n");
+            /* Non-fatal: ProcINFO features degrade for this process */
+        }
+    }
+#endif
     // Initialize CPU burst history with reasonable defaults
     for (int i = 0; i < CPU_BURST_HISTORY; i++) {
         processes[slot].cpu_burst_history[i] = QUANTUM_BASE / 2;
@@ -1443,12 +1469,11 @@ static __attribute__((visibility("hidden"))) void DynamoX(void) {
 static void Astra(void) {
     PrintKernelSuccess("Astra: Astra initializing...\n");
     ProcessControlBlock* current = GetCurrentProcess();
-
     // register
     security_manager_pid = current->pid;
 
-    // Create system tracer with enhanced security
-    CreateSecureProcess(DynamoX, PROC_PRIV_SYSTEM, PROC_FLAG_CORE);
+    FormatA(astra_path, sizeof(astra_path), "%s/astra", current->ProcINFOPath);
+    if (VfsCreateFile(astra_path) != 0) PANIC("Failed to create Astra process info file");
 
     PrintKernelSuccess("Astra: Astra active.\n");
 
@@ -1512,14 +1537,35 @@ static void Astra(void) {
             }
         }
 
+        if (LIKELY(VfsIsFile(astra_path))) {
+            if (current_tick % 1000 == 0) {
+                char buff[1] = {0};
+                int rd = VfsReadFile(astra_path, buff, sizeof(buff));
+                if (rd > 0) {
+                    switch (buff[0]) {
+                        case 'p': PANIC("Astra: CRITICAL: Manual panic triggered via ProcINFO\n"); break;
+                        case 't': threat_level += 10; break; // for fun
+                        case 'k': ASTerminate(current->pid, "ProcINFO"); break;
+                        case 'a': CreateSecureProcess(Astra, PROC_PRIV_SYSTEM, PROC_FLAG_CORE); break;
+                        default: break;
+                    }
+                    int del_rc = VfsDelete(astra_path, false);
+                    int cr_rc  = VfsCreateFile(astra_path);
+                    if (del_rc != 0 || (cr_rc != 0 && !VfsIsFile(astra_path))) {
+                        PrintKernelWarning("Astra: ProcINFO reset failed\n");
+                    }
+                }
+            }
+        } else {
+            (void)VfsCreateFile(astra_path);
+        }
+
         // 1. Token integrity verification
         if (current_tick - last_integrity_scan >= 50) {
             last_integrity_scan = current_tick;
             uint64_t active_bitmap = active_process_bitmap;
             int scanned = 0;
 
-            // FIX: Increased the number of processes scanned per cycle from 3 to 16
-            // to make detection much more effective and timely.
             while (active_bitmap && scanned < 16) {
                 const int slot = FastFFS(active_bitmap);
                 active_bitmap &= ~(1ULL << slot);
@@ -1633,7 +1679,7 @@ int ProcessInit(void) {
     process_count = 1;
     active_process_bitmap |= 1ULL;
 
-    // Create AS internally during init - no external access
+#ifdef VF_CONFIG_USE_ASTRA
     PrintKernel("System: Creating AS (Astra)...\n");
     uint32_t AS_pid = CreateSecureProcess(Astra, PROC_PRIV_SYSTEM, PROC_FLAG_CORE);
     if (!AS_pid) {
@@ -1646,7 +1692,9 @@ int ProcessInit(void) {
     PrintKernelSuccess("System: AS created with PID: ");
     PrintKernelInt(AS_pid);
     PrintKernel("\n");
+#endif
 
+#ifdef VF_CONFIG_USE_VFSHELL
     // Create shell process
     PrintKernel("System: Creating shell process...\n");
     uint32_t shell_pid = CreateSecureProcess(ShellProcess, PROC_PRIV_SYSTEM, PROC_FLAG_CORE);
@@ -1660,6 +1708,26 @@ int ProcessInit(void) {
     PrintKernelSuccess("System: Shell created with PID: ");
     PrintKernelInt(shell_pid);
     PrintKernel("\n");
+#endif
+
+#ifdef VF_CONFIG_USE_DYNAMOX
+    PrintKernel("System: Creating DynamoX...\n");
+    uint32_t dx_pid = CreateSecureProcess(DynamoX, PROC_PRIV_SYSTEM, PROC_FLAG_CORE);
+    if (!dx_pid) {
+#ifndef VF_CONFIG_PANIC_OVERRIDE
+        PANIC("CRITICAL: Failed to create DynamoX process");
+#else
+        PrintKernelError("CRITICAL: Failed to create DynamoX process\n");
+#endif
+    }
+    PrintKernelSuccess("System: DynamoX created with PID: ");
+    PrintKernelInt(dx_pid);
+    PrintKernel("\n");
+#endif
+
+#ifdef VF_CONFIG_USE_CERBERUS
+    CerberusInit();
+#endif
 
     return 0;
 }

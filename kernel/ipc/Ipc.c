@@ -1,7 +1,7 @@
 #include "Ipc.h"
-#include "Process.h"
+#include "../../mm/MemOps.h"
 #include "Panic.h"
-#include "MemOps.h"
+#include "Process.h"
 
 void IpcSendMessage(uint32_t target_pid, const IpcMessage * msg) {
     ASSERT(msg != NULL);

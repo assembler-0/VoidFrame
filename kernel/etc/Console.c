@@ -3,7 +3,9 @@
 #include "Io.h"
 #include "Serial.h"
 #include "Spinlock.h"
+#include "StringOps.h"
 #include "VBEConsole.h"
+#include "VFS.h"
 #include "Vesa.h"
 #include "stdarg.h"
 #include "stdbool.h"
@@ -143,6 +145,12 @@ void ConsoleSetColor(uint8_t color) {
     }
 }
 
+void SystemLog(const char * str) {
+    extern int IsVFSInitialized;
+    if (!IsVFSInitialized) return;
+    VfsWriteFile(SystemKernelLog, str, StringLength(str));
+}
+
 void PrintKernel(const char* str) {
     if (!str) return;
     SpinLock(&lock);
@@ -159,6 +167,7 @@ void PrintKernel(const char* str) {
 
     SpinUnlock(&lock);
     SerialWrite(str);
+    SystemLog(str);
 }
 
 void PrintKernelChar(const char c) {
@@ -221,39 +230,57 @@ void PrintKernelHex(uint64_t num) {
 }
 
 void PrintKernelF(const char* format, ...) {
+    char buffer[1024];
     va_list args;
     va_start(args, format);
-    char* formatted = Format(format, args);
+    Format(buffer, sizeof(buffer), format, args);
     va_end(args);
-
-    PrintKernel(formatted);
+    PrintKernel(buffer);
 }
 
 void PrintKernelWarningF(const char* format, ...) {
+    char buffer[1024];
     va_list args;
     va_start(args, format);
-    char* formatted = Format(format, args);
+    Format(buffer, sizeof(buffer), format, args);
     va_end(args);
-
-    PrintKernelWarning(formatted);
+    PrintKernelWarning(buffer);
 }
 
 void PrintKernelErrorF(const char* format, ...) {
+    char buffer[1024];
     va_list args;
     va_start(args, format);
-    char* formatted = Format(format, args);
+    Format(buffer, sizeof(buffer), format, args);
     va_end(args);
+    PrintKernelError(buffer);
+}
 
-    PrintKernelError(formatted);
+void PrintKernelSuccessF(const char* format, ...) {
+    char buffer[1024];
+    va_list args;
+    va_start(args, format);
+    Format(buffer, sizeof(buffer), format, args);
+    va_end(args);
+    PrintKernelSuccess(buffer);
+}
+
+void SystemLogF(const char * format, ... ) {
+    char buffer[1024];
+    va_list args;
+    va_start(args, format);
+    Format(buffer, sizeof(buffer), format, args);
+    va_end(args);
+    SystemLog(buffer);
 }
 
 void SerialWriteF(const char* format, ...) {
+    char buffer[1024];
     va_list args;
     va_start(args, format);
-    char* formatted = Format(format, args);
+    Format(buffer, sizeof(buffer), format, args);
     va_end(args);
-
-    SerialWrite(formatted);
+    SerialWrite(buffer);
 }
 
 void PrintKernelInt(int64_t num) {
@@ -286,7 +313,6 @@ void PrintKernelAt(const char* str, uint32_t line, uint32_t col) {
     if (!str) return;
     SerialWrite(str);
     SerialWrite("\n");
-
     if (use_vbe) {
         VBEConsoleSetCursor(col, line);
         VBEConsolePrint(str);

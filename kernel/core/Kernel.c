@@ -1,5 +1,11 @@
 // VoidFrame Kernel Entry File
 #include "Kernel.h"
+
+#include "../../mm/KernelHeap.h"
+#include "../../mm/MemOps.h"
+#include "../../mm/PMem.h"
+#include "../../mm/StackGuard.h"
+#include "Cerberus.h"
 #include "Console.h"
 #include "FAT12.h"
 #include "Gdt.h"
@@ -7,21 +13,17 @@
 #include "Ide.h"
 #include "Idt.h"
 #include "Io.h"
-#include "KernelHeap.h"
 #include "LPT/LPT.h"
-#include "MemOps.h"
 #include "MemPool.h"
-#include "Memory.h"
 #include "Multiboot2.h"
 #include "PCI/PCI.h"
 #include "PS2.h"
-#include "Paging.h"
 #include "Panic.h"
 #include "Pic.h"
 #include "Process.h"
 #include "Serial.h"
 #include "Shell.h"
-#include "StackGuard.h"
+#include "Switch.h"
 #include "VFRFS.h"
 #include "VFS.h"
 #include "VMem.h"
@@ -487,7 +489,7 @@ void PXS1(const uint32_t info) {
     PrintKernelSuccess("System: Page tables prepared. Switching to virtual addressing...\n");
     const uint64_t new_stack_top = ((uint64_t)kernel_stack + KERNEL_VIRTUAL_OFFSET) + KERNEL_STACK_SIZE;
     const uint64_t higher_half_entry = (uint64_t)&KernelMainHigherHalf + KERNEL_VIRTUAL_OFFSET;
-    EnablePagingAndJump(pml4_addr, higher_half_entry, new_stack_top);
+    SwitchToHigherHalf(pml4_addr, higher_half_entry, new_stack_top);
 }
 
 static void IRQUnmaskCoreSystems() {
@@ -501,7 +503,6 @@ static void IRQUnmaskCoreSystems() {
     PrintKernelSuccess("System: IRQs unmasked\n");
 }
 
-
 void INITRD1() {
     PrintKernel("INITRD: Creating rootfs on /...\n");
     //======================================================================
@@ -509,6 +510,7 @@ void INITRD1() {
     //======================================================================
     FsMkdir(SystemDir);
     FsMkdir(SystemKernel);      // Kernel executable, modules, and symbols
+    FsCreateFile(SystemKernelLog);
     FsMkdir(SystemBoot);        // Bootloader and initial ramdisk images
     FsMkdir(SystemDrivers);     // Core hardware drivers bundled with the OS
     FsMkdir(SystemLibraries);   // Essential shared libraries (libc, etc.)
@@ -525,7 +527,6 @@ void INITRD1() {
     FsMkdir(DataLogs);          // System and application logs
     FsMkdir(DataSpool);         // Spool directory for printing, mail, etc.
     FsMkdir(DataTemp);          // Temporary files that should persist across reboots
-
 
     //======================================================================
     // 3. Hardware and Device Tree - (Virtual, managed by kernel)
