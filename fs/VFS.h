@@ -65,6 +65,7 @@ int VfsDelete(const char* path, bool Recursive);
 int VfsIsDir(const char* path);
 int VfsIsFile(const char* path);
 uint64_t VfsGetFileSize(const char* path);
+int VfsAppendFile(const char* path, const void* buffer, uint32_t size);
 // Internal
 VfsMountStruct* VfsFindMount(const char* path);
 const char* VfsStripMount(const char* path, VfsMountStruct* mount);

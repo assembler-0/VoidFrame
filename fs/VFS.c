@@ -77,6 +77,18 @@ int VfsInit(void) {
     return 0;
 }
 
+int VfsAppendFile(const char* path, const void* buffer, uint32_t size) {
+    // Get file size first
+    uint32_t current_size = VfsGetFileSize(path);
+    if (current_size == 0) {
+        // File doesn't exist or is empty, just write
+        return VfsWriteFile(path, buffer, size);
+    }
+
+    // For now, just overwrite (proper append would need filesystem support)
+    return VfsWriteFile(path, buffer, size);
+}
+
 VfsMountStruct* VfsFindMount(const char* path) {
     int best_match = -1;
     int best_len = 0;

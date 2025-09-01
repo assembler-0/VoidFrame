@@ -1,9 +1,11 @@
 // VoidFrame Kernel Entry File
 #include "Kernel.h"
+
 #include "../../mm/KernelHeap.h"
 #include "../../mm/MemOps.h"
 #include "../../mm/PMem.h"
 #include "../../mm/StackGuard.h"
+#include "Cerberus.h"
 #include "Console.h"
 #include "FAT12.h"
 #include "Gdt.h"

@@ -95,22 +95,22 @@ VoidFrame/
 │   ├── ipc/                  # IPC related files  
 │   │   ├── Ipc.c                
 │   │   └── Ipc.h         
-│   ├── memory/               # Physical and Virtual memory manager  
-│   │   ├── KernelHeap.c      
-│   │   ├── KernelHeap.h      
-│   │   ├── MemOps.h      
-│   │   ├── MemOps.c      
-│   │   ├── PMem.h            
-│   │   ├── PMem.c            
-│   │   ├── MemoryPool.c            
-│   │   ├── MemoryPool.h            
-│   │   ├── StackGuard.c            
-│   │   ├── StackGuard.h                        
-│   │   ├── VMem.c            
-│   │   └── VMem.h    
 │   └── process/              # MLFQ scheduler  
 │       ├── Process.c     
-│       └── Process.h            
+│       └── Process.h    
+├── mm/                       # Physical and Virtual memory manager  
+│   ├── KernelHeap.c      
+│   ├── KernelHeap.h      
+│   ├── MemOps.h      
+│   ├── MemOps.c      
+│   ├── PMem.h            
+│   ├── PMem.c            
+│   ├── MemoryPool.c            
+│   ├── MemoryPool.h            
+│   ├── StackGuard.c            
+│   ├── StackGuard.h                        
+│   ├── VMem.c            
+│   └── VMem.h            
 ├── scripts/       
 │   └── elf.ld               
 ├── linker.ld         

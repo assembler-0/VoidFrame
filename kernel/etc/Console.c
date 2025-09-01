@@ -271,7 +271,7 @@ void SystemLogF(const char * format, ... ) {
     va_start(args, format);
     Format(buffer, sizeof(buffer), format, args);
     va_end(args);
-
+    SystemLog(buffer);
 }
 
 void SerialWriteF(const char* format, ...) {

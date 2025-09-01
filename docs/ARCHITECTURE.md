@@ -374,5 +374,19 @@ The following functions and commands provide interfaces to the process managemen
   - The fault handler is mid, any fault with bring down the system.
   - It only works on qemu, for some reason??. ive tried Bochs, but it hardly ever gets to the shell, VBox is even worse.
   - The kernel's real hardware support is unknown, since I dont have a legacy BIOS pc :(.
-
+- Parameters:
+  - The kernel build options and flags are as follow (modify as needed)
+      ```jetbrainsmeson
+      vf_config_flags =  [
+          '-DVF_CONFIG_ENABLE_XHCI',             # Enable xHCI driver
+          '-DVF_CONFIG_VM_HOST',                 # Enable support VM host (aka still run with failing features chekcs)
+          '-DVF_CONFIG_PROCINFO_CREATE_DEFAULT', # Create /Runtime/Processes/<pid> by default
+          '-DVF_CONFIG_USE_VFSHELL',             # Enable VFShell
+          '-DVF_CONFIG_USE_DYNAMOX',             # Enable DynamoX
+          '-DVF_CONFIG_USE_ASTRA',               # Enable Astra
+          '-DVF_CONFIG_USE_CERBERUS',            # Enable Cerberus (memory protection)
+          '-DVF_CONFIG_PANIC_OVERRIDE',          # Ignore many panics (sometimes it gets quite annoying)
+      ]
+      ```
+    Quite simple, isn't it?
 > assembler-0 @ voidframe-kernel - 7:05 31/08/2025
