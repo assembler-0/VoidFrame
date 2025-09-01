@@ -64,6 +64,7 @@ inc_dirs = [
     src_root + '/drivers/xHCI',
     src_root + '/drivers/ISA',
     src_root + '/drivers/sound',
+    src_root + '/drivers/virtio',
     src_root + '/fs',
     src_root + '/mm',
     src_root + '/mm/trace',
@@ -122,6 +123,7 @@ c_sources = [
     src_root + '/drivers/LPT/LPT.c',
     src_root + '/drivers/APIC.c',
     src_root + '/drivers/InterruptController.c',
+    src_root + '/drivers/virtio/VirtioBlk.c',
     arch_root + '/idt/Idt.c',
     arch_root + '/gdt/Gdt.c',
     arch_root + '/interrupts/Interrupts.c',
@@ -135,12 +137,21 @@ obj_sources = [
 
 vf_config_flags =  [
     '-DVF_CONFIG_ENABLE_XHCI',
+    '-DVF_CONFIG_ENABLE_VIRTIO',
+    '-DVF_CONFIG_ENABLE_ISA',
+    '-DVF_CONFIG_ENABLE_LPT',
+    '-DVF_CONFIG_ENABLE_PCI',
+    '-DVF_CONFIG_ENABLE_PS2',
+    '-DVF_CONFIG_ENABLE_INITRD',
+    '-DVF_CONFIG_ENABLE_IDE',
+    '-DVF_CONFIG_ENFORCE_MEMORY_PROTECTION',
     '-DVF_CONFIG_VM_HOST',
+    '-DVF_CONFIG_MLFQ_SCHED',
     '-DVF_CONFIG_PROCINFO_CREATE_DEFAULT',
     '-DVF_CONFIG_USE_VFSHELL',
     '-DVF_CONFIG_USE_DYNAMOX',
     '-DVF_CONFIG_USE_ASTRA',
-    '-DVF_CONFIG_USE_CERBERUS',
+#    '-DVF_CONFIG_USE_CERBERUS', - breaks
 #    '-DVF_CONFIG_PANIC_OVERRIDE',
 ]
 
@@ -225,6 +236,8 @@ run_target('run',
                       '-audio', 'pa,id=myaudio',
                       '-device', 'sb16,iobase=0x220,irq=5,dma=5',
                       '-parallel', 'file:printer.out',
+                      '-drive', 'file=VirtioDisk.img,format=raw,id=virtio_disk,if=none',
+                      '-device', 'virtio-blk-pci,drive=virtio_disk,disable-legacy=on',
            ]
 )
 
@@ -234,4 +247,11 @@ run_target('img',
                  qemu_img.full_path() + ' create -f raw VoidFrameDisk.img 1440K' + ' && ' +
                  mkfs_fat.full_path() + ' -F 12 VoidFrameDisk.img'
            ]
+)
+
+run_target('virtio-img',
+    command: ['sh', '-c',
+              qemu_img.full_path() + ' create -f raw VirtioDisk.img 128M' + ' && ' +
+              mkfs_fat.full_path() + ' -F 12 VirtioDisk.img'
+    ]
 )

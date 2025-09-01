@@ -4,6 +4,8 @@
 #include "Cpu.h"
 #include "stdbool.h"
 #include "stdint.h"
+#include "virtio/Virtio.h"
+#include "virtio/VirtioBlk.h"
 
 static uint8_t target_class;
 static uint8_t target_subclass;
@@ -23,7 +25,8 @@ uint32_t PciConfigReadDWord(uint8_t bus, uint8_t slot, uint8_t func, uint8_t off
 }
 
 uint8_t PciConfigReadByte(uint8_t bus, uint8_t slot, uint8_t func, uint8_t offset) {
-    return PciConfigReadDWord(bus, slot, func, offset) & 0xFF;
+    uint32_t dword = PciConfigReadDWord(bus, slot, func, offset & 0xFC);
+    return (dword >> ((offset & 3) * 8)) & 0xFF;
 }
 
 void PciConfigWriteDWord(uint8_t bus, uint8_t slot, uint8_t func, uint8_t offset, uint32_t data) {
@@ -90,6 +93,20 @@ static void PciScanBus(PciDeviceCallback callback) {
     }
 }
 
+static void PciVirtioHandler(PciDevice device) {
+    if (device.vendor_id == VIRTIO_VENDOR_ID) {
+        PrintKernel("Found VirtIO Device -> DID: 0x");
+        PrintKernelHex(device.device_id);
+        PrintKernel("\n");
+
+        // 0x1001 is the transitional block device.
+        // 0x1042 is the modern block device.
+        if (device.device_id == 0x1042 || device.device_id == 0x1001) { // VirtIO Block Device
+            InitializeVirtioBlk(device);
+        }
+    }
+}
+
 // Your old PciEnumerate function, now a simple wrapper around the scanner
 static void PrintPciDeviceInfo(PciDevice device) {
     PrintKernel("PCI: B:0x"); PrintKernelHex(device.bus);
@@ -105,6 +122,9 @@ static void PrintPciDeviceInfo(PciDevice device) {
 void PciEnumerate() {
     PrintKernel("--- PCI Bus Enumeration ---\n");
     PciScanBus(PrintPciDeviceInfo);
+#ifdef VF_CONFIG_ENABLE_VIRTIO
+    PciScanBus(PciVirtioHandler);
+#endif
     PrintKernel("---------------------------\n");
 }
 

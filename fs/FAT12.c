@@ -577,7 +577,7 @@ int Fat12CreateDir(const char* path) {
             return -1;
         }
     }
-    KernelFree(cluster_buffer);
+    // KernelFree(cluster_buffer); - double free?
 
     // Update the entry in the parent directory
     if (IdeReadSector(volume.drive, entry_sector_lba, sector_buffer) != IDE_OK) return -1;
