@@ -1,5 +1,6 @@
 #include "Process.h"
 #include "Atomics.h"
+#include "KernelHeap.h"
 #ifdef VF_CONFIG_USE_CERBERUS
 #include "Cerberus.h"
 #endif
@@ -1072,7 +1073,6 @@ static __attribute__((visibility("hidden"))) uint32_t CreateSecureProcess(void (
     processes[slot].preemption_count = 0;
     processes[slot].wait_time = 0;
     processes[slot].ProcessRuntimePath = FormatS("%s/%d", RuntimeProcesses, new_pid);
-
 #ifdef VF_CONFIG_USE_CERBERUS
     CerberusRegisterProcess(new_pid, (uint64_t)stack, STACK_SIZE);
 #endif
