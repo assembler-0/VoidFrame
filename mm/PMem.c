@@ -1,9 +1,9 @@
-#include "Memory.h"
+#include "PMem.h"
+#include "VMem.h"
 #include "Console.h"
 #include "MemOps.h"
 #include "Multiboot2.h"
 #include "Spinlock.h"
-#include "VMem.h"
 
 // Max 4GB memory for now (1M pages)
 #define MAX_PAGE_BUFFER_OVERHEAD (1024 * 1024) // 1MB

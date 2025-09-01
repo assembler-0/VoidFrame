@@ -53,7 +53,6 @@ inc_dirs = [
     src_root + '/kernel/atomic',
     src_root + '/kernel/core',
     src_root + '/kernel/ipc',
-    src_root + '/kernel/memory',
     src_root + '/kernel/process',
     src_root + '/kernel/etc',
     src_root + '/kernel/elf',
@@ -66,6 +65,8 @@ inc_dirs = [
     src_root + '/drivers/ISA',
     src_root + '/drivers/sound',
     src_root + '/fs',
+    src_root + '/mm',
+    src_root + '/mm/trace',
     arch_root + '/cpu',
     arch_root + '/gdt',
     arch_root + '/idt',
@@ -78,19 +79,13 @@ asm_sources = [
     arch_root + '/idt/IdtLoad.asm',
     arch_root + '/gdt/GdtTssFlush.asm',
     arch_root + '/interrupts/Interrupts.asm',
-    src_root + '/include/Paging.asm'
+    src_root + '/include/Switch.asm'
 ]
 
 # C sources (organized)
 c_sources = [
     src_root + '/kernel/core/Kernel.c',
     src_root + '/kernel/core/Panic.c',
-    src_root + '/kernel/memory/Memory.c',
-    src_root + '/kernel/memory/MemOps.c',
-    src_root + '/kernel/memory/KernelHeap.c',
-    src_root + '/kernel/memory/VMem.c',
-    src_root + '/kernel/memory/StackGuard.c',
-    src_root + '/kernel/memory/MemPool.c',
     src_root + '/kernel/process/Process.c',
     src_root + '/kernel/etc/Shell.c',
     src_root + '/kernel/etc/Console.c',
@@ -101,6 +96,13 @@ c_sources = [
     src_root + '/kernel/atomic/Atomics.c',
     src_root + '/kernel/ipc/Ipc.c',
     src_root + '/kernel/elf/ELFloader.c',
+    src_root + '/mm/PMem.c',
+    src_root + '/mm/MemOps.c',
+    src_root + '/mm/KernelHeap.c',
+    src_root + '/mm/VMem.c',
+    src_root + '/mm/StackGuard.c',
+    src_root + '/mm/MemPool.c',
+    src_root + '/mm/trace/StackTrace.c',
     src_root + '/fs/VFRFS.c',
     src_root + '/fs/FAT12.c',
     src_root + '/fs/VFS.c',

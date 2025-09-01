@@ -65,7 +65,7 @@ void PrintKernelF(const char* format, ...);
 void SerialWriteF(const char* format, ...);
 void PrintKernelErrorF(const char* format, ...);
 void PrintKernelWarningF(const char* format, ...);
-
+void PrintKernelSuccessF(const char* format, ...);
 // save a bit of time
 static inline __attribute__((always_inline)) void PrintNewline(void) {
     PrintKernel("\n");

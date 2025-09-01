@@ -1,8 +1,8 @@
 #include "Vesa.h"
 
+#include "../mm/MemOps.h"
 #include "Cpu.h"
 #include "Font.h"
-#include "MemOps.h"
 #include "Multiboot2.h"
 #include "Serial.h"
 #include "stdint.h"

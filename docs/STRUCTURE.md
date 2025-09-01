@@ -60,7 +60,7 @@ VoidFrame/
 ├── include/                   # Common includes
 │   ├── Font.h           
 │   ├── Io.h            
-│   ├── Paging.h             
+│   ├── Switch.h             
 │   ├── Paging.asm            
 │   ├── stdbool.h            
 │   ├── stdint.h            
@@ -100,8 +100,8 @@ VoidFrame/
 │   │   ├── KernelHeap.h      
 │   │   ├── MemOps.h      
 │   │   ├── MemOps.c      
-│   │   ├── Memory.h            
-│   │   ├── Memory.c            
+│   │   ├── PMem.h            
+│   │   ├── PMem.c            
 │   │   ├── MemoryPool.c            
 │   │   ├── MemoryPool.h            
 │   │   ├── StackGuard.c            

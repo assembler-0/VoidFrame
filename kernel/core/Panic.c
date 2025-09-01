@@ -1,14 +1,14 @@
 #include "Panic.h"
 #include "Io.h"
 // The ONLY necessary includes for display are now Console and Serial
+#include "../../mm/KernelHeap.h"
+#include "../../mm/PMem.h"
 #include "Console.h"
-#include "KernelHeap.h"
-#include "Memory.h"
 #include "Serial.h"
 
-#include "MemOps.h"
+#include "../../mm/MemOps.h"
+#include "../../mm/VMem.h"
 #include "Process.h" // For Registers struct in PanicFromInterrupt
-#include "VMem.h"
 #include "Vesa.h"
 #include "stdint.h"
 // --- Panic Context Structure (Unchanged) ---

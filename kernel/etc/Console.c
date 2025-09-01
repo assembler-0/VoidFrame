@@ -221,39 +221,48 @@ void PrintKernelHex(uint64_t num) {
 }
 
 void PrintKernelF(const char* format, ...) {
+    char buffer[1024];
     va_list args;
     va_start(args, format);
-    char* formatted = Format(format, args);
+    Format(buffer, sizeof(buffer), format, args);
     va_end(args);
-
-    PrintKernel(formatted);
+    PrintKernel(buffer);
 }
 
 void PrintKernelWarningF(const char* format, ...) {
+    char buffer[1024];
     va_list args;
     va_start(args, format);
-    char* formatted = Format(format, args);
+    Format(buffer, sizeof(buffer), format, args);
     va_end(args);
-
-    PrintKernelWarning(formatted);
+    PrintKernelWarning(buffer);
 }
 
 void PrintKernelErrorF(const char* format, ...) {
+    char buffer[1024];
     va_list args;
     va_start(args, format);
-    char* formatted = Format(format, args);
+    Format(buffer, sizeof(buffer), format, args);
     va_end(args);
+    PrintKernelError(buffer);
+}
 
-    PrintKernelError(formatted);
+void PrintKernelSuccessF(const char* format, ...) {
+    char buffer[1024];
+    va_list args;
+    va_start(args, format);
+    Format(buffer, sizeof(buffer), format, args);
+    va_end(args);
+    PrintKernelSuccess(buffer);
 }
 
 void SerialWriteF(const char* format, ...) {
+    char buffer[1024];
     va_list args;
     va_start(args, format);
-    char* formatted = Format(format, args);
+    Format(buffer, sizeof(buffer), format, args);
     va_end(args);
-
-    SerialWrite(formatted);
+    SerialWrite(buffer);
 }
 
 void PrintKernelInt(int64_t num) {

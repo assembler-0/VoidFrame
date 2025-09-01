@@ -1,9 +1,9 @@
 #include "RTL8139.h"
+#include "../../mm/KernelHeap.h"
+#include "../../mm/MemOps.h"
+#include "../../mm/VMem.h"
 #include "Console.h"
 #include "Io.h"
-#include "KernelHeap.h" // For allocating memory
-#include "MemOps.h"
-#include "VMem.h"
 
 // Global device object
 static Rtl8139Device rtl_device;

@@ -1,8 +1,8 @@
 #include "VFS.h"
+#include "../mm/MemOps.h"
 #include "Console.h"
 #include "FAT12.h"
 #include "Format.h"
-#include "MemOps.h"
 #include "Serial.h"
 #include "StringOps.h"
 #include "VFRFS.h"
@@ -130,7 +130,6 @@ const char* VfsStripMount(const char* path, VfsMountStruct* mount) {
 }
 
 int VfsReadFile(const char* path, void* buffer, uint32_t max_size) {
-    SerialWrite("[VFS] VfsReadFile called\n");
     if (!path || !buffer || max_size == 0) {
         SerialWrite("[VFS] Invalid parameters\n");
         return -1;
@@ -327,6 +326,12 @@ uint64_t VfsGetFileSize(const char* path) {
             SerialWrite("[VFS] VfsGetFileSize: Unknown filesystem type\n");
             return 0;
     }
+}
+
+int VfsIsFile(const char* path) {
+    VfsMountStruct* mount = VfsFindMount(path);
+    if (!mount) return 0;
+    return 1;
 }
 
 int VfsIsDir(const char* path) {

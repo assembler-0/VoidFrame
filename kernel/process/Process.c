@@ -1,11 +1,11 @@
 #include "Process.h"
+#include "../../mm/MemOps.h"
 #include "Atomics.h"
 #include "Console.h"
 #include "Cpu.h"
 #include "Format.h"
 #include "Io.h"
 #include "Ipc.h"
-#include "MemOps.h"
 #include "Panic.h"
 #include "Pic.h"
 #include "Serial.h"
@@ -1060,6 +1060,7 @@ static __attribute__((visibility("hidden"))) uint32_t CreateSecureProcess(void (
     processes[slot].preemption_count = 0;
     processes[slot].wait_time = 0;
     processes[slot].ProcINFOPath = FormatS("%s/%d", RuntimeProcesses, new_pid);
+
     if (VfsCreateDir(processes[slot].ProcINFOPath) != 0) PANIC("Failed to create process directory (ProcINFO)");
 
     // Initialize CPU burst history with reasonable defaults
@@ -1443,9 +1444,11 @@ static __attribute__((visibility("hidden"))) void DynamoX(void) {
 static void Astra(void) {
     PrintKernelSuccess("Astra: Astra initializing...\n");
     ProcessControlBlock* current = GetCurrentProcess();
-
     // register
     security_manager_pid = current->pid;
+
+    // const char* astra_path = FormatS("%s/astra", current->ProcINFOPath);
+    // if (VfsCreateFile(astra_path) != 0) PANIC("Failed to create Astra process info file");
 
     // Create system tracer with enhanced security
     CreateSecureProcess(DynamoX, PROC_PRIV_SYSTEM, PROC_FLAG_CORE);
@@ -1512,14 +1515,14 @@ static void Astra(void) {
             }
         }
 
+        // if (VfsIsFile(astra_path) != 1) PANIC("Cannot access Astra process info file");
+
         // 1. Token integrity verification
         if (current_tick - last_integrity_scan >= 50) {
             last_integrity_scan = current_tick;
             uint64_t active_bitmap = active_process_bitmap;
             int scanned = 0;
 
-            // FIX: Increased the number of processes scanned per cycle from 3 to 16
-            // to make detection much more effective and timely.
             while (active_bitmap && scanned < 16) {
                 const int slot = FastFFS(active_bitmap);
                 active_bitmap &= ~(1ULL << slot);

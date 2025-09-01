@@ -6,7 +6,7 @@
 
 - Roadmap/Features: [here!](docs/ROADMAP.md)
 - Structure: [here!](docs/STRUCTURE.md)
-- How it works: [here!](docs/ARCHITECHTURE.md)
+- How it works: [here!](docs/ARCHITECTURE.md)
 
 ---
 
