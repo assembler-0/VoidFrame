@@ -4,6 +4,7 @@
 #include "Console.h"
 #include "ELFloader.h"
 #include "Editor.h"
+#include "Format.h"
 #include "FsUtils.h"
 #include "ISA.h"
 #include "LPT/LPT.h"

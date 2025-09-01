@@ -508,6 +508,7 @@ void INITRD1() {
     //======================================================================
     FsMkdir(SystemDir);
     FsMkdir(SystemKernel);      // Kernel executable, modules, and symbols
+    FsCreateFile(SystemKernelLog);
     FsMkdir(SystemBoot);        // Bootloader and initial ramdisk images
     FsMkdir(SystemDrivers);     // Core hardware drivers bundled with the OS
     FsMkdir(SystemLibraries);   // Essential shared libraries (libc, etc.)
@@ -524,7 +525,6 @@ void INITRD1() {
     FsMkdir(DataLogs);          // System and application logs
     FsMkdir(DataSpool);         // Spool directory for printing, mail, etc.
     FsMkdir(DataTemp);          // Temporary files that should persist across reboots
-
 
     //======================================================================
     // 3. Hardware and Device Tree - (Virtual, managed by kernel)

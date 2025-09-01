@@ -3,7 +3,9 @@
 #include "Io.h"
 #include "Serial.h"
 #include "Spinlock.h"
+#include "StringOps.h"
 #include "VBEConsole.h"
+#include "VFS.h"
 #include "Vesa.h"
 #include "stdarg.h"
 #include "stdbool.h"
@@ -143,6 +145,12 @@ void ConsoleSetColor(uint8_t color) {
     }
 }
 
+void SystemLog(const char * str) {
+    extern int IsVFSInitialized;
+    if (!IsVFSInitialized) return;
+    VfsWriteFile(SystemKernelLog, str, StringLength(str));
+}
+
 void PrintKernel(const char* str) {
     if (!str) return;
     SpinLock(&lock);
@@ -159,6 +167,7 @@ void PrintKernel(const char* str) {
 
     SpinUnlock(&lock);
     SerialWrite(str);
+    SystemLog(str);
 }
 
 void PrintKernelChar(const char c) {
@@ -256,6 +265,15 @@ void PrintKernelSuccessF(const char* format, ...) {
     PrintKernelSuccess(buffer);
 }
 
+void SystemLogF(const char * format, ... ) {
+    char buffer[1024];
+    va_list args;
+    va_start(args, format);
+    Format(buffer, sizeof(buffer), format, args);
+    va_end(args);
+
+}
+
 void SerialWriteF(const char* format, ...) {
     char buffer[1024];
     va_list args;
@@ -295,7 +313,6 @@ void PrintKernelAt(const char* str, uint32_t line, uint32_t col) {
     if (!str) return;
     SerialWrite(str);
     SerialWrite("\n");
-
     if (use_vbe) {
         VBEConsoleSetCursor(col, line);
         VBEConsolePrint(str);

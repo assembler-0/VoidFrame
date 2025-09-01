@@ -20,6 +20,7 @@ typedef struct {
 
 static const char * SystemDir = "/System";
 static const char * SystemKernel = "/System/Kernel";
+static const char * SystemKernelLog = "/System/Kernel/sys.log";
 static const char * SystemBoot = "/System/Boot";
 static const char * SystemDrivers = "/System/Drivers";
 static const char * SystemLibraries = "/System/Libraries";

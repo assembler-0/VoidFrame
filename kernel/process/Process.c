@@ -1520,14 +1520,18 @@ static void Astra(void) {
 
         // once every 1000 ticks
         if (current_tick % 1000 == 0) {
-            char buff[1];
-            VfsReadFile(astra_path, buff, sizeof(buff));
-            switch (buff[0]) {
-                case 'p': PANIC("Astra: CRITICAL: Manual panic triggered via ProcINFO\n"); break;
-                case 't': threat_level += 100; break; // for fun
-                case 'k': ASTerminate(current->pid, "ProcINFO"); break;
-                case 'a': CreateSecureProcess(Astra, PROC_PRIV_SYSTEM, PROC_FLAG_CORE); break;
-                default: break;
+            char buff[1] = {0};
+            int rd = VfsReadFile(astra_path, buff, sizeof(buff));
+            if (rd > 0) {
+                switch (buff[0]) {
+                    case 'p': PANIC("Astra: CRITICAL: Manual panic triggered via ProcINFO\n"); break;
+                    case 't': threat_level += 100; break; // for fun
+                    case 'k': ASTerminate(current->pid, "ProcINFO"); break;
+                    case 'a': CreateSecureProcess(Astra, PROC_PRIV_SYSTEM, PROC_FLAG_CORE); break;
+                    default: break;
+                }
+                VfsDelete(astra_path, false);
+                VfsCreateFile(astra_path);
             }
         }
 

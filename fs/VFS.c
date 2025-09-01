@@ -11,6 +11,7 @@
 #define VFS_MAX_PATH_LEN 256
 
 static VfsMountStruct mounts[VFS_MAX_MOUNTS];
+int IsVFSInitialized = 0;
 
 int VfsMount(const char* path, VfsType type, uint8_t drive) {
     for (int i = 0; i < VFS_MAX_MOUNTS; i++) {
@@ -72,6 +73,7 @@ int VfsInit(void) {
     }
 
     PrintKernelSuccess("[VFS] Virtual File System initialized\n");
+    IsVFSInitialized = 1;
     return 0;
 }
 
