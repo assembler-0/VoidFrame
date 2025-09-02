@@ -728,7 +728,7 @@ static InitResultT PXS2(void) {
     return INIT_SUCCESS;
 }
 
-void KernelMain(const uint32_t magic, const uint32_t info) {
+asmlinkage void KernelMain(const uint32_t magic, const uint32_t info) {
     if (magic != MULTIBOOT2_BOOTLOADER_MAGIC) {
         ClearScreen();
         PrintKernelError("Magic: ");

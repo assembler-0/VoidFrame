@@ -1,5 +1,5 @@
 #include "Interrupts.h"
-
+#include "Kernel.h"
 #include "Atomics.h"
 #include "Console.h"
 #include "Ide.h"
@@ -12,7 +12,7 @@
 volatile uint32_t PITTicks = 0;
 
 // The C-level interrupt handler, called from the assembly stub
-void InterruptHandler(Registers* regs) {
+asmlinkage void InterruptHandler(Registers* regs) {
     ASSERT(regs != NULL);
 
     // Handle hardware interrupts first
