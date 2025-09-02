@@ -8,6 +8,7 @@
 #include "stdint.h"
 #include "stdlib.h"
 
+#ifndef VF_CONFIG_EXCLUDE_EXTRA_OBJECTS
 extern const uint32_t _binary_splash1_32_raw_start[];
 extern const uint32_t _binary_panic_32_raw_start[];
 
@@ -23,6 +24,7 @@ const uint32_t* panic_images[] = {
 };
 
 const unsigned int num_panic_images = sizeof(panic_images) / sizeof(uint32_t*);
+#endif
 
 vbe_info_t vbe_info = {0};
 static int vbe_initialized = 0;
@@ -281,6 +283,7 @@ void VBEDrawStringCentered(uint32_t center_x, uint32_t center_y, const char* str
     VBEDrawString(start_x, start_y, str, fg_color, bg_color);
 }
 
+#ifndef VF_CONFIG_EXCLUDE_EXTRA_OBJECTS
 // Create a simple splash screen
 void VBEShowSplash(void) {
     if (!vbe_initialized) return;
@@ -296,7 +299,9 @@ void VBEShowSplash(void) {
     }
     delay(700000000);
 }
+#endif
 
+#ifndef VF_CONFIG_EXCLUDE_EXTRA_OBJECTS
 void VBEShowPanic(void) {
     if (!vbe_initialized) return;
     const uint32_t* image_data = (const uint32_t*)panic_images[0];
@@ -312,7 +317,7 @@ void VBEShowPanic(void) {
         FastMemcpy(dst, src, vbe_info.width * 4);
     }
 }
-
+#endif
 
 vbe_info_t* VBEGetInfo(void) {
     return vbe_initialized ? &vbe_info : NULL;

@@ -93,8 +93,7 @@ void RtcReadTime(rtc_time_t* rtc_time) {
     {
         uint16_t cval = (uint16_t)rtc_time->century;
         if (cval != 0) {
-            if (bcd_mode)
-                cval = bcd_to_bin((uint8_t)cval);
+            cval = bcd_to_bin((uint8_t)cval);
             rtc_time->year += (uint16_t)(cval * 100);
         } else {
             rtc_time->year += 2000;

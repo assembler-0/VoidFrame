@@ -75,7 +75,9 @@ void __attribute__((noreturn)) KernelPanicHandler(const char* message, uint64_t 
 
     if (use_vbe_graphics) {
         // Pure VBE graphics path - show panic image ONLY
+#ifndef VF_CONFIG_EXCLUDE_EXTRA_OBJECTS
         VBEShowPanic();
+#endif
         PrintKernel("[FATAL] - [KERNEL PANIC] - ");
         if (message) PrintKernel(message);
         else PrintKernel("No message provided.");

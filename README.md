@@ -10,6 +10,16 @@
 
 ---
 
+## Status
+
+![License](https://img.shields.io/badge/License-GPLv2-orange)
+
+![Version](https://img.shields.io/badge/Current%20Version-v0.0.1%20beta5.4-blue)
+
+![Build](https://img.shields.io/badge/GCC-faliling-red)
+
+![Build](https://img.shields.io/badge/Clang-passing-brightgreen)
+
 ## About
 
 VoidFrame is a 64-bit syscall-less **monolithic** kernel designed for the x86_64 architecture written in C and assembly (nasm).
@@ -35,6 +45,7 @@ It would be amazing if you could contribute to this project!
 ```bash
 git clone https://github.com/assembler-0/VoidFrame.git
 cd VoidFrame
+python vfconfig.py
 meson setup build
 cd build
 ninja

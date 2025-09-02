@@ -433,8 +433,9 @@ void PXS1(const uint32_t info) {
     PrintKernel("System: Starting Console...\n");
     ConsoleInit();
     PrintKernelSuccess("System: Console initialized\n");
-
+#ifndef VF_CONFIG_EXCLUDE_EXTRA_OBJECTS
     VBEShowSplash();
+#endif
     ClearScreen();
 
     PrintKernel("System: Parsing MULTIBOOT2 info...\n");

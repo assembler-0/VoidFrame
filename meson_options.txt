@@ -1,0 +1,1 @@
+option('exclude_extra_objects', type : 'boolean', value : false, description : 'Exclude extra objects from the build') # MASSIVE effect!

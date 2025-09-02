@@ -431,9 +431,12 @@ The following functions and commands provide interfaces to the process managemen
     '-DVF_CONFIG_CERBERUS_THREAT_REPORTING', 
     #'-DVF_CONFIG_CERBERUS_STACK_PROTECTION',
     '-DVF_CONFIG_SCHED_MLFQ',
-    '-DVF_CONFIG_PROCINFO_AUTO_CLEANUP', 
-    #'-DVF_CONFIG_SCHED_CFS',
+    '-DVF_CONFIG_PROCINFO_AUTO_CLEANUP',
     #'-DVF_CONFIG_PANIC_OVERRIDE',
     ]
       ```
+  - Setup options:
+    ```jetbrainsmeson
+    option('exclude_extra_objects', type : 'boolean', value : false, description : 'Exclude extra objects from the build') # MASSIVE effect!, smaller size & smoother
+    ```
 > assembler-0 @ voidframe-kernel - 14:40 02/09/2025
