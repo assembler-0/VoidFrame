@@ -124,6 +124,7 @@ c_sources = [
     src_root + '/drivers/APIC.c',
     src_root + '/drivers/InterruptController.c',
     src_root + '/drivers/virtio/VirtioBlk.c',
+    src_root + '/include/ctype.c',
     arch_root + '/idt/Idt.c',
     arch_root + '/gdt/Gdt.c',
     arch_root + '/interrupts/Interrupts.c',
