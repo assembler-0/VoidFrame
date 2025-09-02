@@ -5,7 +5,7 @@
 #include "stdbool.h"
 #include "stdint.h"
 
-#define MAX_MESSAGES 16 // Max messages per process queue
+#define MAX_MESSAGES 16 // Max messages per sched queue
 
 // Extensible message types
 typedef enum {

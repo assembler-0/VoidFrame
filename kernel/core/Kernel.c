@@ -1,11 +1,5 @@
 // VoidFrame Kernel Entry File
 #include "Kernel.h"
-
-#include "../../mm/KernelHeap.h"
-#include "../../mm/MemOps.h"
-#include "../../mm/PMem.h"
-#include "../../mm/StackGuard.h"
-#include "Cerberus.h"
 #include "Console.h"
 #include "FAT12.h"
 #include "Gdt.h"
@@ -13,16 +7,20 @@
 #include "Ide.h"
 #include "Idt.h"
 #include "Io.h"
+#include "KernelHeap.h"
 #include "LPT/LPT.h"
+#include "MLFQ.h"
+#include "MemOps.h"
 #include "MemPool.h"
 #include "Multiboot2.h"
 #include "PCI/PCI.h"
+#include "PMem.h"
 #include "PS2.h"
 #include "Panic.h"
 #include "Pic.h"
-#include "Process.h"
 #include "Serial.h"
 #include "Shell.h"
+#include "StackGuard.h"
 #include "Switch.h"
 #include "VFRFS.h"
 #include "VFS.h"
@@ -556,9 +554,9 @@ void INITRD1() {
     // 5. Live System State - (In-memory tmpfs, managed by kernel)
     //======================================================================
     FsMkdir(RuntimeDir);
-    FsMkdir(RuntimeProcesses);  // A directory for each running process by PID
+    FsMkdir(RuntimeProcesses);  // A directory for each running sched by PID
     FsMkdir(RuntimeServices);   // Status and control files for running services
-    FsMkdir(RuntimeIPC);        // For sockets and other inter-process communication
+    FsMkdir(RuntimeIPC);        // For sockets and other inter-sched communication
     FsMkdir(RuntimeMounts);     // Information on currently mounted filesystems
 }
 
@@ -675,11 +673,11 @@ static InitResultT PXS2(void) {
     else PrintKernelSuccess("System: Huge pages available\n");
 #endif
 
-#ifdef VF_CONFIG_MLFQ_SCHED
+#ifdef VF_CONFIG_SCHED_MLFQ
     // Initialize Process Management
-    PrintKernel("Info: Initializing process management...\n");
-    ProcessInit();
-    PrintKernelSuccess("System: Process management initialized\n");
+    PrintKernel("Info: Initializing MLFQ scheduler...\n");
+    MLFQSchedInit();
+    PrintKernelSuccess("System: MLFQ scheduler initialized\n");
 #endif
 
 #ifdef VF_CONFIG_ENABLE_ISA
@@ -763,7 +761,7 @@ void KernelMainHigherHalf(void) {
     sti();
 
     while (1) { // redundant but added for a worst case scenario, should not reach here (I have no idea why it stops going after sti)
-        Yield();
+        MLFQYield();
     }
 
     __builtin_unreachable();

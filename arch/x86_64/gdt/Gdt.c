@@ -60,7 +60,7 @@ void GdtInit(void) {
     SetTssGate(5, tss_base, tss_limit);
 
     // Initialize TSS fields (make sure tss is zero-initialized)
-    // tss.rsp0 will be set later when a process is created
+    // tss.rsp0 will be set later when a sched is created
     tss.iomap_base = sizeof(struct TssEntry); // Set IOMAP base beyond the TSS limit to disable it.
 
     GdtFlush((uint64_t)&gdt_ptr);

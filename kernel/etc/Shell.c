@@ -1,7 +1,7 @@
 #include "Shell.h"
 
-#include "../../mm/KernelHeap.h"
-#include "../../mm/PMem.h"
+#include "KernelHeap.h"
+#include "PMem.h"
 #include "Cerberus.h"
 #include "Console.h"
 #include "ELFloader.h"
@@ -10,13 +10,13 @@
 #include "FsUtils.h"
 #include "ISA.h"
 #include "LPT/LPT.h"
+#include "MLFQ.h"
 #include "MemOps.h"
 #include "PCI/PCI.h"
 #include "PS2.h"
 #include "Packet.h"
 #include "Panic.h"
 #include "Pic.h"
-#include "Process.h"
 #include "RTC/Rtc.h"
 #include "RTL8139.h"
 #include "SB16.h"
@@ -138,7 +138,7 @@ static void ClearHandler(const char * args) {
 static void ARPTestHandler(const char * args) {
     (void)args;
     
-    CreateProcess(ArpRequestTestProcess);
+    MLFQCreateProcess(ArpRequestTestProcess);
 }
 
 static void VersionHandler(const char * args) {
@@ -180,7 +180,7 @@ static void HelpHandler(const char * args) {
     PrintKernel("  touch <name>   - Create empty file\n");
     PrintKernel("  alloc <size>   - Allocate <size> bytes\n");
     PrintKernel("  panic <message>- Panic with <message>\n");
-    PrintKernel("  kill <pid>     - Terminate process with pid <pid>\n");
+    PrintKernel("  kill <pid>     - Terminate sched with pid <pid>\n");
     PrintKernel("  rm <file> [-r] - Remove file(s) or directory\n");
     PrintKernel("  echo <text> <file> - Write text to file\n");
     PrintKernel("  fstest         - Run filesystem tests\n");
@@ -191,17 +191,17 @@ static void HelpHandler(const char * args) {
 
 static void PSHandler(const char * args) {
     (void)args;
-    ListProcesses();
+    MLFQListProcesses();
 }
 
 static void PerfHandler(const char * args) {
     (void)args;
-    DumpPerformanceStats();
+    MLFQDumpPerformanceStats();
 }
 
 static void SchedHandler(const char * args) {
     (void)args;
-    DumpSchedulerState();
+    MLFQDumpSchedulerState();
 }
 
 static void LsISAHandler(const char * args) {
@@ -225,7 +225,7 @@ static void MemstatHandler(const char * args) {
 static void LsPCIHandler(const char * args) {
     (void)args;
     
-    CreateProcess(PciEnumerate);
+    MLFQCreateProcess(PciEnumerate);
 }
 
 static void VmemFreeListHandler(const char * args) {
@@ -268,7 +268,7 @@ static void PanicHandler(const char * args) {
 static void LsUSBHandler(const char * args) {
     (void)args;
     
-    CreateProcess(xHCIEnumerate);
+    MLFQCreateProcess(xHCIEnumerate);
 }
 
 static void BeepHandler(const char * args) {
@@ -342,7 +342,7 @@ static void KillHandler(const char * args) {
         PrintKernel("Usage: kill <pid>\n");
         return;
     }
-    KillProcess(pid);
+    MLFQKillProcess(pid);
 }
 
 static void PicmaskHandler(const char * args) {
@@ -918,19 +918,19 @@ void MkfsHandler(const char* args) {
     // 5. Live System State - (In-memory tmpfs, managed by kernel)
     //======================================================================
     VfsCreateDir("/Devices/Storage/VFSystemDrive/Runtime");
-    VfsCreateDir("/Devices/Storage/VFSystemDrive/Runtime/Processes");  // A directory for each running process by PID
+    VfsCreateDir("/Devices/Storage/VFSystemDrive/Runtime/Processes");  // A directory for each running sched by PID
     VfsCreateDir("/Devices/Storage/VFSystemDrive/Runtime/Services");   // Status and control files for running services
-    VfsCreateDir("/Devices/Storage/VFSystemDrive/Runtime/IPC");        // For sockets and other inter-process communication
+    VfsCreateDir("/Devices/Storage/VFSystemDrive/Runtime/IPC");        // For sockets and other inter-sched communication
     VfsCreateDir("/Devices/Storage/VFSystemDrive/Runtime/Mounts");     // Information on currently mounted filesystems
 }
 
 void nothing(void) {
-    while (1) Yield();
+    while (1) MLFQYield();
 }
 
 void TestHandler(const char* args) {
     (void)args;
-    CreateProcess(nothing);
+    MLFQCreateProcess(nothing);
 }
 
 static const ShellCommand commands[] = {
@@ -1021,7 +1021,7 @@ void ShellProcess(void) {
                 PrintKernel(str); // Echo character
             }
         } else {
-            Yield();
+            MLFQYield();
         }
     }
 }

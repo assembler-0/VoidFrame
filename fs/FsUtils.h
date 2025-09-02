@@ -184,7 +184,7 @@ static inline void __attribute__((always_inline)) ResolvePathH(const char* curre
     static char work_buffer[512];
     int work_len = 0;
 
-    // Step 1: Create the full path to process
+    // Step 1: Create the full path to sched
     if (input[0] == '/') {
         // Absolute path - copy input directly
         int i = 0;
