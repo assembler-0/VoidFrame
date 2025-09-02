@@ -413,6 +413,8 @@ static void PrintBootstrapSummary(void) {
 
 // Pre-eXecutionSystem 1
 void PXS1(const uint32_t info) {
+
+#ifdef VF_CONFIG_USE_SERIAL
     int sret = SerialInit();
 
     if (sret != 0) {
@@ -425,6 +427,7 @@ void PXS1(const uint32_t info) {
     } else {
         PrintKernelSuccess("System: Serial driver initialized on COM1\n");
     }
+#endif
 
     if (VBEInit(info) != 0) {
         PrintKernelError("System: Failed to initialize VBE and graphical environment");
@@ -433,8 +436,9 @@ void PXS1(const uint32_t info) {
     PrintKernel("System: Starting Console...\n");
     ConsoleInit();
     PrintKernelSuccess("System: Console initialized\n");
-
+#ifndef VF_CONFIG_EXCLUDE_EXTRA_OBJECTS
     VBEShowSplash();
+#endif
     ClearScreen();
 
     PrintKernel("System: Parsing MULTIBOOT2 info...\n");

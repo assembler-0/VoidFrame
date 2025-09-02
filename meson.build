@@ -16,6 +16,8 @@ qemu_img  = find_program('qemu-img')
 mkfs_fat  = find_program('mkfs.fat')
 qemu_system_x86_64 = find_program('qemu-system-x86_64')
 
+exclude_extra_objects = get_option('exclude_extra_objects')
+
 # Source root
 src_root = './'
 arch_root = src_root + 'arch/x86_64'
@@ -149,6 +151,7 @@ vf_config_flags =  [
     '-DVF_CONFIG_ENFORCE_MEMORY_PROTECTION',
     '-DVF_CONFIG_VM_HOST',
     '-DVF_CONFIG_PROCINFO_CREATE_DEFAULT',
+    '-DVF_CONFIG_USE_SERIAL',
     '-DVF_CONFIG_USE_VFSHELL',
     '-DVF_CONFIG_USE_DYNAMOX',
     '-DVF_CONFIG_USE_ASTRA',
@@ -161,6 +164,10 @@ vf_config_flags =  [
     #'-DVF_CONFIG_SCHED_CFS',
     #'-DVF_CONFIG_PANIC_OVERRIDE',
 ]
+
+if exclude_extra_objects
+    vf_config_flags += ['-DVF_CONFIG_EXCLUDE_EXTRA_OBJECTS']
+endif
 
 cfg_flags = []
 foreach flag : vf_config_flags
@@ -197,9 +204,16 @@ foreach c_file : c_sources
     c_objects += c_obj
 endforeach
 
+obj_to_link = []
+if exclude_extra_objects
+    obj_to_link = asm_objects + c_objects
+else
+    obj_to_link = asm_objects + c_objects + obj_sources
+endif
+
 # Link kernel
 kernel = custom_target('voidframe.krnl',
-                       input : asm_objects + c_objects + obj_sources,
+                       input : obj_to_link,
                        output : 'voidframe.krnl',
                        command : [ld.full_path(), '-T', meson.current_source_dir() + '/linker.ld', '-melf_x86_64', '--no-warn-rwx-segments', '-o', '@OUTPUT@'] + ['@INPUT@'],
                        build_by_default : true

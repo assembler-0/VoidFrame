@@ -166,7 +166,9 @@ void PrintKernel(const char* str) {
     }
 
     SpinUnlock(&lock);
+#ifdef VF_CONFIG_USE_SERIAL
     SerialWrite(str);
+#endif
     SystemLog(str);
 }
 
@@ -280,7 +282,9 @@ void SerialWriteF(const char* format, ...) {
     va_start(args, format);
     Format(buffer, sizeof(buffer), format, args);
     va_end(args);
+#ifdef VF_CONFIG_USE_SERIAL
     SerialWrite(buffer);
+#endif
 }
 
 void PrintKernelInt(int64_t num) {
@@ -311,8 +315,10 @@ void PrintKernelInt(int64_t num) {
 
 void PrintKernelAt(const char* str, uint32_t line, uint32_t col) {
     if (!str) return;
+#ifdef VF_CONFIG_USE_SERIAL
     SerialWrite(str);
     SerialWrite("\n");
+#endif
     if (use_vbe) {
         VBEConsoleSetCursor(col, line);
         VBEConsolePrint(str);
