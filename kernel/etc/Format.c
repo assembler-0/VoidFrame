@@ -9,6 +9,11 @@
  * Wirzenius wrote this portably, Torvalds fucked it up :-)
  */
 
+/**
+ *@brief vsprintf and formatting wrappers implementation modified for x86_64
+ *@date 02/09/25 by assembler-0
+ */
+
 #include "StringOps.h"
 #include "ctype.h"
 #include "stdarg.h"
@@ -58,13 +63,19 @@ static int skip_atoi(const char **s)
 #define SPECIAL	32		/* 0x */
 #define SMALL	64		/* use 'abcdef' instead of 'ABCDEF' */
 
-#define do_div(n,base) ({ \
-int __res; \
-__asm__("divl %4":"=a" (n),"=d" (__res):"0" (n),"1" (0),"r" (base)); \
+#if defined(__i386__)
+#define do_div(n, base) ({ \
+unsigned int __res; \
+__asm__("divl %4" : "=a"(n), "=d"(__res) : "0"(n), "1"(0), "r"(base)); \
 __res; })
+#else
+#define do_div(n, base) ({ \
+unsigned long __rem = (unsigned long)(n) % (unsigned long)(base); \
+(n) = (unsigned long)(n) / (unsigned long)(base); \
+(unsigned int)__rem; })
+#endif
 
-static char * number(char * str, int num, int base, int size, int precision
-	,int type)
+static char* number(char* str, long num, int base, int size, int precision, int type)
 {
 	char c,sign,tmp[36];
 	const char *digits="0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ";

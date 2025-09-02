@@ -39,7 +39,7 @@ void RtcReadTime(rtc_time_t* rtc_time) {
     // values match. This ensures an update didn't happen in the middle of our read.
     do {
         // Wait until no update is in progress
-        while (get_update_in_progress_flag());
+        while (get_update_in_progress_flag()) {}
 
         rtc_time->second = cmos_read(CMOS_REG_SECONDS);
         rtc_time->minute = cmos_read(CMOS_REG_MINUTES);
@@ -47,12 +47,12 @@ void RtcReadTime(rtc_time_t* rtc_time) {
         rtc_time->day    = cmos_read(CMOS_REG_DAY);
         rtc_time->month  = cmos_read(CMOS_REG_MONTH);
         rtc_time->year   = cmos_read(CMOS_REG_YEAR);
-
+        rtc_time->century = cmos_read(CMOS_REG_CENTURY);
         // Make a copy of the values we just read
         last_time = *rtc_time;
 
         // Wait again to ensure we are past the update
-        while (get_update_in_progress_flag());
+        while (get_update_in_progress_flag()){}
 
         // Read a second time
         last_time.second = cmos_read(CMOS_REG_SECONDS);
@@ -61,13 +61,20 @@ void RtcReadTime(rtc_time_t* rtc_time) {
         last_time.day    = cmos_read(CMOS_REG_DAY);
         last_time.month  = cmos_read(CMOS_REG_MONTH);
         last_time.year   = cmos_read(CMOS_REG_YEAR);
+#ifdef VF_CONFIG_RTC_CENTURY
+        last_time.century = cmos_read(CMOS_REG_CENTURY);
+#endif
 
     } while ( (last_time.second != rtc_time->second) ||
               (last_time.minute != rtc_time->minute) ||
               (last_time.hour   != rtc_time->hour)   ||
               (last_time.day    != rtc_time->day)    ||
               (last_time.month  != rtc_time->month)  ||
-              (last_time.year   != rtc_time->year) );
+              (last_time.year   != rtc_time->year)
+#ifdef VF_CONFIG_RTC_CENTURY
+              || (last_time.century != rtc_time->century)
+#endif
+              );
 
 
     // Now that we have a stable read, convert from BCD if necessary
@@ -82,6 +89,10 @@ void RtcReadTime(rtc_time_t* rtc_time) {
         rtc_time->month  = bcd_to_bin(rtc_time->month);
         rtc_time->year   = bcd_to_bin(rtc_time->year);
     }
-
-    rtc_time->year += 2000; // trust me
+#ifdef VF_CONFIG_RTC_CENTURY
+    if (!rtc_time->century) {rtc_time->year += 2000; return;}
+    rtc_time->year += (bcd_to_bin(rtc_time->century) * 100);
+#else
+    rtc_time->year += 2000;
+#endif
 }
