@@ -150,7 +150,7 @@ typedef struct {
     ProcessContext context;
     MLFQSchedulerNode* scheduler_node;
     uint64_t creation_time;
-    char* ProcessRuntimePath;
+    char ProcessRuntimePath[256];
 } MLFQProcessControlBlock;
 
 typedef struct {

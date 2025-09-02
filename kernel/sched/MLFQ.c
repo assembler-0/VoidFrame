@@ -360,7 +360,21 @@ static void __attribute__((visibility("hidden"))) TerminateProcess(uint32_t pid,
 #ifdef VF_CONFIG_PROCINFO_AUTO_CLEANUP
     char cleanup_path[256];
     FormatA(cleanup_path, sizeof(cleanup_path), "%s/%d", RuntimeProcesses, proc->pid);
-    VfsDelete(cleanup_path, true);
+
+    // Add debug output
+    PrintKernel("System: Attempting cleanup of ");
+    PrintKernel(cleanup_path);
+    PrintKernel(" for PID ");
+    PrintKernelInt(proc->pid);
+
+    int cleanup_result = VfsDelete(cleanup_path, true);
+    if (cleanup_result != 0) {
+        PrintKernelError("System: Cleanup failed with code ");
+        PrintKernelInt(cleanup_result);
+        PrintKernel("\n");
+    } else {
+        PrintKernel("System: Cleanup successful\n");
+    }
 #endif
 }
 
@@ -404,11 +418,24 @@ static void __attribute__((visibility("hidden"))) ASTerminate(uint32_t pid, cons
     }
 
     SpinUnlockIrqRestore(&scheduler_lock, flags);
-
 #ifdef VF_CONFIG_PROCINFO_AUTO_CLEANUP
     char cleanup_path[256];
     FormatA(cleanup_path, sizeof(cleanup_path), "%s/%d", RuntimeProcesses, proc->pid);
-    VfsDelete(cleanup_path, true);
+
+    // Add debug output
+    PrintKernel("System: Attempting cleanup of ");
+    PrintKernel(cleanup_path);
+    PrintKernel(" for PID ");
+    PrintKernelInt(proc->pid);
+
+    int cleanup_result = VfsDelete(cleanup_path, true);
+    if (cleanup_result != 0) {
+        PrintKernelError("System: Cleanup failed with code ");
+        PrintKernelInt(cleanup_result);
+        PrintKernel("\n");
+    } else {
+        PrintKernel("System: Cleanup successful\n");
+    }
 #endif
 }
 
@@ -1082,8 +1109,7 @@ static __attribute__((visibility("hidden"))) uint32_t CreateSecureProcess(void (
     processes[slot].io_operations = 0;
     processes[slot].preemption_count = 0;
     processes[slot].wait_time = 0;
-    processes[slot].ProcessRuntimePath = FormatS("%s/%d", RuntimeProcesses, new_pid);
-
+    FormatA(processes[slot].ProcessRuntimePath, sizeof(processes[slot].ProcessRuntimePath), "%s/%d", RuntimeProcesses, new_pid);
 #ifdef VF_CONFIG_USE_CERBERUS
     CerberusRegisterProcess(new_pid, (uint64_t)stack, STACK_SIZE);
 #endif
@@ -1158,7 +1184,6 @@ void MLFQCleanupTerminatedProcess(void) {
         if (slot >= MAX_PROCESSES) break;
 
         MLFQProcessControlBlock* proc = &processes[slot];
-
         // Double-check state
         if (proc->state != PROC_ZOMBIE) {
             PrintKernelWarning("System: Cleanup found non-zombie process (PID: ");
@@ -1196,6 +1221,11 @@ void MLFQCleanupTerminatedProcess(void) {
         PrintKernel("System: Process PID ");
         PrintKernelInt(pid_backup);
         PrintKernel(" cleaned up successfully (state now PROC_TERMINATED=0)\n");
+#ifdef VF_CONFIG_PROCINFO_AUTO_CLEANUP
+        char cleanup_path[256];
+        FormatA(cleanup_path, sizeof(cleanup_path), "%s/%d", RuntimeProcesses, pid_backup);
+        VfsDelete(cleanup_path, true);
+#endif
     }
     SpinUnlockIrqRestore(&scheduler_lock, flags);
 }
@@ -1702,7 +1732,7 @@ int MLFQSchedInit(void) {
     idle_proc->privilege_level = PROC_PRIV_SYSTEM;
     idle_proc->scheduler_node = NULL;
     idle_proc->creation_time = MLFQGetSystemTicks();
-    idle_proc->ProcessRuntimePath = FormatS("%s/%d", RuntimeServices, idle_proc->pid);
+    FormatA(idle_proc->ProcessRuntimePath, sizeof(idle_proc->ProcessRuntimePath), "%s/%d", RuntimeServices, idle_proc->pid);
     if (VfsCreateDir(idle_proc->ProcessRuntimePath) != 0) PANIC("Failed to create ProcINFO directory");
     // Securely initialize the token for the Idle Process
     MLFQSecurityToken* token = &idle_proc->token;
