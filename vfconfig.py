@@ -87,6 +87,21 @@ class MesonConfigEditor(App):
     """Main application for editing meson config flags."""
 
     CSS = """
+    ConfigFlagWidget {
+        height: 5;
+        margin: 0;
+        padding: 0;
+    }
+    
+    Horizontal {
+        height: 5;
+        margin: 0;
+    }
+    
+    ScrollableContainer {
+        padding: 0;
+    }
+    
     .dialog {
         align: center middle;
         background: $surface;
