@@ -23,6 +23,22 @@ typedef enum {
     MEM_VIOLATION_HEAP_CORRUPT
 } MemorySecurityViolation;
 
+typedef enum {
+    CERBERUS_THREAT_MEMORY = 100,    // Memory violations
+    CERBERUS_THREAT_STACK,           // Stack corruption
+    CERBERUS_THREAT_CANARY,          // Canary violations
+    CERBERUS_THREAT_EXCESSIVE        // Excessive violations
+} CerberusThreatType;
+
+typedef struct {
+    uint32_t pid;
+    MemorySecurityViolation violation_type;
+    uint64_t fault_address;
+    uint64_t rip;
+    uint32_t severity;
+    uint64_t timestamp;
+} CerberusThreatReport;
+
 typedef struct {
     uint64_t base_addr;
     uint64_t size;

@@ -2,11 +2,12 @@
 #include "Cerberus.h"
 #include "Console.h"
 #include "Format.h"
+#include "Ipc.h"
 #include "Spinlock.h"
 #include "StackGuard.h"
 #include "StringOps.h"
 #include "VFS.h"
-
+#include "VMem.h"
 static CerberusState g_cerberus_state = {0};
 static volatile int cerberus_lock = 0;
 static uint64_t system_ticks = 0;
@@ -89,10 +90,11 @@ int CerberusRegisterProcess(uint32_t pid, uint64_t stack_base, uint64_t stack_si
     proc_info->last_violation = 0;
 
     // Install stack protection if stack provided
-    // if (stack_base && stack_size > 16) {
-    //     CerberusInstallStackCanary(pid, stack_base, stack_size);
-    // }
-
+#ifdef VF_CONFIG_CERBERUS_STACK_PROTECTION
+    if (stack_base && stack_size > 16) {
+        CerberusInstallStackCanary(pid, stack_base, stack_size);
+    }
+#endif
     g_cerberus_state.monitored_processes++;
     SpinUnlock(&cerberus_lock);
 
@@ -126,11 +128,27 @@ void CerberusUnregisterProcess(uint32_t pid) {
     PrintKernelF("[Cerberus] Process %d unregistered\n", pid);
 }
 
-int CerberusInstallStackCanary(uint32_t pid, uint64_t stack_base, uint64_t stack_size) {
+int CerberusInstallStackCanary(uint32_t pid, uint64_t stack_top, uint64_t stack_size) {
     if (!g_cerberus_state.is_initialized) return -1;
 
-    // Install canary at end of stack using existing STACK_CANARY_VALUE
-    uint64_t canary_addr = stack_base + stack_size - sizeof(uint64_t);
+    // CORRECTED: Calculate actual usable stack base
+    // VMemAllocStack returns stack_top, but usable stack starts at stack_top - stack_size
+    uint64_t actual_stack_base = stack_top - stack_size;
+
+    // Place canary at the bottom of usable stack (just above guard page)
+    uint64_t canary_addr = actual_stack_base + sizeof(uint64_t);
+
+    PrintKernelF("[Cerberus] Installing canary: stack_top=0x%lx, base=0x%lx, canary=0x%lx\n",
+                    stack_top, actual_stack_base, canary_addr);
+
+    // Validate memory is accessible
+    uint64_t phys_addr = VMemGetPhysAddr(canary_addr);
+    if (phys_addr == 0) {
+        PrintKernelWarningF("[Cerberus] Canary address not mapped: 0x%lx\n", canary_addr);
+        return -1;
+    }
+
+    // Install canary
     uint64_t* canary_ptr = (uint64_t*)canary_addr;
     *canary_ptr = STACK_CANARY_VALUE;
 
@@ -138,18 +156,7 @@ int CerberusInstallStackCanary(uint32_t pid, uint64_t stack_base, uint64_t stack
     CerberusProcessInfo* proc_info = &g_cerberus_state.process_info[pid];
     proc_info->stack_canary_addr = canary_addr;
 
-    // Track stack as a watched region
-    CerberusTrackAlloc(stack_base, stack_size, pid);
-
-    // Mark as stack region
-    for (int i = 0; i < CERBERUS_MAX_WATCH_REGIONS; i++) {
-        CerberusWatchRegion* region = &g_cerberus_state.watch_regions[i];
-        if (region->is_active && region->base_addr == stack_base && region->process_id == pid) {
-            region->is_stack_region = true;
-            break;
-        }
-    }
-
+    PrintKernelSuccessF("[Cerberus] Stack canary installed for PID %d at 0x%lx\n", pid, canary_addr);
     return 0;
 }
 
@@ -276,17 +283,28 @@ int CerberusAnalyzeFault(uint64_t fault_addr, uint64_t error_code, uint32_t pid,
 void CerberusReportThreat(uint32_t pid, MemorySecurityViolation violation) {
     if (!g_cerberus_state.is_initialized) return;
 
-    // Report to Astra via VFS
-    char threat_msg[128];
-    FormatA(threat_msg, sizeof(threat_msg),
-           "MEMORY_THREAT PID=%d TYPE=%d SEVERITY=%d TICK=%lu",
-           pid, violation,
-           (violation >= MEM_VIOLATION_STACK_CORRUPTION) ? 3 : 2,
-           system_ticks);
-    extern char astra_path[1024];
-    VfsWriteFile(astra_path, threat_msg, StringLength(threat_msg));
+    extern uint32_t security_manager_pid;  // From MLFQ.c
+    if (security_manager_pid == 0) return; // Astra not available
 
-    PrintKernelWarningF("[Cerberus] Threat reported to Astra: PID=%d\n", pid);
+    // Create IPC message with threat data
+    IpcMessage threat_msg = {
+        .sender_pid = 0,  // Kernel/Cerberus
+        .type = IPC_TYPE_DATA,
+        .size = sizeof(CerberusThreatReport)
+    };
+
+    CerberusThreatReport* report = (CerberusThreatReport*)threat_msg.payload.data;
+    report->pid = pid;
+    report->violation_type = violation;
+    report->fault_address = 0; // Can be populated from context
+    report->rip = 0;
+    report->severity = (violation >= MEM_VIOLATION_STACK_CORRUPTION) ? 3 : 2;
+    report->timestamp = system_ticks;
+
+    // Send directly to Astra via IPC - no VFS operations!
+    IpcSendMessage(security_manager_pid, &threat_msg);
+
+    PrintKernelWarningF("[Cerberus] Threat reported to Astra via IPC: PID=%d\n", pid);
 }
 #endif
 

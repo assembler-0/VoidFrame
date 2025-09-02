@@ -1,5 +1,6 @@
 #include "MLFQ.h"
 #include "Atomics.h"
+#include "Cerberus.h"
 #include "KernelHeap.h"
 #ifdef VF_CONFIG_USE_CERBERUS
 #include "Cerberus.h"
@@ -50,7 +51,7 @@ static volatile int scheduler_lock = 0;
 rwlock_t process_table_rwlock = {0};
 
 // Security subsystem
-static uint32_t security_manager_pid = 0;
+uint32_t security_manager_pid = 0;
 static uint32_t security_violation_count = 0;
 static uint64_t last_security_check = 0;
 // Fast bitmap operations for process slots (up to 64 processes for 64-bit)
@@ -355,8 +356,12 @@ static void __attribute__((visibility("hidden"))) TerminateProcess(uint32_t pid,
 #ifdef VF_CONFIG_USE_CERBERUS
     CerberusUnregisterProcess(proc->pid);
 #endif
-    if (proc->ProcessRuntimePath && VfsIsDir(proc->ProcessRuntimePath)) VfsDelete(proc->ProcessRuntimePath, true);
-    else PrintKernelWarning("ProcINFOPath invalid during termination\n");
+
+#ifdef VF_CONFIG_PROCINFO_AUTO_CLEANUP
+    char cleanup_path[256];
+    FormatA(cleanup_path, sizeof(cleanup_path), "%s/%d", RuntimeProcesses, proc->pid);
+    VfsDelete(cleanup_path, true);
+#endif
 }
 
 
@@ -400,8 +405,11 @@ static void __attribute__((visibility("hidden"))) ASTerminate(uint32_t pid, cons
 
     SpinUnlockIrqRestore(&scheduler_lock, flags);
 
-    if (proc->ProcessRuntimePath && VfsIsDir(proc->ProcessRuntimePath)) VfsDelete(proc->ProcessRuntimePath, true);
-    else PrintKernelWarning("ProcINFOPath invalid during termination");
+#ifdef VF_CONFIG_PROCINFO_AUTO_CLEANUP
+    char cleanup_path[256];
+    FormatA(cleanup_path, sizeof(cleanup_path), "%s/%d", RuntimeProcesses, proc->pid);
+    VfsDelete(cleanup_path, true);
+#endif
 }
 
 static void __attribute__((visibility("hidden"))) SecurityViolationHandler(uint32_t violator_pid, const char* reason) {
@@ -656,8 +664,9 @@ static void SmartAging(void) {
 
                 queue->count--;
 
-                // IF NONE OTHER THAN 0, breaks
-                // uint32_t new_priority = (proc->privilege_level == PROC_PRIV_SYSTEM) ? 0 : RT_PRIORITY_THRESHOLD;;
+                // Anti-starvation bridge: Must promote to priority 0 (RT tier) to guarantee
+                // scheduling. SmartAging processes regular queues (3,4) and starved processes
+                // need RT-tier access to break out of potential starvation cycles.
                 uint32_t new_priority = 0;
 
                 proc->priority = new_priority;
@@ -1447,7 +1456,7 @@ static __attribute__((visibility("hidden"))) void DynamoX(void) {
             controller.consecutive_samples++;
 
             // Periodic detailed reporting
-            if (controller.consecutive_samples % 100 == 0) {
+            if (controller.consecutive_samples % 1000 == 0) {
                 SerialWrite("DynamoX: Freq: ");
                 SerialWriteDec(controller.current_freq);
                 SerialWrite("Hz | Load: ");
@@ -1537,9 +1546,34 @@ static void Astra(void) {
                     // Immediately terminate with extreme prejudice.
                     ASTerminate(proc->pid, "Unauthorized privilege escalation");
                     threat_level += 20; // Escalate threat level immediately
-                    }
+                }
             }
         }
+
+#ifdef VF_CONFIG_CERBERUS_THREAT_REPORTING
+        IpcMessage threat_msg;
+        if (IpcReceiveMessage(&threat_msg) == 0) {  // Message received
+            if (threat_msg.size == sizeof(CerberusThreatReport)) {
+                const CerberusThreatReport * report = (CerberusThreatReport*)threat_msg.payload.data;
+
+                PrintKernelError("Astra: Cerberus threat received - PID: ");
+                PrintKernelInt(report->pid);
+                PrintKernelError(" Type: ");
+                PrintKernelInt(report->violation_type);
+                PrintKernelError(" Severity: ");
+                PrintKernelInt(report->severity);
+                PrintKernelError("\n");
+
+                // Escalate threat level based on severity
+                threat_level += report->severity * 5;
+
+                // Take immediate action for severe threats
+                if (report->severity >= 3 || report->violation_type == MEM_VIOLATION_STACK_CORRUPTION) {
+                    ASTerminate(report->pid, "Cerberus memory security violation");
+                }
+            }
+        }
+#endif
 
         if (LIKELY(VfsIsFile(astra_path))) {
             if (current_tick % 1000 == 0) {

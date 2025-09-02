@@ -221,7 +221,6 @@ void MLFQDumpSchedulerState(void);
 uint64_t MLFQGetSystemTicks(void);
 void MLFQListProcesses(void);
 void MLFQGetProcessStats(uint32_t pid, uint32_t* cpu_time, uint32_t* io_ops, uint32_t* preemptions);
-void MLFQBoostProcessPriority(uint32_t pid);
 void MLFQKillProcess(uint32_t pid);
 
 // DEBUG
