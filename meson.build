@@ -1,5 +1,5 @@
 project('voidframe', 'c',
-        version : '0.0.1-beta5.3',
+        version : '0.0.1-beta5.4',
         default_options : [
             'c_std=c11',
             'optimization=2',
@@ -124,6 +124,7 @@ c_sources = [
     src_root + '/drivers/APIC.c',
     src_root + '/drivers/InterruptController.c',
     src_root + '/drivers/virtio/VirtioBlk.c',
+    src_root + '/include/ctype.c',
     arch_root + '/idt/Idt.c',
     arch_root + '/gdt/Gdt.c',
     arch_root + '/interrupts/Interrupts.c',
@@ -144,6 +145,7 @@ vf_config_flags =  [
     '-DVF_CONFIG_ENABLE_PS2',
     '-DVF_CONFIG_ENABLE_INITRD',
     '-DVF_CONFIG_ENABLE_IDE',
+    '-DVF_CONFIG_RTC_CENTURY',
     '-DVF_CONFIG_ENFORCE_MEMORY_PROTECTION',
     '-DVF_CONFIG_VM_HOST',
     '-DVF_CONFIG_PROCINFO_CREATE_DEFAULT',
@@ -153,10 +155,10 @@ vf_config_flags =  [
     '-DVF_CONFIG_USE_CERBERUS',
     '-DVF_CONFIG_CERBERUS_VFS_LOGGING',
     '-DVF_CONFIG_CERBERUS_THREAT_REPORTING',
-#    '-DVF_CONFIG_CERBERUS_STACK_PROTECTION',
+    #'-DVF_CONFIG_CERBERUS_STACK_PROTECTION',
     '-DVF_CONFIG_SCHED_MLFQ',
     '-DVF_CONFIG_PROCINFO_AUTO_CLEANUP',
-    #'-DVF_CONFIG_SCHED_CFS', # not now
+    #'-DVF_CONFIG_SCHED_CFS',
     #'-DVF_CONFIG_PANIC_OVERRIDE',
 ]
 
@@ -251,7 +253,7 @@ run_target('img',
                  'sh', '-c',
                  qemu_img.full_path() + ' create -f raw VoidFrameDisk.img 1440K' + ' && ' +
                  mkfs_fat.full_path() + ' -F 12 VoidFrameDisk.img'
-           ]
+               ]
 )
 
 run_target('virtio-img',

@@ -11,6 +11,7 @@ typedef struct {
     uint8_t day;
     uint8_t month;
     uint16_t year;
+    uint16_t century;
 } rtc_time_t;
 
 // Reads the current date and time from the RTC into the provided struct.

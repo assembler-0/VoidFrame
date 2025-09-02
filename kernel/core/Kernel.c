@@ -728,7 +728,7 @@ static InitResultT PXS2(void) {
     return INIT_SUCCESS;
 }
 
-void KernelMain(const uint32_t magic, const uint32_t info) {
+asmlinkage void KernelMain(const uint32_t magic, const uint32_t info) {
     if (magic != MULTIBOOT2_BOOTLOADER_MAGIC) {
         ClearScreen();
         PrintKernelError("Magic: ");
@@ -739,7 +739,7 @@ void KernelMain(const uint32_t magic, const uint32_t info) {
     console.buffer = (volatile uint16_t*)VGA_BUFFER_ADDR;
 
     ClearScreen();
-    PrintKernelSuccess("System: VoidFrame Kernel - Version 0.0.1-beta5 loaded\n");
+    PrintKernelSuccess("System: VoidFrame Kernel - Version 0.0.1-beta5.4 loaded\n");
     PrintKernel("Magic: ");
     PrintKernelHex(magic);
     PrintKernel(", Info: ");
