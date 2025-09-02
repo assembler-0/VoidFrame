@@ -1,11 +1,15 @@
 #include "Interrupts.h"
+
+#include "Atomics.h"
 #include "Console.h"
 #include "Ide.h"
+#include "MLFQ.h"
 #include "PS2.h"
 #include "Panic.h"
 #include "Pic.h"
-#include "MLFQ.h"
 #include "StackTrace.h"
+
+volatile uint32_t PITTicks = 0;
 
 // The C-level interrupt handler, called from the assembly stub
 void InterruptHandler(Registers* regs) {
@@ -14,7 +18,8 @@ void InterruptHandler(Registers* regs) {
     // Handle hardware interrupts first
     switch (regs->interrupt_number) {
         case 32: // Timer interrupt (IRQ 0)
-            MLFQScheule(regs);
+            MLFQSchedule(regs);
+            AtomicInc(&PITTicks);
             PICSendEOI(regs->interrupt_number);
             return;
 

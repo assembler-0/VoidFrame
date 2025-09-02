@@ -1,10 +1,5 @@
 // VoidFrame Kernel Entry File
 #include "Kernel.h"
-#include "KernelHeap.h"
-#include "MemOps.h"
-#include "PMem.h"
-#include "StackGuard.h"
-#include "Cerberus.h"
 #include "Console.h"
 #include "FAT12.h"
 #include "Gdt.h"
@@ -12,16 +7,20 @@
 #include "Ide.h"
 #include "Idt.h"
 #include "Io.h"
+#include "KernelHeap.h"
 #include "LPT/LPT.h"
+#include "MLFQ.h"
+#include "MemOps.h"
 #include "MemPool.h"
 #include "Multiboot2.h"
 #include "PCI/PCI.h"
+#include "PMem.h"
 #include "PS2.h"
 #include "Panic.h"
 #include "Pic.h"
-#include "MLFQ.h"
 #include "Serial.h"
 #include "Shell.h"
+#include "StackGuard.h"
 #include "Switch.h"
 #include "VFRFS.h"
 #include "VFS.h"
@@ -674,11 +673,11 @@ static InitResultT PXS2(void) {
     else PrintKernelSuccess("System: Huge pages available\n");
 #endif
 
-#ifdef VF_CONFIG_MLFQ_SCHED
+#ifdef VF_CONFIG_SCHED_MLFQ
     // Initialize Process Management
-    PrintKernel("Info: Initializing sched management...\n");
+    PrintKernel("Info: Initializing MLFQ scheduler...\n");
     MLFQSchedInit();
-    PrintKernelSuccess("System: Process management initialized\n");
+    PrintKernelSuccess("System: MLFQ scheduler initialized\n");
 #endif
 
 #ifdef VF_CONFIG_ENABLE_ISA

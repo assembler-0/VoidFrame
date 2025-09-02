@@ -158,7 +158,8 @@ static uint32_t __attribute__((visibility("hidden"))) RemoveFromTerminationQueue
 
 
 uint64_t MLFQGetSystemTicks(void) {
-    return MLFQscheduler.tick_counter;
+    extern volatile uint32_t PITTicks;
+    return PITTicks;
 }
 
 static int __attribute__((visibility("hidden"))) ValidateToken(const MLFQSecurityToken* token, uint32_t pid_to_check) {
@@ -247,7 +248,7 @@ void __attribute__((visibility("hidden"))) RemoveFromScheduler(uint32_t slot) {
     FreeSchedulerNode(node);
 }
 
-static void __attribute__((visibility("hidden"))) TerminateProcess(uint32_t pid, MLFQTerminationReason reason, uint32_t exit_code) {
+static void __attribute__((visibility("hidden"))) TerminateProcess(uint32_t pid, TerminationReason reason, uint32_t exit_code) {
     irq_flags_t flags = SpinLockIrqSave(&scheduler_lock);
     MLFQProcessControlBlock* proc = MLFQGetCurrentProcessByPID(pid);
     if (UNLIKELY(!proc || proc->state == PROC_DYING ||
@@ -309,7 +310,7 @@ static void __attribute__((visibility("hidden"))) TerminateProcess(uint32_t pid,
     }
 
     // Atomic state transition
-    MLFQProcessState old_state = proc->state;
+    ProcessState old_state = proc->state;
     if (UNLIKELY(AtomicCmpxchg((volatile uint32_t*)&proc->state, old_state, PROC_DYING) != old_state)) {
         SpinUnlockIrqRestore(&scheduler_lock, flags);
         return; // Race condition, another thread is handling termination
@@ -656,6 +657,7 @@ static void SmartAging(void) {
                 queue->count--;
 
                 // IF NONE OTHER THAN 0, breaks
+                // uint32_t new_priority = (proc->privilege_level == PROC_PRIV_SYSTEM) ? 0 : RT_PRIORITY_THRESHOLD;;
                 uint32_t new_priority = 0;
 
                 proc->priority = new_priority;
@@ -726,7 +728,7 @@ static inline __attribute__((visibility("hidden"))) __attribute__((always_inline
 }
 
 // Enhanced scheduler with smart preemption and load balancing
-void MLFQScheule(struct Registers* regs) {
+void MLFQSchedule(struct Registers* regs) {
     irq_flags_t flags = SpinLockIrqSave(&scheduler_lock);
     uint64_t schedule_start = MLFQscheduler.tick_counter;
 
@@ -769,7 +771,7 @@ void MLFQScheule(struct Registers* regs) {
 
     // Handle currently running process
     if (LIKELY(old_slot != 0)) {
-        MLFQProcessState state = old_proc->state;
+        ProcessState state = old_proc->state;
 
         if (UNLIKELY(state == PROC_DYING || state == PROC_ZOMBIE || state == PROC_TERMINATED)) {
             goto select_next;
@@ -1064,7 +1066,6 @@ static __attribute__((visibility("hidden"))) uint32_t CreateSecureProcess(void (
     processes[slot].privilege_level = privilege;
     processes[slot].priority = (privilege == PROC_PRIV_SYSTEM) ? 0 : RT_PRIORITY_THRESHOLD;
     processes[slot].base_priority = processes[slot].priority;
-    processes[slot].is_user_mode = (privilege != PROC_PRIV_SYSTEM);
     processes[slot].scheduler_node = NULL;
     processes[slot].creation_time = MLFQGetSystemTicks();
     processes[slot].last_scheduled_tick = MLFQGetSystemTicks();
@@ -1201,7 +1202,9 @@ MLFQProcessControlBlock* MLFQGetCurrentProcessByPID(uint32_t pid) {
     ReadLock(&process_table_rwlock);
     for (int i = 0; i < MAX_PROCESSES; i++) {
         if (processes[i].pid == pid && processes[i].state != PROC_TERMINATED) {
-            return &processes[i];
+            MLFQProcessControlBlock* found = &processes[i];
+            ReadUnlock(&process_table_rwlock);
+            return found;
         }
     }
     ReadUnlock(&process_table_rwlock);
@@ -1762,7 +1765,7 @@ void MLFQDumpPerformanceStats(void) {
     }
 }
 
-static const char* GetStateString(MLFQProcessState state) {
+static const char* GetStateString(ProcessState state) {
     switch (state) {
         case PROC_TERMINATED: return "TERMINATED";
         case PROC_READY:      return "READY     ";

@@ -1,9 +1,9 @@
 #include "Editor.h"
 #include "Console.h"
 #include "KernelHeap.h"
-#include "PS2.h"
-#include "MemOps.h"
 #include "MLFQ.h"
+#include "MemOps.h"
+#include "PS2.h"
 #include "StringOps.h"
 #include "VFS.h"
 
@@ -47,7 +47,9 @@ static void EditorGotoLinePrompt(void) {
     char input[12];
     int len = 0;
     while (1) {
-        while (!HasInput()) { MLFQYield(); }
+        while (!HasInput()) {
+            MLFQYield();
+        }
         char c = GetChar();
         if (c == '\n' || c == '\r') {
             break;

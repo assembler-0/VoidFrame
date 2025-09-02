@@ -4,6 +4,7 @@
 #include "stdint.h"
 #include "Ipc.h"
 #include "Cpu.h"
+#include "Shared.h"
 
 // =============================================================================
 // MLFQ Parameters (last update: 14/08/25)
@@ -118,22 +119,6 @@ typedef struct {
     uint64_t checksum;
 } __attribute__((packed)) MLFQSecurityToken;
 
-typedef enum {
-    PROC_TERMINATED = 0,  // IMPORTANT: Keep this as 0
-    PROC_READY,
-    PROC_RUNNING,
-    PROC_BLOCKED,
-    PROC_ZOMBIE,        // New: Waiting for cleanup
-    PROC_DYING          // New: In process of termination
-} MLFQProcessState;
-
-typedef enum {
-    TERM_NORMAL = 0,    // Normal exit
-    TERM_KILLED,        // Killed by another process
-    TERM_CRASHED,       // Crashed/exception
-    TERM_SECURITY,      // Security violation
-    TERM_RESOURCE       // Resource exhaustion
-} MLFQTerminationReason;
 // Use the same structure for context switching to avoid mismatches
 typedef Registers ProcessContext;
 
@@ -145,11 +130,10 @@ typedef struct SchedulerNode {
 
 typedef struct {
     uint32_t pid;
-    MLFQProcessState state;
+    ProcessState state;
     void* stack;
     uint8_t priority;
     uint8_t base_priority;      // Original priority for reset
-    uint8_t is_user_mode;
     uint8_t privilege_level;
     uint32_t cpu_burst_history[CPU_BURST_HISTORY]; // Track CPU usage patterns
     uint32_t io_operations;     // Count of I/O operations
@@ -157,7 +141,7 @@ typedef struct {
     uint64_t cpu_time_accumulated;
     uint64_t last_scheduled_tick;
     uint64_t wait_time;         // Time spent waiting
-    MLFQTerminationReason term_reason;
+    TerminationReason term_reason;
     uint32_t exit_code;
     uint64_t termination_time;
     uint32_t parent_pid;
@@ -230,7 +214,7 @@ MLFQProcessControlBlock* MLFQGetCurrentProcessByPID(uint32_t pid);
 void MLFQCleanupTerminatedProcess(void);
 void MLFQYield(void);
 
-void MLFQScheule(Registers* regs);
+void MLFQSchedule(Registers* regs);
 void MLFQDumpSchedulerState(void);
 
 // Security functions
