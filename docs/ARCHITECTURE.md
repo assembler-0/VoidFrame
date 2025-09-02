@@ -371,15 +371,15 @@ The goal is to create a system that feels fast and responsive under load but doe
 
 The following functions and commands provide interfaces to the process management subsystem.
 
-| Function / Command           | Description                                                                                                                      |
-|:-----------------------------|:---------------------------------------------------------------------------------------------------------------------------------|
-| `CreateProcess(entry_point)` | Creates a new user-level process. A simplified wrapper around `CreateSecureProcess`.                                             |
-| `KillProcess(pid)`           | Safely requests the termination of a process with the given PID.                                                                 |
-| `MLFQYield()`                    | A cooperative function that allows a process to voluntarily give up the remainder of its time slice and trigger the scheduler.   |
-| `GetProcessByPid(pid)`       | Retrieves a pointer to the PCB for a given PID.                                                                                  |
-| `ListProcesses()`            | A shell/debug command that prints a formatted list of all active processes, including their PID, state, priority, and CPU usage. |
-| `DumpSchedulerState()`       | A debug command that prints detailed internal statistics about the scheduler, including queue depths and load.                   |
-| `DumpPerformanceStats()`     | A debug command that prints performance counters like total context switches and security violations.                            |
+| Function / Command            | Description                                                                                                                      |
+|:------------------------------|:---------------------------------------------------------------------------------------------------------------------------------|
+| `CreateProcess(entry_point)`  | Creates a new user-level process. A simplified wrapper around `CreateSecureProcess`.                                             |
+| `KillProcess(pid)`            | Safely requests the termination of a process with the given PID.                                                                 |
+| `MLFQYield()`                 | A cooperative function that allows a process to voluntarily give up the remainder of its time slice and trigger the scheduler.   |
+| `GetProcessByPid(pid)`        | Retrieves a pointer to the PCB for a given PID.                                                                                  |
+| `ListProcesses()`             | A shell/debug command that prints a formatted list of all active processes, including their PID, state, priority, and CPU usage. |
+| `DumpSchedulerState()`        | A debug command that prints detailed internal statistics about the scheduler, including queue depths and load.                   |
+| `DumpPerformanceStats()`      | A debug command that prints performance counters like total context switches and security violations.                            |
 
 ## Debugging and Development
 - Debugging:
@@ -411,23 +411,29 @@ The following functions and commands provide interfaces to the process managemen
   - The kernel build options and flags are as follow (modify as needed)
       ```jetbrainsmeson
       vf_config_flags =  [
-        '-DVF_CONFIG_ENABLE_XHCI',
-        '-DVF_CONFIG_ENABLE_VIRTIO',
-        '-DVF_CONFIG_ENABLE_ISA',
-        '-DVF_CONFIG_ENABLE_LPT',
-        '-DVF_CONFIG_ENABLE_PCI',
-        '-DVF_CONFIG_ENABLE_PS2',
-        '-DVF_CONFIG_ENABLE_INITRD',
-        '-DVF_CONFIG_ENABLE_IDE',
-        '-DVF_CONFIG_ENFORCE_MEMORY_PROTECTION',
-        '-DVF_CONFIG_VM_HOST',
-        '-DVF_CONFIG_MLFQ_SCHED',
-        '-DVF_CONFIG_PROCINFO_CREATE_DEFAULT',
-        '-DVF_CONFIG_USE_VFSHELL',
-        '-DVF_CONFIG_USE_DYNAMOX',
-        '-DVF_CONFIG_USE_ASTRA',
-       #    '-DVF_CONFIG_USE_CERBERUS',
-       #    '-DVF_CONFIG_PANIC_OVERRIDE',
-      ]
+    '-DVF_CONFIG_ENABLE_XHCI',
+    '-DVF_CONFIG_ENABLE_VIRTIO',
+    '-DVF_CONFIG_ENABLE_ISA',
+    '-DVF_CONFIG_ENABLE_LPT',
+    '-DVF_CONFIG_ENABLE_PCI',
+    '-DVF_CONFIG_ENABLE_PS2',
+    '-DVF_CONFIG_ENABLE_INITRD',
+    '-DVF_CONFIG_ENABLE_IDE',
+    '-DVF_CONFIG_RTC_CENTURY',
+    '-DVF_CONFIG_ENFORCE_MEMORY_PROTECTION',
+    '-DVF_CONFIG_VM_HOST',
+    '-DVF_CONFIG_PROCINFO_CREATE_DEFAULT',
+    '-DVF_CONFIG_USE_VFSHELL',
+    '-DVF_CONFIG_USE_DYNAMOX',
+    '-DVF_CONFIG_USE_ASTRA',
+    '-DVF_CONFIG_USE_CERBERUS',
+    '-DVF_CONFIG_CERBERUS_VFS_LOGGING',
+    '-DVF_CONFIG_CERBERUS_THREAT_REPORTING', 
+    #'-DVF_CONFIG_CERBERUS_STACK_PROTECTION',
+    '-DVF_CONFIG_SCHED_MLFQ',
+    '-DVF_CONFIG_PROCINFO_AUTO_CLEANUP', 
+    #'-DVF_CONFIG_SCHED_CFS',
+    #'-DVF_CONFIG_PANIC_OVERRIDE',
+    ]
       ```
-> assembler-0 @ voidframe-kernel - 11:54 01/09/2025
+> assembler-0 @ voidframe-kernel - 14:40 02/09/2025

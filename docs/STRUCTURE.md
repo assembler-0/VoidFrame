@@ -28,6 +28,19 @@ VoidFrame/
 │   ├── PCI/                 
 │   │   ├── PCI.h            
 │   │   └── PCI.c            
+│   ├── ISA/                 
+│   │   ├── ISA.h            
+│   │   └── ISA.c    
+│   ├── LPT/                 
+│   │   ├── LPT.h            
+│   │   └── LPT.c    
+│   ├── sound/                 
+│   │   ├── SB16.h            
+│   │   └── SB16.c   
+│   ├── virtio/       
+│   │   ├── Virtio.h             
+│   │   ├── VirtioBlk.h             
+│   │   └── VirtioBlk.c     
 │   ├── RTC/                 
 │   │   ├── Rtc.h            
 │   │   └── Rtc.c            
@@ -51,21 +64,23 @@ VoidFrame/
 ├── fs/       
 │   ├── FAT12.h                # Filesystems  
 │   ├── FAT12.c           
-│   ├── Fs.h            
+│   ├── VFRFS.h            
 │   ├── VFRFS.c            
-│   ├── FsUtils.h             
-│   ├── FsUtils.c                         
+│   ├── FsUtils.h                           
 │   ├── VFS.c       
 │   └── VFS.h    
 ├── include/                   # Common includes
 │   ├── Font.h           
 │   ├── Io.h            
 │   ├── Switch.h             
-│   ├── Paging.asm            
+│   ├── Switch.asm            
 │   ├── stdbool.h            
 │   ├── stdint.h            
 │   ├── stddef.h            
 │   ├── stdlib.h            
+│   ├── Ltypes.h            
+│   ├── ctypes.h            
+│   ├── ctypes.c            
 │   └── stdarg.h     
 ├── kernel/                    # Kernel core
 │   ├── atomic/                # Atomic operations
@@ -95,8 +110,9 @@ VoidFrame/
 │   ├── ipc/                  # IPC related files  
 │   │   ├── Ipc.c                
 │   │   └── Ipc.h         
-│   └── process/              # MLFQ scheduler  
-│       ├── Process.c     
+│   └── sched/                # Scheduler and Process management
+│       ├── Shared.h     
+│       ├── MLFQ.c     
 │       └── MLFQ.h    
 ├── mm/                       # Physical and Virtual memory manager  
 │   ├── KernelHeap.c      
@@ -116,5 +132,6 @@ VoidFrame/
 ├── linker.ld         
 ├── grub.cfg                   
 ├── meson.build        
+├── vfconfig.py        
 └── ...                      
 ```

@@ -155,10 +155,10 @@ vf_config_flags =  [
     '-DVF_CONFIG_USE_CERBERUS',
     '-DVF_CONFIG_CERBERUS_VFS_LOGGING',
     '-DVF_CONFIG_CERBERUS_THREAT_REPORTING',
-#    '-DVF_CONFIG_CERBERUS_STACK_PROTECTION',
+    #'-DVF_CONFIG_CERBERUS_STACK_PROTECTION',
     '-DVF_CONFIG_SCHED_MLFQ',
     '-DVF_CONFIG_PROCINFO_AUTO_CLEANUP',
-    #'-DVF_CONFIG_SCHED_CFS', # not now
+    #'-DVF_CONFIG_SCHED_CFS',
     #'-DVF_CONFIG_PANIC_OVERRIDE',
 ]
 
@@ -253,7 +253,7 @@ run_target('img',
                  'sh', '-c',
                  qemu_img.full_path() + ' create -f raw VoidFrameDisk.img 1440K' + ' && ' +
                  mkfs_fat.full_path() + ' -F 12 VoidFrameDisk.img'
-           ]
+               ]
 )
 
 run_target('virtio-img',

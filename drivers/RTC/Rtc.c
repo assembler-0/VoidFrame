@@ -90,8 +90,16 @@ void RtcReadTime(rtc_time_t* rtc_time) {
         rtc_time->year   = bcd_to_bin(rtc_time->year);
     }
 #ifdef VF_CONFIG_RTC_CENTURY
-    if (!rtc_time->century) {rtc_time->year += 2000; return;}
-    rtc_time->year += (bcd_to_bin(rtc_time->century) * 100);
+    {
+        uint16_t cval = (uint16_t)rtc_time->century;
+        if (cval != 0) {
+            if (bcd_mode)
+                cval = bcd_to_bin((uint8_t)cval);
+            rtc_time->year += (uint16_t)(cval * 100);
+        } else {
+            rtc_time->year += 2000;
+        }
+    }
 #else
     rtc_time->year += 2000;
 #endif
