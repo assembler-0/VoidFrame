@@ -90,6 +90,7 @@ asm_sources = [
 c_sources = [
     src_root + '/kernel/core/Kernel.c',
     src_root + '/kernel/core/Panic.c',
+    src_root + '/kernel/core/Compositor.c',
     src_root + '/kernel/sched/MLFQ.c',
     src_root + '/kernel/etc/Shell.c',
     src_root + '/kernel/etc/Console.c',
@@ -127,6 +128,7 @@ c_sources = [
     src_root + '/drivers/InterruptController.c',
     src_root + '/drivers/virtio/VirtioBlk.c',
     src_root + '/include/ctype.c',
+    src_root + '/include/Font.c',
     arch_root + '/idt/Idt.c',
     arch_root + '/gdt/Gdt.c',
     arch_root + '/interrupts/Interrupts.c',

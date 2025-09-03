@@ -37,10 +37,14 @@ ConsoleT console = {
 static volatile int lock = 0;
 
 void Snooze() {
-    if (MLFQGetCurrentProcess()->privilege_level != PROC_PRIV_SYSTEM) return;
+    uint64_t rflags;
+    __asm__ volatile("pushfq; pop %0" : "=r"(rflags));
+    if ((rflags & (1ULL << 9)) != 0) { // IF set => scheduler likely active
+        if (MLFQGetCurrentProcess()->privilege_level != PROC_PRIV_SYSTEM)
+            return;
+    }
     snooze = 1;
 }
-
 void Unsnooze() {
     snooze = 0;
 }
