@@ -436,7 +436,10 @@ void PXS1(const uint32_t info) {
 #ifndef VF_CONFIG_EXCLUDE_EXTRA_OBJECTS
     VBEShowSplash();
 #endif
-    ClearScreen();
+
+#ifdef VF_CONFIG_SNOOZE_ON_BOOT
+    Snooze();
+#endif
 
     PrintKernel("System: Parsing MULTIBOOT2 info...\n");
     ParseMultibootInfo(info);
@@ -758,6 +761,11 @@ void KernelMainHigherHalf(void) {
 
     PrintKernelSuccess("System: Kernel initialization complete\n");
     PrintKernelSuccess("System: Initializing interrupts...\n");
+
+#ifdef VF_CONFIG_SNOOZE_ON_BOOT
+    Unsnooze();
+    ClearScreen();
+#endif
 
     sti();
 

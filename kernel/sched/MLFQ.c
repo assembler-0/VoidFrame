@@ -1252,7 +1252,7 @@ MLFQProcessControlBlock* MLFQGetCurrentProcessByPID(uint32_t pid) {
 
 
 static __attribute__((visibility("hidden"))) void DynamoX(void) {
-    PrintKernel("DynamoX: DynamoX v0.2 starting...\n");
+    PrintKernelSuccess("DynamoX: DynamoX v0.2 starting...\n");
 
     typedef struct {
         uint16_t min_freq;
