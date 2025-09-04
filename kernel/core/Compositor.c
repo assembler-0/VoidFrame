@@ -6,12 +6,7 @@
 #include "MemOps.h"
 #include "StringOps.h"
 #include "Vesa.h"
-
-// In Compositor.c:
-#define TERMINAL_BG     0x1E1E1E  // Dark gray
-#define TERMINAL_TEXT   0x00FF00  // Classic green
-#define WINDOW_BG       0x2F3349  // Modern blue-gray
-#define TITLE_BAR       0x4C566A  // Medium gray
+#include "Pallete.h"
 
 // --- Globals ---
 
@@ -27,8 +22,7 @@ void VFCompositor(void) {
     Snooze();
     if (VBEIsInitialized()) {
         WindowManagerInit();
-        CreateWindow(50, 50, 400, 250, "Window 1");
-        CreateWindow(150, 150, 500, 350, "Window 2");
+        CreateWindow(50, 50, 400, 250, "VFShell");
     }
     while (1) {
         if (VBEIsInitialized()) {
@@ -145,8 +139,14 @@ Window* CreateWindow(int x, int y, int width, int height, const char* title) {
 
 
 void DestroyWindow(Window* window) {
+    // Unlink from neighboring windows
+    if (window->prev) window->prev->next = window->next;
+    if (window->next) window->next->prev = window->prev;
+    // Update head/tail if needed
     if (g_window_list_head == window) g_window_list_head = window->next;
     if (g_window_list_tail == window) g_window_list_tail = window->prev;
+    // Clear pointers to avoid accidental reuse
+    window->next = window->prev = NULL;
     // Free the copied title string
     KernelFree((void*)window->title);
     KernelFree(window->back_buffer);

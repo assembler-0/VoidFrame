@@ -725,9 +725,10 @@ static void SmartAging(void) {
     }
 }
 
-static inline __attribute__((visibility("hidden"))) __attribute__((always_inline)) int ProcINFOPathValidation(const MLFQProcessControlBlock * proc) {
-    if (FastStrCmp(proc->ProcessRuntimePath, FormatS("%s/%d", RuntimeProcesses, proc->pid)) != 0) return 0;
-    return 1;
+static inline __attribute__((visibility("hidden"))) __attribute__((always_inline)) int RuntimePathValidation(const MLFQProcessControlBlock * proc) {
+    char expected[sizeof(proc->ProcessRuntimePath)];
+    FormatA(expected, sizeof(expected), "%s/%d", RuntimeProcesses, proc->pid);
+    return FastStrCmp(proc->ProcessRuntimePath, expected) == 0;
 }
 
 static inline __attribute__((visibility("hidden"))) __attribute__((always_inline)) int AstraPreflightCheck(uint32_t slot) {
@@ -755,7 +756,7 @@ static inline __attribute__((visibility("hidden"))) __attribute__((always_inline
         return 0; // Do not schedule this process.
     }
 
-    if (ProcINFOPathValidation(proc) != 1) {
+    if (RuntimePathValidation(proc) != 1) {
         PrintKernelErrorF("[AS-PREFLIGHT] ProcINFOPath tampering detected for PID: %d (%s)\n", proc->pid, proc->ProcessRuntimePath);
         ASTerminate(proc->pid, "ProcINFOPath tampering detected");
         return 0; // Do not schedule this process.

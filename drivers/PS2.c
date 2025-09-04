@@ -214,6 +214,8 @@ void MouseHandler(void) {
             // Update state
             mouse.x += delta_x;
             mouse.y -= delta_y;
+            mouse.delta_x = delta_x;
+            mouse.delta_y = -delta_y;
             mouse.buttons = flags & 0x07;
 
             // Clamp position to screen resolution
@@ -227,7 +229,7 @@ void MouseHandler(void) {
 
             // --- Fire Events ---
             if (OnMouseMove) {
-                OnMouseMove(mouse.x, mouse.y, delta_x, delta_y);
+                OnMouseMove(mouse.x, mouse.y, mouse.delta_x, mouse.delta_y);
             }
 
             // Check for button presses/releases
