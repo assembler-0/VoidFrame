@@ -7,9 +7,10 @@
 #include "StringOps.h"
 #include "Vesa.h"
 #include "Pallete.h"
+#include "Spinlock.h"
 
 // --- Globals ---
-
+#define MAX_WINDOWS 16
 static Window* g_window_list_head = NULL;
 static Window* g_window_list_tail = NULL;
 static vbe_info_t* g_vbe_info = NULL;
@@ -18,30 +19,252 @@ static int g_mouse_x = 0;
 static int g_mouse_y = 0;
 static Window* g_focused_window = NULL;
 
+// Global text state storage for windows
+static WindowTextState g_window_text_states[MAX_WINDOWS];
+static irq_flags_t g_text_lock = 0;
+static Window* g_vfshell_window = NULL;
+// Get window by title
+Window* GetWindowByTitle(const char* title) {
+    if (!title) return NULL;
+
+    irq_flags_t flags = SpinLockIrqSave(&g_text_lock);
+
+    Window* current = g_window_list_head;
+    while (current) {
+        if (current->title && FastStrCmp(current->title, title) == 0) {
+            SpinUnlockIrqRestore(&g_text_lock, flags);
+            return current;
+        }
+        current = current->next;
+    }
+
+    SpinUnlockIrqRestore(&g_text_lock, flags);
+    return NULL;
+}
+
+// Get text state for a window
+WindowTextState* GetWindowTextState(Window* window) {
+    if (!window) return NULL;
+
+    // Use window pointer as index (simplified approach)
+    static int next_state_index = 0;
+
+    // Find existing state or allocate new one
+    for (int i = 0; i < MAX_WINDOWS; i++) {
+        if (g_window_text_states[i].needs_refresh &&
+            g_window_text_states[i].cursor_row == (int)(uintptr_t)window) {
+            return &g_window_text_states[i];
+        }
+    }
+
+    // Allocate new state
+    if (next_state_index < MAX_WINDOWS) {
+        WindowTextState* state = &g_window_text_states[next_state_index++];
+        FastMemset(state, 0, sizeof(WindowTextState));
+        state->cursor_row = (int)(uintptr_t)window; // Use as identifier
+        state->needs_refresh = true;
+        return state;
+    }
+
+    return NULL;
+}
+
+// Initialize window for text mode
+void WindowInitTextMode(Window* window) {
+    if (!window) return;
+
+    WindowTextState* state = GetWindowTextState(window);
+    if (!state) return;
+
+    // Clear text buffer
+    FastMemset(state->buffer, 0, sizeof(state->buffer));
+    state->cursor_row = 0;
+    state->cursor_col = 0;
+    state->scroll_offset = 0;
+    state->needs_refresh = true;
+
+    // Clear window background
+    WindowFill(window, WINDOW_BG);
+
+    // Draw title bar
+    WindowDrawRect(window, 0, 0, window->rect.width, 20, TITLE_BAR);
+    if (window->title) {
+        WindowDrawString(window, 5, 2, window->title, TERMINAL_TEXT);
+    }
+}
+
+// Scroll window text up by one line
+void WindowScrollUp(Window* window) {
+    WindowTextState* state = GetWindowTextState(window);
+    if (!state) return;
+
+    // Move all lines up
+    for (int row = 0; row < WINDOW_TEXT_ROWS - 1; row++) {
+        for (int col = 0; col < WINDOW_TEXT_COLS; col++) {
+            state->buffer[row][col] = state->buffer[row + 1][col];
+        }
+    }
+
+    // Clear bottom line
+    FastMemset(state->buffer[WINDOW_TEXT_ROWS - 1], 0, WINDOW_TEXT_COLS);
+
+    state->needs_refresh = true;
+}
+
+// Print a character to window
+void WindowPrintChar(Window* window, char c) {
+    if (!window) return;
+
+    irq_flags_t flags = SpinLockIrqSave(&g_text_lock);
+
+    WindowTextState* state = GetWindowTextState(window);
+    if (!state) {
+        SpinUnlockIrqRestore(&g_text_lock, flags);
+        return;
+    }
+
+    switch (c) {
+        case '\n':
+            state->cursor_row++;
+            state->cursor_col = 0;
+            break;
+
+        case '\r':
+            state->cursor_col = 0;
+            break;
+
+        case '\t':
+            state->cursor_col = (state->cursor_col + 4) & ~3; // Align to 4
+            if (state->cursor_col >= WINDOW_TEXT_COLS) {
+                state->cursor_col = 0;
+                state->cursor_row++;
+            }
+            break;
+
+        case '\b':
+            if (state->cursor_col > 0) {
+                state->cursor_col--;
+                state->buffer[state->cursor_row][state->cursor_col] = ' ';
+            }
+            break;
+
+        default:
+            if (c >= 32 && c < 127) { // Printable ASCII
+                if (state->cursor_col < WINDOW_TEXT_COLS && state->cursor_row < WINDOW_TEXT_ROWS) {
+                    state->buffer[state->cursor_row][state->cursor_col] = c;
+                    state->cursor_col++;
+
+                    if (state->cursor_col >= WINDOW_TEXT_COLS) {
+                        state->cursor_col = 0;
+                        state->cursor_row++;
+                    }
+                }
+            }
+            break;
+    }
+
+    // Handle scrolling
+    if (state->cursor_row >= WINDOW_TEXT_ROWS) {
+        WindowScrollUp(window);
+        state->cursor_row = WINDOW_TEXT_ROWS - 1;
+    }
+
+    state->needs_refresh = true;
+    window->needs_redraw = true;
+
+    SpinUnlockIrqRestore(&g_text_lock, flags);
+}
+
+// Print string to window
+void WindowPrintString(Window* window, const char* str) {
+    if (!window || !str) return;
+
+    while (*str) {
+        WindowPrintChar(window, *str);
+        str++;
+    }
+}
+
+// Clear window text
+void WindowClearText(Window* window) {
+    WindowTextState* state = GetWindowTextState(window);
+    if (!state) return;
+
+    irq_flags_t flags = SpinLockIrqSave(&g_text_lock);
+
+    FastMemset(state->buffer, 0, sizeof(state->buffer));
+    state->cursor_row = 0;
+    state->cursor_col = 0;
+    state->needs_refresh = true;
+    window->needs_redraw = true;
+
+    SpinUnlockIrqRestore(&g_text_lock, flags);
+}
+
+// Update VFCompositor to cache VFShell window reference
 void VFCompositor(void) {
     Snooze();
-    if (VBEIsInitialized()) {
-        WindowManagerInit();
-        CreateWindow(50, 50, 400, 250, "VFShell");
+
+    if (!VBEIsInitialized()) {
+        PrintKernel("VFCompositor: VBE not initialized, waiting...\n");
+        while (!VBEIsInitialized()) {
+            MLFQYield();
+        }
     }
+
+    WindowManagerInit();
+
+    // Create VFShell window and cache reference
+    g_vfshell_window = CreateWindow(50, 50, 640, 480, "VFShell");
+    if (g_vfshell_window) {
+        WindowInitTextMode(g_vfshell_window);
+        WindowPrintString(g_vfshell_window, "VFShell - Kernel Log\n");
+        WindowPrintString(g_vfshell_window, "===================\n\n");
+    }
+
     while (1) {
         if (VBEIsInitialized()) {
+            // Refresh text content if needed
+            if (g_vfshell_window && g_vfshell_window->needs_redraw) {
+                WindowTextState* state = GetWindowTextState(g_vfshell_window);
+                if (state && state->needs_refresh) {
+                    // Redraw text content
+                    int text_y = 25; // Start below title bar
+                    for (int row = 0; row < WINDOW_TEXT_ROWS && text_y < g_vfshell_window->rect.height - FONT_HEIGHT; row++) {
+                        int text_x = 5;
+                        for (int col = 0; col < WINDOW_TEXT_COLS && state->buffer[row][col] != 0; col++) {
+                            char single_char[2] = {state->buffer[row][col], 0};
+                            WindowDrawString(g_vfshell_window, text_x, text_y, single_char, TERMINAL_TEXT);
+                            text_x += FONT_WIDTH;
+                        }
+                        text_y += FONT_HEIGHT;
+                    }
+                    state->needs_refresh = false;
+                }
+            }
+
             WindowManagerRun();
             MLFQYield();
         } else {
             MLFQYield();
         }
     }
+
     Unsnooze();
 }
 
-// --- Private Functions ---
+// Get VFShell window (cached reference)
+Window* GetVFShellWindow(void) {
+    return g_vfshell_window;
+}
 
 static void DrawMouseCursor() {
     if (!g_vbe_info) return;
     for (int y = 0; y < 10; y++) {
         for (int x = 0; x < 10; x++) {
-            if (g_mouse_y + y < g_vbe_info->height && g_mouse_x + x < g_vbe_info->width) {
+            if (g_mouse_y + y >= 0 && g_mouse_x + x >= 0 &&
+                g_mouse_y + y < (int)g_vbe_info->height &&
+                g_mouse_x + x < (int)g_vbe_info->width) {
                 g_compositor_buffer[(g_mouse_y + y) * g_vbe_info->width + (g_mouse_x + x)] = TERMINAL_TEXT;
             }
         }
@@ -63,14 +286,15 @@ static void CompositeAndDraw() {
             WindowDrawString(win, 5, 4, win->title, TERMINAL_TEXT);
             win->needs_redraw = false;
         }
-
-        for (int y = 0; y < win->rect.height; y++) {
-            if (win->rect.y + y >= g_vbe_info->height) continue;
-            for (int x = 0; x < win->rect.width; x++) {
-                if (win->rect.x + x >= g_vbe_info->width) continue;
-                uint32_t pixel = win->back_buffer[y * win->rect.width + x];
-                g_compositor_buffer[(win->rect.y + y) * g_vbe_info->width + (win->rect.x + x)] = pixel;
-            }
+        // Clip source and destination ranges when window is partially off-screen
+        int y0 = MAX(0, -win->rect.y);
+        int y1 = MIN(win->rect.height, (int)g_vbe_info->height - win->rect.y);
+        int x0 = MAX(0, -win->rect.x);
+        int x1 = MIN(win->rect.width, (int)g_vbe_info->width - win->rect.x);
+        for (int y = y0; y < y1; y++) {
+            uint32_t* src = &win->back_buffer[y * win->rect.width + x0];
+            uint32_t* dst = &g_compositor_buffer[(win->rect.y + y) * g_vbe_info->width + (win->rect.x + x0)];
+            FastMemcpy(dst, src, (x1 - x0) * 4);
         }
     }
 
@@ -196,11 +420,12 @@ void WindowDrawString(Window* window, int x, int y, const char* str, uint32_t fg
 
 void OnKeyPress(char c) {
     if (g_focused_window) {
-        SerialWriteF("Key '%c' for window \"%s\"\n", c, g_focused_window->title);
+        WindowPrintChar(g_focused_window, c);
     }
 }
 
 void OnMouseMove(int x, int y, int dx, int dy) {
+    if (!g_vbe_info) return;
     g_mouse_x = x;
     g_mouse_y = y;
     if (g_focused_window && g_focused_window->is_moving) {

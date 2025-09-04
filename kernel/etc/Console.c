@@ -1,4 +1,6 @@
 #include "Console.h"
+
+#include "Compositor.h"
 #include "Format.h"
 #include "Io.h"
 #include "MLFQ.h"
@@ -35,6 +37,15 @@ ConsoleT console = {
 };
 
 static volatile int lock = 0;
+
+static void PrintToVFShell(const char* message) {
+    Window* vfshell = GetVFShellWindow();
+    if (vfshell) {
+        WindowPrintString(vfshell, message);
+    } else {
+        SerialWrite(message);
+    }
+}
 
 void Snooze() {
     uint64_t rflags;
@@ -169,7 +180,10 @@ void SystemLog(const char * str) {
 
 void PrintKernel(const char* str) {
     if (!str) return;
-    if (snooze) goto serial;
+    if (snooze) {
+        PrintToVFShell(str);
+        goto serial;
+    }
     SpinLock(&lock);
 
     if (use_vbe) {
