@@ -13,9 +13,6 @@ void __attribute__((weak)) OnMouseButtonUp(int x, int y, uint8_t button);
 #define KEYBOARD_DATA_PORT 0x60
 #define KEYBOARD_STATUS_PORT 0x64
 
-#define KEYBOARD_DATA_PORT 0x60
-#define KEYBOARD_STATUS_PORT 0x64
-
 // PS2 Controller Commands
 #define PS2_CMD_READ_CONFIG     0x20
 #define PS2_CMD_WRITE_CONFIG    0x60

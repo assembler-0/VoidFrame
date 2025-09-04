@@ -732,13 +732,6 @@ static InitResultT PXS2(void) {
     // Unmask IRQs
     IRQUnmaskCoreSystems();
 
-    // Initialize the Window Manager if VBE is available
-    // if (VBEIsInitialized()) {
-        WindowManagerInit();
-        CreateWindow(50, 50, 400, 250, "Window 1");
-        CreateWindow(150, 150, 500, 350, "Window 2");
-    // }
-
     return INIT_SUCCESS;
 }
 
@@ -774,14 +767,15 @@ void KernelMainHigherHalf(void) {
 
 #ifdef VF_CONFIG_SNOOZE_ON_BOOT
     Unsnooze();
+    ClearScreen();
 #endif
 
     sti();
 
     while (1) {
-        // If we have a GUI, run the compositor. Otherwise, yield.
         if (VBEIsInitialized()) {
             WindowManagerRun();
+            MLFQYield();
         } else {
             MLFQYield();
         }

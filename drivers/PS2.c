@@ -213,7 +213,7 @@ void MouseHandler(void) {
 
             // Update state
             mouse.x += delta_x;
-            mouse.y += delta_y;
+            mouse.y -= delta_y;
             mouse.buttons = flags & 0x07;
 
             // Clamp position to screen resolution

@@ -1,6 +1,7 @@
 #include "MLFQ.h"
 #include "Atomics.h"
 #include "Cerberus.h"
+#include "Compositor.h"
 #include "KernelHeap.h"
 #ifdef VF_CONFIG_USE_CERBERUS
 #include "Cerberus.h"
@@ -897,9 +898,12 @@ select_next:;
 #ifdef VF_CONFIG_USE_CERBERUS
         CerberusPreScheduleCheck(next_slot);
 #endif
+
+#ifdef VF_CONFIG_USE_ASTRA
         if (UNLIKELY(!AstraPreflightCheck(next_slot))) {
             goto select_next;
         }
+#endif
 
         if (UNLIKELY(next_slot >= MAX_PROCESSES || processes[next_slot].state != PROC_READY)) {
             goto select_next;
@@ -1798,6 +1802,22 @@ int MLFQSchedInit(void) {
 #endif
 
     return 0;
+}
+
+void VFCompositorRequestInit(const char * str) {
+    (void)str;
+    PrintKernel("System: Creating VFCompositor...\n");
+    uint32_t vfc_pid = CreateSecureProcess(VFCompositor, PROC_PRIV_SYSTEM, PROC_FLAG_CORE);
+    if (!vfc_pid) {
+#ifndef VF_CONFIG_PANIC_OVERRIDE
+        PANIC("CRITICAL: Failed to create VFCompositor process");
+#else
+        PrintKernelError("CRITICAL: Failed to create VFCompositor process\n");
+#endif
+    }
+    PrintKernelSuccess("System: VFCompositor created with PID: ");
+    PrintKernelInt(vfc_pid);
+    PrintKernel("\n");
 }
 
 void MLFQDumpPerformanceStats(void) {

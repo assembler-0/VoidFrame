@@ -28,4 +28,5 @@ void WindowDrawRect(Window* window, int x, int y, int width, int height, uint32_
 // Draws a string within a window
 void WindowDrawString(Window* window, int x, int y, const char* str, uint32_t fg_color);
 
+void VFCompositor(void);
 #endif // WINDOW_MANAGER_H
