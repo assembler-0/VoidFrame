@@ -1,5 +1,6 @@
 // VoidFrame Kernel Entry File
 #include "Kernel.h"
+#include "Compositor.h"
 #include "Console.h"
 #include "FAT12.h"
 #include "Gdt.h"
@@ -433,10 +434,14 @@ void PXS1(const uint32_t info) {
     PrintKernel("System: Starting Console...\n");
     ConsoleInit();
     PrintKernelSuccess("System: Console initialized\n");
+
 #ifndef VF_CONFIG_EXCLUDE_EXTRA_OBJECTS
     VBEShowSplash();
 #endif
-    ClearScreen();
+
+#ifdef VF_CONFIG_SNOOZE_ON_BOOT
+    Snooze();
+#endif
 
     PrintKernel("System: Parsing MULTIBOOT2 info...\n");
     ParseMultibootInfo(info);
@@ -726,6 +731,7 @@ static InitResultT PXS2(void) {
 
     // Unmask IRQs
     IRQUnmaskCoreSystems();
+
     return INIT_SUCCESS;
 }
 
@@ -759,10 +765,20 @@ void KernelMainHigherHalf(void) {
     PrintKernelSuccess("System: Kernel initialization complete\n");
     PrintKernelSuccess("System: Initializing interrupts...\n");
 
+#ifdef VF_CONFIG_SNOOZE_ON_BOOT
+    Unsnooze();
+    ClearScreen();
+#endif
+
     sti();
 
-    while (1) { // redundant but added for a worst case scenario, should not reach here (I have no idea why it stops going after sti)
-        MLFQYield();
+    while (1) {
+        if (VBEIsInitialized()) {
+            WindowManagerRun();
+            MLFQYield();
+        } else {
+            MLFQYield();
+        }
     }
 
     __builtin_unreachable();

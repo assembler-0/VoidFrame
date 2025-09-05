@@ -1,5 +1,6 @@
-#include "Io.h"
 #include "PS2.h"
+#include "Io.h"
+#include "Vesa.h"
 
 // Keyboard buffer (unchanged)
 static volatile char input_buffer[256];
@@ -160,10 +161,15 @@ void KeyboardHandler(void) {
         c = c - 'A' + 1;
     }
 
-    if (c && buffer_count < 255) {
-        input_buffer[buffer_tail] = c;
-        buffer_tail = (buffer_tail + 1) % 256;
-        buffer_count++;
+    if (c) {
+        if (OnKeyPress) {
+            OnKeyPress(c);
+        }
+        if (buffer_count < 255) {
+            input_buffer[buffer_tail] = c;
+            buffer_tail = (buffer_tail + 1) % 256;
+            buffer_count++;
+        }
     }
 }
 
@@ -202,23 +208,44 @@ void MouseHandler(void) {
                 delta_y = (delta_y == 0) ? 0 : (delta_y | 0xFFFFFF00);
             }
 
-            // Y axis is inverted in PS2 mouse
-            delta_y = -delta_y;
+            // Store previous button state to detect changes
+            uint8_t old_buttons = mouse.buttons;
 
-            // Update position
-            mouse.delta_x = delta_x;
-            mouse.delta_y = delta_y;
+            // Update state
             mouse.x += delta_x;
-            mouse.y += delta_y;
+            mouse.y -= delta_y;
+            mouse.delta_x = delta_x;
+            mouse.delta_y = -delta_y;
+            mouse.buttons = flags & 0x07;
 
-            // Update button state
-            mouse.buttons = flags & 0x07; // Lower 3 bits are button states
+            // Clamp position to screen resolution
+            vbe_info_t* vbe = VBEGetInfo();
+            if (vbe) {
+                if (mouse.x < 0) mouse.x = 0;
+                if (mouse.y < 0) mouse.y = 0;
+                if (mouse.x >= (int)vbe->width) mouse.x = vbe->width - 1;
+                if (mouse.y >= (int)vbe->height) mouse.y = vbe->height - 1;
+            }
 
-            // Clamp position to reasonable bounds (you can adjust these)
-            if (mouse.x < 0) mouse.x = 0;
-            if (mouse.y < 0) mouse.y = 0;
-            if (mouse.x > 1023) mouse.x = 1023;  // Adjust for your screen resolution
-            if (mouse.y > 767) mouse.y = 767;
+            // --- Fire Events ---
+            if (OnMouseMove) {
+                OnMouseMove(mouse.x, mouse.y, mouse.delta_x, mouse.delta_y);
+            }
+
+            // Check for button presses/releases
+            uint8_t changed_buttons = mouse.buttons ^ old_buttons;
+            if (changed_buttons) {
+                for (int i = 0; i < 3; i++) {
+                    uint8_t mask = 1 << i;
+                    if (changed_buttons & mask) {
+                        if ((mouse.buttons & mask) && OnMouseButtonDown) {
+                            OnMouseButtonDown(mouse.x, mouse.y, i + 1);
+                        } else if (OnMouseButtonUp) {
+                            OnMouseButtonUp(mouse.x, mouse.y, i + 1);
+                        }
+                    }
+                }
+            }
         }
 
         mouse.packet_index = 0;

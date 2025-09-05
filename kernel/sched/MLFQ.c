@@ -1,6 +1,7 @@
 #include "MLFQ.h"
 #include "Atomics.h"
 #include "Cerberus.h"
+#include "Compositor.h"
 #include "KernelHeap.h"
 #ifdef VF_CONFIG_USE_CERBERUS
 #include "Cerberus.h"
@@ -724,9 +725,10 @@ static void SmartAging(void) {
     }
 }
 
-static inline __attribute__((visibility("hidden"))) __attribute__((always_inline)) int ProcINFOPathValidation(const MLFQProcessControlBlock * proc) {
-    if (FastStrCmp(proc->ProcessRuntimePath, FormatS("%s/%d", RuntimeProcesses, proc->pid)) != 0) return 0;
-    return 1;
+static inline __attribute__((visibility("hidden"))) __attribute__((always_inline)) int RuntimePathValidation(const MLFQProcessControlBlock * proc) {
+    char expected[sizeof(proc->ProcessRuntimePath)];
+    FormatA(expected, sizeof(expected), "%s/%d", RuntimeProcesses, proc->pid);
+    return FastStrCmp(proc->ProcessRuntimePath, expected) == 0;
 }
 
 static inline __attribute__((visibility("hidden"))) __attribute__((always_inline)) int AstraPreflightCheck(uint32_t slot) {
@@ -754,7 +756,7 @@ static inline __attribute__((visibility("hidden"))) __attribute__((always_inline
         return 0; // Do not schedule this process.
     }
 
-    if (ProcINFOPathValidation(proc) != 1) {
+    if (RuntimePathValidation(proc) != 1) {
         PrintKernelErrorF("[AS-PREFLIGHT] ProcINFOPath tampering detected for PID: %d (%s)\n", proc->pid, proc->ProcessRuntimePath);
         ASTerminate(proc->pid, "ProcINFOPath tampering detected");
         return 0; // Do not schedule this process.
@@ -897,9 +899,12 @@ select_next:;
 #ifdef VF_CONFIG_USE_CERBERUS
         CerberusPreScheduleCheck(next_slot);
 #endif
+
+#ifdef VF_CONFIG_USE_ASTRA
         if (UNLIKELY(!AstraPreflightCheck(next_slot))) {
             goto select_next;
         }
+#endif
 
         if (UNLIKELY(next_slot >= MAX_PROCESSES || processes[next_slot].state != PROC_READY)) {
             goto select_next;
@@ -1252,7 +1257,7 @@ MLFQProcessControlBlock* MLFQGetCurrentProcessByPID(uint32_t pid) {
 
 
 static __attribute__((visibility("hidden"))) void DynamoX(void) {
-    PrintKernel("DynamoX: DynamoX v0.2 starting...\n");
+    PrintKernelSuccess("DynamoX: DynamoX v0.2 starting...\n");
 
     typedef struct {
         uint16_t min_freq;
@@ -1798,6 +1803,36 @@ int MLFQSchedInit(void) {
 #endif
 
     return 0;
+}
+
+void VFCompositorRequestInit(const char * str) {
+    (void)str;
+#ifndef VF_CONFIG_ENABLE_VFCOMPOSITOR
+    PrintKernelError("System: VFCompositor disabled in this build\n");
+    return;
+#endif
+    static uint32_t cached_vfc_pid = 0;
+    if (cached_vfc_pid) {
+        MLFQProcessControlBlock* p = MLFQGetCurrentProcessByPID(cached_vfc_pid);
+        if (p && p->state != PROC_TERMINATED) {
+            PrintKernelWarning("System: VFCompositor already running\n");
+            return;
+        }
+        cached_vfc_pid = 0;
+    }
+    PrintKernel("System: Creating VFCompositor...\n");
+    uint32_t vfc_pid = CreateSecureProcess(VFCompositor, PROC_PRIV_SYSTEM, PROC_FLAG_CORE);
+    if (!vfc_pid) {
+#ifndef VF_CONFIG_PANIC_OVERRIDE
+        PANIC("CRITICAL: Failed to create VFCompositor process");
+#else
+        PrintKernelError("CRITICAL: Failed to create VFCompositor process\n");
+#endif
+    }
+    cached_vfc_pid = vfc_pid;
+    PrintKernelSuccess("System: VFCompositor created with PID: ");
+    PrintKernelInt(vfc_pid);
+    PrintKernel("\n");
 }
 
 void MLFQDumpPerformanceStats(void) {

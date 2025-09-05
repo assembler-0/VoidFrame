@@ -8,3 +8,4 @@ CMakeLists.txt
 *build*
 target
 .venv
+*cache*

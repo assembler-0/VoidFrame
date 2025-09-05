@@ -1,6 +1,9 @@
 #include "Console.h"
+
+#include "Compositor.h"
 #include "Format.h"
 #include "Io.h"
+#include "MLFQ.h"
 #include "Serial.h"
 #include "Spinlock.h"
 #include "StringOps.h"
@@ -11,6 +14,8 @@
 #include "stdbool.h"
 #include "stdint.h"
 
+// For future use - a DE/VM?
+static uint8_t snooze = 0;
 // VBE mode flag
 static uint8_t use_vbe = 0;
 // Original VGA implementation preserved
@@ -32,6 +37,28 @@ ConsoleT console = {
 };
 
 static volatile int lock = 0;
+
+static void PrintToVFShell(const char* message) {
+    Window* vfshell = GetVFShellWindow();
+    if (vfshell) {
+        WindowPrintString(vfshell, message);
+    } else {
+        SerialWrite(message);
+    }
+}
+
+void Snooze() {
+    uint64_t rflags;
+    __asm__ volatile("pushfq; pop %0" : "=r"(rflags));
+    if ((rflags & (1ULL << 9)) != 0) { // IF set => scheduler likely active
+        if (MLFQGetCurrentProcess()->privilege_level != PROC_PRIV_SYSTEM)
+            return;
+    }
+    snooze = 1;
+}
+void Unsnooze() {
+    snooze = 0;
+}
 
 // Initialize console - auto-detect VBE or VGA
 void ConsoleInit(void) {
@@ -153,6 +180,7 @@ void SystemLog(const char * str) {
 
 void PrintKernel(const char* str) {
     if (!str) return;
+    if (snooze) goto serial;
     SpinLock(&lock);
 
     if (use_vbe) {
@@ -164,7 +192,7 @@ void PrintKernel(const char* str) {
         }
         console.color = original_color;
     }
-
+serial:
     SpinUnlock(&lock);
     SerialWrite(str);
     SystemLog(str);
@@ -313,6 +341,7 @@ void PrintKernelAt(const char* str, uint32_t line, uint32_t col) {
     if (!str) return;
     SerialWrite(str);
     SerialWrite("\n");
+    // if (snooze) return;
     if (use_vbe) {
         VBEConsoleSetCursor(col, line);
         VBEConsolePrint(str);

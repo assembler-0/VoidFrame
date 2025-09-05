@@ -973,6 +973,7 @@ static const ShellCommand commands[] = {
     {"lscpu", LsCPUHandler},
     {"mkfs", MkfsHandler},
     {"test", TestHandler}, // internal uses
+    {"vfc", VFCompositorRequestInit}, // internal uses
 };
 
 static void ExecuteCommand(const char* cmd) {

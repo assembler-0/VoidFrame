@@ -28,6 +28,9 @@
 #define VGA_COLOR_ERROR     VGA_COLOR_LIGHT_RED
 #define VGA_COLOR_WARNING   VGA_COLOR_LIGHT_YELLOW
 
+#define STATUS_LABEL_ROW 29
+#define STATUS_LABEL_COL 31 // future use
+
 #include "stdint.h"
 // Console state
 typedef struct {
@@ -60,6 +63,8 @@ void PrintKernelAt(const char* str, uint32_t line, uint32_t col);
 void ClearScreen();
 void ConsoleSetColor(uint8_t color);
 void ConsoleInit(void);
+void Snooze();
+void Unsnooze();
 // formated functions
 void PrintKernelF(const char* format, ...);
 void SerialWriteF(const char* format, ...);
