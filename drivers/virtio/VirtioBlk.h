@@ -5,6 +5,5 @@
 
 void InitializeVirtioBlk(PciDevice device);
 int VirtioBlkRead(uint64_t sector, void* buffer);
-int VirtioBlkWrite(uint64_t sector, void* buffer);
-
+int VirtioBlkWrite(uint64_t sector, const void* buffer);
 #endif //VOIDFRAME_VIRTIOBLK_H
