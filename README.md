@@ -45,7 +45,7 @@ It would be amazing if you could contribute to this project!
 ```bash
 git clone https://github.com/assembler-0/VoidFrame.git
 cd VoidFrame
-python vfconfig.py
+python scripts/vfconfig.py
 meson setup build
 cd build
 ninja
