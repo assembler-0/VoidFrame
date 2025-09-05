@@ -17,7 +17,7 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
         with:
-          submodules: recursive  # If you have git submodules
+          submodules: recursive
 
       - name: Setup build environment
         run: |
@@ -32,33 +32,27 @@ jobs:
             qemu-system-x86 \
             llvm \
 
-      - name: Build
+      - name: Compile & Link
         run: |
             meson setup build
             ninja -C build
 
-      - name: Basic smoke test
+      - name: Test
         run: |
-          timeout 30s qemu-system-x86_64 \
-            -cdrom VoidFrame.iso \
-            -m 256M \
-            -display none \
-            -serial stdio \
-            -no-reboot \
-            -no-shutdown || true
+          timeout 30s ninja -C build run || true
           
-          ls -la voidframe.krnl
-          test -s voidframe.krnl
+          ls -la build/voidframe.krnl
+          test -s build/voidframe.krnl
           
           # Check if ISO was created
-          ls -la VoidFrame.iso
-          test -s VoidFrame.iso
+          ls -la build/VoidFrame.iso
+          test -s build/VoidFrame.iso
 
       - name: Upload kernel artifacts
         uses: actions/upload-artifact@v4
         with:
           name: voidframe-build-${{ github.sha }}
           path: |
-            voidframe.krnl
-            VoidFrame.iso
+            build/voidframe.krnl
+            build/VoidFrame.iso
           retention-days: 30
