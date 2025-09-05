@@ -2,10 +2,8 @@
 name: VoidFrame kernel build
 
 on:
-  push:
-    branches: [ main, dev ]
   pull_request:
-    branches: [ main ]
+    branches: [ main, dev ]
   release:
     types: [created]
 
