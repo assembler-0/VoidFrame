@@ -1,0 +1,64 @@
+# .github/workflows/main.yml
+name: VoidFrame kernel build
+
+on:
+  push:
+    branches: [ main, dev ]
+  pull_request:
+    branches: [ main ]
+  release:
+    types: [created]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive  # If you have git submodules
+
+      - name: Setup build environment
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            meson \
+            nasm \
+            xorriso \
+            grub-pc-bin \
+            grub-common \
+            mtools \
+            qemu-system-x86 \
+            llvm \
+
+      - name: Build
+        run: |
+            meson setup build
+            ninja -C build
+
+      - name: Basic smoke test
+        run: |
+          timeout 30s qemu-system-x86_64 \
+            -cdrom VoidFrame.iso \
+            -m 256M \
+            -display none \
+            -serial stdio \
+            -no-reboot \
+            -no-shutdown || true
+          
+          ls -la voidframe.krnl
+          test -s voidframe.krnl
+          
+          # Check if ISO was created
+          ls -la VoidFrame.iso
+          test -s VoidFrame.iso
+
+      - name: Upload kernel artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: voidframe-build-${{ github.sha }}
+          path: |
+            voidframe.krnl
+            VoidFrame.iso
+          retention-days: 30

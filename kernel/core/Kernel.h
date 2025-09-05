@@ -2,11 +2,7 @@
 #define KERNEL_H
 
 #ifndef asmlinkage
-# if defined(__i386__)
-#  define asmlinkage __attribute__((regparm(0)))
-# else
-#  define asmlinkage
-# endif
+#define asmlinkage __attribute__((regparm(0)))
 #endif
 
 #include "stdint.h"

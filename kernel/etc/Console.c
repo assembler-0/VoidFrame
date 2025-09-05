@@ -180,10 +180,7 @@ void SystemLog(const char * str) {
 
 void PrintKernel(const char* str) {
     if (!str) return;
-    if (snooze) {
-        PrintToVFShell(str);
-        goto serial;
-    }
+    if (snooze) goto serial;
     SpinLock(&lock);
 
     if (use_vbe) {

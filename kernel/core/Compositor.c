@@ -19,8 +19,13 @@ static int g_mouse_x = 0;
 static int g_mouse_y = 0;
 static Window* g_focused_window = NULL;
 
-// Global text state storage for windows
-static WindowTextState g_window_text_states[MAX_WINDOWS];
+typedef struct {
+    Window*             window;
+    WindowTextState     state;
+    bool                in_use;
+} WindowStateMapping;
+
+static WindowStateMapping g_window_state_map[MAX_WINDOWS];
 static irq_flags_t g_text_lock = 0;
 static Window* g_vfshell_window = NULL;
 // Get window by title
@@ -42,30 +47,24 @@ Window* GetWindowByTitle(const char* title) {
     return NULL;
 }
 
-// Get text state for a window
 WindowTextState* GetWindowTextState(Window* window) {
     if (!window) return NULL;
-
-    // Use window pointer as index (simplified approach)
-    static int next_state_index = 0;
-
-    // Find existing state or allocate new one
     for (int i = 0; i < MAX_WINDOWS; i++) {
-        if (g_window_text_states[i].needs_refresh &&
-            g_window_text_states[i].cursor_row == (int)(uintptr_t)window) {
-            return &g_window_text_states[i];
+        if (g_window_state_map[i].in_use &&
+            g_window_state_map[i].window == window) {
+            return &g_window_state_map[i].state;
+            }
+    }
+    // Allocate new state
+    for (int i = 0; i < MAX_WINDOWS; i++) {
+        if (!g_window_state_map[i].in_use) {
+            g_window_state_map[i].window       = window;
+            g_window_state_map[i].in_use       = true;
+            FastMemset(&g_window_state_map[i].state, 0, sizeof(WindowTextState));
+            g_window_state_map[i].state.needs_refresh = true;
+            return &g_window_state_map[i].state;
         }
     }
-
-    // Allocate new state
-    if (next_state_index < MAX_WINDOWS) {
-        WindowTextState* state = &g_window_text_states[next_state_index++];
-        FastMemset(state, 0, sizeof(WindowTextState));
-        state->cursor_row = (int)(uintptr_t)window; // Use as identifier
-        state->needs_refresh = true;
-        return state;
-    }
-
     return NULL;
 }
 
@@ -299,7 +298,18 @@ static void CompositeAndDraw() {
     }
 
     DrawMouseCursor();
-    FastMemcpy((void*)g_vbe_info->framebuffer, g_compositor_buffer, g_vbe_info->width * g_vbe_info->height * 4);
+    const uint32_t bpp   = g_vbe_info->bpp;
+    const uint32_t pitch = g_vbe_info->pitch;
+    if (bpp != 32 || pitch == 0) {
+        // Fallback: avoid undefined behavior on unsupported modes
+        return;
+    }
+    uint8_t* dst        = (uint8_t*)g_vbe_info->framebuffer;
+    uint8_t* src        = (uint8_t*)g_compositor_buffer;
+    const uint32_t row_bytes = g_vbe_info->width * 4;
+    for (uint32_t row = 0; row < g_vbe_info->height; row++) {
+        FastMemcpy(dst + row * pitch, src + row * row_bytes, row_bytes);
+    }
 }
 
 // --- Public API ---
@@ -363,6 +373,15 @@ Window* CreateWindow(int x, int y, int width, int height, const char* title) {
 
 
 void DestroyWindow(Window* window) {
+    // Clean up text-state mapping for this window
+    for (int i = 0; i < MAX_WINDOWS; i++) {
+        if (g_window_state_map[i].in_use &&
+            g_window_state_map[i].window == window) {
+            g_window_state_map[i].in_use   = false;
+            g_window_state_map[i].window   = NULL;
+            break;
+        }
+    }
     // Unlink from neighboring windows
     if (window->prev) window->prev->next = window->next;
     if (window->next) window->next->prev = window->prev;
