@@ -3,6 +3,7 @@
 #include "../drivers/Ide.h"
 #include "../kernel/etc/StringOps.h"
 #include "../mm/KernelHeap.h"
+#include "Console.h"
 #include "Format.h"
 #include "MemOps.h"
 #include "VFS.h"
@@ -37,12 +38,19 @@ static Iso9660DirEntry* FindFileInDir(uint32_t dir_lba, uint32_t dir_size, const
 
         Iso9660DirEntry* entry = (Iso9660DirEntry*)sector_buffer;
         uint32_t sector_offset = 0;
-        while (sector_offset < ISO9660_SECTOR_SIZE && entry->length > 0) {
-            char entry_filename[256];
-            FastMemcpy(entry_filename, entry->file_id, entry->file_id_length);
-            entry_filename[entry->file_id_length] = 0;
+        char entry_filename[256];
+        while (sector_offset < ISO9660_SECTOR_SIZE) {
+            if (entry->length == 0) {
+                // End of directory entries in this sector
+                break;
+            }
+            FastMemset(entry_filename, 0, 256);
+            uint32_t name_len = entry->file_id_length;
+            if (name_len >= sizeof(entry_filename))
+                name_len = sizeof(entry_filename) - 1;
+            FastMemcpy(entry_filename, entry->file_id, name_len);
+            entry_filename[name_len] = 0;
 
-            // ISO9660 filenames often have a version number, e.g., "FILE.TXT;1". We'll strip it.
             char* semicolon = FastStrChr(entry_filename, ';');
             if (semicolon) {
                 *semicolon = 0;
@@ -73,6 +81,7 @@ int Iso9660Read(const char* path, void* buffer, uint32_t max_size) {
     // Allocate a buffer for one sector
     uint8_t* sector_buffer = KernelMemoryAlloc(ISO9660_SECTOR_SIZE);
     if (!sector_buffer) {
+        PrintKernelError("Out of memory\n");
         return -1; // Out of memory
     }
 
@@ -84,22 +93,21 @@ int Iso9660Read(const char* path, void* buffer, uint32_t max_size) {
             return -1; // Failed to read sector
         }
         Iso9660Pvd* cand = (Iso9660Pvd*)sector_buffer;
-        if (cand->type == 1 &&
-            cand->id[0]=='C' && cand->id[1]=='D' && cand->id[2]=='0' &&
-            cand->id[3]=='0' && cand->id[4]=='1') {
+        if (cand->type == 1 && FastStrCmp(cand->id, "CD001") == 0) {
             pvd = KernelMemoryAlloc(ISO9660_SECTOR_SIZE);
             if (!pvd) {
                 KernelFree(sector_buffer);
+                PrintKernelError("Out of memory\n");
                 return -1;
             }
             FastMemcpy(pvd, sector_buffer, ISO9660_SECTOR_SIZE);
             break;
         }
     }
-
     KernelFree(sector_buffer);
 
     if (!pvd) {
+        PrintKernelError("PVD not found\n");
         return -1; // PVD not found
     }
 
@@ -167,6 +175,14 @@ int Iso9660Read(const char* path, void* buffer, uint32_t max_size) {
     }
 
     // Read the file data
+    if (current_entry->file_flags & 2) { // directory bit
+        if (current_entry != root_entry) {
+            KernelFree(current_entry);
+        }
+        KernelFree(pvd);
+        return -1;
+    }
+    // Read the file data
     const uint32_t file_size = current_entry->data_length_le;
     const uint32_t file_lba  = current_entry->extent_loc_le;
     // Stat-only mode
@@ -177,6 +193,7 @@ int Iso9660Read(const char* path, void* buffer, uint32_t max_size) {
         KernelFree(pvd);
         return (int)file_size;
     }
+
     const uint32_t to_read = (file_size < max_size) ? file_size : max_size;
     uint8_t* read_buffer = (uint8_t*)buffer;
     uint32_t bytes_read = 0;
@@ -323,7 +340,10 @@ static Iso9660DirEntry** Iso9660ListDir(const char* path) {
 
         Iso9660DirEntry* entry = (Iso9660DirEntry*)dir_sector;
         uint32_t sector_offset = 0;
-        while (sector_offset < ISO9660_SECTOR_SIZE && entry->length > 0) {
+        while (sector_offset < ISO9660_SECTOR_SIZE) {
+            if (entry->length == 0) {
+                break;
+            }
             // Skip . and .. entries
             if (entry->file_id_length == 1 && (entry->file_id[0] == 0 || entry->file_id[0] == 1)) {
                 sector_offset += entry->length;
@@ -348,21 +368,27 @@ static Iso9660DirEntry** Iso9660ListDir(const char* path) {
 }
 
 
+
 int Iso9660CopyFile(const char* iso_path, const char* vfs_path) {
     int file_size = Iso9660Read(iso_path, NULL, 0);
-
+    if (file_size < 0) {
+        // Propagate read error
+        PrintKernelError("Propagate read error\n");
+        return -1;
+    }
     if (file_size == 0) {
+        // Empty file: create without allocating
         return VfsCreateFile(vfs_path);
     }
-
     void* buffer = KernelMemoryAlloc(file_size);
     if (!buffer) {
+        PrintKernelError("Out of memory\n");
         return -1; // Out of memory
     }
-
     int bytes_read = Iso9660Read(iso_path, buffer, file_size);
     if (bytes_read <= 0) {
         KernelFree(buffer);
+        PrintKernelError("Failed to read from ISO\n");
         return -1; // Failed to read from ISO
     }
 
@@ -370,6 +396,7 @@ int Iso9660CopyFile(const char* iso_path, const char* vfs_path) {
     KernelFree(buffer);
 
     if (bytes_written <= 0) {
+        PrintKernelError("Failed to write to FS\n");
         return -1; // Failed to write to VFS
     }
 
@@ -384,7 +411,6 @@ int Iso9660Copy(const char* iso_path, const char* vfs_path) {
         // If listing directory fails, it might be a file.
         return Iso9660CopyFile(iso_path, vfs_path);
     }
-
     VfsCreateDir(vfs_path);
 
     for (int i = 0; entries[i] != NULL; i++) {
