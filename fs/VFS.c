@@ -59,7 +59,21 @@ int VfsInit(void) {
     }
     SerialWrite("[VFS] Root mounted\n");
 
-    // Only mount FAT12 if it was successfully initialized
+    // Prioritize EXT2 mount first
+    extern int ext2_initialized;
+    if (ext2_initialized) {
+        PrintKernel("[VFS] Attempting EXT2 mount...\n");
+        int disk_result = VfsMount(FormatS("%s/VFSystemDrive", DevicesStorage), VFS_EXT2, 0);
+
+        if (disk_result == 0) {
+            SerialWriteF("[VFS] EXT2 mounted at %s/VFSystemDrive\n", DevicesStorage);
+        } else {
+            SerialWrite("[VFS] EXT2 mount failed\n");
+        }
+    } else {
+        PrintKernel("[VFS] Skipping EXT2 mount - Not initialized\n");
+    }
+
     extern int fat12_initialized;
     if (fat12_initialized) {
         PrintKernel("[VFS] Attempting FAT12 mount...\n");

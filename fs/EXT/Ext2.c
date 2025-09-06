@@ -21,14 +21,21 @@ typedef struct {
 } Ext2Volume;
 
 static Ext2Volume volume;
-static int ext2_initialized = 0;
+int ext2_initialized = 0;
 
 // Helper to read a block from the disk
 int Ext2ReadBlock(uint32_t block, void* buffer) {
+    if (block >= volume.superblock.s_blocks_count) {
+        PrintKernelF("[EXT2] Block %u out of bounds (max: %u)\n",
+                     block, volume.superblock.s_blocks_count - 1);
+        return -1;
+    }
     uint32_t sector_start = block * (volume.block_size / 512);
-    uint32_t num_sectors = volume.block_size / 512;
+    uint32_t num_sectors   = volume.block_size / 512;
     for (uint32_t i = 0; i < num_sectors; i++) {
-        if (IdeReadSector(volume.drive, sector_start + i, (uint8_t*)buffer + (i * 512)) != IDE_OK) {
+        if (IdeReadSector(volume.drive,
+                          sector_start + i,
+                          (uint8_t*)buffer + (i * 512)) != IDE_OK) {
             return -1;
         }
     }
@@ -58,10 +65,19 @@ int Ext2Init(uint8_t drive) {
     }
 
     // Calculate important values
+    if (volume.superblock.s_log_block_size > 10) {  // Max 1MB blocks
+        PrintKernelF("[EXT2] Invalid block size shift: %u\n",
+                     volume.superblock.s_log_block_size);
+        return -1;
+    }
     volume.block_size = 1024 << volume.superblock.s_log_block_size;
     volume.inode_size = volume.superblock.s_inode_size;
     volume.blocks_per_group = volume.superblock.s_blocks_per_group;
     volume.inodes_per_group = volume.superblock.s_inodes_per_group;
+    if (volume.blocks_per_group == 0) {
+        PrintKernelF("[EXT2] Invalid blocks_per_group: 0\n");
+        return -1;
+    }
     volume.num_groups = (volume.superblock.s_blocks_count + volume.blocks_per_group - 1) / volume.blocks_per_group;
 
     PrintKernelF("[EXT2] Block size: %d bytes\n", volume.block_size);
@@ -119,34 +135,30 @@ uint32_t Ext2FindInDir(Ext2Inode* dir_inode, const char* name) {
     if (!S_ISDIR(dir_inode->i_mode)) {
         return 0; // Not a directory
     }
-
     uint8_t* block_buffer = KernelMemoryAlloc(volume.block_size);
     if (!block_buffer) return 0;
-
     // We only handle direct blocks for now
     for (int i = 0; i < 12; i++) {
         if (dir_inode->i_block[i] == 0) continue;
-
         if (Ext2ReadBlock(dir_inode->i_block[i], block_buffer) != 0) {
             continue;
         }
-
         Ext2DirEntry* entry = (Ext2DirEntry*)block_buffer;
         uint32_t offset = 0;
         while (offset < volume.block_size) {
             if (entry->inode == 0) break;
-
-            if (FastStrnCmp(name, entry->name, entry->name_len) == 0 && FastStrlen(name, 255) == entry->name_len) {
-                uint32_t found_inode = entry->inode;
-                KernelFree(block_buffer);
-                return found_inode;
-            }
-
+            char name_buf[256];
+            FastMemcpy(name_buf, entry->name, entry->name_len);
+            name_buf[entry->name_len] = '\0';
+            PrintKernelF("  %s\n", name_buf);
             offset += entry->rec_len;
+            if (entry->rec_len == 0) {
+                PrintKernelF("[EXT2] Corrupted directory entry\n");
+                break;
+            }
             entry = (Ext2DirEntry*)((uint8_t*)entry + entry->rec_len);
         }
     }
-
     KernelFree(block_buffer);
     return 0; // Not found
 }
