@@ -26,8 +26,7 @@ int ext2_initialized = 0;
 // Helper to read a block from the disk
 int Ext2ReadBlock(uint32_t block, void* buffer) {
     if (block >= volume.superblock.s_blocks_count) {
-        PrintKernelF("[EXT2] Block %u out of bounds (max: %u)\
-",
+        PrintKernelF("[EXT2] Block %u out of bounds (max: %u)",
                      block, volume.superblock.s_blocks_count - 1);
         return -1;
     }
@@ -311,9 +310,18 @@ int Ext2WriteFile(const char* path, const void* buffer, uint32_t size) {
     if (!ext2_initialized) return -1;
 
     uint32_t inode_num = Ext2PathToInode(path);
+
+    // If file doesn't exist, create it automatically
     if (inode_num == 0) {
-        PrintKernelF("[EXT2] WriteFile: File not found: %s\n", path);
-        return -1;
+        if (Ext2CreateFile(path) != 0) {
+            PrintKernelF("[EXT2] WriteFile: Failed to create file: %s\n", path);
+            return -1;
+        }
+        inode_num = Ext2PathToInode(path);
+        if (inode_num == 0) {
+            PrintKernelF("[EXT2] WriteFile: Failed to find created file: %s\n", path);
+            return -1;
+        }
     }
 
     Ext2Inode inode;
@@ -321,16 +329,15 @@ int Ext2WriteFile(const char* path, const void* buffer, uint32_t size) {
 
     if (!S_ISREG(inode.i_mode)) return -1;
 
-    uint32_t bytes_written = 0;
+    int bytes_written = 0;  // Changed from uint32_t to int
     const uint8_t* data_buffer = (const uint8_t*)buffer;
 
     uint8_t* block_buffer = KernelMemoryAlloc(volume.block_size);
     if (!block_buffer) return -1;
 
-    // Write to direct blocks, overwriting existing data.
-    // Does not support extending the file (allocating new blocks).
+    // Write to direct blocks, overwriting existing data
     for (int i = 0; i < 12; i++) {
-        if (bytes_written >= size) break;
+        if (bytes_written >= (int)size) break;
         if (inode.i_block[i] == 0) {
             PrintKernelF("[EXT2] WriteFile: Reached end of allocated blocks for %s. File extension not yet supported.\n", path);
             break;
@@ -362,20 +369,20 @@ int Ext2WriteFile(const char* path, const void* buffer, uint32_t size) {
 
     KernelFree(block_buffer);
 
-    if (bytes_written != -1 && bytes_written > 0) {
-        if (bytes_written != inode.i_size) {
-             inode.i_size = bytes_written;
-             // inode.i_mtime = get_current_time(); // TODO: Implement time retrieval
-             if (Ext2WriteInode(inode_num, &inode) != 0) {
-                 return -1; // Failed to update inode
-             }
+    if (bytes_written > 0) {
+        if ((uint32_t)bytes_written != inode.i_size) {
+            inode.i_size = bytes_written;
+            if (Ext2WriteInode(inode_num, &inode) != 0) {
+                return -1;
+            }
         }
     }
 
-    if (bytes_written == -1) return -1;
+    if (bytes_written <= 0 && size > 0) return -1;
 
     return bytes_written;
 }
+
 
 int Ext2ListDir(const char* path) {
     if (!ext2_initialized) return -1;
@@ -417,18 +424,394 @@ int Ext2ListDir(const char* path) {
     return 0;
 }
 
-int Ext2CreateFile(const char* path) {
-    PrintKernelF("[EXT2] CreateFile: %s (Not implemented)\n", path);
+static int Ext2FindFreeBit(uint8_t* bitmap, uint32_t size_in_bits) {
+    for (uint32_t i = 0; i < size_in_bits; i++) {
+        uint32_t byte_idx = i / 8;
+        uint32_t bit_idx = i % 8;
+        if (!(bitmap[byte_idx] & (1 << bit_idx))) {
+            return i;
+        }
+    }
     return -1;
 }
 
-int Ext2CreateDir(const char* path) {
-    PrintKernelF("[EXT2] CreateDir: %s (Not implemented)\n", path);
+static void Ext2SetBit(uint8_t* bitmap, uint32_t bit) {
+    uint32_t byte_idx = bit / 8;
+    uint32_t bit_idx = bit % 8;
+    bitmap[byte_idx] |= (1 << bit_idx);
+}
+
+static void Ext2ClearBit(uint8_t* bitmap, uint32_t bit) {
+    uint32_t byte_idx = bit / 8;
+    uint32_t bit_idx = bit % 8;
+    bitmap[byte_idx] &= ~(1 << bit_idx);
+}
+
+static uint32_t Ext2AllocateInode() {
+    uint8_t* bitmap_buffer = KernelMemoryAlloc(volume.block_size);
+    if (!bitmap_buffer) return 0;
+
+    for (uint32_t group = 0; group < volume.num_groups; group++) {
+        uint32_t inode_bitmap_block = volume.group_descs[group].bg_inode_bitmap;
+
+        if (Ext2ReadBlock(inode_bitmap_block, bitmap_buffer) != 0) {
+            continue;
+        }
+
+        int free_bit = Ext2FindFreeBit(bitmap_buffer, volume.inodes_per_group);
+        if (free_bit != -1) {
+            Ext2SetBit(bitmap_buffer, free_bit);
+            if (Ext2WriteBlock(inode_bitmap_block, bitmap_buffer) == 0) {
+                volume.group_descs[group].bg_free_inodes_count--;
+                uint32_t bgdt_block = (volume.block_size == 1024) ? 2 : 1;
+                Ext2WriteBlock(bgdt_block, volume.group_descs);
+
+                volume.superblock.s_free_inodes_count--;
+
+                KernelFree(bitmap_buffer);
+                return group * volume.inodes_per_group + free_bit + 1;
+            }
+        }
+    }
+
+    KernelFree(bitmap_buffer);
+    return 0;
+}
+
+static uint32_t Ext2AllocateBlock() {
+    uint8_t* bitmap_buffer = KernelMemoryAlloc(volume.block_size);
+    if (!bitmap_buffer) return 0;
+
+    for (uint32_t group = 0; group < volume.num_groups; group++) {
+        uint32_t block_bitmap_block = volume.group_descs[group].bg_block_bitmap;
+
+        if (Ext2ReadBlock(block_bitmap_block, bitmap_buffer) != 0) {
+            continue;
+        }
+
+        int free_bit = Ext2FindFreeBit(bitmap_buffer, volume.blocks_per_group);
+        if (free_bit != -1) {
+            Ext2SetBit(bitmap_buffer, free_bit);
+            if (Ext2WriteBlock(block_bitmap_block, bitmap_buffer) == 0) {
+                volume.group_descs[group].bg_free_blocks_count--;
+                uint32_t bgdt_block = (volume.block_size == 1024) ? 2 : 1;
+                Ext2WriteBlock(bgdt_block, volume.group_descs);
+
+                volume.superblock.s_free_blocks_count--;
+
+                KernelFree(bitmap_buffer);
+                return group * volume.blocks_per_group + free_bit + volume.superblock.s_first_data_block;
+            }
+        }
+    }
+
+    KernelFree(bitmap_buffer);
+    return 0;
+}
+
+static int Ext2AddDirEntry(uint32_t dir_inode_num, const char* name, uint32_t file_inode_num, uint8_t file_type) {
+    Ext2Inode dir_inode;
+    if (Ext2ReadInode(dir_inode_num, &dir_inode) != 0) return -1;
+
+    if (!S_ISDIR(dir_inode.i_mode)) return -1;
+
+    uint8_t* block_buffer = KernelMemoryAlloc(volume.block_size);
+    if (!block_buffer) return -1;
+
+    uint16_t name_len = FastStrlen(name, 255);
+    uint16_t required_len = 8 + name_len;
+    if (required_len % 4 != 0) required_len += 4 - (required_len % 4);
+
+    // Look for space in existing blocks
+    for (int i = 0; i < 12; i++) {
+        if (dir_inode.i_block[i] == 0) continue;
+
+        if (Ext2ReadBlock(dir_inode.i_block[i], block_buffer) != 0) continue;
+
+        Ext2DirEntry* entry = (Ext2DirEntry*)block_buffer;
+        uint32_t offset = 0;
+        Ext2DirEntry* last_entry = NULL;
+
+        while (offset < volume.block_size && entry->rec_len > 0) {
+            last_entry = entry;
+            offset += entry->rec_len;
+            if (offset >= volume.block_size) break;
+            entry = (Ext2DirEntry*)((uint8_t*)block_buffer + offset);
+        }
+
+        if (last_entry && offset <= volume.block_size) {
+            uint16_t actual_len = 8 + last_entry->name_len;
+            if (actual_len % 4 != 0) actual_len += 4 - (actual_len % 4);
+
+            uint16_t available_space = last_entry->rec_len - actual_len;
+
+            if (available_space >= required_len) {
+                last_entry->rec_len = actual_len;
+
+                Ext2DirEntry* new_entry = (Ext2DirEntry*)((uint8_t*)last_entry + actual_len);
+                new_entry->inode = file_inode_num;
+                new_entry->rec_len = available_space;
+                new_entry->name_len = name_len;
+                new_entry->file_type = file_type;
+                FastMemcpy(new_entry->name, name, name_len);
+
+                if (Ext2WriteBlock(dir_inode.i_block[i], block_buffer) == 0) {
+                    KernelFree(block_buffer);
+                    return 0;
+                }
+            }
+        }
+    }
+
+    // Need to allocate a new block for the directory
+    for (int i = 0; i < 12; i++) {
+        if (dir_inode.i_block[i] == 0) {
+            uint32_t new_block = Ext2AllocateBlock();
+            if (new_block == 0) break;
+
+            dir_inode.i_block[i] = new_block;
+            dir_inode.i_size += volume.block_size;
+
+            FastMemset(block_buffer, 0, volume.block_size);
+            Ext2DirEntry* entry = (Ext2DirEntry*)block_buffer;
+            entry->inode = file_inode_num;
+            entry->rec_len = volume.block_size;
+            entry->name_len = name_len;
+            entry->file_type = file_type;
+            FastMemcpy(entry->name, name, name_len);
+
+            if (Ext2WriteBlock(new_block, block_buffer) == 0 &&
+                Ext2WriteInode(dir_inode_num, &dir_inode) == 0) {
+                KernelFree(block_buffer);
+                return 0;
+            }
+            break;
+        }
+    }
+
+    KernelFree(block_buffer);
     return -1;
+}
+
+int Ext2CreateFile(const char* path) {
+    if (!ext2_initialized) return -1;
+
+    // Extract directory path and filename
+    char dir_path[256] = "/";
+    char filename[256];
+
+    const char* last_slash = NULL;
+    for (const char* p = path; *p; p++) {
+        if (*p == '/') last_slash = p;
+    }
+
+    if (last_slash && last_slash != path) {
+        int dir_len = last_slash - path;
+        if (dir_len >= 255) return -1;
+        FastMemcpy(dir_path, path, dir_len);
+        dir_path[dir_len] = '\0';
+        FastStrCopy(filename, last_slash + 1, 255);
+    } else {
+        FastStrCopy(filename, last_slash ? last_slash + 1 : path, 255);
+    }
+
+    // Check if file already exists
+    if (Ext2PathToInode(path) != 0) {
+        return 0; // Success - file exists
+    }
+
+    // Find parent directory
+    uint32_t parent_inode_num = Ext2PathToInode(dir_path);
+    if (parent_inode_num == 0) {
+        PrintKernelF("[EXT2] CreateFile: Parent directory not found: %s\n", dir_path);
+        return -1;
+    }
+
+    // Allocate new inode
+    uint32_t new_inode_num = Ext2AllocateInode();
+    if (new_inode_num == 0) {
+        PrintKernelF("[EXT2] CreateFile: Failed to allocate inode\n");
+        return -1;
+    }
+
+    // Allocate first data block
+    uint32_t first_block = Ext2AllocateBlock();
+    if (first_block == 0) {
+        PrintKernelF("[EXT2] CreateFile: Failed to allocate data block\n");
+        return -1;
+    }
+
+    // Initialize inode
+    Ext2Inode new_inode;
+    FastMemset(&new_inode, 0, sizeof(Ext2Inode));
+    new_inode.i_mode = 0x8000 | 0x1FF; // Regular file with 777 permissions
+    new_inode.i_uid = 0;
+    new_inode.i_size = 0;
+    new_inode.i_gid = 0;
+    new_inode.i_links_count = 1;
+    new_inode.i_blocks = volume.block_size / 512;
+    new_inode.i_block[0] = first_block;
+    for (int i = 1; i < 15; i++) {
+        new_inode.i_block[i] = 0;
+    }
+
+    // Write inode
+    if (Ext2WriteInode(new_inode_num, &new_inode) != 0) {
+        PrintKernelF("[EXT2] CreateFile: Failed to write inode\n");
+        return -1;
+    }
+
+    // Add directory entry
+    if (Ext2AddDirEntry(parent_inode_num, filename, new_inode_num, 1) != 0) { // 1 = regular file
+        PrintKernelF("[EXT2] CreateFile: Failed to add directory entry\n");
+        return -1;
+    }
+
+    // Initialize the data block with zeros
+    uint8_t* zero_buffer = KernelMemoryAlloc(volume.block_size);
+    if (zero_buffer) {
+        FastMemset(zero_buffer, 0, volume.block_size);
+        Ext2WriteBlock(first_block, zero_buffer);
+        KernelFree(zero_buffer);
+    }
+
+    PrintKernelSuccessF("[EXT2] Created file: %s (inode %u)\n", path, new_inode_num);
+    return 0;
+}
+
+
+int Ext2CreateDir(const char* path) {
+    if (!ext2_initialized) return -1;
+
+    // Extract directory path and dirname
+    char parent_path[256] = "/";
+    char dirname[256];
+
+    const char* last_slash = NULL;
+    for (const char* p = path; *p; p++) {
+        if (*p == '/') last_slash = p;
+    }
+
+    if (last_slash && last_slash != path) {
+        int parent_len = last_slash - path;
+        if (parent_len >= 255) return -1;
+        FastMemcpy(parent_path, path, parent_len);
+        parent_path[parent_len] = '\0';
+        FastStrCopy(dirname, last_slash + 1, 255);
+    } else {
+        FastStrCopy(dirname, last_slash ? last_slash + 1 : path, 255);
+    }
+
+    // Check if directory already exists
+    if (Ext2PathToInode(path) != 0) {
+        return 0;
+    }
+
+    // Find parent directory
+    uint32_t parent_inode_num = Ext2PathToInode(parent_path);
+    if (parent_inode_num == 0) {
+        PrintKernelF("[EXT2] CreateDir: Parent directory not found: %s\n", parent_path);
+        return -1;
+    }
+
+    // Allocate new inode
+    uint32_t new_inode_num = Ext2AllocateInode();
+    if (new_inode_num == 0) {
+        PrintKernelF("[EXT2] CreateDir: Failed to allocate inode\n");
+        return -1;
+    }
+
+    // Allocate data block for directory entries
+    uint32_t dir_block = Ext2AllocateBlock();
+    if (dir_block == 0) {
+        PrintKernelF("[EXT2] CreateDir: Failed to allocate data block\n");
+        return -1;
+    }
+
+    // Initialize inode
+    Ext2Inode new_inode;
+    FastMemset(&new_inode, 0, sizeof(Ext2Inode));
+    new_inode.i_mode = 0x4000 | 0x1FF; // Directory with 777 permissions
+    new_inode.i_uid = 0;
+    new_inode.i_size = volume.block_size;
+    new_inode.i_gid = 0;
+    new_inode.i_links_count = 2; // . and parent link
+    new_inode.i_blocks = volume.block_size / 512;
+    new_inode.i_block[0] = dir_block;
+    for (int i = 1; i < 15; i++) {
+        new_inode.i_block[i] = 0;
+    }
+
+    // Create directory entries (. and ..)
+    uint8_t* dir_buffer = KernelMemoryAlloc(volume.block_size);
+    if (!dir_buffer) return -1;
+
+    FastMemset(dir_buffer, 0, volume.block_size);
+
+    // . entry
+    Ext2DirEntry* dot_entry = (Ext2DirEntry*)dir_buffer;
+    dot_entry->inode = new_inode_num;
+    dot_entry->rec_len = 12;
+    dot_entry->name_len = 1;
+    dot_entry->file_type = 2; // Directory
+    dot_entry->name[0] = '.';
+
+    // .. entry
+    Ext2DirEntry* dotdot_entry = (Ext2DirEntry*)(dir_buffer + 12);
+    dotdot_entry->inode = parent_inode_num;
+    dotdot_entry->rec_len = volume.block_size - 12;
+    dotdot_entry->name_len = 2;
+    dotdot_entry->file_type = 2; // Directory
+    dotdot_entry->name[0] = '.';
+    dotdot_entry->name[1] = '.';
+
+    // Write directory block and inode
+    if (Ext2WriteBlock(dir_block, dir_buffer) != 0 ||
+        Ext2WriteInode(new_inode_num, &new_inode) != 0) {
+        KernelFree(dir_buffer);
+        PrintKernelF("[EXT2] CreateDir: Failed to write directory data\n");
+        return -1;
+    }
+
+    KernelFree(dir_buffer);
+
+    // Add directory entry to parent
+    if (Ext2AddDirEntry(parent_inode_num, dirname, new_inode_num, 2) != 0) { // 2 = directory
+        PrintKernelF("[EXT2] CreateDir: Failed to add directory entry\n");
+        return -1;
+    }
+
+    // Update parent directory link count
+    Ext2Inode parent_inode;
+    if (Ext2ReadInode(parent_inode_num, &parent_inode) == 0) {
+        parent_inode.i_links_count++;
+        Ext2WriteInode(parent_inode_num, &parent_inode);
+    }
+
+    PrintKernelSuccessF("[EXT2] Created directory: %s (inode %u)\n", path, new_inode_num);
+    return 0;
 }
 
 int Ext2Delete(const char* path) {
-    PrintKernelF("[EXT2] Delete: %s (Not implemented)\n", path);
+    if (!ext2_initialized) return -1;
+
+    uint32_t inode_num = Ext2PathToInode(path);
+    if (inode_num == 0) {
+        PrintKernelF("[EXT2] Delete: File not found: %s\n", path);
+        return -1;
+    }
+
+    Ext2Inode inode;
+    if (Ext2ReadInode(inode_num, &inode) != 0) return -1;
+
+    // For now, only implement file deletion (not directories)
+    if (!S_ISREG(inode.i_mode)) {
+        PrintKernelF("[EXT2] Delete: Directory deletion not yet implemented: %s\n", path);
+        return -1;
+    }
+
+    // TODO: Complete implementation - remove directory entry, free inode and data blocks
+    PrintKernelF("[EXT2] Delete: %s (Implementation in progress)\n", path);
     return -1;
 }
 
