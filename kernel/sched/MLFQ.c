@@ -1510,7 +1510,7 @@ static __attribute__((visibility("hidden"))) void DynamoX(void) {
         }
         MLFQCleanupTerminatedProcess();
         CheckResourceLeaks();
-        MLFQYield();
+        // MLFQYield();
     }
 }
 
@@ -1720,7 +1720,7 @@ static void Astra(void) {
 
         MLFQCleanupTerminatedProcess();
         CheckResourceLeaks();
-        MLFQYield();
+        // MLFQYield();
     }
 }
 

@@ -1,7 +1,9 @@
 ENTRY(_start)
 
+PROCESS_BASE = 0xFFFFFE0000800000;  /* Kernel base + 8MB */
+
 SECTIONS {
-    . = 0xFFFFFFFF80800000;  /* Kernel base + 8MB */
+    . = PROCESS_BASE;  /* Kernel base + 8MB */
 
     .text ALIGN(4K) : {
         *(.text.entry)  /* Entry point first */
@@ -31,7 +33,7 @@ SECTIONS {
     }
 
     /* Optional: Add symbols for runtime use */
-    __process_start = 0xFFFFFFFF80800000;
+    __process_start = PROCESS_BASE;
     __process_end = .;
     __process_size = __process_end - __process_start;
 

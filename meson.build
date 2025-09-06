@@ -110,7 +110,7 @@ c_sources = [
     src_root + '/mm/trace/StackTrace.c',
     src_root + '/mm/security/Cerberus.c',
     src_root + '/fs/VFRFS.c',
-    src_root + '/fs/FAT12.c',
+    src_root + '/fs/FAT1x.c',
     src_root + '/fs/VFS.c',
     src_root + '/drivers/Pic.c',
     src_root + '/drivers/Serial.c',

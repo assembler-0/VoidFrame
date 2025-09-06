@@ -18,7 +18,7 @@ typedef struct __attribute__((packed)) {
     uint16_t heads;
     uint32_t hidden_sectors;
     uint32_t total_sectors_32;
-} Fat12BootSector;
+} Fat1xBootSector;
 
 // FAT12 Directory Entry
 typedef struct __attribute__((packed)) {
@@ -35,7 +35,7 @@ typedef struct __attribute__((packed)) {
     uint16_t modify_date;
     uint16_t cluster_low;
     uint32_t file_size;
-} Fat12DirEntry;
+} Fat1xDirEntry;
 
 // Attributes
 #define FAT12_ATTR_READ_ONLY  0x01
@@ -51,23 +51,23 @@ typedef struct __attribute__((packed)) {
 
 typedef struct {
     uint8_t drive;
-    Fat12BootSector boot;
+    Fat1xBootSector boot;
     uint8_t* fat_table;
     uint32_t fat_sector;
     uint32_t root_sector;
     uint32_t data_sector;
-} Fat12Volume;
+} Fat1xVolume;
 
 // Core Functions
-int Fat12Init(uint8_t drive);
-int Fat12ReadFile(const char* filename, void* buffer, uint32_t max_size);
-int Fat12WriteFile(const char* filename, const void* buffer, uint32_t size);
-int Fat12DeleteFile(const char* filename);
-int Fat12CreateFile(const char* filename);
-int Fat12DeleteRecursive(const char* path);
-int Fat12CreateDir(const char* dirname);
-int Fat12ListRoot(void);
-int Fat12GetCluster(uint16_t cluster, uint8_t* buffer);
-int Fat12IsDirectory(const char* path);
-int Fat12ListDirectory(const char* path);
-uint64_t Fat12GetFileSize(const char* path);
+int Fat1xInit(uint8_t drive);
+int Fat1xReadFile(const char* filename, void* buffer, uint32_t max_size);
+int Fat1xWriteFile(const char* filename, const void* buffer, uint32_t size);
+int Fat1xDeleteFile(const char* filename);
+int Fat1xCreateFile(const char* filename);
+int Fat1xDeleteRecursive(const char* path);
+int Fat1xCreateDir(const char* dirname);
+int Fat1xListRoot(void);
+int Fat1xGetCluster(uint16_t cluster, uint8_t* buffer);
+int Fat1xIsDirectory(const char* path);
+int Fat1xListDirectory(const char* path);
+uint64_t Fat1xGetFileSize(const char* path);
