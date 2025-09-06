@@ -268,6 +268,18 @@ run_target('run',
            ]
 )
 
+run_target('runmin',
+           command : [qemu_system_x86_64.full_path(),
+                      '-cdrom', 'VoidFrame.iso',
+                      '-debugcon', 'file:bootstrap.log',
+                      '-serial', 'file:serial.log',
+                      '-no-reboot','-no-shutdown',
+                      '-m', '4G',
+                      '-boot', 'd',
+           ]
+)
+
+
 run_target('img',
                command : [
                  'sh', '-c',

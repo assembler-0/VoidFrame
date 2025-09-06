@@ -35,9 +35,12 @@ jobs:
             meson setup build
             ninja -C build
 
-      - name: Test
+      - name: Artifact Analysis
         run: |
-          timeout 30s ninja -C build run || true
+          timeout 30s ninja -C build runmin || true
+          
+          grep -q "1KCSWF23Z456789" build/bootstrap.log
+          ! grep -i "panic\|fault\|crash\|oops\|error" build/serial.log
           
           ls -la build/voidframe.krnl
           test -s build/voidframe.krnl
@@ -45,6 +48,16 @@ jobs:
           # Check if ISO was created
           ls -la build/VoidFrame.iso
           test -s build/VoidFrame.iso
+          
+          file build/voidframe.krnl | grep -q "ELF.*executable"
+    
+          # Verify kernel size is reasonable (not empty, not huge)
+          KERNEL_SIZE=$(stat -c%s build/voidframe.krnl)
+          test $KERNEL_SIZE -gt 100000    # > 100KB
+          test $KERNEL_SIZE -lt 10000000  # < 10MB
+          
+          # Check ISO bootability
+          file build/VoidFrame.iso | grep -q "ISO.*bootable"
 
       - name: Upload kernel artifacts
         uses: actions/upload-artifact@v4
