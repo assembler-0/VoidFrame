@@ -26,9 +26,7 @@ jobs:
             xorriso \
             grub-pc-bin \
             grub-common \
-            mtools \
             qemu-system-x86 \
-            llvm \
 
       - name: Compile & Link
         run: |
@@ -37,7 +35,7 @@ jobs:
 
       - name: Artifact Analysis
         run: |
-          timeout 30s ninja -C build runmin || true
+          timeout 10s ninja -C build runmin || true
           
           grep -q "1KCSWF23Z456789" build/bootstrap.log
           ! grep -i "panic\|fault\|crash\|oops\|error" build/serial.log
