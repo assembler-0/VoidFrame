@@ -165,8 +165,6 @@ void IsaAutoDetect(void) {
     if (SB16_Probe(SB16_DSP_BASE)) {
         IsaRegisterDevice(SB16_DSP_BASE, 16, 5, ISA_DMA_SB_8BIT,
                          ISA_DEVICE_SOUND, "Sound Blaster 16");
-        PrintKernel("Testing SB16 beep...\n");
-        SB16_Beep(SB16_DSP_BASE);
     }
 
 }

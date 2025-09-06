@@ -66,6 +66,8 @@ int VfsIsDir(const char* path);
 int VfsIsFile(const char* path);
 uint64_t VfsGetFileSize(const char* path);
 int VfsAppendFile(const char* path, const void* buffer, uint32_t size);
+int VfsCopyFile(const char* src_path, const char* dest_path);
+int VfsMoveFile(const char* src_path, const char* dest_path);
 // Internal
 VfsMountStruct* VfsFindMount(const char* path);
 const char* VfsStripMount(const char* path, VfsMountStruct* mount);

@@ -1,12 +1,13 @@
 #include "VFS.h"
 #include "../mm/MemOps.h"
 #include "Console.h"
-#include "FAT12.h"
+#include "FAT1x.h"
 #include "Format.h"
 #include "Serial.h"
 #include "StringOps.h"
 #include "VFRFS.h"
 #include "stdbool.h"
+#include "KernelHeap.h"
 
 #define VFS_MAX_PATH_LEN 256
 
@@ -172,11 +173,11 @@ int VfsReadFile(const char* path, void* buffer, uint32_t max_size) {
             FastMemcpy(buffer, node->data, copy_size);
             return copy_size;
         }
-        case VFS_FAT12: {
+        case VFS_FAT12: case VFS_FAT16: {
             extern int fat12_initialized;
             if (!fat12_initialized) return -1;
             // Use new path-aware function
-            return Fat12ReadFile(local_path, buffer, max_size);
+            return Fat1xReadFile(local_path, buffer, max_size);
         }
     }
 
@@ -208,10 +209,10 @@ int VfsListDir(const char* path) {
             }
             return result;
         }
-        case VFS_FAT12: {
+        case VFS_FAT12: case VFS_FAT16: {
             extern int fat12_initialized;
             if (!fat12_initialized) return -1;
-            return Fat12ListDirectory(local_path);
+            return Fat1xListDirectory(local_path);
         }
     }
 
@@ -232,11 +233,11 @@ int VfsCreateFile(const char* path) {
             FsClose(fd);
             return 0;
         }
-        case VFS_FAT12:
+        case VFS_FAT12: case VFS_FAT16:
             if (FastStrlen(local_path, 2) == 0) return -1;
             extern int fat12_initialized;
             if (!fat12_initialized) return -1;
-            return Fat12CreateFile(local_path);
+            return Fat1xCreateFile(local_path);
     }
 
     return -1;
@@ -252,11 +253,11 @@ int VfsCreateDir(const char* path) {
         case VFS_RAMFS:
             if (FastStrlen(local_path, 2) == 0) return -1;
             return FsMkdir(local_path);
-        case VFS_FAT12:
+        case VFS_FAT12: case VFS_FAT16:
             if (FastStrlen(local_path, 2) == 0) return -1;
             extern int fat12_initialized;
             if (!fat12_initialized) return -1;
-            return Fat12CreateDir(local_path);
+            return Fat1xCreateDir(local_path);
     }
 
     return -1;
@@ -273,12 +274,12 @@ int VfsDelete(const char* path, bool Recursive) {
             if (FastStrlen(local_path, 2) == 0) return -1;
             if (Recursive) return FsDeleteRecursive(local_path);
             return FsDelete(local_path);
-        case VFS_FAT12:
+        case VFS_FAT12: case VFS_FAT16:
             if (FastStrlen(local_path, 2) == 0) return -1;
             extern int fat12_initialized;
             if (!fat12_initialized) return -1;
-            if (Recursive) return Fat12DeleteRecursive(local_path);
-            return Fat12DeleteFile(local_path);
+            if (Recursive) return Fat1xDeleteRecursive(local_path);
+            return Fat1xDeleteFile(local_path);
     }
 
     return -1;
@@ -329,10 +330,10 @@ uint64_t VfsGetFileSize(const char* path) {
             return node->size;
         }
 
-        case VFS_FAT12: {
+        case VFS_FAT12: case VFS_FAT16: {
             extern int fat12_initialized;
             if (!fat12_initialized) return 0;
-            return  Fat12GetFileSize(local_path);
+            return  Fat1xGetFileSize(local_path);
 
         }
 
@@ -355,14 +356,14 @@ int VfsIsFile(const char* path) {
             FsNode* node = FsFind(local_path);
             return node && node->type == FS_FILE;
         }
-        case VFS_FAT12: {
+        case VFS_FAT12: case VFS_FAT16: {
             extern int fat12_initialized;
             if (!fat12_initialized) return 0;
-            if (Fat12IsDirectory(local_path)) return 0;
-            uint64_t size = Fat12GetFileSize(local_path);
+            if (Fat1xIsDirectory(local_path)) return 0;
+            uint64_t size = Fat1xGetFileSize(local_path);
             if (size > 0) return 1;
             char test_buffer[1];
-            int read_result = Fat12ReadFile(local_path, test_buffer, 1);
+            int read_result = Fat1xReadFile(local_path, test_buffer, 1);
             return read_result >= 0;
         }
     }
@@ -381,11 +382,11 @@ int VfsIsDir(const char* path) {
             FsNode* node = FsFind(local_path);
             return node && node->type == FS_DIRECTORY;
         }
-        case VFS_FAT12: {
+        case VFS_FAT12: case VFS_FAT16: {
             extern int fat12_initialized;
             if (!fat12_initialized) return 0;
             // Use new directory detection function
-            return Fat12IsDirectory(local_path);
+            return Fat1xIsDirectory(local_path);
         }
     }
     return 0;
@@ -406,13 +407,74 @@ int VfsWriteFile(const char* path, const void* buffer, uint32_t size) {
             FsClose(fd);
             return result;
         }
-        case VFS_FAT12:
+        case VFS_FAT12: case VFS_FAT16:
             // Use enhanced path-aware file writing
             extern int fat12_initialized;
             if (!fat12_initialized) return -1;
-            return Fat12WriteFile(local_path, buffer, size);
+            return Fat1xWriteFile(local_path, buffer, size);
     }
 
     return -1;
+}
+
+int VfsCopyFile(const char* src_path, const char* dest_path) {
+    if (!src_path || !dest_path) {
+        return -1;
+    }
+    // Ensure source exists and is a regular file
+    if (!VfsIsFile(src_path)) {
+        return -1;
+    }
+    uint64_t file_size = VfsGetFileSize(src_path);
+    // Handle empty file explicitly
+    if (file_size == 0) {
+        return VfsCreateFile(dest_path);
+    }
+    // Prevent size_t/u32 truncation
+    size_t buf_size = (size_t)file_size;
+    if ((uint64_t)buf_size != file_size || buf_size == 0) {
+        return -1;
+    }
+    void* buffer = KernelMemoryAlloc(buf_size);
+    if (!buffer) {
+        return -1; // Failed to allocate memory
+    }
+    int bytes_read = VfsReadFile(src_path, buffer, (uint32_t)buf_size);
+    if (bytes_read <= 0) {
+        KernelFree(buffer);
+        return -1; // Failed to read source file
+    }
+    int bytes_written = VfsWriteFile(dest_path, buffer, (uint32_t)bytes_read);
+    KernelFree(buffer);
+    if (bytes_written <= 0) {
+        return -1; // Failed to write destination file
+    }
+    return 0; // Success
+}
+
+int VfsMoveFile(const char* src_path, const char* dest_path) {
+    if (!src_path || !dest_path) {
+        return -1;
+    }
+
+    VfsMountStruct* src_mount = VfsFindMount(src_path);
+    VfsMountStruct* dest_mount = VfsFindMount(dest_path);
+
+    if (src_mount == dest_mount) {
+        // If on the same filesystem, we could implement a rename function
+        // For now, we will copy and delete
+    }
+
+    if (VfsCopyFile(src_path, dest_path) == 0) {
+        if (VfsDelete(src_path, false) == 0) {
+            return 0; // Success
+        } else {
+            // Cleanup the copied file if delete fails
+            VfsDelete(dest_path, false);
+            return -1; // Failed to delete source file
+        }
+    }
+
+    return -1; // Failed to copy file
 }
 

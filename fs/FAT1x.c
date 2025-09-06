@@ -1,5 +1,5 @@
 // Generic FAT filesystem driver for FAT12/16
-#include "FAT12.h"
+#include "FAT1x.h"
 #include "Console.h"
 #include "Ide.h"
 #include "KernelHeap.h"
@@ -7,7 +7,7 @@
 #include "MemPool.h"
 #include "StringOps.h"
 
-static Fat12Volume volume;
+static Fat1xVolume volume;
 static uint8_t* sector_buffer = NULL;
 int fat12_initialized = 0;  // Make global for VFS
 
@@ -27,7 +27,7 @@ void Fat12ConvertFilename(const char* filename, char* fat_name) {
     }
 }
 
-int Fat12Init(uint8_t drive) {
+int Fat1xInit(uint8_t drive) {
     if (fat12_initialized) {
         return 0;
     }
@@ -39,7 +39,7 @@ int Fat12Init(uint8_t drive) {
         return -1;
     }
     // Copy the parsed fields into our struct to avoid overflow
-    FastMemcpy(&volume.boot, boot_sector, sizeof(Fat12BootSector));
+    FastMemcpy(&volume.boot, boot_sector, sizeof(Fat1xBootSector));
 
     // Validate sector size
     // For now we only support 512-byte ATA sectors
@@ -140,7 +140,7 @@ static uint16_t Fat12FindFreeCluster() {
     return 0; // Invalid cluster number indicates failure
 }
 
-int Fat12GetCluster(uint16_t cluster, uint8_t* buffer) {
+int Fat1xGetCluster(uint16_t cluster, uint8_t* buffer) {
     if (volume.boot.sectors_per_cluster == 0 || volume.boot.sectors_per_cluster > 8) return -1;
 
     uint32_t sector = volume.data_sector + ((cluster - 2) * volume.boot.sectors_per_cluster);
@@ -155,7 +155,7 @@ int Fat12GetCluster(uint16_t cluster, uint8_t* buffer) {
 }
 
 
-static Fat12DirEntry* Fat12FindEntry(const char* path, uint16_t* parent_cluster, uint32_t* entry_sector, int* entry_offset) {
+static Fat1xDirEntry* Fat12FindEntry(const char* path, uint16_t* parent_cluster, uint32_t* entry_sector, int* entry_offset) {
     if (!path || path[0] != '/') return NULL;
 
     // Start at root directory
@@ -185,7 +185,7 @@ static Fat12DirEntry* Fat12FindEntry(const char* path, uint16_t* parent_cluster,
         Fat12ConvertFilename(component, fat_name);
 
         // Search in current directory
-        Fat12DirEntry* found = NULL;
+        Fat1xDirEntry* found = NULL;
         uint32_t found_sector = 0;
         int found_offset = -1;
 
@@ -197,7 +197,7 @@ static Fat12DirEntry* Fat12FindEntry(const char* path, uint16_t* parent_cluster,
                     return NULL;
                 }
 
-                Fat12DirEntry* entries = (Fat12DirEntry*)sector_buffer;
+                Fat1xDirEntry* entries = (Fat1xDirEntry*)sector_buffer;
                 for (int i = 0; i < 16; i++) {
                     if ((uint8_t)entries[i].name[0] == 0x00) break;
                     if ((uint8_t)entries[i].name[0] == 0xE5) continue;
@@ -220,12 +220,12 @@ static Fat12DirEntry* Fat12FindEntry(const char* path, uint16_t* parent_cluster,
             if (!cluster_buffer) return NULL; // Critical: Check allocation
 
             while (cluster < 0xFF8 && !found) {
-                if (Fat12GetCluster(cluster, cluster_buffer) != 0) {
+                if (Fat1xGetCluster(cluster, cluster_buffer) != 0) {
                     KernelFree(cluster_buffer);
                     return NULL;
                 }
 
-                Fat12DirEntry* entries = (Fat12DirEntry*)cluster_buffer;
+                Fat1xDirEntry* entries = (Fat1xDirEntry*)cluster_buffer;
                 int entries_per_cluster = cluster_bytes / 32;
                 for (int i = 0; i < entries_per_cluster; i++) {
                     if ((uint8_t)entries[i].name[0] == 0x00) break;
@@ -261,7 +261,7 @@ static Fat12DirEntry* Fat12FindEntry(const char* path, uint16_t* parent_cluster,
             if (IdeReadSector(volume.drive, found_sector, sector_buffer) != IDE_OK) {
                 return NULL;
             }
-            return &((Fat12DirEntry*)sector_buffer)[found_offset];
+            return &((Fat1xDirEntry*)sector_buffer)[found_offset];
         }
 
         // Must be a directory to continue
@@ -287,7 +287,7 @@ static int Fat12FindDirectoryEntry(uint16_t parent_cluster, const char* fat_name
                 return -1;
             }
 
-            Fat12DirEntry* entries = (Fat12DirEntry*)sector_buffer;
+            Fat1xDirEntry* entries = (Fat1xDirEntry*)sector_buffer;
             for (int i = 0; i < 16; i++) {
                 uint8_t first_char = entries[i].name[0];
                 if (first_char == 0x00) {
@@ -325,12 +325,12 @@ static int Fat12FindDirectoryEntry(uint16_t parent_cluster, const char* fat_name
     if (!cluster_buffer) return -1;
 
     while (current_cluster < 0xFF8) {
-        if (Fat12GetCluster(current_cluster, cluster_buffer) != 0) {
+        if (Fat1xGetCluster(current_cluster, cluster_buffer) != 0) {
             KernelFree(cluster_buffer);
             return -1;
         }
 
-        Fat12DirEntry* entries = (Fat12DirEntry*)cluster_buffer;
+        Fat1xDirEntry* entries = (Fat1xDirEntry*)cluster_buffer;
         int entries_per_cluster = cluster_bytes / 32;
 
         for (int i = 0; i < entries_per_cluster; i++) {
@@ -403,7 +403,7 @@ static int Fat12FindDirectoryEntry(uint16_t parent_cluster, const char* fat_name
 }
 
 // NEW: Check if a path is a directory
-int Fat12IsDirectory(const char* path) {
+int Fat1xIsDirectory(const char* path) {
     if (!path) return 0;
 
     // Root is always a directory
@@ -413,18 +413,18 @@ int Fat12IsDirectory(const char* path) {
     uint32_t entry_sector;
     int entry_offset;
 
-    Fat12DirEntry* entry = Fat12FindEntry(path, &parent_cluster, &entry_sector, &entry_offset);
+    Fat1xDirEntry* entry = Fat12FindEntry(path, &parent_cluster, &entry_sector, &entry_offset);
     if (!entry) return 0;
 
     return (entry->attr & FAT12_ATTR_DIRECTORY) ? 1 : 0;
 }
 
-int Fat12ListDirectory(const char* path) {
+int Fat1xListDirectory(const char* path) {
     if (!path) return -1;
 
     // If the path is the root, call the dedicated root listing function
     if (FastStrCmp(path, "/") == 0) {
-        return Fat12ListRoot();
+        return Fat1xListRoot();
     }
 
     // If we are here, we are listing a subdirectory, not the root.
@@ -432,7 +432,7 @@ int Fat12ListDirectory(const char* path) {
     uint32_t entry_sector;
     int entry_offset;
 
-    Fat12DirEntry* entry = Fat12FindEntry(path, &parent_cluster, &entry_sector, &entry_offset);
+    Fat1xDirEntry* entry = Fat12FindEntry(path, &parent_cluster, &entry_sector, &entry_offset);
     if (!entry || !(entry->attr & FAT12_ATTR_DIRECTORY)) {
         // Path is not a valid directory
         return -1;
@@ -448,15 +448,15 @@ int Fat12ListDirectory(const char* path) {
 
     uint16_t current_cluster = cluster;
     while (current_cluster < 0xFF8) {
-        if (Fat12GetCluster(current_cluster, cluster_buffer) != 0) {
+        if (Fat1xGetCluster(current_cluster, cluster_buffer) != 0) {
             KernelFree(cluster_buffer);
             return -1;
         }
 
-        Fat12DirEntry* entries = (Fat12DirEntry*)cluster_buffer;
+        Fat1xDirEntry* entries = (Fat1xDirEntry*)cluster_buffer;
         int entries_per_cluster = cluster_bytes / 32;
         for (int i = 0; i < entries_per_cluster; i++) {
-            Fat12DirEntry* current_entry = &entries[i];
+            Fat1xDirEntry* current_entry = &entries[i];
 
             if ((uint8_t)current_entry->name[0] == 0x00) break;
             if ((uint8_t)current_entry->name[0] == 0xE5) continue;
@@ -492,7 +492,7 @@ int Fat12ListDirectory(const char* path) {
     return 0;
 }
 
-int Fat12CreateDir(const char* path) {
+int Fat1xCreateDir(const char* path) {
     if (!path || path[0] != '/') return -1;
 
     char parent_path[256];
@@ -526,7 +526,7 @@ int Fat12CreateDir(const char* path) {
         uint16_t temp_parent_cluster;
         uint32_t temp_entry_sector;
         int temp_entry_offset;
-        Fat12DirEntry* parent_entry = Fat12FindEntry(parent_path, &temp_parent_cluster, &temp_entry_sector, &temp_entry_offset);
+        Fat1xDirEntry* parent_entry = Fat12FindEntry(parent_path, &temp_parent_cluster, &temp_entry_sector, &temp_entry_offset);
         if (!parent_entry || !(parent_entry->attr & FAT12_ATTR_DIRECTORY)) {
             return -1; // Parent not found or is not a directory
         }
@@ -555,14 +555,14 @@ int Fat12CreateDir(const char* path) {
     FastMemset(cluster_buffer, 0, cluster_size_bytes);
 
     // Create the '.' entry (points to itself)
-    Fat12DirEntry* dot_entry = (Fat12DirEntry*)cluster_buffer;
+    Fat1xDirEntry* dot_entry = (Fat1xDirEntry*)cluster_buffer;
     FastMemcpy(dot_entry->name, ".          ", 11);
     dot_entry->attr = FAT12_ATTR_DIRECTORY;
     dot_entry->cluster_low = new_cluster;
     dot_entry->file_size = 0;
 
     // Create the '..' entry (points to parent)
-    Fat12DirEntry* dotdot_entry = dot_entry + 1;
+    Fat1xDirEntry* dotdot_entry = dot_entry + 1;
     FastMemcpy(dotdot_entry->name, "..         ", 11);
     dotdot_entry->attr = FAT12_ATTR_DIRECTORY;
     dotdot_entry->cluster_low = parent_cluster; // <-- This now correctly points to the real parent cluster
@@ -582,7 +582,7 @@ int Fat12CreateDir(const char* path) {
     // Update the entry in the parent directory
     if (IdeReadSector(volume.drive, entry_sector_lba, sector_buffer) != IDE_OK) return -1;
 
-    Fat12DirEntry* new_dir_entry = &((Fat12DirEntry*)sector_buffer)[entry_offset];
+    Fat1xDirEntry* new_dir_entry = &((Fat1xDirEntry*)sector_buffer)[entry_offset];
     FastMemcpy(new_dir_entry->name, fat_name, 11);
     new_dir_entry->attr = FAT12_ATTR_DIRECTORY;
     new_dir_entry->cluster_low = new_cluster;
@@ -596,14 +596,14 @@ int Fat12CreateDir(const char* path) {
 }
 
 // NEW: Enhanced file operations with path support
-int Fat12ReadFile(const char* path, void* buffer, uint32_t max_size) {
+int Fat1xReadFile(const char* path, void* buffer, uint32_t max_size) {
     if (!path) return -1;
 
     uint16_t parent_cluster;
     uint32_t entry_sector;
     int entry_offset;
 
-    Fat12DirEntry* entry = Fat12FindEntry(path, &parent_cluster, &entry_sector, &entry_offset);
+    Fat1xDirEntry* entry = Fat12FindEntry(path, &parent_cluster, &entry_sector, &entry_offset);
     if (!entry || (entry->attr & FAT12_ATTR_DIRECTORY)) return -1;
 
     uint16_t cluster = entry->cluster_low;
@@ -619,7 +619,7 @@ int Fat12ReadFile(const char* path, void* buffer, uint32_t max_size) {
         uint8_t* cluster_buffer = KernelMemoryAlloc(cluster_bytes);
         if (!cluster_buffer) return -1;
 
-        if (Fat12GetCluster(cluster, cluster_buffer) != 0) {
+        if (Fat1xGetCluster(cluster, cluster_buffer) != 0) {
             KernelFree(cluster_buffer);
             return -1;
         }
@@ -637,12 +637,12 @@ int Fat12ReadFile(const char* path, void* buffer, uint32_t max_size) {
     return bytes_read;
 }
 
-int Fat12CreateFile(const char* filename) {
+int Fat1xCreateFile(const char* filename) {
     if (!filename) return -1;
-    return Fat12WriteFile(filename, "", 0);
+    return Fat1xWriteFile(filename, "", 0);
 }
 
-int Fat12WriteFile(const char* path, const void* buffer, uint32_t size) {
+int Fat1xWriteFile(const char* path, const void* buffer, uint32_t size) {
     if (!path) return -1;
 
     // Parse path to get parent and filename
@@ -679,7 +679,7 @@ int Fat12WriteFile(const char* path, const void* buffer, uint32_t size) {
         uint16_t temp_parent;
         uint32_t temp_entry_sector;
         int temp_entry_offset;
-        Fat12DirEntry* parent_entry = Fat12FindEntry(parent_path, &temp_parent, &temp_entry_sector, &temp_entry_offset);
+        Fat1xDirEntry* parent_entry = Fat12FindEntry(parent_path, &temp_parent, &temp_entry_sector, &temp_entry_offset);
         if (!parent_entry || !(parent_entry->attr & FAT12_ATTR_DIRECTORY)) {
             return -1; // Parent doesn't exist or isn't a directory
         }
@@ -690,7 +690,7 @@ int Fat12WriteFile(const char* path, const void* buffer, uint32_t size) {
     uint16_t existing_parent;
     uint32_t existing_sector;
     int existing_offset;
-    Fat12DirEntry* existing_entry = Fat12FindEntry(path, &existing_parent, &existing_sector, &existing_offset);
+    Fat1xDirEntry* existing_entry = Fat12FindEntry(path, &existing_parent, &existing_sector, &existing_offset);
 
     uint32_t entry_sector;
     int entry_offset;
@@ -777,7 +777,7 @@ int Fat12WriteFile(const char* path, const void* buffer, uint32_t size) {
         return -1;
     }
 
-    Fat12DirEntry* dir_entry = &((Fat12DirEntry*)sector_buffer)[entry_offset];
+    Fat1xDirEntry* dir_entry = &((Fat1xDirEntry*)sector_buffer)[entry_offset];
     FastMemcpy(dir_entry->name, fat_name, 11);
     dir_entry->attr = FAT12_ATTR_ARCHIVE;
     dir_entry->file_size = size;
@@ -797,7 +797,7 @@ int Fat12WriteFile(const char* path, const void* buffer, uint32_t size) {
     return size;
 }
 
-int Fat12DeleteRecursive(const char* path) {
+int Fat1xDeleteRecursive(const char* path) {
     if (!path) return -1;
 
     // Check if the path exists
@@ -805,7 +805,7 @@ int Fat12DeleteRecursive(const char* path) {
     uint32_t entry_sector;
     int entry_offset;
 
-    Fat12DirEntry* entry = Fat12FindEntry(path, &parent_cluster, &entry_sector, &entry_offset);
+    Fat1xDirEntry* entry = Fat12FindEntry(path, &parent_cluster, &entry_sector, &entry_offset);
     if (!entry) {
         PrintKernel("Error: Path not found: ");
         PrintKernel(path);
@@ -818,7 +818,7 @@ int Fat12DeleteRecursive(const char* path) {
         PrintKernel("Deleting file: ");
         PrintKernel(path);
         PrintKernel("\n");
-        return Fat12DeleteFile(path);
+        return Fat1xDeleteFile(path);
     }
 
     // It's a directory - we need to recursively delete its contents
@@ -859,15 +859,15 @@ int Fat12DeleteRecursive(const char* path) {
         if (visited_count < 256) {
             visited_clusters[visited_count++] = current_cluster;
         }
-        if (Fat12GetCluster(current_cluster, cluster_buffer) != 0) {
+        if (Fat1xGetCluster(current_cluster, cluster_buffer) != 0) {
             KernelFree(cluster_buffer);
             PrintKernel("Error: Failed to read directory cluster\n");
             return -1;
         }
-        Fat12DirEntry* entries = (Fat12DirEntry*)cluster_buffer;
+        Fat1xDirEntry* entries = (Fat1xDirEntry*)cluster_buffer;
         int entries_per_cluster = cluster_bytes / 32;
         for (int i = 0; i < entries_per_cluster; i++) {
-            Fat12DirEntry* current_entry = &entries[i];
+            Fat1xDirEntry* current_entry = &entries[i];
 
             // End of directory entries
             if ((uint8_t)current_entry->name[0] == 0x00) {
@@ -922,7 +922,7 @@ int Fat12DeleteRecursive(const char* path) {
             }
 
             // Recursively delete this entry
-            if (Fat12DeleteRecursive(child_path) != 0) {
+            if (Fat1xDeleteRecursive(child_path) != 0) {
                 KernelFree(cluster_buffer);
                 PrintKernel("Error: Failed to delete child: ");
                 PrintKernel(child_path);
@@ -935,18 +935,18 @@ int Fat12DeleteRecursive(const char* path) {
 
     KernelFree(cluster_buffer);
     PrintKernel(".");
-    return Fat12DeleteFile(path);
+    return Fat1xDeleteFile(path);
 }
 
 // Enhanced file/directory deletion with path support
-int Fat12DeleteFile(const char* path) {
+int Fat1xDeleteFile(const char* path) {
     if (!path) return -1;
 
     uint16_t parent_cluster;
     uint32_t entry_sector;
     int entry_offset;
 
-    Fat12DirEntry* entry = Fat12FindEntry(path, &parent_cluster, &entry_sector, &entry_offset);
+    Fat1xDirEntry* entry = Fat12FindEntry(path, &parent_cluster, &entry_sector, &entry_offset);
     if (!entry) return -1;
 
     // If it's a directory, check if it's empty (only . and .. entries)
@@ -958,12 +958,12 @@ int Fat12DeleteFile(const char* path) {
             if (!cluster_buffer) return -1;
 
             // Check if directory is empty (only . and .. entries)
-            if (Fat12GetCluster(dir_cluster, cluster_buffer) != 0) {
+            if (Fat1xGetCluster(dir_cluster, cluster_buffer) != 0) {
                 KernelFree(cluster_buffer);
                 return -1;
             }
 
-            Fat12DirEntry* entries = (Fat12DirEntry*)cluster_buffer;
+            Fat1xDirEntry* entries = (Fat1xDirEntry*)cluster_buffer;
             int entries_per_cluster = cluster_bytes / 32;
             int valid_entries = 0;
 
@@ -1000,7 +1000,7 @@ int Fat12DeleteFile(const char* path) {
         return -1;
     }
 
-    Fat12DirEntry* target_entry = &((Fat12DirEntry*)sector_buffer)[entry_offset];
+    Fat1xDirEntry* target_entry = &((Fat1xDirEntry*)sector_buffer)[entry_offset];
     target_entry->name[0] = 0xE5;
 
     // Write changes back to disk
@@ -1015,20 +1015,20 @@ int Fat12DeleteFile(const char* path) {
     return 0;
 }
 
-uint64_t Fat12GetFileSize(const char* path) {
+uint64_t Fat1xGetFileSize(const char* path) {
     if (!path) return 0;
 
     uint16_t parent_cluster;
     uint32_t entry_sector;
     int entry_offset;
 
-    Fat12DirEntry* entry = Fat12FindEntry(path, &parent_cluster, &entry_sector, &entry_offset);
+    Fat1xDirEntry* entry = Fat12FindEntry(path, &parent_cluster, &entry_sector, &entry_offset);
     if (!entry || (entry->attr & FAT12_ATTR_DIRECTORY)) return 0;
 
     return entry->file_size;
 }
 
-int Fat12ListRoot(void) {
+int Fat1xListRoot(void) {
     uint32_t root_sectors = (volume.boot.root_entries * 32 + 511) / 512;
 
     for (uint32_t sector = 0; sector < root_sectors; sector++) {
@@ -1037,10 +1037,10 @@ int Fat12ListRoot(void) {
             return -1;
         }
 
-        Fat12DirEntry* entries = (Fat12DirEntry*)sector_buffer;
+        Fat1xDirEntry* entries = (Fat1xDirEntry*)sector_buffer;
         // The root directory has 16 entries per 512-byte sector
         for (int i = 0; i < 16; i++) {
-            Fat12DirEntry* entry = &entries[i];
+            Fat1xDirEntry* entry = &entries[i];
 
             // 0x00 means end of directory
             if ((uint8_t)entry->name[0] == 0x00) break;

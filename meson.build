@@ -110,7 +110,8 @@ c_sources = [
     src_root + '/mm/trace/StackTrace.c',
     src_root + '/mm/security/Cerberus.c',
     src_root + '/fs/VFRFS.c',
-    src_root + '/fs/FAT12.c',
+    src_root + '/fs/FAT1x.c',
+    src_root + '/fs/Iso9660.c',
     src_root + '/fs/VFS.c',
     src_root + '/drivers/Pic.c',
     src_root + '/drivers/Serial.c',
@@ -147,7 +148,6 @@ vf_config_flags =  [
     '-DVF_CONFIG_ENABLE_LPT',
     '-DVF_CONFIG_ENABLE_PCI',
     '-DVF_CONFIG_ENABLE_PS2',
-    '-DVF_CONFIG_ENABLE_INITRD',
     '-DVF_CONFIG_ENABLE_IDE',
     '-DVF_CONFIG_ENABLE_VFCOMPOSITOR',
     '-DVF_CONFIG_RTC_CENTURY',
@@ -230,6 +230,7 @@ iso = custom_target('VoidFrame.iso',
                         'cd ' + meson.current_build_dir() + ' && ' +
                         'mkdir -p isodir/boot/grub && ' +
                         'mkdir -p isodir/EFI/BOOT && ' +
+                        'mkdir -p isodir/bin && ' +
                         'cp voidframe.krnl isodir/boot/voidframe.krnl && ' +
                         'cp ' + meson.current_source_dir() + '/grub.cfg isodir/boot/grub/grub.cfg && ' +
                         'cp ' + meson.current_source_dir() + '/grub.cfg isodir/EFI/BOOT/grub.cfg && ' +

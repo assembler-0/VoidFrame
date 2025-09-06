@@ -243,7 +243,7 @@ void VFCompositor(void) {
             }
 
             WindowManagerRun();
-            MLFQYield();
+            // MLFQYield();
         } else {
             MLFQYield();
         }

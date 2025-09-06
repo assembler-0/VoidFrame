@@ -62,7 +62,7 @@ VoidFrame/
 │   ├── Vesa.c       
 │   └── Vesa.h    
 ├── fs/       
-│   ├── FAT12.h                # Filesystems  
+│   ├── FAT1x.h                # Filesystems  
 │   ├── FAT12.c           
 │   ├── VFRFS.h            
 │   ├── VFRFS.c            

@@ -1,7 +1,5 @@
 #include "Shell.h"
 
-#include "KernelHeap.h"
-#include "PMem.h"
 #include "Cerberus.h"
 #include "Console.h"
 #include "ELFloader.h"
@@ -9,10 +7,13 @@
 #include "Format.h"
 #include "FsUtils.h"
 #include "ISA.h"
+#include "Iso9660.h"
+#include "KernelHeap.h"
 #include "LPT/LPT.h"
 #include "MLFQ.h"
 #include "MemOps.h"
 #include "PCI/PCI.h"
+#include "PMem.h"
 #include "PS2.h"
 #include "Packet.h"
 #include "Panic.h"
@@ -182,11 +183,16 @@ static void HelpHandler(const char * args) {
     PrintKernel("  panic <message>- Panic with <message>\n");
     PrintKernel("  kill <pid>     - Terminate sched with pid <pid>\n");
     PrintKernel("  rm <file> [-r] - Remove file(s) or directory\n");
+    PrintKernel("  cp <src> <dest>- Copy file\n");
+    PrintKernel("  mv <src> <dest>- Move file\n");
     PrintKernel("  echo <text> <file> - Write text to file\n");
     PrintKernel("  fstest         - Run filesystem tests\n");
     PrintKernel("  size <file>    - Get size of <file> in bytes\n");
     PrintKernel("  heapvallvl <0/1/2>- Set kernel heap validation level\n");
     PrintKernel("  lscpu          - List cpu features (CPUID)\n");
+    PrintKernel("  vfc            - Start VFCompositor\n");
+    PrintKernel("  setup          - Copy system files\n");
+    PrintKernel("  isocp <iso> <vfs>- Copy from <iso> to <vfs>\n");
 }
 
 static void PSHandler(const char * args) {
@@ -933,6 +939,75 @@ void TestHandler(const char* args) {
     MLFQCreateProcess(nothing);
 }
 
+static void IsoCpHandler(const char* args) {
+    char* src = GetArg(args, 1);
+    char* dest = GetArg(args, 2);
+    if (src && dest) {
+        if (Iso9660Copy(src, dest) == 0) {
+            PrintKernel("ISO content copied successfully.\n");
+        } else {
+            PrintKernel("Failed to copy content from ISO.\n");
+        }
+        KernelFree(src);
+        KernelFree(dest);
+    } else {
+        PrintKernel("Usage: isocp <iso_path> <vfs_path>\n");
+        if (src) KernelFree(src);
+        if (dest) KernelFree(dest);
+    }
+}
+
+static void CpHandler(const char* args) {
+    char* src = GetArg(args, 1);
+    char* dest = GetArg(args, 2);
+    if (src && dest) {
+        char src_path[256];
+        char dest_path[256];
+        ResolvePath(src, src_path, 256);
+        ResolvePath(dest, dest_path, 256);
+        if (VfsCopyFile(src_path, dest_path) == 0) {
+            PrintKernel("File copied\n");
+        } else {
+            PrintKernel("Failed to copy file\n");
+        }
+        KernelFree(src);
+        KernelFree(dest);
+    } else {
+        PrintKernel("Usage: cp <source> <destination>\n");
+        if (src) KernelFree(src);
+        if (dest) KernelFree(dest);
+    }
+}
+
+static void MvHandler(const char* args) {
+    char* src = GetArg(args, 1);
+    char* dest = GetArg(args, 2);
+    if (src && dest) {
+        char src_path[256];
+        char dest_path[256];
+        ResolvePath(src, src_path, 256);
+        ResolvePath(dest, dest_path, 256);
+        if (VfsMoveFile(src_path, dest_path) == 0) {
+            PrintKernel("File moved\n");
+        } else {
+            PrintKernel("Failed to move file\n");
+        }
+        KernelFree(src);
+        KernelFree(dest);
+    } else {
+        PrintKernel("Usage: mv <source> <destination>\n");
+        if (src) KernelFree(src);
+        if (dest) KernelFree(dest);
+    }
+}
+
+void CloneSystemFiles(const char * args) {
+    (void)args;
+    PrintKernel("Info: Setup is copying system files...\n");
+    ExecuteCommand("isocp /bin /Data/Apps");
+    ExecuteCommand("isocp /boot/voidframe.krnl /System/Kernel/voidframe.krnl");
+}
+
 static const ShellCommand commands[] = {
     {"help", HelpHandler},
     {"ps", PSHandler},
@@ -974,13 +1049,35 @@ static const ShellCommand commands[] = {
     {"mkfs", MkfsHandler},
     {"test", TestHandler}, // internal uses
     {"vfc", VFCompositorRequestInit}, // internal uses
+    {"cp", CpHandler},
+    {"mv", MvHandler},
+    {"isocp", IsoCpHandler},
+    {"setup", CloneSystemFiles},
 };
 
-static void ExecuteCommand(const char* cmd) {
+void ExecuteCommand(const char* cmd) {
     char* cmd_name = GetArg(cmd, 0);
     if (!cmd_name) return;
-
     for (size_t i = 0; i < (sizeof(commands) / sizeof(ShellCommand)); i++) {
+        if (VfsIsFile(FormatS("%s/%s", DataDir, cmd_name))) {
+            const char* full = FormatS("%s/%s", DataDir, cmd_name);
+            const ElfLoadOptions opts = {
+                .privilege_level = PROC_PRIV_USER,
+                .security_flags = 0,
+                .max_memory = 16 * 1024 * 1024,
+                .process_name = full
+            };
+            const uint32_t pid = CreateProcessFromElf(full, &opts);
+            if (pid != 0) {
+                PrintKernelSuccess("ELF Executable loaded (PID: ");
+                PrintKernelInt(pid);
+                PrintKernel(")\n");
+            } else {
+                PrintKernelError("Failed to load ELF executable\n");
+            }
+            KernelFree(cmd_name);
+            return; // avoid also running a built-in with the same name
+        }
         if (FastStrCmp(cmd_name, commands[i].name) == 0) {
             commands[i].func(cmd); // Call the handler
             KernelFree(cmd_name);

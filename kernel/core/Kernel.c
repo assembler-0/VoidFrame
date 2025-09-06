@@ -2,7 +2,8 @@
 #include "Kernel.h"
 #include "Compositor.h"
 #include "Console.h"
-#include "FAT12.h"
+#include "FAT1x.h"
+#include "Format.h"
 #include "Gdt.h"
 #include "ISA.h"
 #include "Ide.h"
@@ -645,7 +646,7 @@ static InitResultT PXS2(void) {
 
         // Explicitly initialize FAT12 before VFS
         PrintKernel("Info: Initializing FAT12...\n");
-        if (Fat12Init(0) == 0) {
+        if (Fat1xInit(0) == 0) {
             PrintKernelSuccess("System: FAT12 Driver initialized\n");
         } else {
             PrintKernelWarning("FAT12 initialization failed\n");
@@ -661,11 +662,9 @@ static InitResultT PXS2(void) {
     FsInit();
     PrintKernelSuccess("System: VFRFS (VoidFrame RamFS) initialized\n");
 
-#ifdef VF_CONFIG_ENABLE_INITRD
     // Initrd
     INITRD1();
     PrintKernelSuccess("System: INITRD (Stage 1) initialized\n");
-#endif
 
     // Initialize VFS
     PrintKernel("Info: Initializing VFS...\n");

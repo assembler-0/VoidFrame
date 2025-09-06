@@ -367,7 +367,7 @@ static void __attribute__((visibility("hidden"))) TerminateProcess(uint32_t pid,
     PrintKernel(cleanup_path);
     PrintKernel(" for PID ");
     PrintKernelInt(proc->pid);
-
+    PrintKernel("\n");
     int cleanup_result = VfsDelete(cleanup_path, true);
     if (cleanup_result != 0) {
         PrintKernelError("System: Cleanup failed with code ");
@@ -997,14 +997,8 @@ void MLFQProcessBlocked(uint32_t slot) {
 }
 
 void MLFQYield() {
-    irq_flags_t flags = SpinLockIrqSave(&scheduler_lock);
-    MLFQProcessControlBlock* current = MLFQGetCurrentProcess();
-    if (current) {
-        current->state = PROC_READY;
-    }
-    RequestSchedule();
-    SpinUnlockIrqRestore(&scheduler_lock, flags);
-    __asm__ __volatile__("hlt");
+    volatile int delay = MLFQscheduler.total_processes * 100;
+    while (delay-- > 0) __asm__ __volatile__("pause");
 }
 
 void ProcessExitStub() {
@@ -1510,7 +1504,7 @@ static __attribute__((visibility("hidden"))) void DynamoX(void) {
         }
         MLFQCleanupTerminatedProcess();
         CheckResourceLeaks();
-        MLFQYield();
+        // MLFQYield();
     }
 }
 

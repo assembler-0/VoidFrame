@@ -3,5 +3,6 @@
 
 void ShellInit(void);
 void ShellProcess(void);
+void ExecuteCommand(const char* cmd);
 
 #endif
