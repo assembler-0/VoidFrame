@@ -22,6 +22,23 @@ void FastStrCopy(char* dst, const char* src, size_t max_len) {
     dst[i] = '\0';
 }
 
+int FastStrnCmp(const char* str1, const char* str2, size_t n) {
+    if (!str1 || !str2) return (str1 == str2) ? 0 : (str1 ? 1 : -1);
+    if (n == 0) return 0;  // Edge case: comparing 0 characters
+
+    // Compare up to n characters
+    while (n > 0 && *str1 && *str1 == *str2) {
+        str1++;
+        str2++;
+        n--;
+    }
+
+    // If we've compared n characters, they're equal
+    if (n == 0) return 0;
+
+    return (unsigned char)*str1 - (unsigned char)*str2;
+}
+
 int FastStrCmp(const char* str1, const char* str2) {
     if (!str1 || !str2) return (str1 == str2) ? 0 : (str1 ? 1 : -1);
 

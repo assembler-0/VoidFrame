@@ -1,8 +1,9 @@
 // VoidFrame Kernel Entry File
 #include "Kernel.h"
+#include "../../fs/FAT/FAT1x.h"
 #include "Compositor.h"
 #include "Console.h"
-#include "FAT1x.h"
+#include "EXT/Ext2.h"
 #include "Format.h"
 #include "Gdt.h"
 #include "ISA.h"
@@ -647,13 +648,19 @@ static InitResultT PXS2(void) {
         // Explicitly initialize FAT12 before VFS
         PrintKernel("Info: Initializing FAT12...\n");
         if (Fat1xInit(0) == 0) {
-            PrintKernelSuccess("System: FAT12 Driver initialized\n");
+            PrintKernelSuccess("System: FAT1x Driver initialized\n");
         } else {
-            PrintKernelWarning("FAT12 initialization failed\n");
+            PrintKernelWarning("FAT1x initialization failed\n");
+        }
+
+        if (Ext2Init(0) == 0) {
+            PrintKernelSuccess("System: Ext2 Driver initialized\n");
+        } else {
+            PrintKernelWarning("Ext2 initialization failed\n");
         }
     } else {
         PrintKernelWarning(" IDE initialization failed - no drives detected\n");
-        PrintKernelWarning(" Skipping FAT12 initialization\n");
+        PrintKernelWarning(" Skipping FAT1x & EXT2 initialization\n");
     }
 #endif
 

@@ -1,13 +1,14 @@
 #include "VFS.h"
 #include "../mm/MemOps.h"
 #include "Console.h"
-#include "FAT1x.h"
+#include "FAT/FAT1x.h"
+#include "EXT/Ext2.h"
 #include "Format.h"
+#include "KernelHeap.h"
 #include "Serial.h"
 #include "StringOps.h"
 #include "VFRFS.h"
 #include "stdbool.h"
-#include "KernelHeap.h"
 
 #define VFS_MAX_PATH_LEN 256
 
@@ -179,6 +180,9 @@ int VfsReadFile(const char* path, void* buffer, uint32_t max_size) {
             // Use new path-aware function
             return Fat1xReadFile(local_path, buffer, max_size);
         }
+        case VFS_EXT2: {
+            return Ext2ReadFile(local_path, buffer, max_size);
+        }
     }
 
     return -1;
@@ -214,6 +218,9 @@ int VfsListDir(const char* path) {
             if (!fat12_initialized) return -1;
             return Fat1xListDirectory(local_path);
         }
+        case VFS_EXT2: {
+            return Ext2ListDir(local_path);
+        }
     }
 
     return -1;
@@ -238,6 +245,9 @@ int VfsCreateFile(const char* path) {
             extern int fat12_initialized;
             if (!fat12_initialized) return -1;
             return Fat1xCreateFile(local_path);
+        case VFS_EXT2: {
+            return Ext2CreateFile(local_path);
+        }
     }
 
     return -1;
@@ -258,6 +268,9 @@ int VfsCreateDir(const char* path) {
             extern int fat12_initialized;
             if (!fat12_initialized) return -1;
             return Fat1xCreateDir(local_path);
+        case VFS_EXT2: {
+            return Ext2CreateDir(local_path);
+        }
     }
 
     return -1;
@@ -280,6 +293,9 @@ int VfsDelete(const char* path, bool Recursive) {
             if (!fat12_initialized) return -1;
             if (Recursive) return Fat1xDeleteRecursive(local_path);
             return Fat1xDeleteFile(local_path);
+        case VFS_EXT2: {
+            return Ext2Delete(local_path);
+        }
     }
 
     return -1;
@@ -336,6 +352,9 @@ uint64_t VfsGetFileSize(const char* path) {
             return  Fat1xGetFileSize(local_path);
 
         }
+        case VFS_EXT2: {
+            return Ext2GetFileSize(local_path);
+        }
 
         default:
             SerialWrite("[VFS] VfsGetFileSize: Unknown filesystem type\n");
@@ -366,6 +385,9 @@ int VfsIsFile(const char* path) {
             int read_result = Fat1xReadFile(local_path, test_buffer, 1);
             return read_result >= 0;
         }
+        case VFS_EXT2: {
+            return Ext2IsFile(local_path);
+        }
     }
 
     return 0;
@@ -387,6 +409,9 @@ int VfsIsDir(const char* path) {
             if (!fat12_initialized) return 0;
             // Use new directory detection function
             return Fat1xIsDirectory(local_path);
+        }
+        case VFS_EXT2: {
+            return Ext2IsDir(local_path);
         }
     }
     return 0;
@@ -412,6 +437,9 @@ int VfsWriteFile(const char* path, const void* buffer, uint32_t size) {
             extern int fat12_initialized;
             if (!fat12_initialized) return -1;
             return Fat1xWriteFile(local_path, buffer, size);
+        case VFS_EXT2: {
+            return Ext2WriteFile(local_path, buffer, size);
+        }
     }
 
     return -1;
