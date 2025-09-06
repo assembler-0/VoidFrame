@@ -997,14 +997,8 @@ void MLFQProcessBlocked(uint32_t slot) {
 }
 
 void MLFQYield() {
-    irq_flags_t flags = SpinLockIrqSave(&scheduler_lock);
-    MLFQProcessControlBlock* current = MLFQGetCurrentProcess();
-    if (current) {
-        current->state = PROC_READY;
-    }
-    RequestSchedule();
-    SpinUnlockIrqRestore(&scheduler_lock, flags);
-    __asm__ __volatile__("hlt");
+    volatile int delay = MLFQscheduler.total_processes * 100;
+    while (delay-- > 0) __asm__ __volatile__("pause");
 }
 
 void ProcessExitStub() {
@@ -1720,7 +1714,7 @@ static void Astra(void) {
 
         MLFQCleanupTerminatedProcess();
         CheckResourceLeaks();
-        // MLFQYield();
+        MLFQYield();
     }
 }
 

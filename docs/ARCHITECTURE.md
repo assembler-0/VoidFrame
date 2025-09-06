@@ -417,7 +417,6 @@ The following functions and commands provide interfaces to the process managemen
     '-DVF_CONFIG_ENABLE_LPT',
     '-DVF_CONFIG_ENABLE_PCI',
     '-DVF_CONFIG_ENABLE_PS2',
-    '-DVF_CONFIG_ENABLE_INITRD',
     '-DVF_CONFIG_ENABLE_IDE',
     '-DVF_CONFIG_RTC_CENTURY',
     '-DVF_CONFIG_ENFORCE_MEMORY_PROTECTION',
