@@ -193,6 +193,7 @@ static void HelpHandler(const char * args) {
     PrintKernel("  vfc            - Start VFCompositor\n");
     PrintKernel("  setup          - Copy system files\n");
     PrintKernel("  isocp <iso> <vfs>- Copy from <iso> to <vfs>\n");
+    PrintKernel("  ext2test       - Test EXT2 write functionality\n");
 }
 
 static void PSHandler(const char * args) {
@@ -1008,6 +1009,35 @@ void CloneSystemFiles(const char * args) {
     ExecuteCommand("isocp /boot/voidframe.krnl /System/Kernel/voidframe.krnl");
 }
 
+static void Ext2TestHandler(const char* args) {
+    (void)args;
+    PrintKernel("EXT2: Running write functionality test...\n");
+    
+    const char* test_data = "Hello from VoidFrame EXT2!\nThis is a test file.\n";
+    int data_len = 0;
+    while (test_data[data_len]) data_len++;
+    
+    PrintKernel("EXT2: Writing test file...\n");
+    if (VfsWriteFile("/Devices/Storage/VFSystemDrive/test.txt", test_data, data_len) >= 0) {
+        PrintKernelSuccess("EXT2: File written successfully!\n");
+        
+        uint8_t* read_buffer = KernelMemoryAlloc(256);
+        if (read_buffer) {
+            int bytes_read = VfsReadFile("/Devices/Storage/VFSystemDrive/test.txt", read_buffer, 255);
+            if (bytes_read > 0) {
+                read_buffer[bytes_read] = 0;
+                PrintKernelSuccess("EXT2: File contents:\n");
+                PrintKernel((char*)read_buffer);
+            }
+            KernelFree(read_buffer);
+        }
+    } else {
+        PrintKernelError("EXT2: Failed to write test file\n");
+    }
+    
+    PrintKernelSuccess("EXT2: Write test completed!\n");
+}
+
 static const ShellCommand commands[] = {
     {"help", HelpHandler},
     {"ps", PSHandler},
@@ -1053,6 +1083,7 @@ static const ShellCommand commands[] = {
     {"mv", MvHandler},
     {"isocp", IsoCpHandler},
     {"setup", CloneSystemFiles},
+    {"ext2test", Ext2TestHandler},
 };
 
 void ExecuteCommand(const char* cmd) {

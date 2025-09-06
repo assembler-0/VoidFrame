@@ -38,10 +38,12 @@ It would be amazing if you could contribute to this project!
 - nasm >= 2.16
 - qemu >= 7.0.0
 - mkfs.fat (dosfstools)
+- mkfs.ext2
 - grub-mkrescue
     - Note: depending on your distro, grub-mkrescue may require xorriso and mtools packages.
 
 ### Quickstart
+#### Full development setup
 ```bash
 git clone https://github.com/assembler-0/VoidFrame.git
 cd VoidFrame
@@ -49,8 +51,16 @@ python scripts/vfconfig.py
 meson setup build
 cd build
 ninja
-ninja img # Optional
-ninja virtio-img # Optional
+ninja img
+ninja virtio-img
 ninja run
 ```
-
+#### Minimal setup
+```bash
+git clone https://github.com/assembler-0/VoidFrame.git
+cd VoidFrame
+meson setup build -Dexclude_extra_objects=true
+cd build
+ninja
+ninja runmin
+```
