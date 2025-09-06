@@ -14,7 +14,7 @@
 
 ![License](https://img.shields.io/badge/License-GPLv2-orange)
 
-![Version](https://img.shields.io/badge/Current%20Version-v0.0.1%20beta5.4-blue)
+![Version](https://img.shields.io/badge/Current%20Version-v0.0.1%20beta6-blue)
 
 ![Build](https://img.shields.io/badge/GCC-faliling-red)
 
@@ -38,10 +38,12 @@ It would be amazing if you could contribute to this project!
 - nasm >= 2.16
 - qemu >= 7.0.0
 - mkfs.fat (dosfstools)
+- mkfs.ext2
 - grub-mkrescue
     - Note: depending on your distro, grub-mkrescue may require xorriso and mtools packages.
 
 ### Quickstart
+#### Full development setup
 ```bash
 git clone https://github.com/assembler-0/VoidFrame.git
 cd VoidFrame
@@ -49,8 +51,16 @@ python scripts/vfconfig.py
 meson setup build
 cd build
 ninja
-ninja img # Optional
-ninja virtio-img # Optional
+ninja img
+ninja virtio-img
 ninja run
 ```
-
+#### Minimal setup
+```bash
+git clone https://github.com/assembler-0/VoidFrame.git
+cd VoidFrame
+meson setup build -Dexclude_extra_objects=true
+cd build
+ninja
+ninja runmin
+```

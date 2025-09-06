@@ -144,7 +144,7 @@ static void ARPTestHandler(const char * args) {
 
 static void VersionHandler(const char * args) {
     (void)args;
-    PrintKernelSuccess("VoidFrame v0.0.1-beta5\n");
+    PrintKernelSuccess("VoidFrame v0.0.1-beta6\n");
     PrintKernelF("Built on %s at %s\n", DATE, TIME);
     PrintKernelSuccess("VoidFrame Shell v0.0.1-beta\n");
 }
@@ -193,6 +193,7 @@ static void HelpHandler(const char * args) {
     PrintKernel("  vfc            - Start VFCompositor\n");
     PrintKernel("  setup          - Copy system files\n");
     PrintKernel("  isocp <iso> <vfs>- Copy from <iso> to <vfs>\n");
+    PrintKernel("  ext2test       - Test EXT2 write functionality\n");
 }
 
 static void PSHandler(const char * args) {

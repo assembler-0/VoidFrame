@@ -53,7 +53,7 @@
 - [x] ELF64 header parsing
 - [x] Program header mapping (`PT_LOAD`)
 - [x] Set up new stack
-- [ ] Jump to entry point
+- [x] Jump to entry point
 - [x] Static binaries only (no relocations)
 - [ ] Dynamic linker / interpreter (WAY later)
 
