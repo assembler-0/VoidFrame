@@ -367,7 +367,7 @@ static void __attribute__((visibility("hidden"))) TerminateProcess(uint32_t pid,
     PrintKernel(cleanup_path);
     PrintKernel(" for PID ");
     PrintKernelInt(proc->pid);
-
+    PrintKernel("\n");
     int cleanup_result = VfsDelete(cleanup_path, true);
     if (cleanup_result != 0) {
         PrintKernelError("System: Cleanup failed with code ");

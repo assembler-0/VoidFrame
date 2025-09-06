@@ -1060,7 +1060,21 @@ void ExecuteCommand(const char* cmd) {
     if (!cmd_name) return;
     for (size_t i = 0; i < (sizeof(commands) / sizeof(ShellCommand)); i++) {
         if (VfsIsFile(FormatS("%s/%s", DataDir, cmd_name))) {
-            ElfloadHandler(cmd);
+            const char* full = FormatS("%s/%s", DataDir, cmd_name);
+            const ElfLoadOptions opts = {
+                .privilege_level = PROC_PRIV_USER,
+                .security_flags = 0,
+                .max_memory = 16 * 1024 * 1024,
+                .process_name = full
+            };
+            const uint32_t pid = CreateProcessFromElf(full, &opts);
+            if (pid != 0) {
+                PrintKernelSuccess("ELF Executable loaded (PID: ");
+                PrintKernelInt(pid);
+                PrintKernel(")\n");
+            } else {
+                PrintKernelError("Failed to load ELF executable\n");
+            }
             KernelFree(cmd_name);
             return; // avoid also running a built-in with the same name
         }

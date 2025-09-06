@@ -83,7 +83,10 @@ int Iso9660Read(const char* path, void* buffer, uint32_t max_size) {
             KernelFree(sector_buffer);
             return -1; // Failed to read sector
         }
-        if (FastStrCmp(((Iso9660Pvd*)sector_buffer)->id, "CD001") == 0 && ((Iso9660Pvd*)sector_buffer)->type == 1) {
+        Iso9660Pvd* cand = (Iso9660Pvd*)sector_buffer;
+        if (cand->type == 1 &&
+            cand->id[0]=='C' && cand->id[1]=='D' && cand->id[2]=='0' &&
+            cand->id[3]=='0' && cand->id[4]=='1') {
             pvd = KernelMemoryAlloc(ISO9660_SECTOR_SIZE);
             if (!pvd) {
                 KernelFree(sector_buffer);
@@ -164,10 +167,17 @@ int Iso9660Read(const char* path, void* buffer, uint32_t max_size) {
     }
 
     // Read the file data
-    uint32_t file_size = current_entry->data_length_le;
-    uint32_t to_read = (file_size < max_size) ? file_size : max_size;
-    uint32_t file_lba = current_entry->extent_loc_le;
-
+    const uint32_t file_size = current_entry->data_length_le;
+    const uint32_t file_lba  = current_entry->extent_loc_le;
+    // Stat-only mode
+    if (buffer == NULL || max_size == 0) {
+        if (current_entry != root_entry) {
+            KernelFree(current_entry);
+        }
+        KernelFree(pvd);
+        return (int)file_size;
+    }
+    const uint32_t to_read = (file_size < max_size) ? file_size : max_size;
     uint8_t* read_buffer = (uint8_t*)buffer;
     uint32_t bytes_read = 0;
     while (bytes_read < to_read) {
@@ -339,12 +349,7 @@ static Iso9660DirEntry** Iso9660ListDir(const char* path) {
 
 
 int Iso9660CopyFile(const char* iso_path, const char* vfs_path) {
-    uint32_t file_size = 0;
-    // A dummy read to get the file size
-    void* dummy_buffer = KernelMemoryAlloc(1);
-    int read_size = Iso9660Read(iso_path, dummy_buffer, 0);
-    KernelFree(dummy_buffer);
-    file_size = read_size;
+    int file_size = Iso9660Read(iso_path, NULL, 0);
 
     if (file_size == 0) {
         return VfsCreateFile(vfs_path);
@@ -395,8 +400,8 @@ int Iso9660Copy(const char* iso_path, const char* vfs_path) {
         char vfs_filepath[256];
         char iso_filepath[256];
 
-        FormatS(vfs_filepath, "%s/%s", vfs_path, filename);
-        FormatS(iso_filepath, "%s/%s", iso_path, filename);
+        FormatA(vfs_filepath, sizeof(vfs_filepath), "%s/%s", vfs_path, filename);
+        FormatA(iso_filepath, sizeof(iso_filepath), "%s/%s", iso_path, filename);
 
         if (entries[i]->file_flags & 2) { // Directory
             Iso9660Copy(iso_filepath, vfs_filepath);
