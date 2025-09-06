@@ -144,7 +144,7 @@ static void ARPTestHandler(const char * args) {
 
 static void VersionHandler(const char * args) {
     (void)args;
-    PrintKernelSuccess("VoidFrame v0.0.1-beta5\n");
+    PrintKernelSuccess("VoidFrame v0.0.1-beta6\n");
     PrintKernelF("Built on %s at %s\n", DATE, TIME);
     PrintKernelSuccess("VoidFrame Shell v0.0.1-beta\n");
 }

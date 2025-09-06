@@ -27,6 +27,7 @@ jobs:
             grub-pc-bin \
             grub-common \
             qemu-system-x86 \
+            mtools \
 
       - name: Compile & Link
         run: |
