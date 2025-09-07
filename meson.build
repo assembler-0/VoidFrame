@@ -48,6 +48,13 @@ c_flags = [
     '-Wextra',
 ]
 
+cpp_flags = c_flags + [
+    '-std=gnu++17',
+    '-fno-exceptions',
+    '-fno-rtti',
+    '-fno-threadsafe-statics',
+]
+
 # Assembly flags
 asm_flags = ['-f', 'elf64']
 
@@ -235,7 +242,7 @@ foreach cpp_file : cpp_sources
     cpp_obj = custom_target('cpp_' + obj_name,
                           input : cpp_file,
                           output : obj_name,
-                          command : [clangpp.full_path(), c_flags, inc_flags, cfg_flags, '-c', '-o', '@OUTPUT@', '@INPUT@']
+                          command : [clangpp.full_path(), cpp_flags, inc_flags, cfg_flags, '-c', '-o', '@OUTPUT@', '@INPUT@']
     )
     cpp_objects += cpp_obj
 endforeach

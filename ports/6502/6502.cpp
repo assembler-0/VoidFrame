@@ -1,4 +1,4 @@
-#include "Console.h"
+// #include "Console.h"
 
 // Helper types
 using Byte = unsigned char;
@@ -19,18 +19,16 @@ struct MEM {
     // Read a byte from memory
     Byte operator[](const u32 Address) const {
         // Assert Address is < MAX_MEM
-        return Data[Address];
+        return Data[Address & 0xFFFF];
     }
-
     // Write a byte to memory
     Byte& operator[](const u32 Address) {
         // Assert Address is < MAX_MEM
-        return Data[Address];
+        return Data[Address & 0xFFFF];
     }
-
     // Write a byte and decrement cycles
     void WriteByte(Byte Value, u32 Address, u32& Cycles) {
-        Data[Address] = Value;
+        Data[Address & 0xFFFF] = Value;
         Cycles--;
     }
 };
@@ -54,11 +52,10 @@ struct CPU {
 
     /// @brief Resets the CPU to a known state
     void Reset(MEM& Memory){
-        PC = 0xFFFC;
         SP = 0xFF;
         C = Z = I = D = V = B = N = 0;
         A = X = Y = 0;
-        Memory.Init();
+        PC = static_cast<Word>(Memory[0xFFFC]) | (static_cast<Word>(Memory[0xFFFD]) << 8);
     }
 
     // Set Zero and Negative flags based on a value
@@ -352,7 +349,7 @@ struct CPU {
                 case INS_NOP: { Cycles--; } break;
 
                 default: {
-                    PrintKernelF("Instruction not handled: %d\n", static_cast<int>(Instruction));
+                    // PrintKernelF("Instruction not handled: %d\n", static_cast<int>(Instruction));
                     Cycles = 0; // Stop execution
                 } break;
             }
@@ -361,15 +358,15 @@ struct CPU {
 };
 
 extern "C" void Entry6502(const char * args){
+    (void)args;
     CPU cpu{};
-    MEM mem{};
-    cpu.Reset(mem);
-
-    // Load a program into memory
+    static MEM mem;         // avoid large stack object
+    mem.Init();             // clear memory explicitly
+    // Write reset vector first
     mem[0xFFFC] = 0x00;
     mem[0xFFFD] = 0xF0;
-    //
-    // // Main program at 0xF000
+    cpu.Reset(mem);
+    // Load a program into memory
     int i = 0;
     mem[0xF000 + i++] = CPU::INS_CLC;       // Clear Carry
     mem[0xF000 + i++] = CPU::INS_LDA_IM;    // A = 10
@@ -384,23 +381,19 @@ extern "C" void Entry6502(const char * args){
     mem[0xF000 + i++] = CPU::INS_CMP_IM;    // Compare A (13) with 13
     mem[0xF000 + i++] = 0x0D;               // Sets Z flag
     mem[0xF000 + i++] = CPU::INS_BEQ;       // Branch if Z is set
-    mem[0xF000 + i++] = 0x02;               // Branch to INS_LDX_IM
+    mem[0xF000 + i++] = 0x02;               // Offset to next instruction
     mem[0xF000 + i++] = CPU::INS_LDA_IM;    // This should be skipped
     mem[0xF000 + i++] = 0xFF;
     mem[0xF000 + i++] = CPU::INS_LDX_IM;    // X = 42
     mem[0xF000 + i++] = 0x2A;
     mem[0xF000 + i++] = CPU::INS_BRK;       // Halt
-
-    // Set PC to start of program
-    cpu.PC = 0xF000;
-
+    // PC already set by reset vector
     // Execute for a number of cycles
     cpu.Execute(50, mem);
-
-    PrintKernelF("A: %d\n", static_cast<int>(cpu.A));
-    PrintKernelF("X: %d\n", static_cast<int>(cpu.X));
-    PrintKernelF("Value at 0x10: %d\n", static_cast<int>(mem[0x10]));
-    PrintKernelF("Zero Flag: %d\n", static_cast<int>(cpu.Z));
-    PrintKernelF("PC: %d\n", cpu.PC);
-    PrintKernel("6502 emulation complete.\n");
+    // PrintKernelF("A: %d\n", static_cast<int>(cpu.A));
+    // PrintKernelF("X: %d\n", static_cast<int>(cpu.X));
+    // PrintKernelF("Value at 0x10: %d\n", static_cast<int>(mem[0x10]));
+    // PrintKernelF("Zero Flag: %d\n", static_cast<int>(cpu.Z));
+    // PrintKernelF("PC: %d\n", cpu.PC);
+    // PrintKernelSuccess("6502 emulation complete.\n");
 }
