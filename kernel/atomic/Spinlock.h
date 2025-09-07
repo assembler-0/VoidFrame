@@ -90,9 +90,17 @@ static inline void MCSUnlock(volatile mcs_node_t** lock, mcs_node_t* node) {
 typedef struct {
     volatile int readers;
     volatile int writer;
+    volatile uint32_t owner;
+    volatile int recursion;
 } rwlock_t;
 
-static inline void ReadLock(rwlock_t* lock) {
+#define RWLOCK_INIT { .readers = 0, .writer = 0, .owner = 0, .recursion = 0 }
+
+static inline void ReadLock(rwlock_t* lock, uint32_t owner_id) {
+    if (lock->writer && lock->owner == owner_id) {
+        // The current process holds the write lock, so it can "read"
+        return;
+    }
     while (1) {
         while (lock->writer) __builtin_ia32_pause();
         __sync_fetch_and_add(&lock->readers, 1);
@@ -101,19 +109,38 @@ static inline void ReadLock(rwlock_t* lock) {
     }
 }
 
-static inline void ReadUnlock(rwlock_t* lock) {
+static inline void ReadUnlock(rwlock_t* lock, uint32_t owner_id) {
+    if (lock->writer && lock->owner == owner_id) {
+        __atomic_thread_fence(__ATOMIC_RELEASE);
+        return;
+    }
     __sync_fetch_and_sub(&lock->readers, 1);
 }
 
-static inline void WriteLock(rwlock_t* lock) {
+static inline void WriteLock(rwlock_t* lock, uint32_t owner_id) {
+    if (lock->writer && lock->owner == owner_id) {
+        lock->recursion++;
+        return;
+    }
+
     while (__sync_lock_test_and_set(&lock->writer, 1)) {
         while (lock->writer) __builtin_ia32_pause();
     }
     while (lock->readers) __builtin_ia32_pause();
+
+    lock->owner = owner_id;
+    lock->recursion = 1;
 }
 
 static inline void WriteUnlock(rwlock_t* lock) {
-    __sync_lock_release(&lock->writer);
+    if (lock->recursion <= 0) {
+        PANIC("WriteUnlock Underflow");
+        return; // Or trigger an assertion/panic in debug builds
+    }
+    if (--lock->recursion == 0) {
+        lock->owner = 0;
+        __sync_lock_release(&lock->writer);
+    }
 }
 
 // Original API preserved
