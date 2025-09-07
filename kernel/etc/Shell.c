@@ -1125,7 +1125,6 @@ static void PcBeepHandler(const char * args) {
     KernelFree(size_str);
 }
 
-
 static const ShellCommand commands[] = {
     {"help", HelpHandler},
     {"ps", PSHandler},
@@ -1217,6 +1216,7 @@ void ShellInit(void) {
 
 void ShellProcess(void) {
     PrintKernelSuccess("System: VoidFrame Shell v0.0.2-development1 ('help' for list of commands)\n");
+    ExecuteCommand("help");
     while (1) {
         if (HasInput()) {
             const char c = GetChar();
