@@ -1,4 +1,4 @@
-# The VoidFrame monolithic kernel 💫 v0.0.1-beta6.1
+# The VoidFrame monolithic kernel 💫 v0.0.2-rc1
 
 ## Table of Contents
 

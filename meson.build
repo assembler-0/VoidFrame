@@ -1,5 +1,5 @@
 project('voidframe', 'c',
-        version : '0.0.1-beta6.1',
+        version : '0.0.2-rc1',
         default_options : [
             'c_std=c11',
             'optimization=2',
