@@ -1,11 +1,10 @@
 // VoidFrame Kernel Entry File
 #include "Kernel.h"
-#include "../../drivers/ethernet/realtek/RTL8139.h"
+#include "realtek/RTL8139.h"
 #include "Compositor.h"
 #include "Console.h"
 #include "EXT/Ext2.h"
 #include "FAT/FAT1x.h"
-#include "Format.h"
 #include "Gdt.h"
 #include "ISA.h"
 #include "Ide.h"
@@ -786,7 +785,7 @@ asmlinkage void KernelMain(const uint32_t magic, const uint32_t info) {
     console.buffer = (volatile uint16_t*)VGA_BUFFER_ADDR;
 
     ClearScreen();
-    PrintKernelSuccess("System: VoidFrame Kernel - Version 0.0.2-rc1 loaded\n");
+    PrintKernelSuccess("System: VoidFrame Kernel - Version 0.0.2-development1 loaded\n");
     PrintKernel("Magic: ");
     PrintKernelHex(magic);
     PrintKernel(", Info: ");
