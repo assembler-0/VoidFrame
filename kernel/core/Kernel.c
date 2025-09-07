@@ -1,9 +1,10 @@
 // VoidFrame Kernel Entry File
 #include "Kernel.h"
-#include "FAT/FAT1x.h"
+#include "../../drivers/ethernet/realtek/RTL8139.h"
 #include "Compositor.h"
 #include "Console.h"
 #include "EXT/Ext2.h"
+#include "FAT/FAT1x.h"
 #include "Format.h"
 #include "Gdt.h"
 #include "ISA.h"
@@ -21,6 +22,7 @@
 #include "PS2.h"
 #include "Panic.h"
 #include "Pic.h"
+#include "SVGAII.h"
 #include "Serial.h"
 #include "Shell.h"
 #include "StackGuard.h"
@@ -29,8 +31,7 @@
 #include "VFS.h"
 #include "VMem.h"
 #include "Vesa.h"
-#include "SVGAII.h"
-#include "ethernet/RTL8139.h"
+#include "ethernet/intel/E1000.h"
 #include "stdbool.h"
 #include "stdint.h"
 #include "xHCI/xHCI.h"
@@ -725,6 +726,10 @@ static InitResultT PXS2(void) {
     PrintKernel("Info: Initializing RTL8139 Driver...\n");
     Rtl8139_Init();
     PrintKernelSuccess("System: RTL8139 Driver initialized\n");
+
+    PrintKernel("Info: Initializing E1000 Driver...\n");
+    E1000_Init();
+    PrintKernelSuccess("System: E1000 Driver initialized\n");
 #endif
 
 #ifdef VF_CONFIG_ENABLE_VMWARE_SVGA_II

@@ -1,5 +1,6 @@
 #include "Shell.h"
 
+#include "../../drivers/ethernet/realtek/RTL8139.h"
 #include "Cerberus.h"
 #include "Console.h"
 #include "ELFloader.h"
@@ -19,13 +20,13 @@
 #include "Panic.h"
 #include "Pic.h"
 #include "RTC/Rtc.h"
-#include "RTL8139.h"
 #include "SB16.h"
 #include "Serial.h"
 #include "StackTrace.h"
 #include "StringOps.h"
 #include "VFS.h"
 #include "VMem.h"
+#include "intel/E1000.h"
 #include "stdlib.h"
 #include "xHCI/xHCI.h"
 
@@ -102,8 +103,9 @@ void ArpRequestTestProcess() {
     FullArpPacket packet;
 
     const Rtl8139Device* nic = GetRtl8139Device();
-    if (!nic) {
-        PrintKernelError("RTL8139 not ready");
+    const E1000Device* e1000 = E1000_GetDevice();
+    if (!nic || !e1000) {
+        PrintKernelError("No NIC found & ready");
         return;
     }
 
@@ -129,6 +131,7 @@ void ArpRequestTestProcess() {
 
     uint32_t packet_size = sizeof(EthernetHeader) + sizeof(ArpPacket);
     Rtl8139_SendPacket(&packet, packet_size);
+    E1000_SendPacket(&packet, packet_size);
 }
 
 static void ClearHandler(const char * args) {
@@ -138,7 +141,6 @@ static void ClearHandler(const char * args) {
 
 static void ARPTestHandler(const char * args) {
     (void)args;
-    
     MLFQCreateProcess(ArpRequestTestProcess);
 }
 

@@ -1,7 +1,7 @@
 #include "RTL8139.h"
-#include "../../mm/KernelHeap.h"
-#include "../../mm/MemOps.h"
-#include "../../mm/VMem.h"
+#include "../../../mm/KernelHeap.h"
+#include "../../../mm/MemOps.h"
+#include "../../../mm/VMem.h"
 #include "Console.h"
 #include "Io.h"
 
