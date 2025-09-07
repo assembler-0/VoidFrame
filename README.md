@@ -14,7 +14,7 @@
 
 ![License](https://img.shields.io/badge/License-GPLv2-orange)
 
-![Version](https://img.shields.io/badge/Current%20Version-v0.0.1%20beta6.1-blue)
+![Version](https://img.shields.io/badge/Current%20Version-v0.0.2%20rc1-blue)
 
 ![Build](https://img.shields.io/badge/Build-passing-brightgreen)
 

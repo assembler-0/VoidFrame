@@ -144,9 +144,9 @@ static void ARPTestHandler(const char * args) {
 
 static void VersionHandler(const char * args) {
     (void)args;
-    PrintKernelSuccess("VoidFrame v0.0.1-beta6.1\n");
+    PrintKernelSuccess("VoidFrame v0.0.2-rc1\n");
     PrintKernelF("Built on %s at %s\n", DATE, TIME);
-    PrintKernelSuccess("VoidFrame Shell v0.0.1-beta6.1\n");
+    PrintKernelSuccess("VoidFrame Shell v0.0.2-rc1\n");
 }
 
 static void HelpHandler(const char * args) {
@@ -1097,7 +1097,7 @@ void ShellInit(void) {
 }
 
 void ShellProcess(void) {
-    PrintKernelSuccess("System: VoidFrame Shell v0.0.1-beta ('help' for list of commands)\n");
+    PrintKernelSuccess("System: VoidFrame Shell v0.0.2-rc1 ('help' for list of commands)\n");
     while (1) {
         if (HasInput()) {
             const char c = GetChar();
