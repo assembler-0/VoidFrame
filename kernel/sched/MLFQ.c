@@ -1237,15 +1237,15 @@ MLFQProcessControlBlock* MLFQGetCurrentProcess(void) {
 }
 
 MLFQProcessControlBlock* MLFQGetCurrentProcessByPID(uint32_t pid) {
-    ReadLock(&process_table_rwlock);
+    ReadLock(&process_table_rwlock, pid);
     for (int i = 0; i < MAX_PROCESSES; i++) {
         if (processes[i].pid == pid && processes[i].state != PROC_TERMINATED) {
             MLFQProcessControlBlock* found = &processes[i];
-            ReadUnlock(&process_table_rwlock);
+            ReadUnlock(&process_table_rwlock, pid);
             return found;
         }
     }
-    ReadUnlock(&process_table_rwlock);
+    ReadUnlock(&process_table_rwlock, pid);
     return NULL;
 }
 
@@ -1943,7 +1943,7 @@ void MLFQDumpSchedulerState(void) {
 
 // Get detailed process scheduling information
 void MLFQGetProcessStats(uint32_t pid, uint32_t* cpu_time, uint32_t* io_ops, uint32_t* preemptions) {
-    ReadLock(&process_table_rwlock);
+    ReadLock(&process_table_rwlock, pid);
     MLFQProcessControlBlock* proc = MLFQGetCurrentProcessByPID(pid);
     if (!proc) {
         if (cpu_time) *cpu_time = 0;
@@ -1955,5 +1955,5 @@ void MLFQGetProcessStats(uint32_t pid, uint32_t* cpu_time, uint32_t* io_ops, uin
     if (cpu_time) *cpu_time = (uint32_t)proc->cpu_time_accumulated;
     if (io_ops) *io_ops = proc->io_operations;
     if (preemptions) *preemptions = proc->preemption_count;
-    ReadUnlock(&process_table_rwlock);
+    ReadUnlock(&process_table_rwlock, pid);
 }
