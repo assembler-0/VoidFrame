@@ -34,12 +34,16 @@ bool SVGAII_DetectAndInitialize() {
     // 2. Get I/O port base from BAR0
     // The OSDev Wiki states: "The base I/O port (SVGA_PORT_BASE) is not fixed and is derived by subtracting 1 from BAR0 in the PCI configuration."
     uint32_t bar0 = PciConfigReadDWord(pci_dev.bus, pci_dev.device, pci_dev.function, PCI_BAR0_REG);
-    svgaII_device.io_port_base = (uint16_t)(bar0 & 0xFFFC) - 1; // Clear lower bits and subtract 1
+    // I/O BAR: bit0=1 => I/O space; mask off low two bits per PCI spec
+    if ((bar0 & 1) == 0) {
+        // TODO: handle MMIO BAR0
+    } else {
+        svgaII_device.io_port_base = (uint16_t)(bar0 & ~0x3u);
+    }
 
-    // Enable memory space and bus mastering for the device
-    uint16_t command_reg = PciConfigReadDWord(pci_dev.bus, pci_dev.device, pci_dev.function, PCI_COMMAND_REG);
-    command_reg |= (PCI_CMD_MEM_SPACE_EN | PCI_CMD_BUS_MASTER_EN);
-    PciConfigWriteDWord(pci_dev.bus, pci_dev.device, pci_dev.function, PCI_COMMAND_REG, command_reg);
+    uint32_t cmdsts = PciConfigReadDWord(pci_dev.bus, pci_dev.device, pci_dev.function, PCI_COMMAND_REG);
+    cmdsts |= (uint32_t)(PCI_CMD_MEM_SPACE_EN | PCI_CMD_BUS_MASTER_EN);
+    PciConfigWriteDWord(pci_dev.bus, pci_dev.device, pci_dev.function, PCI_COMMAND_REG, cmdsts);
 
     // 3. Negotiate SVGA ID
     SVGAII_WriteReg(SVGA_REG_ID, SVGA_ID_2); // Try ID_2 first, as it's common
@@ -58,24 +62,28 @@ bool SVGAII_DetectAndInitialize() {
     uint32_t fifo_phys_addr = SVGAII_ReadReg(SVGA_REG_FIFO_START);
     uint32_t fifo_size = SVGAII_ReadReg(SVGA_REG_FIFO_SIZE);
 
-    // 5. Map Framebuffer and FIFO into virtual memory
-    // Framebuffer mapping
-    svgaII_device.framebuffer = (uint32_t*)VMemMapMMIO(0, fb_phys_addr, fb_size, VMEM_WRITE | VMEM_NOCACHE);
-    if (svgaII_device.framebuffer == NULL) {
+    uint64_t fb_phys_aligned = fb_phys_addr & ~0xFFFULL;
+    uint64_t fb_off          = fb_phys_addr - fb_phys_aligned;
+    uint64_t fb_size_aligned = (fb_off + fb_size + 0xFFFULL) & ~0xFFFULL;
+    uint64_t fb_virt         = (uint64_t)PHYS_TO_VIRT(fb_phys_aligned);
+    if (VMemMapMMIO(fb_virt, fb_phys_aligned, fb_size_aligned, VMEM_WRITE | VMEM_NOCACHE) != VMEM_SUCCESS) {
         svgaII_device.initialized = false;
         return false;
     }
-    svgaII_device.fb_size = fb_size;
+    svgaII_device.framebuffer = (uint32_t*)(fb_virt + fb_off);
+    svgaII_device.fb_size     = (uint32_t)fb_size_aligned;
 
     // FIFO mapping
-    svgaII_device.fifo_ptr = (uint32_t*)VMemMapMMIO(0, fifo_phys_addr, fifo_size, VMEM_WRITE | VMEM_NOCACHE);
-    if (svgaII_device.fifo_ptr == NULL) {
-        // Unmap framebuffer if FIFO mapping fails
-        VMemUnmapMMIO((uint64_t)svgaII_device.framebuffer, svgaII_device.fb_size);
+    uint64_t fifo_phys_aligned = fifo_phys_addr & ~0xFFFULL;
+    uint64_t fifo_off          = fifo_phys_addr - fifo_phys_aligned;
+    uint64_t fifo_size_aligned = (fifo_off + fifo_size + 0xFFFULL) & ~0xFFFULL;
+    uint64_t fifo_virt         = (uint64_t)PHYS_TO_VIRT(fifo_phys_aligned);
+    if (VMemMapMMIO(fifo_virt, fifo_phys_aligned, fifo_size_aligned, VMEM_WRITE | VMEM_NOCACHE) != VMEM_SUCCESS) {
         svgaII_device.initialized = false;
         return false;
     }
-    svgaII_device.fifo_size = fifo_size;
+    svgaII_device.fifo_ptr = (uint32_t*)(fifo_virt + fifo_off);
+    svgaII_device.fifo_size = (uint32_t)fifo_size_aligned;
 
     // Initialize FIFO (as per OSDev Wiki, write 0 to FIFO_MIN and FIFO_MAX)
     // This part needs more specific FIFO initialization details from OSDev Wiki or other sources.
@@ -86,7 +94,7 @@ bool SVGAII_DetectAndInitialize() {
     svgaII_device.fifo_ptr[3] = 0; // FIFO_STOP
 
     // 6. Enable SVGA mode
-    SVGAII_WriteReg(SVGA_REG_ENABLE, 1);
+    SVGAII_SetMode(800, 600, 32);
 
     svgaII_device.initialized = true;
     return true;
@@ -121,7 +129,9 @@ void SVGAII_PutPixel(uint32_t x, uint32_t y, uint32_t color) {
     // Assuming 32-bit BPP for simplicity (color is ARGB)
     // Need to handle different BPP values (16, 24) if required.
     if (svgaII_device.bpp == 32) {
-        svgaII_device.framebuffer[(y * svgaII_device.width) + x] = color;
+        uint32_t* fb32 = svgaII_device.framebuffer;
+        uint32_t stride_pixels = svgaII_device.pitch / 4;
+        fb32[y * stride_pixels + x] = color;
     }
     // Add logic for 16-bit, 24-bit if necessary
 }

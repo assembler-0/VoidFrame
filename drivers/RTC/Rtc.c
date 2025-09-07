@@ -38,8 +38,8 @@ uint8_t Rtc_BinaryToBcd(uint8_t binary) {
 }
 
 static bool Rtc_IsUpdating() {
-    Rtc_WriteRegister(RTC_STATUS_A, 0x0A); // Select register A
-    return (Rtc_ReadRegister(RTC_STATUS_A) & 0x80); // Check update in progress bit
+    outb(RTC_CMOS_ADDRESS, 0x80 | RTC_STATUS_A); // select reg A, NMI masked
+    return (inb(RTC_CMOS_DATA) & 0x80) != 0;     // UIP bit
 }
 
 void RtcReadTime(RtcDateTime *dateTime) {
