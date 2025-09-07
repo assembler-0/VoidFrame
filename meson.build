@@ -9,6 +9,7 @@ project('voidframe', 'c',
 )
 
 clang = find_program('clang', required : true)
+clangpp = find_program('clang++', required : true)
 ld = find_program('ld', required : true)
 nasm = find_program('nasm', required : true)
 grub_mkrescue = find_program('grub-mkrescue')
@@ -47,6 +48,13 @@ c_flags = [
     '-Wextra',
 ]
 
+cpp_flags = c_flags + [
+    '-std=gnu++17',
+    '-fno-exceptions',
+    '-fno-rtti',
+    '-fno-threadsafe-statics',
+]
+
 # Assembly flags
 asm_flags = ['-f', 'elf64']
 
@@ -78,6 +86,8 @@ inc_dirs = [
     src_root + '/mm',
     src_root + '/mm/trace',
     src_root + '/mm/security',
+    src_root + '/ports/6502',
+    src_root + '/ports',
     arch_root + '/cpu',
     arch_root + '/gdt',
     arch_root + '/idt',
@@ -146,6 +156,10 @@ c_sources = [
     arch_root + '/gdt/Gdt.c',
     arch_root + '/interrupts/Interrupts.c',
     arch_root + '/cpu/Cpu.c'
+]
+
+cpp_sources = [
+    src_root + '/ports/6502/6502.cpp',
 ]
 
 obj_sources = [
@@ -221,11 +235,23 @@ foreach c_file : c_sources
     c_objects += c_obj
 endforeach
 
+# Compile C files
+cpp_objects = []
+foreach cpp_file : cpp_sources
+    obj_name = cpp_file.split('/')[-1].split('.')[0] + '_cpp.o'
+    cpp_obj = custom_target('cpp_' + obj_name,
+                          input : cpp_file,
+                          output : obj_name,
+                          command : [clangpp.full_path(), cpp_flags, inc_flags, cfg_flags, '-c', '-o', '@OUTPUT@', '@INPUT@']
+    )
+    cpp_objects += cpp_obj
+endforeach
+
 obj_to_link = []
 if exclude_extra_objects
-    obj_to_link = asm_objects + c_objects
+    obj_to_link = asm_objects + c_objects + cpp_objects
 else
-    obj_to_link = asm_objects + c_objects + obj_sources
+    obj_to_link = asm_objects + c_objects + obj_sources + cpp_objects
 endif
 
 # Link kernel
