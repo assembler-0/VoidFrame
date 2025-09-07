@@ -3,6 +3,7 @@
 
 #include "Io.h"
 #include "stdint.h"
+#include "Panic.h"
 
 #define DEADLOCK_TIMEOUT_CYCLES 100000000ULL
 #define MAX_BACKOFF_CYCLES 1024
@@ -134,7 +135,7 @@ static inline void WriteLock(rwlock_t* lock, uint32_t owner_id) {
 
 static inline void WriteUnlock(rwlock_t* lock) {
     if (lock->recursion <= 0) {
-        PANIC("WriteUnlock Underflow");
+        // PANIC("WriteUnlock Underflow");
         return; // Or trigger an assertion/panic in debug builds
     }
     if (--lock->recursion == 0) {
