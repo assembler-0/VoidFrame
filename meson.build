@@ -257,7 +257,7 @@ run_target('run',
                       '-serial', 'stdio',
                       '-no-reboot','-no-shutdown',
                       '-m', '4G',
-                      '-drive', 'file=VoidFrameDisk.img,format=raw,if=ide',
+                      '-hda', 'VoidFrameDisk.img',
                       '-boot', 'd',
                       '-device', 'rtl8139',
                       '-device', 'e1000',
@@ -288,7 +288,7 @@ run_target('runmin',
 run_target('img',
                command : [
                  'sh', '-c',
-                 qemu_img.full_path() + ' create -f raw VoidFrameDisk.img 512M' + ' && ' +
+                 qemu_img.full_path() + ' create -f qcow2 VoidFrameDisk.img 16G' + ' && ' +
                  mkfs_ext2.full_path() + ' VoidFrameDisk.img'
                ]
 )

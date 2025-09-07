@@ -9,10 +9,13 @@
 #include "StringOps.h"
 #include "VFRFS.h"
 #include "stdbool.h"
+#include "../kernel/atomic/Spinlock.h"
+#include "../kernel/sched/MLFQ.h"
 
 #define VFS_MAX_PATH_LEN 256
 
 static VfsMountStruct mounts[VFS_MAX_MOUNTS];
+static rwlock_t vfs_lock = RWLOCK_INIT;
 int IsVFSInitialized = 0;
 
 int VfsMount(const char* path, VfsType type, uint8_t drive) {
@@ -463,34 +466,48 @@ int VfsCopyFile(const char* src_path, const char* dest_path) {
     if (!src_path || !dest_path) {
         return -1;
     }
+    
+    WriteLock(&vfs_lock, MLFQGetCurrentProcess()->pid);
+    
     // Ensure source exists and is a regular file
     if (!VfsIsFile(src_path)) {
+        WriteUnlock(&vfs_lock);
         return -1;
     }
     uint64_t file_size = VfsGetFileSize(src_path);
     // Handle empty file explicitly
     if (file_size == 0) {
-        return VfsCreateFile(dest_path);
+        int result = VfsCreateFile(dest_path);
+        WriteUnlock(&vfs_lock);
+        return result;
     }
     // Prevent size_t/u32 truncation
     size_t buf_size = (size_t)file_size;
     if ((uint64_t)buf_size != file_size || buf_size == 0) {
+        WriteUnlock(&vfs_lock);
         return -1;
     }
     void* buffer = KernelMemoryAlloc(buf_size);
     if (!buffer) {
+        PrintKernelError("Failed to allocate memory\n");
+        WriteUnlock(&vfs_lock);
         return -1; // Failed to allocate memory
     }
     int bytes_read = VfsReadFile(src_path, buffer, (uint32_t)buf_size);
     if (bytes_read <= 0) {
         KernelFree(buffer);
+        PrintKernelError("Failed to read sources\n");
+        WriteUnlock(&vfs_lock);
         return -1; // Failed to read source file
     }
     int bytes_written = VfsWriteFile(dest_path, buffer, (uint32_t)bytes_read);
     KernelFree(buffer);
     if (bytes_written <= 0) {
+        PrintKernelError("Failed to write destination\n");
+        WriteUnlock(&vfs_lock);
         return -1; // Failed to write destination file
     }
+    WriteUnlock(&vfs_lock);
     return 0; // Success
 }
 
