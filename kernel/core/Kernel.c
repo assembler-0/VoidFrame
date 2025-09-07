@@ -29,6 +29,7 @@
 #include "VFS.h"
 #include "VMem.h"
 #include "Vesa.h"
+#include "SVGAII.h"
 #include "ethernet/RTL8139.h"
 #include "stdbool.h"
 #include "stdint.h"
@@ -42,6 +43,7 @@ extern uint8_t _kernel_phys_end[];
 
 // Global variable to store the Multiboot2 info address
 static uint32_t g_multiboot_info_addr = 0;
+bool g_svgaII_active = false;
 
 void ParseMultibootInfo(uint32_t info) {
     g_multiboot_info_addr = info;
@@ -430,7 +432,9 @@ void PXS1(const uint32_t info) {
     }
 
     if (VBEInit(info) != 0) {
-        PrintKernelError("System: Failed to initialize VBE and graphical environment");
+        PrintKernelError("System: Failed to initialize VBE and graphical environment\n");
+    } else {
+        PrintKernelSuccess("System: VBE driver initialized\n");
     }
 
     PrintKernel("System: Starting Console...\n");
@@ -624,6 +628,7 @@ static InitResultT PXS2(void) {
     PitInstall();
     PrintKernelSuccess("System: PIC & PIT initialized\n");
 
+
 #ifdef VF_CONFIG_ENABLE_PS2
     // Initialize keyboard
     PrintKernel("Info: Initializing keyboard...\n");
@@ -712,6 +717,13 @@ static InitResultT PXS2(void) {
     PrintKernelSuccess("System: RTL8139 Driver initialized\n");
 #endif
 
+#ifdef VF_CONFIG_ENABLE_VMWARE_SVGA_II
+    if (SVGAII_DetectAndInitialize()) {
+        g_svgaII_active = true;
+        PrintKernelSuccess("System: VMware SVGA II driver initialized\n");
+    }
+#endif
+
 #ifdef VF_CONFIG_ENABLE_XHCI
     PrintKernel("Info: Initializing xHCI...\n");
     xHCIInit();
@@ -779,7 +791,7 @@ void KernelMainHigherHalf(void) {
     sti();
 
     while (1) {
-        if (VBEIsInitialized()) {
+        if (g_svgaII_active || VBEIsInitialized()) {
             WindowManagerRun();
             MLFQYield();
         } else {
