@@ -131,7 +131,9 @@ void ArpRequestTestProcess() {
     packet.arp.target_ip[3] = 1;
 
     uint32_t packet_size = sizeof(EthernetHeader) + sizeof(ArpPacket);
+	PrintKernel("Sending packet(s) for RTL8139");
     Rtl8139_SendPacket(&packet, packet_size);
+	PrintKernel("Sending packet(s) for E1000");
     E1000_SendPacket(&packet, packet_size);
 }
 

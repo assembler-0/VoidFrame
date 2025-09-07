@@ -1519,7 +1519,6 @@ static void Astra(void) {
     if (VfsCreateFile(astra_path) != 0) PANIC("Failed to create Astra process info file");
 
     PrintKernelSuccess("Astra: Astra active.\n");
-
     uint64_t last_check = 0;
 
     uint64_t last_integrity_scan = 0;
@@ -1605,27 +1604,21 @@ static void Astra(void) {
         }
 #endif
 
-        if (LIKELY(VfsIsFile(astra_path))) {
-            if (current_tick % 1000 == 0) {
-                char buff[1] = {0};
-                int rd = VfsReadFile(astra_path, buff, sizeof(buff));
-                if (rd > 0) {
-                    switch (buff[0]) {
-                        case 'p': PANIC("Astra: CRITICAL: Manual panic triggered via ProcINFO\n"); break;
-                        case 't': threat_level += 10; break; // for fun
-                        case 'k': ASTerminate(current->pid, "ProcINFO"); break;
-                        case 'a': CreateSecureProcess(Astra, PROC_PRIV_SYSTEM, PROC_FLAG_CORE); break;
-                        default: break;
-                    }
-                    int del_rc = VfsDelete(astra_path, false);
-                    int cr_rc  = VfsCreateFile(astra_path);
-                    if (del_rc != 0 || (cr_rc != 0 && !VfsIsFile(astra_path))) {
-                        PrintKernelWarning("Astra: ProcINFO reset failed\n");
-                    }
-                }
+        if (current_tick % 250 == 0) {
+            char buff[1] = {0};
+            if (VfsReadFile(astra_path, buff, sizeof(buff)) == -1) PANIC("Failed to read Astra process info file");
+            switch (buff[0]) {
+                case 'p': PANIC("Astra: CRITICAL: Manual panic triggered via ProcINFO\n"); break;
+                case 't': threat_level += 10; break; // for fun
+                case 'k': ASTerminate(current->pid, "ProcINFO"); break;
+                case 'a': CreateSecureProcess(Astra, PROC_PRIV_SYSTEM, PROC_FLAG_CORE); break;
+                default: break;
             }
-        } else {
-            (void)VfsCreateFile(astra_path);
+            int del_rc = VfsDelete(astra_path, false);
+            int cr_rc  = VfsCreateFile(astra_path);
+            if (del_rc != 0 || (cr_rc != 0 && !VfsIsFile(astra_path))) {
+                PANIC("Astra: ProcINFO reset failed\n");
+            }
         }
 
         // 1. Token integrity verification
