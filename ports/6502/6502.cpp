@@ -1,4 +1,4 @@
-// #include "Console.h"
+#include "Console.h"
 
 // Helper types
 using Byte = unsigned char;
@@ -349,7 +349,7 @@ struct CPU {
                 case INS_NOP: { Cycles--; } break;
 
                 default: {
-                    // PrintKernelF("Instruction not handled: %d\n", static_cast<int>(Instruction));
+                    PrintKernelF("Instruction not handled: %d\n", static_cast<int>(Instruction));
                     Cycles = 0; // Stop execution
                 } break;
             }
@@ -390,10 +390,10 @@ extern "C" void Entry6502(const char * args){
     // PC already set by reset vector
     // Execute for a number of cycles
     cpu.Execute(50, mem);
-    // PrintKernelF("A: %d\n", static_cast<int>(cpu.A));
-    // PrintKernelF("X: %d\n", static_cast<int>(cpu.X));
-    // PrintKernelF("Value at 0x10: %d\n", static_cast<int>(mem[0x10]));
-    // PrintKernelF("Zero Flag: %d\n", static_cast<int>(cpu.Z));
-    // PrintKernelF("PC: %d\n", cpu.PC);
-    // PrintKernelSuccess("6502 emulation complete.\n");
+    PrintKernelF("A: %d\n", static_cast<int>(cpu.A));
+    PrintKernelF("X: %d\n", static_cast<int>(cpu.X));
+    PrintKernelF("Value at 0x10: %d\n", static_cast<int>(mem[0x10]));
+    PrintKernelF("Zero Flag: %d\n", static_cast<int>(cpu.Z));
+    PrintKernelF("PC: %d\n", cpu.PC);
+    PrintKernelSuccess("6502 emulation complete.\n");
 }

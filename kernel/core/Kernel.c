@@ -805,8 +805,8 @@ void KernelMainHigherHalf(void) {
     PrintKernelSuccess("System: Initializing interrupts...\n");
 
 #ifdef VF_CONFIG_SNOOZE_ON_BOOT
+	ClearScreen();
     Unsnooze();
-    ClearScreen();
 #endif
 
     sti();

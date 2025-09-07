@@ -131,7 +131,9 @@ void ArpRequestTestProcess() {
     packet.arp.target_ip[3] = 1;
 
     uint32_t packet_size = sizeof(EthernetHeader) + sizeof(ArpPacket);
+	PrintKernel("Sending packet(s) for RTL8139");
     Rtl8139_SendPacket(&packet, packet_size);
+	PrintKernel("Sending packet(s) for E1000");
     E1000_SendPacket(&packet, packet_size);
 }
 
@@ -1123,7 +1125,6 @@ static void PcBeepHandler(const char * args) {
     KernelFree(size_str);
 }
 
-
 static const ShellCommand commands[] = {
     {"help", HelpHandler},
     {"ps", PSHandler},
@@ -1215,6 +1216,7 @@ void ShellInit(void) {
 
 void ShellProcess(void) {
     PrintKernelSuccess("System: VoidFrame Shell v0.0.2-development1 ('help' for list of commands)\n");
+    ExecuteCommand("help");
     while (1) {
         if (HasInput()) {
             const char c = GetChar();
