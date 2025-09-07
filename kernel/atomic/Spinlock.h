@@ -94,6 +94,8 @@ typedef struct {
     volatile int recursion;
 } rwlock_t;
 
+#define RWLOCK_INIT { .readers = 0, .writer = 0, .owner = 0, .recursion = 0 }
+
 static inline void ReadLock(rwlock_t* lock, uint32_t owner_id) {
     if (lock->writer && lock->owner == owner_id) {
         // The current process holds the write lock, so it can "read"
@@ -109,7 +111,7 @@ static inline void ReadLock(rwlock_t* lock, uint32_t owner_id) {
 
 static inline void ReadUnlock(rwlock_t* lock, uint32_t owner_id) {
     if (lock->writer && lock->owner == owner_id) {
-        // This was a recursive read "lock" by the write lock owner, so do nothing
+        __atomic_thread_fence(__ATOMIC_RELEASE);
         return;
     }
     __sync_fetch_and_sub(&lock->readers, 1);
@@ -131,6 +133,10 @@ static inline void WriteLock(rwlock_t* lock, uint32_t owner_id) {
 }
 
 static inline void WriteUnlock(rwlock_t* lock) {
+    if (lock->recursion <= 0) {
+        // This is a serious error - unlock without lock
+        return; // Or trigger an assertion/panic in debug builds
+    }
     if (--lock->recursion == 0) {
         lock->owner = 0;
         __sync_lock_release(&lock->writer);

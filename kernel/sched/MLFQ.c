@@ -1237,15 +1237,16 @@ MLFQProcessControlBlock* MLFQGetCurrentProcess(void) {
 }
 
 MLFQProcessControlBlock* MLFQGetCurrentProcessByPID(uint32_t pid) {
-    ReadLock(&process_table_rwlock, pid);
+    MLFQProcessControlBlock* current = MLFQGetCurrentProcess();
+    ReadLock(&process_table_rwlock, current->pid);
     for (int i = 0; i < MAX_PROCESSES; i++) {
         if (processes[i].pid == pid && processes[i].state != PROC_TERMINATED) {
             MLFQProcessControlBlock* found = &processes[i];
-            ReadUnlock(&process_table_rwlock, pid);
+            ReadUnlock(&process_table_rwlock, current->pid);
             return found;
         }
     }
-    ReadUnlock(&process_table_rwlock, pid);
+    ReadUnlock(&process_table_rwlock, current->pid);
     return NULL;
 }
 

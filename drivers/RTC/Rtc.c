@@ -1,105 +1,131 @@
-#include "Rtc.h"
+#include "RTC/Rtc.h"
 #include "Io.h"
+#include "stdbool.h"
 
-#define CMOS_ADDRESS 0x70
-#define CMOS_DATA    0x71
+#define RTC_CMOS_ADDRESS 0x70
+#define RTC_CMOS_DATA 0x71
 
-// CMOS Register numbers
-#define CMOS_REG_SECONDS   0x00
-#define CMOS_REG_MINUTES   0x02
-#define CMOS_REG_HOURS     0x04
-#define CMOS_REG_DAY       0x07
-#define CMOS_REG_MONTH     0x08
-#define CMOS_REG_YEAR      0x09
-#define CMOS_REG_CENTURY   0x32 // Common on newer systems
+#define RTC_SECONDS 0x00
+#define RTC_MINUTES 0x02
+#define RTC_HOURS 0x04
+#define RTC_DAY_OF_WEEK 0x06
+#define RTC_DAY_OF_MONTH 0x07
+#define RTC_MONTH 0x08
+#define RTC_YEAR 0x09
+#define RTC_CENTURY 0x32 // Most common century register
+#define RTC_STATUS_A 0x0A
+#define RTC_STATUS_B 0x0B
+#define RTC_STATUS_C 0x0C
 
-#define CMOS_REG_STATUS_A  0x0A
-#define CMOS_REG_STATUS_B  0x0B
+typedef rtc_time_t RtcDateTime;
 
-static uint8_t cmos_read(uint8_t reg) {
-    // Select the register, making sure NMI is disabled
-    outb(CMOS_ADDRESS, (1 << 7) | reg);
-    // Read the data
-    return inb(CMOS_DATA);
+static uint8_t Rtc_ReadRegister(uint8_t reg) {
+    outb(RTC_CMOS_ADDRESS, reg);
+    return inb(RTC_CMOS_DATA);
 }
 
-static int get_update_in_progress_flag() {
-    return cmos_read(CMOS_REG_STATUS_A) & 0x80;
+static void Rtc_WriteRegister(uint8_t reg, uint8_t value) {
+    outb(RTC_CMOS_ADDRESS, reg);
+    outb(RTC_CMOS_DATA, value);
 }
 
-static uint8_t bcd_to_bin(uint8_t bcd) {
-    return (bcd & 0x0F) + ((bcd >> 4) * 10);
+int Rtc_BcdToBinary(uint8_t bcd) {
+    return (bcd & 0x0F) + ((bcd / 16) * 10);
 }
 
-void RtcReadTime(rtc_time_t* rtc_time) {
-    rtc_time_t last_time;
-    uint8_t status_b;
+uint8_t Rtc_BinaryToBcd(uint8_t binary) {
+    return ((binary / 10) << 4) | (binary % 10);
+}
 
-    // The robust way to read the RTC is to read it twice and see if the
-    // values match. This ensures an update didn't happen in the middle of our read.
-    do {
-        // Wait until no update is in progress
-        while (get_update_in_progress_flag()) {}
+static bool Rtc_IsUpdating() {
+    Rtc_WriteRegister(RTC_STATUS_A, 0x0A); // Select register A
+    return (Rtc_ReadRegister(RTC_STATUS_A) & 0x80); // Check update in progress bit
+}
 
-        rtc_time->second = cmos_read(CMOS_REG_SECONDS);
-        rtc_time->minute = cmos_read(CMOS_REG_MINUTES);
-        rtc_time->hour   = cmos_read(CMOS_REG_HOURS);
-        rtc_time->day    = cmos_read(CMOS_REG_DAY);
-        rtc_time->month  = cmos_read(CMOS_REG_MONTH);
-        rtc_time->year   = cmos_read(CMOS_REG_YEAR);
-        rtc_time->century = cmos_read(CMOS_REG_CENTURY);
-        // Make a copy of the values we just read
-        last_time = *rtc_time;
+void RtcReadTime(RtcDateTime *dateTime) {
+    uint8_t second, minute, hour, day, month, year, century;
+    uint8_t statusB;
 
-        // Wait again to ensure we are past the update
-        while (get_update_in_progress_flag()){}
+    // Wait until the update in progress bit is 0
+    while (Rtc_IsUpdating());
 
-        // Read a second time
-        last_time.second = cmos_read(CMOS_REG_SECONDS);
-        last_time.minute = cmos_read(CMOS_REG_MINUTES);
-        last_time.hour   = cmos_read(CMOS_REG_HOURS);
-        last_time.day    = cmos_read(CMOS_REG_DAY);
-        last_time.month  = cmos_read(CMOS_REG_MONTH);
-        last_time.year   = cmos_read(CMOS_REG_YEAR);
-#ifdef VF_CONFIG_RTC_CENTURY
-        last_time.century = cmos_read(CMOS_REG_CENTURY);
-#endif
+    // Read RTC registers
+    second = Rtc_ReadRegister(RTC_SECONDS);
+    minute = Rtc_ReadRegister(RTC_MINUTES);
+    hour = Rtc_ReadRegister(RTC_HOURS);
+    day = Rtc_ReadRegister(RTC_DAY_OF_MONTH);
+    month = Rtc_ReadRegister(RTC_MONTH);
+    year = Rtc_ReadRegister(RTC_YEAR);
+    century = Rtc_ReadRegister(RTC_CENTURY); // Read century byte
 
-    } while ( (last_time.second != rtc_time->second) ||
-              (last_time.minute != rtc_time->minute) ||
-              (last_time.hour   != rtc_time->hour)   ||
-              (last_time.day    != rtc_time->day)    ||
-              (last_time.month  != rtc_time->month)  ||
-              (last_time.year   != rtc_time->year)
-#ifdef VF_CONFIG_RTC_CENTURY
-              || (last_time.century != rtc_time->century)
-#endif
-              );
+    statusB = Rtc_ReadRegister(RTC_STATUS_B);
 
-
-    // Now that we have a stable read, convert from BCD if necessary
-    status_b = cmos_read(CMOS_REG_STATUS_B);
-
-    if (!(status_b & 0x04)) { // Bit 2 clear means BCD mode
-        rtc_time->second = bcd_to_bin(rtc_time->second);
-        rtc_time->minute = bcd_to_bin(rtc_time->minute);
-        // Handle 12/24 hour clock for the hour value
-        rtc_time->hour = ((rtc_time->hour & 0x7F) + 12 * ((rtc_time->hour & 0x80) != 0)) % 24;
-        rtc_time->day    = bcd_to_bin(rtc_time->day);
-        rtc_time->month  = bcd_to_bin(rtc_time->month);
-        rtc_time->year   = bcd_to_bin(rtc_time->year);
+    if (!(statusB & 0x04)) { // If BCD mode
+        dateTime->second = Rtc_BcdToBinary(second);
+        dateTime->minute = Rtc_BcdToBinary(minute);
+        dateTime->hour = Rtc_BcdToBinary(hour);
+        dateTime->day = Rtc_BcdToBinary(day);
+        dateTime->month = Rtc_BcdToBinary(month);
+        dateTime->year = Rtc_BcdToBinary(year);
+        dateTime->century = Rtc_BcdToBinary(century);
+    } else { // Binary mode
+        dateTime->second = second;
+        dateTime->minute = minute;
+        dateTime->hour = hour;
+        dateTime->day = day;
+        dateTime->month = month;
+        dateTime->year = year;
+        dateTime->century = century;
     }
-#ifdef VF_CONFIG_RTC_CENTURY
-    {
-        uint16_t cval = (uint16_t)rtc_time->century;
-        if (cval != 0) {
-            cval = bcd_to_bin((uint8_t)cval);
-            rtc_time->year += (uint16_t)(cval * 100);
-        } else {
-            rtc_time->year += 2000;
-        }
+
+    if (!(statusB & 0x02) && (dateTime->hour & 0x80)) { // 12-hour format and PM
+        dateTime->hour = ((dateTime->hour & 0x7F) + 12) % 24;
     }
-#else
-    rtc_time->year += 2000;
-#endif
+
+    // Calculate full year
+    dateTime->year += dateTime->century * 100;
+}
+
+void RtcSetTime(const RtcDateTime *dateTime) {
+    uint8_t statusB;
+    uint8_t second, minute, hour, day, month, year, century;
+
+    // Read current status B to preserve settings
+    statusB = Rtc_ReadRegister(RTC_STATUS_B);
+
+    // Disable NMI and updates while setting time
+    Rtc_WriteRegister(RTC_CMOS_ADDRESS, RTC_STATUS_B | 0x80); // Disable NMI
+    Rtc_WriteRegister(RTC_STATUS_B, statusB | 0x80); // Disable updates
+
+    // Convert to BCD if necessary
+    if (!(statusB & 0x04)) { // If BCD mode
+        second = Rtc_BinaryToBcd(dateTime->second);
+        minute = Rtc_BinaryToBcd(dateTime->minute);
+        hour = Rtc_BinaryToBcd(dateTime->hour);
+        day = Rtc_BinaryToBcd(dateTime->day);
+        month = Rtc_BinaryToBcd(dateTime->month);
+        year = Rtc_BinaryToBcd(dateTime->year % 100);
+        century = Rtc_BinaryToBcd(dateTime->year / 100);
+    } else { // Binary mode
+        second = dateTime->second;
+        minute = dateTime->minute;
+        hour = dateTime->hour;
+        day = dateTime->day;
+        month = dateTime->month;
+        year = dateTime->year % 100;
+        century = dateTime->year / 100;
+    }
+
+    // Write to RTC registers
+    Rtc_WriteRegister(RTC_SECONDS, second);
+    Rtc_WriteRegister(RTC_MINUTES, minute);
+    Rtc_WriteRegister(RTC_HOURS, hour);
+    Rtc_WriteRegister(RTC_DAY_OF_MONTH, day);
+    Rtc_WriteRegister(RTC_MONTH, month);
+    Rtc_WriteRegister(RTC_YEAR, year);
+    Rtc_WriteRegister(RTC_CENTURY, century);
+
+    // Re-enable updates and NMI
+    Rtc_WriteRegister(RTC_STATUS_B, statusB);
+    Rtc_WriteRegister(RTC_CMOS_ADDRESS, RTC_STATUS_B); // Re-enable NMI
 }

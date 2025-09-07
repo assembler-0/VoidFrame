@@ -82,7 +82,7 @@ int VfsInit(void) {
         if (disk_result == 0) {
             SerialWriteF("[VFS] FAT12 mounted at %s/VFSystemDrive\n", DevicesStorage);
         } else {
-            SerialWrite("[VFS] FAT12 mount failed\n");
+            SerialWrite("[VFS] FAT12 mount failed\n");''
         }
     } else {
         PrintKernel("[VFS] Skipping FAT12 mount - Not initialized\n");
