@@ -14,6 +14,7 @@ nasm = find_program('nasm', required : true)
 grub_mkrescue = find_program('grub-mkrescue')
 qemu_img  = find_program('qemu-img')
 mkfs_fat  = find_program('mkfs.fat')
+mkfs_ext2 = find_program('mkfs.ext2')
 qemu_system_x86_64 = find_program('qemu-system-x86_64')
 
 exclude_extra_objects = get_option('exclude_extra_objects')
@@ -62,10 +63,13 @@ inc_dirs = [
     src_root + '/drivers',
     src_root + '/drivers/PCI',
     src_root + '/drivers/ethernet',
+    src_root + '/drivers/ethernet/intel',
+    src_root + '/drivers/ethernet/realtek',
     src_root + '/drivers/RTC',
     src_root + '/drivers/xHCI',
     src_root + '/drivers/ISA',
     src_root + '/drivers/sound',
+    src_root + '/drivers/storage',
     src_root + '/drivers/virtio',
     src_root + '/drivers/vmware',
     src_root + '/fs',
@@ -124,10 +128,13 @@ c_sources = [
     src_root + '/drivers/Vesa.c',
     src_root + '/drivers/PCI/PCI.c',
     src_root + '/drivers/RTC/Rtc.c',
-    src_root + '/drivers/ethernet/RTL8139.c',
+    src_root + '/drivers/ethernet/realtek/RTL8139.c',
+    src_root + '/drivers/ethernet/intel/E1000.c',
     src_root + '/drivers/xHCI/xHCI.c',
     src_root + '/drivers/ISA/ISA.c',
     src_root + '/drivers/sound/SB16.c',
+    src_root + '/drivers/sound/Generic.c',
+    src_root + '/drivers/storage/AHCI.c',
     src_root + '/drivers/LPT/LPT.c',
     src_root + '/drivers/APIC.c',
     src_root + '/drivers/InterruptController.c',
@@ -155,6 +162,8 @@ vf_config_flags =  [
     '-DVF_CONFIG_ENABLE_PS2',
     '-DVF_CONFIG_ENABLE_IDE',
     '-DVF_CONFIG_ENABLE_VFCOMPOSITOR',
+    '-DVF_CONFIG_ENABLE_AHCI',
+    '-DVF_CONFIG_ENABLE_GENERIC_SOUND',
 #    '-DVF_CONFIG_ENABLE_VMWARE_SVGA_II',
     '-DVF_CONFIG_RTC_CENTURY',
     '-DVF_CONFIG_ENFORCE_MEMORY_PROTECTION',
@@ -256,7 +265,10 @@ run_target('run',
                       '-serial', 'stdio',
                       '-no-reboot','-no-shutdown',
                       '-m', '4G',
-                      '-drive', 'file=VoidFrameDisk.img,format=raw,if=ide',
+                      '-drive', 'file=VoidFrameDisk.img,if=ide',
+                      '-drive', 'file=SataDisk.img,if=none,id=sata0',
+                      '-device', 'ahci,id=ahci',
+                      '-device', 'ide-hd,drive=sata0,bus=ahci.0',
                       '-boot', 'd',
                       '-device', 'rtl8139',
                       '-device', 'e1000',
@@ -264,7 +276,7 @@ run_target('run',
                       '-device', 'ich9-intel-hda',
                       '-usb', '-device', 'usb-tablet',
                       '-audio', 'pa,id=myaudio',
-                      '-device', 'sb16,iobase=0x220,irq=5,dma=5',
+                      '-device', 'sb16,iobase=0x220,irq=5,dma=1,dma16=5',
                       '-parallel', 'file:printer.out',
                       '-drive', 'file=VirtioDisk.img,format=raw,id=virtio_disk,if=none',
                       '-device', 'virtio-blk-pci,drive=virtio_disk,disable-legacy=on',
@@ -287,14 +299,16 @@ run_target('runmin',
 run_target('img',
                command : [
                  'sh', '-c',
-                 qemu_img.full_path() + ' create -f raw VoidFrameDisk.img 1440K' + ' && ' +
-                 mkfs_fat.full_path() + ' -F 12 VoidFrameDisk.img'
+                 qemu_img.full_path() + ' create -f qcow2 VoidFrameDisk.img 16G' + ' && ' +
+                 mkfs_ext2.full_path() + ' VoidFrameDisk.img'
                ]
 )
 
-run_target('virtio-img',
+run_target('extra-img',
     command: ['sh', '-c',
               qemu_img.full_path() + ' create -f raw VirtioDisk.img 128M' + ' && ' +
-              mkfs_fat.full_path() + ' -F 16 VirtioDisk.img'
+              mkfs_fat.full_path() + ' -F 16 VirtioDisk.img' + ' && ' +
+              qemu_img.full_path() + ' create -f raw SataDisk.img 128M' + ' && ' +
+              mkfs_fat.full_path() + ' -F 16 SataDisk.img'
     ]
 )

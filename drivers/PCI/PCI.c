@@ -24,6 +24,11 @@ uint32_t PciConfigReadDWord(uint8_t bus, uint8_t slot, uint8_t func, uint8_t off
     return inl(0xCFC);
 }
 
+uint16_t PciReadConfig16(uint8_t bus, uint8_t slot, uint8_t func, uint8_t offset) {
+    uint32_t dword = PciConfigReadDWord(bus, slot, func, offset & 0xFC);
+    return (dword >> ((offset & 2) * 8)) & 0xFFFF;
+}
+
 uint8_t PciConfigReadByte(uint8_t bus, uint8_t slot, uint8_t func, uint8_t offset) {
     uint32_t dword = PciConfigReadDWord(bus, slot, func, offset & 0xFC);
     return (dword >> ((offset & 3) * 8)) & 0xFF;
@@ -45,6 +50,17 @@ void PciConfigWriteDWord(uint8_t bus, uint8_t slot, uint8_t func, uint8_t offset
 
     outl(0xCF8, address);
     outl(0xCFC, data);
+}
+
+void PciWriteConfig16(uint8_t bus, uint8_t slot, uint8_t func, uint8_t offset, uint16_t data) {
+    uint32_t dword_offset = offset & 0xFC;
+    uint32_t word_offset = offset & 0x02;
+    
+    uint32_t current_value = PciConfigReadDWord(bus, slot, func, dword_offset);
+    uint32_t mask = ~(0xFFFF << (word_offset * 8));
+    uint32_t new_value = (current_value & mask) | ((uint32_t)data << (word_offset * 8));
+    
+    PciConfigWriteDWord(bus, slot, func, dword_offset, new_value);
 }
 
 void PciConfigWriteByte(uint8_t bus, uint8_t slot, uint8_t func, uint8_t offset, uint8_t data) {
@@ -85,6 +101,9 @@ static void PciScanBus(PciDeviceCallback callback) {
                 pci_dev.class_code = (class_reg >> 24) & 0xFF;
                 pci_dev.subclass = (class_reg >> 16) & 0xFF;
                 pci_dev.prog_if = (class_reg >> 8) & 0xFF;
+                
+                // Read BAR0
+                pci_dev.bar0 = PciConfigReadDWord(bus, device, func, 0x10);
 
                 // Call the provided callback with the device info
                 callback(pci_dev);

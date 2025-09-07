@@ -463,35 +463,50 @@ int VfsCopyFile(const char* src_path, const char* dest_path) {
     if (!src_path || !dest_path) {
         return -1;
     }
-    // Ensure source exists and is a regular file
+
     if (!VfsIsFile(src_path)) {
         return -1;
     }
+
     uint64_t file_size = VfsGetFileSize(src_path);
-    // Handle empty file explicitly
     if (file_size == 0) {
-        return VfsCreateFile(dest_path);
+        int result = VfsCreateFile(dest_path);
+        return result;
     }
-    // Prevent size_t/u32 truncation
+
+    if (VfsCreateFile(dest_path) != 0) {
+        PrintKernelError("Failed to create destination file\n");
+        return -1;
+    }
+
+    // Rest of the existing logic...
     size_t buf_size = (size_t)file_size;
     if ((uint64_t)buf_size != file_size || buf_size == 0) {
         return -1;
     }
+
     void* buffer = KernelMemoryAlloc(buf_size);
     if (!buffer) {
-        return -1; // Failed to allocate memory
+        PrintKernelError("Failed to allocate memory\n");
+        return -1;
     }
+
     int bytes_read = VfsReadFile(src_path, buffer, (uint32_t)buf_size);
     if (bytes_read <= 0) {
         KernelFree(buffer);
-        return -1; // Failed to read source file
+        PrintKernelError("Failed to read source\n");
+        return -1;
     }
+
     int bytes_written = VfsWriteFile(dest_path, buffer, (uint32_t)bytes_read);
     KernelFree(buffer);
+
     if (bytes_written <= 0) {
-        return -1; // Failed to write destination file
+        PrintKernelError("Failed to write destination\n");
+        return -1;
     }
-    return 0; // Success
+
+    return 0;
 }
 
 int VfsMoveFile(const char* src_path, const char* dest_path) {

@@ -33,26 +33,20 @@ int SB16_Probe(uint16_t io_base) {
 }
 
 void SB16_Beep(uint16_t io_base) {
-    delay(1000);
-
-    dsp_write(io_base, 0xD1);  // Turn speaker on
-    delay(1000);               // Small delay after speaker enable
-
-    // Set the sample rate
+    // Turn speaker on
+    dsp_write(io_base, 0xD1);
+    
+    // Set sample rate
     dsp_write(io_base, 0x40);
-    dsp_write(io_base, 0xA8);
-
-    // Tell the DSP we are sending a block of data
-    dsp_write(io_base, 0x14);
-
-    // Send the length
-    uint16_t length = 256;
-    dsp_write(io_base, (length - 1) & 0xFF);
-    dsp_write(io_base, ((length - 1) >> 8) & 0xFF);
-
-    // Send the actual audio data
-    for (int j = 0; j < length; j++) {
-        uint8_t sample = (j % 16 < 8) ? 0xF0 : 0x10;
-        dsp_write(io_base, sample);
+    dsp_write(io_base, 0xA6);
+    
+    // Use direct mode (0x10) instead of DMA
+    for (int i = 0; i < 8000; i++) {
+        dsp_write(io_base, 0x10);  // Direct 8-bit output
+        dsp_write(io_base, (i % 64 < 32) ? 0xFF : 0x00);  // Square wave
+        delay(10);
     }
+    
+    // Turn speaker off
+    dsp_write(io_base, 0xD3);
 }

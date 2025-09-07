@@ -1,9 +1,10 @@
 // VoidFrame Kernel Entry File
 #include "Kernel.h"
-#include "../../fs/FAT/FAT1x.h"
+#include "../../drivers/ethernet/realtek/RTL8139.h"
 #include "Compositor.h"
 #include "Console.h"
 #include "EXT/Ext2.h"
+#include "FAT/FAT1x.h"
 #include "Format.h"
 #include "Gdt.h"
 #include "ISA.h"
@@ -21,6 +22,7 @@
 #include "PS2.h"
 #include "Panic.h"
 #include "Pic.h"
+#include "SVGAII.h"
 #include "Serial.h"
 #include "Shell.h"
 #include "StackGuard.h"
@@ -29,8 +31,9 @@
 #include "VFS.h"
 #include "VMem.h"
 #include "Vesa.h"
-#include "SVGAII.h"
-#include "ethernet/RTL8139.h"
+#include "ethernet/intel/E1000.h"
+#include "sound/Generic.h"
+#include "storage/AHCI.h"
 #include "stdbool.h"
 #include "stdint.h"
 #include "xHCI/xHCI.h"
@@ -628,6 +631,16 @@ static InitResultT PXS2(void) {
     PitInstall();
     PrintKernelSuccess("System: PIC & PIT initialized\n");
 
+#ifdef VF_CONFIG_ENFORCE_MEMORY_PROTECTION
+    PrintKernel("Info: Final memory health check...\n");
+    GetDetailedMemoryStats(&stats);
+    if (stats.fragmentation_score > 50) {
+        PrintKernelWarning("[WARN] High memory fragmentation detected\n");
+    }
+    // Memory protection
+    StackGuardInit();
+    SetupMemoryProtection();
+#endif
 
 #ifdef VF_CONFIG_ENABLE_PS2
     // Initialize keyboard
@@ -715,6 +728,26 @@ static InitResultT PXS2(void) {
     PrintKernel("Info: Initializing RTL8139 Driver...\n");
     Rtl8139_Init();
     PrintKernelSuccess("System: RTL8139 Driver initialized\n");
+
+    PrintKernel("Info: Initializing E1000 Driver...\n");
+    E1000_Init();
+    PrintKernelSuccess("System: E1000 Driver initialized\n");
+#endif
+
+#ifdef VF_CONFIG_ENABLE_GENERIC_SOUND
+    PrintKernel("Info: Initializing PC Speaker...\n");
+    PCSpkr_Init();
+    PrintKernelSuccess("System: PC Speaker initialized\n");
+
+    PrintKernel("Info: Initializing AHCI Driver...\n");
+#endif
+
+#ifdef VF_CONFIG_ENABLE_AHCI
+    if (AHCI_Init() == 0) {
+        PrintKernelSuccess("System: AHCI Driver initialized\n");
+    } else {
+        PrintKernelWarning("AHCI initialization failed\n");
+    }
 #endif
 
 #ifdef VF_CONFIG_ENABLE_VMWARE_SVGA_II
@@ -734,17 +767,6 @@ static InitResultT PXS2(void) {
     PrintKernel("Info: Initializing LPT Driver...\n");
     LPT_Init();
     PrintKernelSuccess("System: LPT Driver initialized\n");
-#endif
-
-#ifdef VF_CONFIG_ENFORCE_MEMORY_PROTECTION
-    PrintKernel("Info: Final memory health check...\n");
-    GetDetailedMemoryStats(&stats);
-    if (stats.fragmentation_score > 50) {
-        PrintKernelWarning("[WARN] High memory fragmentation detected\n");
-    }
-    // Memory protection
-    StackGuardInit();
-    SetupMemoryProtection();
 #endif
 
     // Unmask IRQs

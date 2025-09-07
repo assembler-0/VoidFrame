@@ -1,5 +1,6 @@
 #include "Shell.h"
 
+#include "../../drivers/ethernet/realtek/RTL8139.h"
 #include "Cerberus.h"
 #include "Console.h"
 #include "ELFloader.h"
@@ -19,13 +20,14 @@
 #include "Panic.h"
 #include "Pic.h"
 #include "RTC/Rtc.h"
-#include "RTL8139.h"
 #include "SB16.h"
 #include "Serial.h"
 #include "StackTrace.h"
 #include "StringOps.h"
 #include "VFS.h"
 #include "VMem.h"
+#include "intel/E1000.h"
+#include "sound/Generic.h"
 #include "stdlib.h"
 #include "xHCI/xHCI.h"
 
@@ -102,8 +104,9 @@ void ArpRequestTestProcess() {
     FullArpPacket packet;
 
     const Rtl8139Device* nic = GetRtl8139Device();
-    if (!nic) {
-        PrintKernelError("RTL8139 not ready");
+    const E1000Device* e1000 = E1000_GetDevice();
+    if (!nic || !e1000) {
+        PrintKernelError("No NIC found & ready");
         return;
     }
 
@@ -129,6 +132,7 @@ void ArpRequestTestProcess() {
 
     uint32_t packet_size = sizeof(EthernetHeader) + sizeof(ArpPacket);
     Rtl8139_SendPacket(&packet, packet_size);
+    E1000_SendPacket(&packet, packet_size);
 }
 
 static void ClearHandler(const char * args) {
@@ -138,7 +142,6 @@ static void ClearHandler(const char * args) {
 
 static void ARPTestHandler(const char * args) {
     (void)args;
-    
     MLFQCreateProcess(ArpRequestTestProcess);
 }
 
@@ -149,51 +152,145 @@ static void VersionHandler(const char * args) {
     PrintKernelSuccess("VoidFrame Shell v0.0.2-rc1\n");
 }
 
+typedef struct {
+    const char* name;
+    const char* desc;
+} HelpEntry;
+
+typedef struct {
+    const char* category;
+    const HelpEntry* entries;
+    int count;
+} HelpCategory;
+
+static const HelpEntry system_cmds[] = {
+    {"help", "Show help menu"},
+    {"clear", "Clear screen"},
+    {"ver", "Show version info"},
+    {"time", "Show current time"},
+    {"ps", "List processes"},
+    {"sched", "Show scheduler state"},
+    {"perf", "Show performance stats"},
+    {"kill <pid>", "Terminate process"},
+    {"memstat", "Show memory statistics"},
+    {"lscpu", "List CPU features"}
+};
+
+static const HelpEntry file_cmds[] = {
+    {"ls [path]", "List directory contents"},
+    {"cd <dir>", "Change directory"},
+    {"pwd", "Print working directory"},
+    {"cat <file>", "Display file contents"},
+    {"edit <file>", "Edit file"},
+    {"mkdir <name>", "Create directory"},
+    {"touch <name>", "Create empty file"},
+    {"rm <file> [-r]", "Remove file/directory"},
+    {"cp <src> <dest>", "Copy file"},
+    {"mv <src> <dest>", "Move file"},
+    {"echo <text> <file>", "Write text to file"},
+    {"size <file>", "Get file size"}
+};
+
+static const HelpEntry hw_cmds[] = {
+    {"lspci", "List PCI devices"},
+    {"lsisa", "List ISA devices"},
+    {"lsusb", "List USB devices"},
+    {"beep <x>", "Send beep x times"},
+    {"pcbeep <x>", "PC speaker beep  for <x> seconds (200hz)"},
+    {"picmask <irq>", "Mask IRQ"},
+    {"picunmask <irq>", "Unmask IRQ"},
+    {"setfreq <hz>", "Set PIT timer frequency"},
+    {"serialw <msg>", "Write to serial port"},
+    {"parallelw <msg>", "Write to parallel port"}
+};
+
+static const HelpEntry dev_cmds[] = {
+    {"elfload <path>", "Load ELF executable"},
+    {"alloc <size>", "Allocate memory"},
+    {"panic <msg>", "Trigger panic"},
+    {"vmemfreelist", "Show VMem free list"},
+    {"heapvallvl <0/1/2>", "Set heap validation level"},
+    {"fstest", "Run filesystem tests"},
+    {"arptest", "Perform ARP test"},
+    {"setup", "Copy system files"},
+    {"isocp <iso> <vfs>", "Copy from ISO to VFS"}
+};
+
+static const HelpCategory help_categories[] = {
+    {"System", system_cmds, sizeof(system_cmds)/sizeof(HelpEntry)},
+    {"Files", file_cmds, sizeof(file_cmds)/sizeof(HelpEntry)},
+    {"Hardware", hw_cmds, sizeof(hw_cmds)/sizeof(HelpEntry)},
+    {"Development", dev_cmds, sizeof(dev_cmds)/sizeof(HelpEntry)}
+};
+
+static void ShowHelpCategory(int cat_idx) {
+    const HelpCategory* cat = &help_categories[cat_idx];
+    PrintKernelSuccess(cat->category);
+    PrintKernel(" Commands:\n");
+    for (int i = 0; i < cat->count; i++) {
+        PrintKernel("  ");
+        PrintKernel(cat->entries[i].name);
+        int pad = 20 - StringLength(cat->entries[i].name);
+        for (int j = 0; j < pad && j < 20; j++) PrintKernel(" ");
+        PrintKernel("- ");
+        PrintKernel(cat->entries[i].desc);
+        PrintKernel("\n");
+    }
+}
+
 static void HelpHandler(const char * args) {
-    (void)args;
-    PrintKernelSuccess("VoidFrame Shell Commands:\n");
-    PrintKernel("  help           - Show this help\n");
-    PrintKernel("  ps             - List processes\n");
-    PrintKernel("  sched          - Show scheduler state\n");
-    PrintKernel("  perf           - Show performance stats\n");
-    PrintKernel("  time           - Show current time\n");
-    PrintKernel("  edit <file>    - Edit <file>\n");
-    PrintKernel("  beep <x>       - Send Beep <x> times (SB16)\n");
-    PrintKernel("  picmask <irq>  - Mask IRQ <irq>\n");
-    PrintKernel("  picunmask <irq>- Unmask IRQ <irq>\n");
-    PrintKernel("  memstat        - Show memory statistics\n");
-    PrintKernel("  serialw <msg>  - Write <msg> to available serial port\n");
-    PrintKernel("  parallelw <msg>- Write <msg> to available parallel port\n");
-    PrintKernel("  setfreq <hz>   - Set PIT timer <hz>\n");
-    PrintKernel("  filesize <file>- Get size of <file> in bytes\n");
-    PrintKernel("  lspci          - List current PCI device(s)\n");
-    PrintKernel("  lsisa          - List current ISA device(s)\n");
-    PrintKernel("  lsusb          - List current USB device(s) and xHCI controller(s)\n");
-    PrintKernel("  arptest        - Perform an ARP test and send packets\n");
-    PrintKernel("  elfload <path> - Load an ELF executable in <path>\n");
-    PrintKernel("  vmemfreelist   - Show VMem free list\n");
-    PrintKernel("  clear          - Clear screen\n");
-    PrintKernel("  cd <dir>       - Change directory\n");
-    PrintKernel("  pwd            - Print working directory\n");
-    PrintKernel("  ls [path]      - List directory contents\n");
-    PrintKernel("  cat <file>     - Display file contents\n");
-    PrintKernel("  mkdir <name>   - Create directory\n");
-    PrintKernel("  touch <name>   - Create empty file\n");
-    PrintKernel("  alloc <size>   - Allocate <size> bytes\n");
-    PrintKernel("  panic <message>- Panic with <message>\n");
-    PrintKernel("  kill <pid>     - Terminate sched with pid <pid>\n");
-    PrintKernel("  rm <file> [-r] - Remove file(s) or directory\n");
-    PrintKernel("  cp <src> <dest>- Copy file\n");
-    PrintKernel("  mv <src> <dest>- Move file\n");
-    PrintKernel("  echo <text> <file> - Write text to file\n");
-    PrintKernel("  fstest         - Run filesystem tests\n");
-    PrintKernel("  size <file>    - Get size of <file> in bytes\n");
-    PrintKernel("  heapvallvl <0/1/2>- Set kernel heap validation level\n");
-    PrintKernel("  lscpu          - List cpu features (CPUID)\n");
-    PrintKernel("  vfc            - Start VFCompositor\n");
-    PrintKernel("  setup          - Copy system files\n");
-    PrintKernel("  isocp <iso> <vfs>- Copy from <iso> to <vfs>\n");
-    PrintKernel("  ext2test       - Test EXT2 write functionality\n");
+    char* category = GetArg(args, 1);
+    int num_categories = sizeof(help_categories)/sizeof(HelpCategory);
+    
+    if (!category) {
+        PrintKernelSuccess("VoidFrame Shell Help\n");
+        PrintKernel("Categories (use 'help <category>' or number):\n");
+        for (int i = 0; i < num_categories; i++) {
+            PrintKernel("  ");
+            PrintKernelInt(i + 1);
+            PrintKernel(". ");
+            PrintKernel(help_categories[i].category);
+            PrintKernel("\n");
+        }
+        PrintKernel("\nExamples: 'help 1', 'help system', 'help files'\n");
+        KernelFree(category);
+        return;
+    }
+    
+    // Check if it's a number
+    int cat_num = atoi(category);
+    if (cat_num > 0 && cat_num <= num_categories) {
+        ShowHelpCategory(cat_num - 1);
+        KernelFree(category);
+        return;
+    }
+    
+    // Check category names
+    for (int i = 0; i < num_categories; i++) {
+        if (FastStrCmp(category, "system") == 0 && i == 0) {
+            ShowHelpCategory(i);
+            KernelFree(category);
+            return;
+        }
+        if (FastStrCmp(category, "files") == 0 && i == 1) {
+            ShowHelpCategory(i);
+            KernelFree(category);
+            return;
+        }
+        if (FastStrCmp(category, "hardware") == 0 && i == 2) {
+            ShowHelpCategory(i);
+            KernelFree(category);
+            return;
+        }
+        if (FastStrCmp(category, "dev") == 0 && i == 3) {
+            ShowHelpCategory(i);
+            KernelFree(category);
+            return;
+        }
+    }
+    
+    PrintKernel("Unknown category. Use 'help' to see available categories.\n");
+    KernelFree(category);
 }
 
 static void PSHandler(const char * args) {
@@ -1009,6 +1106,24 @@ void CloneSystemFiles(const char * args) {
     ExecuteCommand("isocp /boot/voidframe.krnl /System/Kernel/voidframe.krnl");
 }
 
+static void PcBeepHandler(const char * args) {
+    char* size_str = GetArg(args, 1);
+    if (!size_str) {
+        PrintKernel("Usage: pcbeep <x>\n");
+        KernelFree(size_str);
+        return;
+    }
+    int size = atoi(size_str);
+    if (size <= 0) {
+        PrintKernel("Usage: pcbeep <x>\n");
+        KernelFree(size_str);
+        return;
+    }
+    PCSpkr_Beep(200, (uint32_t)size * 1000);
+    KernelFree(size_str);
+}
+
+
 static const ShellCommand commands[] = {
     {"help", HelpHandler},
     {"ps", PSHandler},
@@ -1054,6 +1169,7 @@ static const ShellCommand commands[] = {
     {"mv", MvHandler},
     {"isocp", IsoCpHandler},
     {"setup", CloneSystemFiles},
+    {"pcbeep", PcBeepHandler},
 };
 
 void ExecuteCommand(const char* cmd) {

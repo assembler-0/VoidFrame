@@ -13,6 +13,7 @@ typedef struct {
     uint8_t class_code;
     uint8_t subclass;
     uint8_t prog_if; // Programming Interface
+    uint32_t bar0;
 } PciDevice;
 
 static PciDevice found_device;
@@ -34,8 +35,10 @@ void PciEnumerate();
 int PciFindDevice(uint16_t vendor_id, uint16_t device_id, PciDevice* out_device);
 int PciFindByClass(uint8_t class, uint8_t subclass, uint8_t prog_if, PciDevice* out_device);
 uint32_t PciConfigReadDWord(uint8_t bus, uint8_t slot, uint8_t func, uint8_t offset);
+uint16_t PciReadConfig16(uint8_t bus, uint8_t slot, uint8_t func, uint8_t offset);
 uint8_t PciConfigReadByte(uint8_t bus, uint8_t slot, uint8_t func, uint8_t offset);
 void PciConfigWriteDWord(uint8_t bus, uint8_t slot, uint8_t func, uint8_t offset, uint32_t data);
+void PciWriteConfig16(uint8_t bus, uint8_t slot, uint8_t func, uint8_t offset, uint16_t data);
 void PciConfigWriteByte(uint8_t bus, uint8_t slot, uint8_t func, uint8_t offset, uint8_t data);
 uint64_t GetPCIMMIOSize(const PciDevice* pci_dev, uint32_t bar_value);
 #endif // PCI_H

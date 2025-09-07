@@ -50,7 +50,7 @@ meson setup build
 cd build
 ninja
 ninja img
-ninja virtio-img
+ninja extra-img
 ninja run
 ```
 #### Minimal setup
@@ -135,8 +135,10 @@ ninja runmin
 ### Drivers
 - Network
     - [x] RTL8139 (PCI)
+    - [x] E1000   (PCI)
 - Sound
     - [x] SB16 (PCI)
+    - [x] Generic PC speaker
 - USB
     - [x] xHCI
 - VirtIO
@@ -160,3 +162,4 @@ ninja runmin
 - Storage
     - [x] PATA (IDE)
     - [x] VirtIO Block
+    - [x] AHCI

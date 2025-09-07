@@ -135,8 +135,10 @@ static inline void WriteLock(rwlock_t* lock, uint32_t owner_id) {
 
 static inline void WriteUnlock(rwlock_t* lock) {
     if (lock->recursion <= 0) {
-        // PANIC("WriteUnlock Underflow");
-        return; // Or trigger an assertion/panic in debug builds
+        lock->recursion = 0;
+        lock->owner = 0;
+        __sync_lock_release(&lock->writer);
+        return;
     }
     if (--lock->recursion == 0) {
         lock->owner = 0;
