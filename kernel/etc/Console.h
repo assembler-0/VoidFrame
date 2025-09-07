@@ -28,8 +28,8 @@
 #define VGA_COLOR_ERROR     VGA_COLOR_LIGHT_RED
 #define VGA_COLOR_WARNING   VGA_COLOR_LIGHT_YELLOW
 
-#define STATUS_LABEL_ROW 29
-#define STATUS_LABEL_COL 31 // future use
+#define STATUS_LABEL_ROW 50
+#define STATUS_LABEL_COL 0 // future use
 
 #include "stdint.h"
 // Console state
