@@ -27,6 +27,7 @@
 #include "VFS.h"
 #include "VMem.h"
 #include "intel/E1000.h"
+#include "sound/Generic.h"
 #include "stdlib.h"
 #include "xHCI/xHCI.h"
 
@@ -195,6 +196,7 @@ static const HelpEntry hw_cmds[] = {
     {"lsisa", "List ISA devices"},
     {"lsusb", "List USB devices"},
     {"beep <x>", "Send beep x times"},
+    {"pcbeep <x>", "PC speaker beep  for <x> seconds (200hz)"},
     {"picmask <irq>", "Mask IRQ"},
     {"picunmask <irq>", "Unmask IRQ"},
     {"setfreq <hz>", "Set PIT timer frequency"},
@@ -1104,6 +1106,24 @@ void CloneSystemFiles(const char * args) {
     ExecuteCommand("isocp /boot/voidframe.krnl /System/Kernel/voidframe.krnl");
 }
 
+static void PcBeepHandler(const char * args) {
+    char* size_str = GetArg(args, 1);
+    if (!size_str) {
+        PrintKernel("Usage: pcbeep <x>\n");
+        KernelFree(size_str);
+        return;
+    }
+    int size = atoi(size_str);
+    if (size <= 0) {
+        PrintKernel("Usage: pcbeep <x>\n");
+        KernelFree(size_str);
+        return;
+    }
+    PCSpkr_Beep(2000, size);
+    KernelFree(size_str);
+}
+
+
 static const ShellCommand commands[] = {
     {"help", HelpHandler},
     {"ps", PSHandler},
@@ -1149,6 +1169,7 @@ static const ShellCommand commands[] = {
     {"mv", MvHandler},
     {"isocp", IsoCpHandler},
     {"setup", CloneSystemFiles},
+    {"pcbeep", PcBeepHandler},
 };
 
 void ExecuteCommand(const char* cmd) {

@@ -135,8 +135,10 @@ ninja runmin
 ### Drivers
 - Network
     - [x] RTL8139 (PCI)
+    - [x] E1000   (PCI)
 - Sound
     - [x] SB16 (PCI)
+    - [x] Generic PC speaker
 - USB
     - [x] xHCI
 - VirtIO

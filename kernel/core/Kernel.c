@@ -32,6 +32,7 @@
 #include "VMem.h"
 #include "Vesa.h"
 #include "ethernet/intel/E1000.h"
+#include "sound/Generic.h"
 #include "stdbool.h"
 #include "stdint.h"
 #include "xHCI/xHCI.h"
@@ -730,6 +731,12 @@ static InitResultT PXS2(void) {
     PrintKernel("Info: Initializing E1000 Driver...\n");
     E1000_Init();
     PrintKernelSuccess("System: E1000 Driver initialized\n");
+#endif
+
+#ifdef VF_CONFIG_ENABLE_GENERIC_SOUND
+    PrintKernel("Info: Initializing PC Speaker...\n");
+    PCSpkr_Init();
+    PrintKernelSuccess("System: PC Speaker initialized\n");
 #endif
 
 #ifdef VF_CONFIG_ENABLE_VMWARE_SVGA_II
