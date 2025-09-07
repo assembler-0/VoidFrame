@@ -1119,7 +1119,7 @@ static void PcBeepHandler(const char * args) {
         KernelFree(size_str);
         return;
     }
-    PCSpkr_Beep(2000, size);
+    PCSpkr_Beep(200, (uint32_t)size * 1000);
     KernelFree(size_str);
 }
 
