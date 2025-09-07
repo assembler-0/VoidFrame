@@ -63,7 +63,7 @@ void __attribute__((noreturn)) KernelPanicHandler(const char* message, uint64_t 
     cli();
     ClearScreen();
     ConsoleSetColor(VGA_COLOR_WHITE);
-
+    Unsnooze();
     // Reentrancy guard to prevent recursive panics
     static volatile int in_panic = 0;
     if (__atomic_exchange_n(&in_panic, 1, __ATOMIC_ACQ_REL)) {

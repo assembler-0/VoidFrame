@@ -14,6 +14,7 @@ nasm = find_program('nasm', required : true)
 grub_mkrescue = find_program('grub-mkrescue')
 qemu_img  = find_program('qemu-img')
 mkfs_fat  = find_program('mkfs.fat')
+mkfs_ext2 = find_program('mkfs.ext2')
 qemu_system_x86_64 = find_program('qemu-system-x86_64')
 
 exclude_extra_objects = get_option('exclude_extra_objects')
@@ -287,8 +288,8 @@ run_target('runmin',
 run_target('img',
                command : [
                  'sh', '-c',
-                 qemu_img.full_path() + ' create -f raw VoidFrameDisk.img 1440K' + ' && ' +
-                 mkfs_fat.full_path() + ' -F 12 VoidFrameDisk.img'
+                 qemu_img.full_path() + ' create -f raw VoidFrameDisk.img 512M' + ' && ' +
+                 mkfs_ext2.full_path() + ' VoidFrameDisk.img'
                ]
 )
 

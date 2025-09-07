@@ -1,6 +1,6 @@
 // VoidFrame Kernel Entry File
 #include "Kernel.h"
-#include "../../fs/FAT/FAT1x.h"
+#include "FAT/FAT1x.h"
 #include "Compositor.h"
 #include "Console.h"
 #include "EXT/Ext2.h"
@@ -628,6 +628,16 @@ static InitResultT PXS2(void) {
     PitInstall();
     PrintKernelSuccess("System: PIC & PIT initialized\n");
 
+#ifdef VF_CONFIG_ENFORCE_MEMORY_PROTECTION
+    PrintKernel("Info: Final memory health check...\n");
+    GetDetailedMemoryStats(&stats);
+    if (stats.fragmentation_score > 50) {
+        PrintKernelWarning("[WARN] High memory fragmentation detected\n");
+    }
+    // Memory protection
+    StackGuardInit();
+    SetupMemoryProtection();
+#endif
 
 #ifdef VF_CONFIG_ENABLE_PS2
     // Initialize keyboard
@@ -734,17 +744,6 @@ static InitResultT PXS2(void) {
     PrintKernel("Info: Initializing LPT Driver...\n");
     LPT_Init();
     PrintKernelSuccess("System: LPT Driver initialized\n");
-#endif
-
-#ifdef VF_CONFIG_ENFORCE_MEMORY_PROTECTION
-    PrintKernel("Info: Final memory health check...\n");
-    GetDetailedMemoryStats(&stats);
-    if (stats.fragmentation_score > 50) {
-        PrintKernelWarning("[WARN] High memory fragmentation detected\n");
-    }
-    // Memory protection
-    StackGuardInit();
-    SetupMemoryProtection();
 #endif
 
     // Unmask IRQs
