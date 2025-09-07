@@ -163,8 +163,11 @@ void IsaAutoDetect(void) {
     }
 
     if (SB16_Probe(SB16_DSP_BASE)) {
-        IsaRegisterDevice(SB16_DSP_BASE, 16, 5, ISA_DMA_SB_8BIT,
+        IsaRegisterDevice(SB16_DSP_BASE, 16, 5, 1,
                          ISA_DEVICE_SOUND, "Sound Blaster 16");
+        PrintKernelSuccess("ISA: Sound Blaster 16 detected and registered\n");
+    } else {
+        PrintKernel("ISA: Sound Blaster 16 not detected\n");
     }
 
 }
