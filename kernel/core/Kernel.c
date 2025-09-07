@@ -33,6 +33,7 @@
 #include "Vesa.h"
 #include "ethernet/intel/E1000.h"
 #include "sound/Generic.h"
+#include "storage/AHCI.h"
 #include "stdbool.h"
 #include "stdint.h"
 #include "xHCI/xHCI.h"
@@ -737,6 +738,16 @@ static InitResultT PXS2(void) {
     PrintKernel("Info: Initializing PC Speaker...\n");
     PCSpkr_Init();
     PrintKernelSuccess("System: PC Speaker initialized\n");
+
+    PrintKernel("Info: Initializing AHCI Driver...\n");
+#endif
+
+#ifdef VF_CONFIG_ENABLE_AHCI
+    if (AHCI_Init() == 0) {
+        PrintKernelSuccess("System: AHCI Driver initialized\n");
+    } else {
+        PrintKernelWarning("AHCI initialization failed\n");
+    }
 #endif
 
 #ifdef VF_CONFIG_ENABLE_VMWARE_SVGA_II

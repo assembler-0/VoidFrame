@@ -50,7 +50,7 @@ meson setup build
 cd build
 ninja
 ninja img
-ninja virtio-img
+ninja extra-img
 ninja run
 ```
 #### Minimal setup
@@ -162,3 +162,4 @@ ninja runmin
 - Storage
     - [x] PATA (IDE)
     - [x] VirtIO Block
+    - [x] AHCI
