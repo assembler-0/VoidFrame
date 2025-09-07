@@ -1,6 +1,6 @@
 #include "Shell.h"
-
-#include "../../drivers/ethernet/realtek/RTL8139.h"
+#include "6502/6502.h"
+#include "realtek/RTL8139.h"
 #include "Cerberus.h"
 #include "Console.h"
 #include "ELFloader.h"
@@ -1170,6 +1170,7 @@ static const ShellCommand commands[] = {
     {"isocp", IsoCpHandler},
     {"setup", CloneSystemFiles},
     {"pcbeep", PcBeepHandler},
+    {"6502", Entry6502},
 };
 
 void ExecuteCommand(const char* cmd) {

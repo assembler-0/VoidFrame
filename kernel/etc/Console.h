@@ -52,6 +52,9 @@ typedef enum {
 
 extern ConsoleT console;
 
+#ifdef __cplusplus
+extern "C" {
+#endif
 void PrintKernelSuccess(const char* str);
 void PrintKernelError(const char* str);
 void PrintKernelWarning(const char* str);
@@ -71,6 +74,9 @@ void SerialWriteF(const char* format, ...);
 void PrintKernelErrorF(const char* format, ...);
 void PrintKernelWarningF(const char* format, ...);
 void PrintKernelSuccessF(const char* format, ...);
+#ifdef __cplusplus
+}
+#endif
 // save a bit of time
 static inline __attribute__((always_inline)) void PrintNewline(void) {
     PrintKernel("\n");
