@@ -10,14 +10,40 @@
 
 #define ISO9660_SECTOR_SIZE 2048
 
+static uint8_t cdrom_drive = 0xFF; // Auto-detect CD-ROM drive
+
+// Function to detect CD-ROM drive
+static int DetectCdromDrive(void) {
+    if (cdrom_drive != 0xFF) return cdrom_drive;
+    
+    uint8_t sector_buffer[512];
+    for (uint8_t drive = 0; drive < 4; drive++) {
+        for (int sector_offset = 0; sector_offset < 4; sector_offset++) {
+            if (IdeReadSector(drive, 16 * 4 + sector_offset, sector_buffer) == 0) {
+                for (int offset = 0; offset < 512 - 5; offset++) {
+                    if (FastMemcmp(sector_buffer + offset + 1, "CD001", 5) == 0 && 
+                        sector_buffer[offset] == 1) {
+                        cdrom_drive = drive;
+                        PrintKernelF("[ISO] CD-ROM detected on drive %d\n", drive);
+                        return drive;
+                    }
+                }
+            }
+        }
+    }
+    return -1;
+}
+
 // Function to read a sector from the ISO
 static int ReadSector(uint32_t lba, void* buffer) {
-    // ISO9660 sector size is 2048, but IDE reads in 512-byte sectors.
-    // So, we need to read 4 IDE sectors to get one ISO sector.
-    // We assume that on emulated environments cdrom is mounted as IDE1 (primary slave)
+    int drive = DetectCdromDrive();
+    if (drive < 0) return -1;
+    
     uint32_t start_lba = lba * 4;
     for (int i = 0; i < 4; i++) {
-        if (IdeReadSector(1, start_lba + i, (uint8_t*)buffer + (i * 512)) != 0) {
+        int result = IdeReadSector(drive, start_lba + i, (uint8_t*)buffer + (i * 512));
+        if (result != 0) {
+            PrintKernelF("[ISO] Failed to read sector %u from drive %d\n", start_lba + i, drive);
             return -1;
         }
     }
@@ -96,7 +122,7 @@ int Iso9660Read(const char* path, void* buffer, uint32_t max_size) {
             return -1; // Failed to read sector
         }
         Iso9660Pvd* cand = (Iso9660Pvd*)sector_buffer;
-        if (cand->type == 1 && FastStrCmp(cand->id, "CD001") == 0) {
+        if (cand->type == 1 && FastMemcmp(cand->id, "CD001", 5) == 0) {
             pvd = KernelMemoryAlloc(ISO9660_SECTOR_SIZE);
             if (!pvd) {
                 KernelFree(sector_buffer);
@@ -252,7 +278,7 @@ static Iso9660DirEntry** Iso9660ListDir(const char* path) {
             KernelFree(sector_buffer);
             return NULL;
         }
-        if (FastStrCmp(((Iso9660Pvd*)sector_buffer)->id, "CD001") == 0 && ((Iso9660Pvd*)sector_buffer)->type == 1) {
+        if (FastMemcmp(((Iso9660Pvd*)sector_buffer)->id, "CD001", 5) == 0 && ((Iso9660Pvd*)sector_buffer)->type == 1) {
             pvd = KernelMemoryAlloc(ISO9660_SECTOR_SIZE);
             if (!pvd) {
                 KernelFree(sector_buffer);
