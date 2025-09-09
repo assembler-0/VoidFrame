@@ -263,9 +263,7 @@ uint32_t CreateProcessFromElf(const char* filename, const ElfLoadOptions* option
     void* adjusted_entry = (uint8_t*)process_memory + (entry_point - base_vaddr);
 
     // 9. Create sched with enhanced security
-    uint32_t pid = MLFQCreateProcess(
-        (void (*)(void))adjusted_entry
-    );
+    uint32_t pid = MLFQCreateProcess(filename, (void (*)(void))adjusted_entry);
 
     // Clean up temporary ELF data
     VMemFreeWithGuards(elf_data, file_size);

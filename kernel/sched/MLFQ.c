@@ -1016,7 +1016,7 @@ void ProcessExitStub() {
     __builtin_unreachable();
 }
 
-static __attribute__((visibility("hidden"))) uint32_t CreateSecureProcess(void (*entry_point)(void), uint8_t privilege, uint32_t initial_flags) {
+static __attribute__((visibility("hidden"))) uint32_t CreateSecureProcess(const char * name, void (*entry_point)(void), uint8_t privilege, uint32_t initial_flags) {
     irq_flags_t flags = SpinLockIrqSave(&scheduler_lock);
     if (UNLIKELY(!entry_point)) {
         SpinUnlockIrqRestore(&scheduler_lock, flags);
@@ -1095,6 +1095,7 @@ static __attribute__((visibility("hidden"))) uint32_t CreateSecureProcess(void (
     }
 
     // Initialize process with enhanced security and scheduling data
+    processes[slot].name = name;
     processes[slot].pid = new_pid;
     processes[slot].state = PROC_READY;
     processes[slot].stack = stack;
@@ -1168,8 +1169,8 @@ static __attribute__((visibility("hidden"))) uint32_t CreateSecureProcess(void (
     return new_pid;
 }
 
-uint32_t MLFQCreateProcess(void (*entry_point)(void)) {
-    return CreateSecureProcess(entry_point, PROC_PRIV_USER, 0);
+uint32_t MLFQCreateProcess(const char * name, void (*entry_point)(void)) {
+    return CreateSecureProcess(name, entry_point, PROC_PRIV_USER, 0);
 }
 
 void MLFQCleanupTerminatedProcess(void) {
@@ -1611,7 +1612,7 @@ static void Astra(void) {
                 case 'p': PANIC("Astra: CRITICAL: Manual panic triggered via ProcINFO\n"); break;
                 case 't': threat_level += 10; break; // for fun
                 case 'k': ASTerminate(current->pid, "ProcINFO"); break;
-                case 'a': CreateSecureProcess(Astra, PROC_PRIV_SYSTEM, PROC_FLAG_CORE); break;
+                case 'a': CreateSecureProcess("Astra", Astra, PROC_PRIV_SYSTEM, PROC_FLAG_CORE); break;
                 default: break;
             }
             int del_rc = VfsDelete(astra_path, false);
@@ -1720,6 +1721,7 @@ int MLFQSchedInit(void) {
     InitSchedulerNodePool();
     // Initialize idle process
     MLFQProcessControlBlock* idle_proc = &processes[0];
+    idle_proc->name = "Idle";
     idle_proc->pid = 0;
     idle_proc->state = PROC_RUNNING;
     idle_proc->privilege_level = PROC_PRIV_SYSTEM;
@@ -1742,7 +1744,7 @@ int MLFQSchedInit(void) {
 
 #ifdef VF_CONFIG_USE_ASTRA
     PrintKernel("System: Creating AS (Astra)...\n");
-    uint32_t AS_pid = CreateSecureProcess(Astra, PROC_PRIV_SYSTEM, PROC_FLAG_CORE);
+    uint32_t AS_pid = CreateSecureProcess("Astra", Astra, PROC_PRIV_SYSTEM, PROC_FLAG_CORE);
     if (!AS_pid) {
 #ifndef VF_CONFIG_PANIC_OVERRIDE
         PANIC("CRITICAL: Failed to create Astra");
@@ -1758,7 +1760,7 @@ int MLFQSchedInit(void) {
 #ifdef VF_CONFIG_USE_VFSHELL
     // Create shell process
     PrintKernel("System: Creating shell process...\n");
-    uint32_t shell_pid = CreateSecureProcess(ShellProcess, PROC_PRIV_SYSTEM, PROC_FLAG_CORE);
+    uint32_t shell_pid = CreateSecureProcess("VFShell", ShellProcess, PROC_PRIV_SYSTEM, PROC_FLAG_CORE);
     if (!shell_pid) {
 #ifndef VF_CONFIG_PANIC_OVERRIDE
         PANIC("CRITICAL: Failed to create shell process");
@@ -1773,7 +1775,7 @@ int MLFQSchedInit(void) {
 
 #ifdef VF_CONFIG_USE_DYNAMOX
     PrintKernel("System: Creating DynamoX...\n");
-    uint32_t dx_pid = CreateSecureProcess(DynamoX, PROC_PRIV_SYSTEM, PROC_FLAG_CORE);
+    uint32_t dx_pid = CreateSecureProcess("DynamoX",DynamoX, PROC_PRIV_SYSTEM, PROC_FLAG_CORE);
     if (!dx_pid) {
 #ifndef VF_CONFIG_PANIC_OVERRIDE
         PANIC("CRITICAL: Failed to create DynamoX process");
@@ -1809,7 +1811,7 @@ void VFCompositorRequestInit(const char * str) {
         cached_vfc_pid = 0;
     }
     PrintKernel("System: Creating VFCompositor...\n");
-    uint32_t vfc_pid = CreateSecureProcess(VFCompositor, PROC_PRIV_SYSTEM, PROC_FLAG_CORE);
+    uint32_t vfc_pid = CreateSecureProcess("VFCompositor", VFCompositor, PROC_PRIV_SYSTEM, PROC_FLAG_CORE);
     if (!vfc_pid) {
 #ifndef VF_CONFIG_PANIC_OVERRIDE
         PANIC("CRITICAL: Failed to create VFCompositor process");
@@ -1866,8 +1868,8 @@ static const char* GetStateString(ProcessState state) {
 
 void MLFQListProcesses(void) {
     PrintKernel("\n--- Enhanced Process List ---\n");
-    PrintKernel("PID\tState     \tPrio\tCPU%\tI/O\tPreempt\n");
-    PrintKernel("-----------------------------------------------\n");
+    PrintKernel("PID\tState     \tPrio\tCPU%\tI/O\tPreempt\tName\n");
+    PrintKernel("-----------------------------------------------------------------\n");
     
     uint64_t total_cpu_time = 1; // Avoid division by zero
     for (int i = 0; i < MAX_PROCESSES; i++) {
@@ -1892,10 +1894,12 @@ void MLFQListProcesses(void) {
             PrintKernelInt(p->io_operations);
             PrintKernel("\t");
             PrintKernelInt(p->preemption_count);
+            PrintKernel("\t");
+            PrintKernel(p->name);
             PrintKernel("\n");
         }
     }
-    PrintKernel("-----------------------------------------------\n");
+    PrintKernel("-----------------------------------------------------------------\n");
     PrintKernel("Total CPU time: ");
     PrintKernelInt((uint32_t)total_cpu_time);
     PrintKernel(" ticks\n");

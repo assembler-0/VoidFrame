@@ -144,7 +144,7 @@ static void ClearHandler(const char * args) {
 
 static void ARPTestHandler(const char * args) {
     (void)args;
-    MLFQCreateProcess(ArpRequestTestProcess);
+    MLFQCreateProcess("ARPTest", ArpRequestTestProcess);
 }
 
 static void VersionHandler(const char * args) {
@@ -331,7 +331,7 @@ static void MemstatHandler(const char * args) {
 static void LsPCIHandler(const char * args) {
     (void)args;
     
-    MLFQCreateProcess(PciEnumerate);
+    MLFQCreateProcess("PCIEnumerate", PciEnumerate);
 }
 
 static void VmemFreeListHandler(const char * args) {
@@ -373,8 +373,7 @@ static void PanicHandler(const char * args) {
 
 static void LsUSBHandler(const char * args) {
     (void)args;
-    
-    MLFQCreateProcess(xHCIEnumerate);
+    MLFQCreateProcess("xHCIEnumerate", xHCIEnumerate);
 }
 
 static void BeepHandler(const char * args) {
@@ -1036,7 +1035,7 @@ void nothing(void) {
 
 void TestHandler(const char* args) {
     (void)args;
-    MLFQCreateProcess(nothing);
+    MLFQCreateProcess("nothing", nothing);
 }
 
 static void IsoCpHandler(const char* args) {

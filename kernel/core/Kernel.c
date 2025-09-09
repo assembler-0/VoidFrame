@@ -46,6 +46,7 @@ extern uint8_t _kernel_phys_end[];
 // Global variable to store the Multiboot2 info address
 static uint32_t g_multiboot_info_addr = 0;
 bool g_svgaII_active = false;
+bool g_HasKernelStarted = false;
 
 void ParseMultibootInfo(uint32_t info) {
     g_multiboot_info_addr = info;
@@ -808,6 +809,8 @@ void KernelMainHigherHalf(void) {
 	ClearScreen();
     Unsnooze();
 #endif
+
+    g_HasKernelStarted = true;
 
     sti();
 

@@ -129,6 +129,7 @@ typedef struct SchedulerNode {
 } MLFQSchedulerNode;
 
 typedef struct {
+    char * name;
     uint32_t pid;
     ProcessState state;
     void* stack;
@@ -208,7 +209,7 @@ typedef struct {
 
 // Core process functions
 int MLFQSchedInit(void);
-uint32_t MLFQCreateProcess(void (*entry_point)(void));
+uint32_t MLFQCreateProcess(const char * name, void (*entry_point)(void));
 MLFQProcessControlBlock* MLFQGetCurrentProcess(void);
 MLFQProcessControlBlock* MLFQGetCurrentProcessByPID(uint32_t pid);
 void MLFQCleanupTerminatedProcess(void);
