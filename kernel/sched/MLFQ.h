@@ -129,7 +129,7 @@ typedef struct SchedulerNode {
 } MLFQSchedulerNode;
 
 typedef struct {
-    char * name;
+    char name[64];
     uint32_t pid;
     ProcessState state;
     void* stack;

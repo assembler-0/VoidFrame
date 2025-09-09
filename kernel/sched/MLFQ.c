@@ -1095,7 +1095,7 @@ static __attribute__((visibility("hidden"))) uint32_t CreateSecureProcess(const 
     }
 
     // Initialize process with enhanced security and scheduling data
-    processes[slot].name = name;
+    FormatA(processes[slot].name, sizeof(processes[slot].name), "%s", name ? name : "proc");
     processes[slot].pid = new_pid;
     processes[slot].state = PROC_READY;
     processes[slot].stack = stack;
@@ -1721,7 +1721,7 @@ int MLFQSchedInit(void) {
     InitSchedulerNodePool();
     // Initialize idle process
     MLFQProcessControlBlock* idle_proc = &processes[0];
-    idle_proc->name = "Idle";
+    FormatA(idle_proc->name, sizeof(idle_proc->name), "Idle");
     idle_proc->pid = 0;
     idle_proc->state = PROC_RUNNING;
     idle_proc->privilege_level = PROC_PRIV_SYSTEM;

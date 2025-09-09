@@ -14,9 +14,10 @@
 static int ReadSector(uint32_t lba, void* buffer) {
     // ISO9660 sector size is 2048, but IDE reads in 512-byte sectors.
     // So, we need to read 4 IDE sectors to get one ISO sector.
+    // We assume that on emulated environments cdrom is mounted as IDE1 (primary slave)
     uint32_t start_lba = lba * 4;
     for (int i = 0; i < 4; i++) {
-        if (IdeReadSector(0, start_lba + i, (uint8_t*)buffer + (i * 512)) != 0) {
+        if (IdeReadSector(1, start_lba + i, (uint8_t*)buffer + (i * 512)) != 0) {
             return -1;
         }
     }
@@ -50,7 +51,7 @@ static Iso9660DirEntry* FindFileInDir(uint32_t dir_lba, uint32_t dir_size, const
                 name_len = sizeof(entry_filename) - 1;
             FastMemcpy(entry_filename, entry->file_id, name_len);
             entry_filename[name_len] = 0;
-
+            PrintKernelF("[ISO] Found entry: '%s' (looking for '%s')\n", entry_filename, filename);
             char* semicolon = FastStrChr(entry_filename, ';');
             if (semicolon) {
                 *semicolon = 0;
@@ -79,6 +80,7 @@ static Iso9660DirEntry* FindFileInDir(uint32_t dir_lba, uint32_t dir_size, const
 
 int Iso9660Read(const char* path, void* buffer, uint32_t max_size) {
     // Allocate a buffer for one sector
+    PrintKernelF("ISO9660: Reading '%s'\n", path);
     uint8_t* sector_buffer = KernelMemoryAlloc(ISO9660_SECTOR_SIZE);
     if (!sector_buffer) {
         PrintKernelError("Out of memory\n");
@@ -90,6 +92,7 @@ int Iso9660Read(const char* path, void* buffer, uint32_t max_size) {
     for (uint32_t lba = 16; lba < 32; lba++) {
         if (ReadSector(lba, sector_buffer) != 0) {
             KernelFree(sector_buffer);
+            PrintKernelError("Failed to read sector\n");
             return -1; // Failed to read sector
         }
         Iso9660Pvd* cand = (Iso9660Pvd*)sector_buffer;
@@ -131,6 +134,7 @@ int Iso9660Read(const char* path, void* buffer, uint32_t max_size) {
     if (FastStrCmp(path, "/") == 0) {
         KernelFree(path_copy);
         KernelFree(pvd);
+        PrintKernelError("Nothing to read\n");
         return 0; // Not an error, but nothing to read
     }
 
@@ -154,6 +158,7 @@ int Iso9660Read(const char* path, void* buffer, uint32_t max_size) {
         if (!current_entry) {
             KernelFree(path_copy);
             KernelFree(pvd);
+            PrintKernelError("Path not found\n");
             return -1; // Path not found
         }
 
@@ -171,6 +176,7 @@ int Iso9660Read(const char* path, void* buffer, uint32_t max_size) {
 
     if (!current_entry) {
         KernelFree(pvd);
+        PrintKernelError("This should not happen\n");
         return -1; // Should not happen
     }
 
@@ -180,8 +186,11 @@ int Iso9660Read(const char* path, void* buffer, uint32_t max_size) {
             KernelFree(current_entry);
         }
         KernelFree(pvd);
+        PrintKernelError("Path is a directory\n");
         return -1;
     }
+    PrintKernelF("[ISO] Found file: data_length_le=%u, extent_loc_le=%u\n",
+             current_entry->data_length_le, current_entry->extent_loc_le);
     // Read the file data
     const uint32_t file_size = current_entry->data_length_le;
     const uint32_t file_lba  = current_entry->extent_loc_le;
