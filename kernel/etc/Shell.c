@@ -3,7 +3,6 @@
 #include "realtek/RTL8139.h"
 #include "Cerberus.h"
 #include "Console.h"
-#include "ELFloader.h"
 #include "Editor.h"
 #include "Format.h"
 #include "FsUtils.h"
@@ -30,6 +29,7 @@
 #include "sound/Generic.h"
 #include "stdlib.h"
 #include "xHCI/xHCI.h"
+#include "ExecLoader.h"
 
 #define DATE __DATE__
 #define TIME __TIME__
@@ -207,7 +207,7 @@ static const HelpEntry hw_cmds[] = {
 };
 
 static const HelpEntry dev_cmds[] = {
-    {"elfload <path>", "Load ELF executable"},
+    {"execve <path>", "Load ELF executable"},
     {"alloc <size>", "Allocate memory"},
     {"panic <msg>", "Trigger panic"},
     {"vmemfreelist", "Show VMem free list"},
@@ -628,20 +628,20 @@ static void FileSizeHandler(const char * args) {
     }
 }
 
-static void ElfloadHandler(const char * args) {
+static void execveHandler(const char * args) {
     char* name = GetArg(args, 1);
     if (name) {
         char full_path[256];
         ResolvePath(name, full_path, 256);
 
-        const ElfLoadOptions opts = {
+        const ExecLoadOptions opts = {
             .privilege_level = PROC_PRIV_USER,
             .security_flags = 0,
             .max_memory = 16 * 1024 * 1024,
             .process_name = full_path
         };
 
-        uint32_t pid = CreateProcessFromElf(full_path, &opts);
+        uint32_t pid = LoadExecutable(full_path, &opts);
         if (pid != 0) {
             PrintKernelSuccess("ELF Executable loaded (PID: ");
             PrintKernelInt(pid);
@@ -651,7 +651,7 @@ static void ElfloadHandler(const char * args) {
         }
         KernelFree(name);
     } else {
-        PrintKernel("Usage: elfload <path>\n");
+        PrintKernel("Usage: execve <path>\n");
         KernelFree(name);
     }
 }
@@ -1142,7 +1142,7 @@ static const ShellCommand commands[] = {
     {"lsusb", LsUSBHandler},
     {"lsisa", LsISAHandler},
     {"arptest", ARPTestHandler},
-    {"elfload", ElfloadHandler},
+    {"execve", execveHandler},
     {"vmemfreelist", VmemFreeListHandler},
     {"clear", ClearHandler},
     {"cd", CdHandler},
@@ -1179,13 +1179,13 @@ void ExecuteCommand(const char* cmd) {
     for (size_t i = 0; i < (sizeof(commands) / sizeof(ShellCommand)); i++) {
         if (VfsIsFile(FormatS("%s/%s", DataDir, cmd_name))) {
             const char* full = FormatS("%s/%s", DataDir, cmd_name);
-            const ElfLoadOptions opts = {
+            const ExecLoadOptions opts = {
                 .privilege_level = PROC_PRIV_USER,
                 .security_flags = 0,
                 .max_memory = 16 * 1024 * 1024,
                 .process_name = full
             };
-            const uint32_t pid = CreateProcessFromElf(full, &opts);
+            const uint32_t pid = LoadExecutable(full, &opts);
             if (pid != 0) {
                 PrintKernelSuccess("ELF Executable loaded (PID: ");
                 PrintKernelInt(pid);

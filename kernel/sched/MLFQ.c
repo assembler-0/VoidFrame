@@ -1811,7 +1811,7 @@ void VFCompositorRequestInit(const char * str) {
         cached_vfc_pid = 0;
     }
     PrintKernel("System: Creating VFCompositor...\n");
-    uint32_t vfc_pid = CreateSecureProcess("VFCompositor", VFCompositor, PROC_PRIV_SYSTEM, PROC_FLAG_CORE);
+    uint32_t vfc_pid = CreateSecureProcess("VFCompositor", VFCompositor, PROC_PRIV_USER, 0);
     if (!vfc_pid) {
 #ifndef VF_CONFIG_PANIC_OVERRIDE
         PANIC("CRITICAL: Failed to create VFCompositor process");

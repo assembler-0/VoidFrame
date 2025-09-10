@@ -121,6 +121,10 @@ uint32_t CreateProcessFromElf(const char* filename, const ElfLoadOptions* option
 
     // Security check: Only system processes can create system processes
     MLFQProcessControlBlock* creator = MLFQGetCurrentProcess();
+    if (!creator) {
+        PrintKernelError("ELF: No current process\n");
+        return 0;
+    }
     if (options->privilege_level == PROC_PRIV_SYSTEM &&
         creator->privilege_level != PROC_PRIV_SYSTEM) {
         PrintKernelError("ELF: Unauthorized attempt to create system sched\n");
@@ -149,8 +153,8 @@ uint32_t CreateProcessFromElf(const char* filename, const ElfLoadOptions* option
 
     // 3. Read ELF file from VFS
     int bytes_read = VfsReadFile(filename, (char*)elf_data, file_size);
-    if (bytes_read <= 0) {
-        PrintKernelError("ELF: Failed to read file completely\n");
+    if (bytes_read <= 0 || (uint64_t)bytes_read != file_size) {
+        PrintKernelError("ELF: Failed to read file completely (or incomplete read)\n");
         VMemFreeWithGuards(elf_data, file_size);
         return 0;
     }

@@ -754,6 +754,8 @@ static InitResultT PXS2(void) {
     if (SVGAII_DetectAndInitialize()) {
         g_svgaII_active = true;
         PrintKernelSuccess("System: VMware SVGA II driver initialized\n");
+    } else {
+        PrintKernelWarning("VMware SVGA II driver not detected\n");
     }
 #endif
 
