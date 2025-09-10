@@ -41,19 +41,16 @@ static uint32_t find_priority_message(MessageQueue* queue, IpcPriority min_prior
 
 IpcResult IpcSendMessage(uint32_t target_pid, const IpcMessage* msg) {
     if (!msg) return IPC_ERROR_INVALID_MSG;
-
     MLFQProcessControlBlock* target = MLFQGetCurrentProcessByPID(target_pid);
     if (!target) return IPC_ERROR_NO_PROCESS;
-
     MessageQueue* queue = &target->ipc_queue;
     SpinLock(&queue->lock);
-    
+    IpcMessage* dest = NULL;
     if (queue->count >= MAX_MESSAGES) {
         // Try to drop lowest priority message if this is higher priority
         if (msg->priority > IPC_PRIORITY_LOW) {
             uint32_t drop_idx = queue->head;
             IpcPriority lowest = IPC_PRIORITY_URGENT;
-            
             for (uint32_t i = 0; i < queue->count; i++) {
                 uint32_t idx = (queue->head + i) % MAX_MESSAGES;
                 if (queue->messages[idx].priority < lowest) {
@@ -61,13 +58,9 @@ IpcResult IpcSendMessage(uint32_t target_pid, const IpcMessage* msg) {
                     drop_idx = idx;
                 }
             }
-            
             if (msg->priority > lowest) {
-                // Move message to replace dropped one
-                if (drop_idx != queue->tail) {
-                    FastMemcpy(&queue->messages[drop_idx], 
-                              &queue->messages[queue->tail], sizeof(IpcMessage));
-                }
+                // Overwrite the dropped entry in‐place
+                dest = &queue->messages[drop_idx];
                 queue->dropped_count++;
             } else {
                 SpinUnlock(&queue->lock);
@@ -78,40 +71,39 @@ IpcResult IpcSendMessage(uint32_t target_pid, const IpcMessage* msg) {
             return IPC_ERROR_QUEUE_FULL;
         }
     } else {
+        // Normal enqueue when there's room
+        dest = &queue->messages[queue->tail];
+        queue->tail = (queue->tail + 1) % MAX_MESSAGES;
         queue->count++;
     }
-    
-    IpcMessage* dest = &queue->messages[queue->tail];
     FastMemcpy(dest, msg, sizeof(IpcMessage));
-    dest->timestamp = MLFQGetSystemTicks();
+    dest->timestamp   = MLFQGetSystemTicks();
     dest->sequence_id = get_next_sequence_id();
-    
-    queue->tail = (queue->tail + 1) % MAX_MESSAGES;
-    update_priority_bitmap(queue, msg->priority);
-    
-    SpinUnlock(&queue->lock);
-    
-    // Wake up target if blocked
+    // Recompute the priority bitmap so it's accurate after any replacement
+    queue->priority_bitmap = 0;
+    for (uint32_t i = 0; i < queue->count; i++) {
+        uint32_t idx = (queue->head + i) % MAX_MESSAGES;
+        update_priority_bitmap(queue, queue->messages[idx].priority);
+    }
+    // Wake up the target under the same lock to avoid missed wakeups
     if (target->state == PROC_BLOCKED) {
         target->state = PROC_READY;
     }
-    
+    SpinUnlock(&queue->lock);
     return IPC_SUCCESS;
 }
 
 IpcResult IpcReceiveMessage(IpcMessage* msg_buffer) {
     if (!msg_buffer) return IPC_ERROR_INVALID_MSG;
-
     MLFQProcessControlBlock* current = MLFQGetCurrentProcess();
     MessageQueue* queue = &current->ipc_queue;
-
     while (true) {
         SpinLock(&queue->lock);
-        
+
         if (queue->count > 0) {
             uint32_t msg_idx = find_priority_message(queue, IPC_PRIORITY_LOW);
             FastMemcpy(msg_buffer, &queue->messages[msg_idx], sizeof(IpcMessage));
-            
+
             // Remove message by shifting if not at head
             if (msg_idx != queue->head) {
                 for (uint32_t i = msg_idx; i != queue->head; ) {
@@ -120,10 +112,10 @@ IpcResult IpcReceiveMessage(IpcMessage* msg_buffer) {
                     i = prev;
                 }
             }
-            
+
             queue->head = (queue->head + 1) % MAX_MESSAGES;
             queue->count--;
-            
+
             // Update priority bitmap
             if (queue->count == 0) {
                 queue->priority_bitmap = 0;
@@ -134,49 +126,54 @@ IpcResult IpcReceiveMessage(IpcMessage* msg_buffer) {
                     update_priority_bitmap(queue, queue->messages[idx].priority);
                 }
             }
-            
+
             SpinUnlock(&queue->lock);
             return IPC_SUCCESS;
         }
-        
-        SpinUnlock(&queue->lock);
+
         current->state = PROC_BLOCKED;
+        SpinUnlock(&queue->lock);
         MLFQYield();
     }
 }
 
 IpcResult IpcReceiveMessageType(IpcMessage* msg_buffer, IpcMessageType type) {
     if (!msg_buffer) return IPC_ERROR_INVALID_MSG;
-
     MLFQProcessControlBlock* current = MLFQGetCurrentProcess();
     MessageQueue* queue = &current->ipc_queue;
-
     while (true) {
         SpinLock(&queue->lock);
-        
+
         // Look for message of specific type
         for (uint32_t i = 0; i < queue->count; i++) {
             uint32_t idx = (queue->head + i) % MAX_MESSAGES;
             if (queue->messages[idx].type == type) {
                 FastMemcpy(msg_buffer, &queue->messages[idx], sizeof(IpcMessage));
-                
+
                 // Shift messages to fill gap
                 for (uint32_t j = i; j > 0; j--) {
                     uint32_t curr = (queue->head + j) % MAX_MESSAGES;
                     uint32_t prev = (queue->head + j - 1) % MAX_MESSAGES;
                     FastMemcpy(&queue->messages[curr], &queue->messages[prev], sizeof(IpcMessage));
                 }
-                
+
                 queue->head = (queue->head + 1) % MAX_MESSAGES;
                 queue->count--;
-                
+
+                // Recompute priority bitmap
+                queue->priority_bitmap = 0;
+                for (uint32_t k = 0; k < queue->count; k++) {
+                    uint32_t idx2 = (queue->head + k) % MAX_MESSAGES;
+                    update_priority_bitmap(queue, queue->messages[idx2].priority);
+                }
                 SpinUnlock(&queue->lock);
                 return IPC_SUCCESS;
             }
         }
-        
-        SpinUnlock(&queue->lock);
+
+        // Mark blocked while still holding the lock to avoid a wakeup‐before‐block race
         current->state = PROC_BLOCKED;
+        SpinUnlock(&queue->lock);
         MLFQYield();
     }
 }

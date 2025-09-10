@@ -74,13 +74,13 @@ typedef enum {
 // Core IPC functions
 IpcResult IpcSendMessage(uint32_t target_pid, const IpcMessage* msg);
 IpcResult IpcReceiveMessage(IpcMessage* msg_buffer);
-IpcResult IpcReceiveMessageTimeout(IpcMessage* msg_buffer, uint64_t timeout_ticks);
+// IpcResult IpcReceiveMessageTimeout(IpcMessage* msg_buffer, uint64_t timeout_ticks);
 IpcResult IpcReceiveMessageType(IpcMessage* msg_buffer, IpcMessageType type);
 
 // Advanced IPC functions
 IpcResult IpcSendRequest(uint32_t target_pid, const void* request_data, uint64_t size, uint32_t* request_id);
 IpcResult IpcSendResponse(uint32_t target_pid, uint32_t request_id, const void* response_data, uint64_t size, int32_t status);
-IpcResult IpcBroadcast(const IpcMessage* msg, uint32_t* target_pids, uint32_t count);
+// IpcResult IpcBroadcast(const IpcMessage* msg, uint32_t* target_pids, uint32_t count);
 
 // Utility functions
 uint32_t IpcGetQueueCount(void);
