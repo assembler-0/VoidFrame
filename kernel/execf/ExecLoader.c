@@ -29,7 +29,14 @@ uint32_t LoadExecutable(const char* filename, const ExecLoadOptions* options) {
         PrintKernelError("EXEC: NULL filename\n");
         return 0;
     }
-
+    // Universal privilege enforcement
+    if (options && options->privilege_level == PROC_PRIV_SYSTEM) {
+        MLFQProcessControlBlock* creator = MLFQGetCurrentProcess();
+        if (!creator || creator->privilege_level != PROC_PRIV_SYSTEM) {
+            PrintKernelError("EXEC: Unauthorized privilege request\n");
+            return 0;
+        }
+    }
     // Read first few bytes to detect format
     uint8_t header[64];
     int bytes_read = VfsReadFile(filename, (char*)header, sizeof(header));

@@ -207,7 +207,7 @@ static const HelpEntry hw_cmds[] = {
 };
 
 static const HelpEntry dev_cmds[] = {
-    {"execve <path>", "Load ELF executable"},
+    {"execve <path>", "Load executable (ELF/PE32+)"},
     {"alloc <size>", "Allocate memory"},
     {"panic <msg>", "Trigger panic"},
     {"vmemfreelist", "Show VMem free list"},

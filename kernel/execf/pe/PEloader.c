@@ -25,8 +25,9 @@ static int ValidatePEHeader(const uint8_t* pe_data, uint64_t file_size) {
     }
 
     // Check PE header offset bounds
-    if (dos->e_lfanew >= file_size || 
-        dos->e_lfanew + sizeof(PEHeader) + sizeof(OptionalHeader) > file_size) {
+    const uint64_t peoff = (uint64_t)dos->e_lfanew;
+    const uint64_t need  = (uint64_t)sizeof(PEHeader) + (uint64_t)sizeof(OptionalHeader);
+    if (peoff > file_size || peoff + need > file_size) {
         PrintKernelError("PE: PE header out of bounds\n");
         return 0;
     }
@@ -114,6 +115,11 @@ uint32_t CreateProcessFromPE(const char* filename, const PELoadOptions* options)
         PrintKernelError("PE: No current process\n");
         return 0;
     }
+    if (options->privilege_level == PROC_PRIV_SYSTEM &&
+        creator->privilege_level != PROC_PRIV_SYSTEM) {
+        PrintKernelError("PE: Unauthorized attempt to create system process\n");
+        return 0;
+    }
 
     PrintKernelSuccess("PE: Loading executable: ");
     PrintKernel(filename);
@@ -199,6 +205,12 @@ uint32_t CreateProcessFromPE(const char* filename, const PELoadOptions* options)
     }
 
     // Calculate entry point
+    if (opt->entry_point >= image_size) {
+        PrintKernelError("PE: Entry point outside image\n");
+        VMemFreeWithGuards(process_memory, image_size);
+        VMemFreeWithGuards(pe_data, file_size);
+        return 0;
+    }
     void* entry_point = (uint8_t*)process_memory + opt->entry_point;
 
     // Create process

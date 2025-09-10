@@ -5,7 +5,7 @@
 #include "stdint.h"
 
 // DOS Header (first 64 bytes of PE file)
-typedef struct {
+typedef struct __attribute__((packed))  {
     uint16_t e_magic;      // "MZ"
     uint16_t e_cblp;       // Bytes on last page
     uint16_t e_cp;         // Pages in file
@@ -28,7 +28,7 @@ typedef struct {
 } DOSHeader;
 
 // PE Header
-typedef struct {
+typedef struct __attribute__((packed))  {
     uint32_t signature;    // "PE\0\0"
     uint16_t machine;      // Target machine
     uint16_t sections;     // Number of sections
@@ -40,7 +40,7 @@ typedef struct {
 } PEHeader;
 
 // Optional Header (PE32+)
-typedef struct {
+typedef struct __attribute__((packed))  {
     uint16_t magic;           // PE32+ magic (0x20b)
     uint8_t  major_linker;    // Linker version
     uint8_t  minor_linker;
@@ -73,7 +73,7 @@ typedef struct {
 } OptionalHeader;
 
 // Section Header
-typedef struct {
+typedef struct __attribute__((packed))  {
     char     name[8];         // Section name
     uint32_t virtual_size;    // Virtual size
     uint32_t virtual_addr;    // Virtual address (RVA)
@@ -85,6 +85,8 @@ typedef struct {
     uint16_t num_line_nums;   // Number of line numbers
     uint32_t characteristics; // Section characteristics
 } SectionHeader;
+
+_Static_assert(sizeof(DOSHeader) == 64, "DOSHeader size mismatch");
 
 // Constants
 #define DOS_MAGIC       0x5A4D  // "MZ"
@@ -102,7 +104,7 @@ typedef struct {
 #define IMAGE_SCN_MEM_WRITE         0x80000000
 
 // Load options (similar to ELF)
-typedef struct {
+typedef struct __attribute__((packed))  {
     uint8_t privilege_level;
     uint32_t security_flags;
     uint64_t max_memory;
