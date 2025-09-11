@@ -50,7 +50,7 @@ uint32_t LoadExecutable(const char* filename, const ExecLoadOptions* options) {
     switch (format) {
         case EXEC_FORMAT_ELF64: {
             ElfLoadOptions elf_opts = {
-                .privilege_level = options ? options->privilege_level : PROC_PRIV_USER,
+                .privilege_level = options ? options->privilege_level : PROC_PRIV_NORM,
                 .security_flags = options ? options->security_flags : 0,
                 .max_memory = options ? options->max_memory : (16 * 1024 * 1024),
                 .process_name = options ? options->process_name : filename
@@ -60,7 +60,7 @@ uint32_t LoadExecutable(const char* filename, const ExecLoadOptions* options) {
         
         case EXEC_FORMAT_PE32PLUS: {
             PELoadOptions pe_opts = {
-                .privilege_level = options ? options->privilege_level : PROC_PRIV_USER,
+                .privilege_level = options ? options->privilege_level : PROC_PRIV_NORM,
                 .security_flags = options ? options->security_flags : 0,
                 .max_memory = options ? options->max_memory : (16 * 1024 * 1024),
                 .process_name = options ? options->process_name : filename

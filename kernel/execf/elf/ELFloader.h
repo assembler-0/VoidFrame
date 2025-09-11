@@ -64,7 +64,7 @@ typedef struct {
 
 // Enhanced API
 typedef struct {
-    uint8_t privilege_level;    // PROC_PRIV_USER or PROC_PRIV_SYSTEM
+    uint8_t privilege_level;    // PROC_PRIV_NORM or PROC_PRIV_SYSTEM
     uint32_t security_flags;    // Additional security flags
     uint64_t max_memory;        // Memory limit for sched
     const char* process_name;   // Optional sched name for debugging

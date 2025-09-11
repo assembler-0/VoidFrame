@@ -71,7 +71,9 @@ asmlinkage void InterruptHandler(Registers* regs) {
 
             // Print detailed information
             PrintDetailedFaultInfo(&ctx, regs);
-            delay(100000000);
+            RegistersDumpT dump = {0};
+            DumpRegisters(&dump);
+            PrintRegisters(&dump);
             // Still panic, but now with much more info
             PanicFromInterrupt(ctx.fault_reason, regs);
             break;

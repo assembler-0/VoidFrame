@@ -26,6 +26,7 @@
 #define offsetof(type, member) ((uint64_t)&(((type*)0)->member))
 
 // Security flags
+#define PROC_FLAG_NONE          0U
 #define PROC_FLAG_IMMUNE        (1U << 0)
 #define PROC_FLAG_CRITICAL      (1U << 1)
 #define PROC_FLAG_SUPERVISOR    (1U << 3)
@@ -1170,7 +1171,7 @@ static __attribute__((visibility("hidden"))) uint32_t CreateSecureProcess(const 
 }
 
 uint32_t MLFQCreateProcess(const char * name, void (*entry_point)(void)) {
-    return CreateSecureProcess(name, entry_point, PROC_PRIV_USER, 0);
+    return CreateSecureProcess(name, entry_point, PROC_PRIV_NORM, PROC_FLAG_NONE);
 }
 
 void MLFQCleanupTerminatedProcess(void) {
@@ -1811,7 +1812,7 @@ void VFCompositorRequestInit(const char * str) {
         cached_vfc_pid = 0;
     }
     PrintKernel("System: Creating VFCompositor...\n");
-    uint32_t vfc_pid = CreateSecureProcess("VFCompositor", VFCompositor, PROC_PRIV_USER, 0);
+    uint32_t vfc_pid = CreateSecureProcess("VFCompositor", VFCompositor, PROC_PRIV_NORM, 0);
     if (!vfc_pid) {
 #ifndef VF_CONFIG_PANIC_OVERRIDE
         PANIC("CRITICAL: Failed to create VFCompositor process");

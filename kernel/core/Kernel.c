@@ -803,7 +803,7 @@ void KernelMainHigherHalf(void) {
 
     // Initialize core systems
     PXS2();
-
+    PrintKernelF("PCB size: %d\n", sizeof(MLFQProcessControlBlock));
     PrintKernelSuccess("System: Kernel initialization complete\n");
     PrintKernelSuccess("System: Initializing interrupts...\n");
 

@@ -203,7 +203,7 @@ typedef struct {
 | `context`              | Stores the CPU register state (`rip`, `rsp`, etc.) when the process is not running. This is crucial for context switching. |
 | `priority`             | The process's current priority level in the scheduler. This value can change dynamically.                                  |
 | `base_priority`        | The initial priority assigned at creation, used to reset a process's priority.                                             |
-| `privilege_level`      | The security privilege level (`PROC_PRIV_SYSTEM` or `PROC_PRIV_USER`).                                                     |
+| `privilege_level`      | The security privilege level (`PROC_PRIV_SYSTEM` or `PROC_PRIV_NORM`).                                                     |
 | `token`                | A `SecurityToken` structure used by the Astra security system to verify the process's integrity.                           |
 | `scheduler_node`       | A pointer to the node that links this PCB into the scheduler's priority queues.                                            |
 | `cpu_time_accumulated` | Total system ticks this process has spent running on the CPU.                                                              |

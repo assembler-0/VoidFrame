@@ -86,8 +86,8 @@
 #define FAIRNESS_BOOST_ACTUAL_INTERVAL (FAIRNESS_BOOST_INTERVAL * FAIRNESS_BOOST_MULTIPLIER)
 #define LOAD_BALANCE_ACTUAL_THRESHOLD (LOAD_BALANCE_THRESHOLD * LOAD_BALANCE_MULTIPLIER)
 
-#define PROC_PRIV_SYSTEM     0   // Highest privilege (kernel services)
-#define PROC_PRIV_USER       1   // User processes
+#define PROC_PRIV_SYSTEM     0  // Highest privilege (kernel services)
+#define PROC_PRIV_NORM       1  // Normal processes
 #define PROC_PRIV_RESTRICTED 2  // Restricted processes
 
 // =============================================================================

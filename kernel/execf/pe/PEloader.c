@@ -99,7 +99,7 @@ uint32_t CreateProcessFromPE(const char* filename, const PELoadOptions* options)
 
     // Default options
     PELoadOptions default_opts = {
-        .privilege_level = PROC_PRIV_USER,
+        .privilege_level = PROC_PRIV_NORM,
         .security_flags = 0,
         .max_memory = DEFAULT_PROCESS_MEMORY_LIMIT,
         .process_name = filename

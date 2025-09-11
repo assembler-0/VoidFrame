@@ -212,6 +212,7 @@ static const HelpEntry dev_cmds[] = {
     {"panic <msg>", "Trigger panic"},
     {"vmemfreelist", "Show VMem free list"},
     {"heapvallvl <0/1/2>", "Set heap validation level"},
+    {"regdump", "Dump CPU registers"},
     {"fstest", "Run filesystem tests"},
     {"arptest", "Perform ARP test"},
     {"setup", "Copy system files"},
@@ -367,7 +368,9 @@ static void PanicHandler(const char * args) {
     FaultContext ctx = {0};
     ctx.fault_reason = str;
     PrintDetailedFaultInfo(&ctx, regs);
-    delay(10000000);
+    RegistersDumpT dump = {0};
+    DumpRegisters(&dump);
+    PrintRegisters(&dump);
     PanicFromInterrupt(ctx.fault_reason, regs);
 }
 
@@ -635,7 +638,7 @@ static void execveHandler(const char * args) {
         ResolvePath(name, full_path, 256);
 
         const ExecLoadOptions opts = {
-            .privilege_level = PROC_PRIV_USER,
+            .privilege_level = PROC_PRIV_NORM,
             .security_flags = 0,
             .max_memory = 16 * 1024 * 1024,
             .process_name = full_path
@@ -1124,6 +1127,15 @@ static void PcBeepHandler(const char * args) {
     KernelFree(size_str);
 }
 
+static void RegDumpHandler(const char * args) {
+    (void)args;
+    PrintKernel("Info: Dumping registers...\n");
+    RegistersDumpT dump = {0};
+    DumpRegisters(&dump);
+    PrintRegisters(&dump);
+    PrintKernelSuccess("Registers dumped.\n");
+}
+
 static const ShellCommand commands[] = {
     {"help", HelpHandler},
     {"ps", PSHandler},
@@ -1171,6 +1183,7 @@ static const ShellCommand commands[] = {
     {"setup", CloneSystemFiles},
     {"pcbeep", PcBeepHandler},
     {"6502", Entry6502},
+    {"regdump", RegDumpHandler},
 };
 
 void ExecuteCommand(const char* cmd) {
@@ -1180,7 +1193,7 @@ void ExecuteCommand(const char* cmd) {
         if (VfsIsFile(FormatS("%s/%s", DataDir, cmd_name))) {
             const char* full = FormatS("%s/%s", DataDir, cmd_name);
             const ExecLoadOptions opts = {
-                .privilege_level = PROC_PRIV_USER,
+                .privilege_level = PROC_PRIV_NORM,
                 .security_flags = 0,
                 .max_memory = 16 * 1024 * 1024,
                 .process_name = full

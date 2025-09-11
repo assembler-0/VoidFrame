@@ -2,7 +2,7 @@
 #define CPU_H
 
 #include "stdint.h"
-#include <stdbool.h> // For bool type
+#include "stdbool.h"
 
 typedef struct {
     bool sse;
@@ -23,6 +23,28 @@ typedef struct Registers {
     uint64_t rsp, ss;
 } __attribute__((packed)) Registers;
 
+typedef struct {
+    // General purpose registers
+    uint64_t rax, rbx, rcx, rdx;
+    uint64_t rsi, rdi, rbp, rsp;
+    uint64_t r8, r9, r10, r11, r12, r13, r14, r15;
+    uint64_t rip, rflags;
+
+    // Segment registers
+    uint16_t cs, ds, es, fs, gs, ss;
+
+    // Control registers
+    uint64_t cr0, cr2, cr3, cr4;
+    uint64_t cr8;  // Only in 64-bit mode
+
+    // Debug registers
+    uint64_t dr0, dr1, dr2, dr3, dr6, dr7;
+
+    // MSRs (selected important ones)
+    uint64_t efer, star, lstar, cstar, sfmask;
+    uint64_t fs_base, gs_base, kernel_gs_base;
+} RegistersDumpT;
+
 void CpuInit(void);
 CpuFeatures* GetCpuFeatures(void);
 
@@ -35,5 +57,8 @@ static inline uint64_t __attribute__((always_inline)) rdtsc(void) {
 static inline void __attribute__((always_inline)) delay(uint64_t cycles) {
     while (cycles--) __asm__ volatile ("nop");
 }
+
+void DumpRegisters(RegistersDumpT* dump);
+void PrintRegisters(const RegistersDumpT* dump);
 
 #endif // CPU_H
