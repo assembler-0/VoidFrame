@@ -4,6 +4,7 @@
 #include "VFS.h"
 #include "elf/ELFloader.h"
 #include "pe/PEloader.h"
+#include "aout/AoutLoader.h"
 
 ExecFormat DetectExecutableFormat(const uint8_t* data, uint64_t size) {
     if (!data || size < 4) {
@@ -19,6 +20,14 @@ ExecFormat DetectExecutableFormat(const uint8_t* data, uint64_t size) {
     // Check PE magic (DOS header)
     if (size >= 2 && data[0] == 'M' && data[1] == 'Z') {
         return EXEC_FORMAT_PE32PLUS;
+    }
+
+    // Check a.out magic
+    if (size >= 4) {
+        uint32_t magic = *(uint32_t*)data;
+        if (magic == 0407 || magic == 0410 || magic == 0413 || magic == 0314) {
+            return EXEC_FORMAT_AOUT;
+        }
     }
 
     return EXEC_FORMAT_UNKNOWN;
@@ -66,6 +75,16 @@ uint32_t LoadExecutable(const char* filename, const ExecLoadOptions* options) {
                 .process_name = options ? options->process_name : filename
             };
             return CreateProcessFromPE(filename, &pe_opts);
+        }
+        
+        case EXEC_FORMAT_AOUT: {
+            AoutLoadOptions aout_opts = {
+                .privilege_level = options ? options->privilege_level : PROC_PRIV_NORM,
+                .security_flags = options ? options->security_flags : 0,
+                .max_memory = options ? options->max_memory : (8 * 1024 * 1024),
+                .process_name = options ? options->process_name : filename
+            };
+            return CreateProcessFromAout(filename, &aout_opts);
         }
         
         default:

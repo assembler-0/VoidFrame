@@ -103,7 +103,7 @@ ninja runmin
 - [x] Builtin Editor
 - [x] ELF64 loader
 - [x] PE32+/COFF loader
-- [ ] a.out loader
+- [x] a.out loader
 ### Filesystems
 - FAT1x
     - [x] Read

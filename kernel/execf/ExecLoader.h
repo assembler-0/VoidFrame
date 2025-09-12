@@ -16,7 +16,8 @@ typedef struct {
 typedef enum {
     EXEC_FORMAT_UNKNOWN = 0,
     EXEC_FORMAT_ELF64,
-    EXEC_FORMAT_PE32PLUS
+    EXEC_FORMAT_PE32PLUS,
+    EXEC_FORMAT_AOUT
 } ExecFormat;
 
 // Main API

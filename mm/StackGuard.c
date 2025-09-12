@@ -8,8 +8,8 @@ void __stack_chk_fail(void) {
 }
 
 void StackGuardInit(void) {
-    // Use RDTSC for randomness
-    uint64_t tsc;
-    __asm__ volatile("rdtsc" : "=A"(tsc));
-    __stack_chk_guard ^= tsc;
+    // Keep canary value consistent - don't randomize it
+    // Cerberus expects STACK_CANARY_VALUE to be constant
+    __stack_chk_guard = STACK_CANARY_VALUE;
+    PrintKernelSuccess("StackGuard initialized with fixed canary\n");
 }

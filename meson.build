@@ -70,6 +70,7 @@ inc_dirs = [
     src_root + '/kernel/execf',
     src_root + '/kernel/execf/elf',
     src_root + '/kernel/execf/pe',
+    src_root + '/kernel/execf/aout',
     src_root + '/kernel/graphics',
     src_root + '/drivers',
     src_root + '/drivers/PCI',
@@ -123,6 +124,7 @@ c_sources = [
     src_root + '/kernel/ipc/Ipc.c',
     src_root + '/kernel/execf/elf/ELFloader.c',
     src_root + '/kernel/execf/pe/PEloader.c',
+    src_root + '/kernel/execf/aout/AoutLoader.c',
     src_root + '/kernel/execf/ExecLoader.c',
     src_root + '/mm/PMem.c',
     src_root + '/mm/MemOps.c',
@@ -196,9 +198,9 @@ vf_config_flags =  [
     '-DVF_CONFIG_USE_CERBERUS',
 #    '-DVF_CONFIG_CERBERUS_VFS_LOGGING',
     '-DVF_CONFIG_CERBERUS_THREAT_REPORTING',
-#    '-DVF_CONFIG_CERBERUS_STACK_PROTECTION',
+    '-DVF_CONFIG_CERBERUS_STACK_PROTECTION',
     '-DVF_CONFIG_SCHED_MLFQ',
-    '-DVF_CONFIG_PROCINFO_AUTO_CLEANUP',
+#    '-DVF_CONFIG_PROCINFO_AUTO_CLEANUP',
     #'-DVF_CONFIG_PANIC_OVERRIDE',
 ]
 

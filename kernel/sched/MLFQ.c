@@ -1222,11 +1222,9 @@ void MLFQCleanupTerminatedProcess(void) {
         PrintKernel("System: Process PID ");
         PrintKernelInt(pid_backup);
         PrintKernel(" cleaned up successfully (state now PROC_TERMINATED=0)\n");
-#ifdef VF_CONFIG_PROCINFO_AUTO_CLEANUP
         char cleanup_path[256];
         FormatA(cleanup_path, sizeof(cleanup_path), "%s/%d", RuntimeProcesses, pid_backup);
         VfsDelete(cleanup_path, true);
-#endif
     }
     SpinUnlockIrqRestore(&scheduler_lock, flags);
 }

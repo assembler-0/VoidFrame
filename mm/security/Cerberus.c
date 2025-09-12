@@ -129,28 +129,34 @@ void CerberusUnregisterProcess(uint32_t pid) {
 }
 
 int CerberusInstallStackCanary(uint32_t pid, uint64_t stack_top, uint64_t stack_size) {
-    if (!g_cerberus_state.is_initialized) return -1;
+    if (!g_cerberus_state.is_initialized || pid >= CERBERUS_MAX_PROCESSES) return -1;
+    if (stack_size < 0x2000) return -1; // Need at least 8KB
 
-    // CORRECTED: Calculate actual usable stack base
-    // VMemAllocStack returns stack_top, but usable stack starts at stack_top - stack_size
-    uint64_t actual_stack_base = stack_top - stack_size;
+    // Place canary near stack top (stacks grow down)
+    // Leave some space for initial stack usage
+    uint64_t canary_addr = stack_top - 0x100; // 256 bytes from top
 
-    // Place canary at the bottom of usable stack (just above guard page)
-    uint64_t canary_addr = actual_stack_base + sizeof(uint64_t);
+    PrintKernelF("[Cerberus] Installing canary: stack_top=0x%lx, size=0x%lx, canary=0x%lx\n",
+                    stack_top, stack_size, canary_addr);
 
-    PrintKernelF("[Cerberus] Installing canary: stack_top=0x%lx, base=0x%lx, canary=0x%lx\n",
-                    stack_top, actual_stack_base, canary_addr);
-
-    // Validate memory is accessible
+    // Validate memory is accessible and writable
     uint64_t phys_addr = VMemGetPhysAddr(canary_addr);
     if (phys_addr == 0) {
         PrintKernelWarningF("[Cerberus] Canary address not mapped: 0x%lx\n", canary_addr);
         return -1;
     }
 
-    // Install canary
-    uint64_t* canary_ptr = (uint64_t*)canary_addr;
-    *canary_ptr = STACK_CANARY_VALUE;
+    // Test write access safely
+    volatile uint64_t* test_ptr = (volatile uint64_t*)canary_addr;
+    uint64_t original = *test_ptr; // Read first
+    *test_ptr = 0x1234567890ABCDEF; // Test write
+    if (*test_ptr != 0x1234567890ABCDEF) {
+        PrintKernelWarningF("[Cerberus] Canary address not writable: 0x%lx\n", canary_addr);
+        return -1;
+    }
+
+    // Install actual canary
+    *test_ptr = STACK_CANARY_VALUE;
 
     // Record canary location
     CerberusProcessInfo* proc_info = &g_cerberus_state.process_info[pid];
@@ -166,8 +172,17 @@ int CerberusCheckStackCanary(uint32_t pid) {
     CerberusProcessInfo* proc_info = &g_cerberus_state.process_info[pid];
     if (!proc_info->is_monitored || !proc_info->stack_canary_addr) return 0;
 
-    uint64_t* canary_ptr = (uint64_t*)proc_info->stack_canary_addr;
-    if (*canary_ptr != STACK_CANARY_VALUE) {
+    // Validate canary address is still mapped
+    uint64_t phys_addr = VMemGetPhysAddr(proc_info->stack_canary_addr);
+    if (phys_addr == 0) {
+        PrintKernelWarningF("[Cerberus] Canary address unmapped for PID %d\n", pid);
+        return -1;
+    }
+
+    volatile uint64_t* canary_ptr = (volatile uint64_t*)proc_info->stack_canary_addr;
+    uint64_t canary_value = *canary_ptr;
+    
+    if (canary_value != STACK_CANARY_VALUE) {
         // Stack canary corrupted!
         CerberusViolationReport violation = {
             .violation_type = MEM_VIOLATION_CANARY_CORRUPT,
@@ -178,7 +193,7 @@ int CerberusCheckStackCanary(uint32_t pid) {
 
         FormatA(violation.description, sizeof(violation.description),
                "Stack canary corrupted: expected=0x%lx found=0x%lx",
-               STACK_CANARY_VALUE, *canary_ptr);
+               STACK_CANARY_VALUE, canary_value);
 
         CerberusLogViolation(&violation);
         proc_info->is_compromised = true;
