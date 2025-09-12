@@ -1,1 +1,2 @@
 option('exclude_extra_objects', type : 'boolean', value : false, description : 'Exclude extra objects from the build') # MASSIVE effect!
+option('automatic_post', type : 'boolean', value : false, description : 'Perform automatic power on self-test after kernel initialization')

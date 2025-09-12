@@ -31,15 +31,15 @@ jobs:
 
       - name: Compile & Link
         run: |
-            meson setup build
+            meson setup build -Dexclude_extra_objects=true -Dautomatic_post=true
             ninja -C build
 
       - name: Artifact Analysis
         run: |
-          timeout 10s ninja -C build runmin || true
+          timeout 30s ninja -C build runmin || true
           
           grep -q "1KCSWF23Z456789" build/bootstrap.log
-          ! grep -i "panic\|fault\|crash\|oops\|error" build/serial.log
+          ! grep -i "panic\|fault\|crash\|oops\|error\|failed" build/serial.log
           
           ls -la build/voidframe.krnl
           test -s build/voidframe.krnl

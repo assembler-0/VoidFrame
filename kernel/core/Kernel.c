@@ -803,7 +803,6 @@ void KernelMainHigherHalf(void) {
 
     // Initialize core systems
     PXS2();
-    PrintKernelF("PCB size: %d\n", sizeof(MLFQProcessControlBlock));
     PrintKernelSuccess("System: Kernel initialization complete\n");
     PrintKernelSuccess("System: Initializing interrupts...\n");
 
@@ -813,6 +812,10 @@ void KernelMainHigherHalf(void) {
 #endif
 
     g_HasKernelStarted = true;
+
+#ifdef VF_CONFIG_AUTOMATIC_POST
+    ExecuteCommand("post");
+#endif
 
     sti();
 

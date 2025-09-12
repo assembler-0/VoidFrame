@@ -19,6 +19,7 @@ mkfs_ext2 = find_program('mkfs.ext2')
 qemu_system_x86_64 = find_program('qemu-system-x86_64')
 
 exclude_extra_objects = get_option('exclude_extra_objects')
+automatic_post = get_option('automatic_post')
 
 # Source root
 src_root = './'
@@ -117,6 +118,7 @@ c_sources = [
     src_root + '/kernel/etc/VBEConsole.c',
     src_root + '/kernel/etc/Editor.c',
     src_root + '/kernel/etc/StringOps.c',
+    src_root + '/kernel/etc/POST.c',
     src_root + '/kernel/atomic/Atomics.c',
     src_root + '/kernel/ipc/Ipc.c',
     src_root + '/kernel/execf/elf/ELFloader.c',
@@ -204,6 +206,10 @@ if exclude_extra_objects
     vf_config_flags += ['-DVF_CONFIG_EXCLUDE_EXTRA_OBJECTS']
 endif
 
+if automatic_post
+    vf_config_flags += ['-DVF_CONFIG_AUTOMATIC_POST']
+endif
+
 cfg_flags = []
 foreach flag : vf_config_flags
     cfg_flags += flag
@@ -289,6 +295,7 @@ iso = custom_target('VoidFrame.iso',
 run_target('run',
            command : [qemu_system_x86_64.full_path(),
                       '-cpu', 'max',
+                      '-device', 'vmware-svga',
                       '-enable-kvm',
                       '-cdrom', 'VoidFrame.iso',
                       '-debugcon', 'file:bootstrap.log',

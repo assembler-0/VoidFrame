@@ -73,6 +73,12 @@ asmlinkage void InterruptHandler(Registers* regs) {
             PrintDetailedFaultInfo(&ctx, regs);
             RegistersDumpT dump = {0};
             DumpRegisters(&dump);
+            // Override with fault context where applicable
+            dump.rip    = regs->rip;
+            dump.cs     = regs->cs;
+            dump.rflags = regs->rflags;
+            dump.rsp    = regs->rsp;
+            dump.ss     = regs->ss;
             PrintRegisters(&dump);
             // Still panic, but now with much more info
             PanicFromInterrupt(ctx.fault_reason, regs);

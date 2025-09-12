@@ -30,6 +30,7 @@
 #include "stdlib.h"
 #include "xHCI/xHCI.h"
 #include "ExecLoader.h"
+#include "POST.h"
 
 #define DATE __DATE__
 #define TIME __TIME__
@@ -216,7 +217,8 @@ static const HelpEntry dev_cmds[] = {
     {"fstest", "Run filesystem tests"},
     {"arptest", "Perform ARP test"},
     {"setup", "Copy system files"},
-    {"isocp <iso> <vfs>", "Copy from ISO to VFS"}
+    {"isocp <iso> <vfs>", "Copy from ISO to VFS"},
+    {"post", "Perform POST"}
 };
 
 static const HelpCategory help_categories[] = {
@@ -1184,6 +1186,7 @@ static const ShellCommand commands[] = {
     {"pcbeep", PcBeepHandler},
     {"6502", Entry6502},
     {"regdump", RegDumpHandler},
+    {"post", POSTHandler},
 };
 
 void ExecuteCommand(const char* cmd) {
