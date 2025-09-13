@@ -1220,11 +1220,11 @@ void ExecuteCommand(const char* cmd) {
             };
             const uint32_t pid = LoadExecutable(full, &opts);
             if (pid != 0) {
-                PrintKernelSuccess("ELF Executable loaded (PID: ");
+                PrintKernelSuccess("Executable loaded (PID: ");
                 PrintKernelInt(pid);
                 PrintKernel(")\n");
             } else {
-                PrintKernelError("Failed to load ELF executable\n");
+                PrintKernelError("Failed to load executable\n");
             }
             KernelFree(cmd_name);
             return; // avoid also running a built-in with the same name

@@ -44,7 +44,6 @@ static void FreeNode(FsNode* node) {
     if (node && node >= fs_nodes && node < fs_nodes + MAX_FS_NODES) {
         if (node->data) {
             KernelFree(node->data);
-            node->data = NULL;
         }
         FastMemset(node, 0, sizeof(FsNode));
     }
@@ -106,8 +105,7 @@ FsNode* FsCreateNode(const char* name, FsNodeType type, FsNode* parent) {
     FsNode* node = AllocNode();
     if (!node) return NULL;
 
-    strncpy(node->name, name, MAX_FILENAME - 1);
-    node->name[MAX_FILENAME - 1] = '\0';
+    strncpy(node->name, name, MAX_FILENAME);
     node->type = type;
     node->parent = parent;
     node->created_time = GetCurrentTime();

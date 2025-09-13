@@ -12,6 +12,30 @@
 
 static uint8_t cdrom_drive = 0xFF;
 
+static inline char toupper_iso(char c) {
+    if (c >= 'a' && c <= 'z') return (char)(c - 'a' + 'A');
+    return c;
+}
+
+// Compare ISO names case-insensitively and ignore version suffix ";n"
+static int IsoNameEquals(const char* a, const char* b) {
+    // Skip leading spaces in ISO entries if any
+    while (*a == ' ') a++;
+    while (*b == ' ') b++;
+
+    for (;;) {
+        char ca = *a;
+        char cb = *b;
+        if (ca == ';') ca = '\0';
+        if (cb == ';') cb = '\0';
+        ca = toupper_iso(ca);
+        cb = toupper_iso(cb);
+        if (ca != cb) return 0;
+        if (ca == '\0') return 1;
+        a++; b++;
+    }
+}
+
 static int ReadSector(uint32_t lba, void* buffer) {
     if (cdrom_drive == 0xFF) {
         PrintKernel("[ISO] Auto-detecting CD-ROM drive...\n");
@@ -78,7 +102,7 @@ static Iso9660DirEntry* FindFileInDir(uint32_t dir_lba, uint32_t dir_size, const
                 *semicolon = 0;
             }
 
-            if (FastStrCmp(entry_filename, filename) == 0) {
+            if (IsoNameEquals(entry_filename, filename)) {
                 // Found it! We need to copy the entry to a new buffer, as the sector_buffer will be freed.
                 Iso9660DirEntry* result = KernelMemoryAlloc(entry->length);
                 if (result) {
@@ -241,15 +265,14 @@ int Iso9660Read(const char* path, void* buffer, uint32_t max_size) {
     const uint32_t to_read = (file_size < max_size) ? file_size : max_size;
     uint8_t* read_buffer = (uint8_t*)buffer;
     uint32_t bytes_read = 0;
+    uint8_t* temp_sector = KernelMemoryAlloc(ISO9660_SECTOR_SIZE);
+    if (!temp_sector) {
+        if (current_entry != root_entry) KernelFree(current_entry);
+        KernelFree(pvd);
+        return -1;
+    }
     while (bytes_read < to_read) {
         uint32_t sector_to_read = file_lba + (bytes_read / ISO9660_SECTOR_SIZE);
-        uint8_t* temp_sector = KernelMemoryAlloc(ISO9660_SECTOR_SIZE);
-        if (!temp_sector) {
-            if (current_entry != root_entry) KernelFree(current_entry);
-            KernelFree(pvd);
-            return -1;
-        }
-
         if (ReadSector(sector_to_read, temp_sector) != 0) {
             KernelFree(temp_sector);
             if (current_entry != root_entry) KernelFree(current_entry);
@@ -264,8 +287,8 @@ int Iso9660Read(const char* path, void* buffer, uint32_t max_size) {
 
         FastMemcpy(read_buffer + bytes_read, temp_sector + offset_in_sector, chunk_size);
         bytes_read += chunk_size;
-        KernelFree(temp_sector);
     }
+    KernelFree(temp_sector);
 
     if (current_entry != root_entry) {
         KernelFree(current_entry);

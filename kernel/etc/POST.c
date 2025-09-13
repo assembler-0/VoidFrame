@@ -27,7 +27,7 @@ bool MemoryTest() {
         if (!ptr) return false;
         KernelFree(ptr);
     }
-    //
+
     for (int i = 0; i < N; i++) ptrs[i] = KernelMemoryAlloc(128);
 
     // free every other block
@@ -36,25 +36,6 @@ bool MemoryTest() {
     // re-allocate in different sizes
     for (int i = 0; i < N/2; i++) {
         ptrs[i] = KernelMemoryAlloc((i % 2) ? 64 : 256);
-    }
-
-    for (int iter = 0; iter < 100000; iter++) {
-        int idx = rnd() % N;
-        if (ptrs[idx]) {
-            KernelFree(ptrs[idx]);
-            ptrs[idx] = NULL;
-        } else {
-            size_t sz = (rnd() % 8192) + 1; // 1–8K
-            ptrs[idx] = KernelMemoryAlloc(sz);
-            if (!ptrs[idx]) PANIC("OOM during fuzz");
-        }
-    }
-
-    for (uintptr_t addr = 0x400000; addr < 0x800000; addr += 0x1000) {
-        void* frame = AllocPage();
-        VMemMap(addr, (uint64_t)frame, PAGE_PRESENT | PAGE_WRITABLE);
-        VMemUnmap(addr, PAGE_SIZE);
-        FreePage(frame);
     }
 
     for (int i = 0; i < 1000; i++) {

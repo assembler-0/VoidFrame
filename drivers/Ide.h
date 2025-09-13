@@ -33,6 +33,7 @@
 #define IDE_CMD_WRITE_SECTORS   0x30
 #define IDE_CMD_IDENTIFY        0xEC
 #define IDE_CMD_PACKET          0xA0
+#define IDE_CMD_IDENTIFY_PACKET 0xA1
 #define ATAPI_CMD_READ_10       0x28
 
 
@@ -42,10 +43,10 @@
 
 // Error Codes
 #define IDE_OK              0
-#define IDE_ERROR_TIMEOUT   -1
-#define IDE_ERROR_NOT_READY -2
-#define IDE_ERROR_NO_DRIVE  -3
-#define IDE_ERROR_IO        -4
+#define IDE_ERROR_TIMEOUT   (-1)
+#define IDE_ERROR_NOT_READY (-2)
+#define IDE_ERROR_NO_DRIVE  (-3)
+#define IDE_ERROR_IO        (-4)
 
 typedef struct {
     uint16_t base_port;
@@ -57,6 +58,7 @@ typedef struct {
 
 // Core Functions
 int IdeInit(void);
+int IdeIsInitialized(void);
 int IdeReadSector(uint8_t drive, uint32_t lba, void* buffer);
 int IdeWriteSector(uint8_t drive, uint32_t lba, const uint8_t* buffer);
 int IdeGetDriveInfo(uint8_t drive, char* model_out);
