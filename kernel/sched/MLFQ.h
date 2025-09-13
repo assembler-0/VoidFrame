@@ -215,7 +215,7 @@ MLFQProcessControlBlock* MLFQGetCurrentProcessByPID(uint32_t pid);
 void MLFQCleanupTerminatedProcess(void);
 void MLFQYield(void);
 void VFCompositorRequestInit(const char * str);
-
+void MLFQKillCurrentProcess(const char * reason);
 void MLFQSchedule(Registers* regs);
 void MLFQDumpSchedulerState(void);
 

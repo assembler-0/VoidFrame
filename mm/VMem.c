@@ -283,14 +283,16 @@ void* VMemAlloc(uint64_t size) {
 
     // 2. Use bump allocator if no free block found
     if (vaddr == 0) {
-        if (*next_vaddr + size > region_end) {
+        uint64_t avail = (region_end >= *next_vaddr) ? (region_end - *next_vaddr + 1) : 0;
+        if (size > avail) {
             // Try other region if this one is full
             region = 1 - region;
             free_list = region ? &kernel_space.free_list_high : &kernel_space.free_list_low;
             next_vaddr = region ? &kernel_space.next_vaddr_high : &kernel_space.next_vaddr_low;
             region_end = region ? VIRT_ADDR_SPACE_HIGH_END : VIRT_ADDR_SPACE_LOW_END;
             
-            if (*next_vaddr + size > region_end) {
+            uint64_t avail2 = (region_end >= *next_vaddr) ? (region_end - *next_vaddr + 1) : 0;
+            if (size > avail2) {
                 SpinUnlockIrqRestore(&vmem_lock, flags);
                 return NULL;
             }

@@ -8,6 +8,7 @@
 #include "Panic.h"
 #include "Pic.h"
 #include "StackTrace.h"
+#include "PageFaultHandler.h"
 
 volatile uint32_t PITTicks = 0;
 
@@ -60,18 +61,37 @@ asmlinkage void InterruptHandler(Registers* regs) {
     static char panic_message[256];
 
     switch (regs->interrupt_number) {
-        case 6:  // Invalid Opcode
-        case 8:  // Double Fault
-        case 13: // General Protection Fault
-        case 14: // Page Fault
+        case 14: // Page Fault - Handle gracefully
         {
-            // Perform deep fault analysis
+            FaultResult result = HandlePageFault(regs);
+            
+            switch (result) {
+                case FAULT_HANDLED:
+                    // Fault was handled, continue execution
+                    return;
+                    
+                case FAULT_KILL_PROCESS:
+                    // Kill the offending process
+                    PrintKernelWarning("Killing process ");
+                    PrintKernelInt(MLFQGetCurrentProcess()->pid);
+                    PrintKernelWarning(" due to page fault\n");
+                    MLFQKillCurrentProcess("Page Fault (segmentation fault)");
+                    return;
+                    
+                case FAULT_RETRY:
+                    // Retry the instruction
+                    return;
+                    
+                case FAULT_PANIC_KERNEL:
+                default:
+                    // Fall through to panic handling
+                    break;
+            }
+            
+            // If we get here, it's a serious kernel fault
             FaultContext ctx = {0};
             AnalyzeFault(regs, &ctx);
-
-            // Print detailed information
-            PrintDetailedFaultInfo(&ctx, regs);
-            RegistersDumpT dump = {0};
+            PrintDetailedFaultInfo(&ctx, regs);RegistersDumpT dump = {0};
             DumpRegisters(&dump);
             // Override with fault context where applicable
             dump.rip    = regs->rip;
@@ -80,7 +100,18 @@ asmlinkage void InterruptHandler(Registers* regs) {
             dump.rsp    = regs->rsp;
             dump.ss     = regs->ss;
             PrintRegisters(&dump);
-            // Still panic, but now with much more info
+            PanicFromInterrupt("Unrecoverable page fault", regs);
+            break;
+        }
+        
+        case 6:  // Invalid Opcode
+        case 8:  // Double Fault  
+        case 13: // General Protection Fault
+        {
+            // These are still serious - analyze and panic
+            FaultContext ctx = {0};
+            AnalyzeFault(regs, &ctx);
+            PrintDetailedFaultInfo(&ctx, regs);
             PanicFromInterrupt(ctx.fault_reason, regs);
             break;
         }

@@ -35,8 +35,8 @@ static const size_t size_classes[NUM_SIZE_CLASSES] = {
 typedef struct {
     HeapBlock* free_list;
     int count;
-    int hits;           // Cache hit counter
-    int misses;         // Cache miss counter
+    uint64_t hits;           // Cache hit counter
+    uint64_t misses;         // Cache miss counter
 } FastCache;
 
 // Global state

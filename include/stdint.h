@@ -41,4 +41,10 @@ _Static_assert(sizeof(int32_t) == 4, "sizeof(int32_t) != 4");
 typedef signed long long int64_t;
 _Static_assert(sizeof(int64_t) == 8, "sizeof(int64_t) != 8");
 
+typedef signed long long intptr_t;
+_Static_assert(sizeof(intptr_t) == 8, "intptr_t should be 8 bytes");
+
+typedef __int128_t int128_t;
+_Static_assert(sizeof(int128_t) == 16, "sizeof(int128_t) != 16");
+
 #endif

@@ -55,6 +55,12 @@
 #define KERNEL_SPACE_START         KERNEL_VIRTUAL_BASE    // Kernel starts here
 #define KERNEL_SPACE_END           0xFFFFFFFFFFFFFFFFULL  // Kernel ends at top
 
+#define VIRT_ADDR_SPACE_LOW_END_EXCL   (VIRT_ADDR_SPACE_LOW_END + 1ULL)
+#define VIRT_ADDR_SPACE_HIGH_END_EXCL  (VIRT_ADDR_SPACE_HIGH_END + 1ULL)
+
+_Static_assert((KERNEL_VIRTUAL_OFFSET & PAGE_MASK) == 0, "KERNEL_VIRTUAL_OFFSET must be page-aligned");
+_Static_assert(VIRT_ADDR_SPACE_HIGH_END < KERNEL_VIRTUAL_OFFSET, "High canonical heap must not overlap kernel window");
+
 // Address conversion macros
 #define PHYS_TO_VIRT(paddr) ((void*)((uint64_t)(paddr) + KERNEL_VIRTUAL_OFFSET))
 #define VIRT_TO_PHYS(vaddr) ((uint64_t)(vaddr) - KERNEL_VIRTUAL_OFFSET)
