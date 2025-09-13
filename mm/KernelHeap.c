@@ -21,20 +21,22 @@ typedef struct HeapBlock {
 #define HEAP_ALIGN       8
 #define MAX_ALLOC_SIZE   (1ULL << 30)  // 1GB limit
 
-// Small allocation optimization
-#define SMALL_ALLOC_THRESHOLD 256
-#define NUM_SIZE_CLASSES 8
-#define FAST_CACHE_SIZE 16
+// Improved size class allocation
+#define SMALL_ALLOC_THRESHOLD 1024
+#define NUM_SIZE_CLASSES 12
+#define FAST_CACHE_SIZE 32
 
-// Size classes for small allocations (32, 48, 64, 96, 128, 192, 256)
+// Optimized size classes: powers of 2 + midpoints for better fit
 static const size_t size_classes[NUM_SIZE_CLASSES] = {
-    32, 48, 64, 96, 128, 192, 256, 512
+    32, 48, 64, 96, 128, 192, 256, 384, 512, 768, 1024, 1536
 };
 
-// Fast allocation cache for each size class
+// Enhanced fast allocation cache with statistics
 typedef struct {
     HeapBlock* free_list;
     int count;
+    uint64_t hits;           // Cache hit counter
+    uint64_t misses;         // Cache miss counter
 } FastCache;
 
 // Global state
@@ -218,20 +220,31 @@ static void SplitBlock(HeapBlock* block, size_t needed_size) {
     UpdateChecksum(block);
 }
 
-// Create new block from virtual memory
+// Create new block from virtual memory with size optimization
 static HeapBlock* CreateNewBlock(size_t size) {
-    size_t total_size = sizeof(HeapBlock) + size;
+    // For small allocations, allocate larger chunks to reduce VMem calls
+    size_t chunk_size = size;
+    if (size <= SMALL_ALLOC_THRESHOLD) {
+        chunk_size = (size < 4096) ? 4096 : PAGE_ALIGN_UP(size * 4);
+    }
+    
+    size_t total_size = sizeof(HeapBlock) + chunk_size;
     void* mem = VMemAlloc(total_size);
     if (!mem) return NULL;
 
     HeapBlock* block = (HeapBlock*)mem;
-    InitBlock(block, size, 0);
+    InitBlock(block, chunk_size, 0);
 
     // Link to head of list
     block->next = heap_head;
     block->prev = NULL;
     if (heap_head) heap_head->prev = block;
     heap_head = block;
+
+    // If we allocated more than needed, split the block
+    if (chunk_size > size) {
+        SplitBlock(block, size);
+    }
 
     return block;
 }
@@ -260,10 +273,12 @@ void KernelHeapInit() {
     total_allocated = 0;
     peak_allocated = 0;
 
-    // Initialize fast caches
+    // Initialize enhanced fast caches
     for (int i = 0; i < NUM_SIZE_CLASSES; i++) {
         fast_caches[i].free_list = NULL;
         fast_caches[i].count = 0;
+        fast_caches[i].hits = 0;
+        fast_caches[i].misses = 0;
     }
     // change as needed
     KernelHeapSetValidationLevel(KHEAP_VALIDATION_BASIC);
@@ -287,6 +302,7 @@ void* KernelMemoryAlloc(size_t size) {
         // Try fast cache first
         HeapBlock* block = FastCachePop(size_class);
         if (block) {
+            fast_caches[size_class].hits++;
             InitBlock(block, actual_size, 0);
             total_allocated += actual_size;
             if (total_allocated > peak_allocated) {
@@ -295,6 +311,7 @@ void* KernelMemoryAlloc(size_t size) {
             SpinUnlockIrqRestore(&kheap_lock, flags);
             return BlockToUser(block);
         }
+        fast_caches[size_class].misses++;
 
         SpinUnlockIrqRestore(&kheap_lock, flags);
         size = actual_size; // Use size class size
@@ -450,9 +467,19 @@ void PrintHeapStats(void) {
     PrintKernel("[HEAP] Blocks: "); PrintKernelInt(used_blocks);
     PrintKernel(" used, "); PrintKernelInt(free_blocks); PrintKernel(" free, ");
     PrintKernelInt(cached_blocks); PrintKernel(" cached\n");
-    PrintKernel("[HEAP] Memory: "); PrintKernelInt(used_bytes);
-    PrintKernel(" used, "); PrintKernelInt(free_bytes); PrintKernel(" free\n");
-    PrintKernel("[HEAP] Peak allocated: "); PrintKernelInt(peak_allocated); PrintKernel("\n");
+    PrintKernel("[HEAP] Memory: "); PrintKernelInt(used_bytes / 1024);
+    PrintKernel("KB used, "); PrintKernelInt(free_bytes / 1024); PrintKernel("KB free\n");
+    PrintKernel("[HEAP] Peak: "); PrintKernelInt(peak_allocated / 1024); PrintKernel("KB\n");
+    
+    // Show cache efficiency
+    PrintKernel("[HEAP] Cache stats:\n");
+    for (int i = 0; i < NUM_SIZE_CLASSES; i++) {
+        if (fast_caches[i].hits + fast_caches[i].misses > 0) {
+            int hit_rate = (fast_caches[i].hits * 100) / (fast_caches[i].hits + fast_caches[i].misses);
+            PrintKernel("  "); PrintKernelInt(size_classes[i]); PrintKernel("B: ");
+            PrintKernelInt(hit_rate); PrintKernel("% hit rate\n");
+        }
+    }
 }
 
 void KernelHeapSetValidationLevel(int level) {

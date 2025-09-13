@@ -1938,6 +1938,13 @@ void MLFQDumpSchedulerState(void) {
     }
 }
 
+void MLFQKillCurrentProcess(const char * reason) {
+    MLFQProcessControlBlock* current = MLFQGetCurrentProcess();
+    if (current) {
+        ASTerminate(current->pid, reason);
+    }
+}
+
 // Get detailed process scheduling information
 void MLFQGetProcessStats(uint32_t pid, uint32_t* cpu_time, uint32_t* io_ops, uint32_t* preemptions) {
     ReadLock(&process_table_rwlock, pid);

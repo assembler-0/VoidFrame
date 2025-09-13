@@ -377,8 +377,8 @@ static void ValidateMemoryLayout(void) {
     PrintKernelInt(kernel_size / 1024);
     PrintKernel(" KB)\n");
 
-    _Static_assert(VIRT_ADDR_SPACE_START < VIRT_ADDR_SPACE_END, "VIRT addr space invalid");
-    if (VIRT_ADDR_SPACE_END > KERNEL_VIRTUAL_OFFSET) {
+    _Static_assert(VIRT_ADDR_SPACE_HIGH_START < VIRT_ADDR_SPACE_HIGH_END, "VIRT addr space invalid");
+    if (VIRT_ADDR_SPACE_HIGH_END > KERNEL_VIRTUAL_OFFSET) {
         PrintKernelWarning("Virtual address space intersects kernel mapping window\n");
     }
 

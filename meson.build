@@ -134,6 +134,7 @@ c_sources = [
     src_root + '/mm/MemPool.c',
     src_root + '/mm/trace/StackTrace.c',
     src_root + '/mm/security/Cerberus.c',
+    src_root + '/mm/PageFaultHandler.c',
     src_root + '/fs/VFRFS.c',
     src_root + '/fs/FAT/FAT1x.c',
     src_root + '/fs/EXT/Ext2.c',

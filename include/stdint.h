@@ -27,7 +27,7 @@ typedef unsigned long long uint64_t;
 _Static_assert(sizeof(uint64_t) == 8, "sizeof(uint64_t) != 8");
 
 typedef unsigned long long uintptr_t;
-_Static_assert(sizeof(uintptr_t) == 8, "uintptr_t should be 8 bytes");
+_Static_assert(sizeof(uintptr_t) == 8, "sizeof(uintptr_t) != 8");
 
 typedef signed char int8_t;
 _Static_assert(sizeof(int8_t) == 1, "sizeof(int8_t) != 1");
@@ -40,5 +40,11 @@ _Static_assert(sizeof(int32_t) == 4, "sizeof(int32_t) != 4");
 
 typedef signed long long int64_t;
 _Static_assert(sizeof(int64_t) == 8, "sizeof(int64_t) != 8");
+
+typedef signed long intptr_t;
+_Static_assert(sizeof(intptr_t) == 8, "sizeof(intptr_t) != 8");
+
+typedef __int128_t int128_t;
+_Static_assert(sizeof(int128_t) == 16, "sizeof(int128_t) != 16");
 
 #endif
