@@ -1,4 +1,6 @@
 #include "E1000.h"
+#include "../interface/Arp.h"
+#include "../interface/Ip.h"
 #include "Console.h"
 #include "Cpu.h"
 #include "Io.h"
@@ -6,6 +8,7 @@
 #include "MemOps.h"
 #include "PCI/PCI.h"
 #include "PMem.h"
+#include "ethernet/Packet.h"
 
 static E1000Device g_e1000_device = {0};
 
@@ -185,4 +188,30 @@ int E1000_SendPacket(const void* data, uint16_t length) {
 
 const E1000Device* E1000_GetDevice(void) {
     return g_e1000_device.initialized ? &g_e1000_device : NULL;
+}
+
+void E1000_HandleReceive(void) {
+    if (!g_e1000_device.initialized) {
+        return;
+    }
+
+    uint16_t old_cur;
+    while (g_e1000_device.rx_descs[g_e1000_device.rx_cur].status & 1) {
+        uint8_t* received_data = g_e1000_device.rx_buffers[g_e1000_device.rx_cur];
+        uint16_t received_length = g_e1000_device.rx_descs[g_e1000_device.rx_cur].length;
+
+        EthernetHeader* eth_header = (EthernetHeader*)received_data;
+
+        if (eth_header->ethertype == HTONS(0x0800)) { // IPv4
+            IpHandlePacket((IpHeader*)(received_data + sizeof(EthernetHeader)), received_length - sizeof(EthernetHeader));
+        } else if (eth_header->ethertype == HTONS(0x0806)) { // ARP
+            ArpHandlePacket(eth_header, received_length);
+        }
+
+        // Reset descriptor
+        g_e1000_device.rx_descs[g_e1000_device.rx_cur].status = 0;
+        old_cur = g_e1000_device.rx_cur;
+        g_e1000_device.rx_cur = (g_e1000_device.rx_cur + 1) % E1000_NUM_RX_DESC;
+        E1000_WriteReg(E1000_RDT, old_cur);
+    }
 }

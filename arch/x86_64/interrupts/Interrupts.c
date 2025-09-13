@@ -9,6 +9,7 @@
 #include "Pic.h"
 #include "StackTrace.h"
 #include "PageFaultHandler.h"
+#include "ethernet/Network.h"
 
 volatile uint32_t PITTicks = 0;
 
@@ -21,6 +22,7 @@ asmlinkage void InterruptHandler(Registers* regs) {
         case 32: // Timer interrupt (IRQ 0)
             MLFQSchedule(regs);
             AtomicInc(&PITTicks);
+            Net_Poll();
             PICSendEOI(regs->interrupt_number);
             return;
 

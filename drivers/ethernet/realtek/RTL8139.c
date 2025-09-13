@@ -2,8 +2,11 @@
 #include "../../../mm/KernelHeap.h"
 #include "../../../mm/MemOps.h"
 #include "../../../mm/VMem.h"
+#include "../interface/Arp.h"
+#include "../interface/Ip.h"
 #include "Console.h"
 #include "Io.h"
+#include "ethernet/Packet.h"
 
 // Global device object
 static Rtl8139Device rtl_device;
@@ -116,5 +119,29 @@ void Rtl8139_SendPacket(void* data, uint32_t len) {
 
 const Rtl8139Device* GetRtl8139Device() {
     return &rtl_device;
+}
+
+void Rtl8139_HandleReceive() {
+    uint16_t status = inw(rtl_device.io_base + REG_ISR);
+
+    if (status & ISR_RX_OK) {
+        uint8_t* received_data = rtl_device.rx_buffer + rtl_device.current_rx_offset;
+        uint16_t packet_len = *(uint16_t*)(received_data + 2);
+
+        EthernetHeader* eth_header = (EthernetHeader*)received_data;
+        if (eth_header->ethertype == HTONS(0x0800)) { // IPv4
+            IpHandlePacket((IpHeader*)(received_data + sizeof(EthernetHeader)), packet_len - sizeof(EthernetHeader));
+        } else if (eth_header->ethertype == HTONS(0x0806)) { // ARP
+            ArpHandlePacket(eth_header, packet_len);
+        }
+
+        rtl_device.current_rx_offset = (rtl_device.current_rx_offset + packet_len + 4 + 3) & ~3;
+        if (rtl_device.current_rx_offset > RX_BUFFER_SIZE) {
+            rtl_device.current_rx_offset -= RX_BUFFER_SIZE;
+        }
+
+        outw(rtl_device.io_base + REG_CAPR, rtl_device.current_rx_offset - 0x10);
+        outw(rtl_device.io_base + REG_ISR, ISR_RX_OK);
+    }
 }
 

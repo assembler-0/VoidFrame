@@ -167,30 +167,30 @@ The `ProcessControlBlock` is the fundamental data structure that represents a pr
 
 ```c
 typedef struct {
+    char name[64];
     uint32_t pid;
     ProcessState state;
     void* stack;
     uint8_t priority;
-    uint8_t base_priority;   
-    uint8_t is_user_mode;
+    uint8_t base_priority;      
     uint8_t privilege_level;
-    uint32_t cpu_burst_history[CPU_BURST_HISTORY];
-    uint32_t io_operations;   
-    uint32_t preemption_count;
+    uint32_t cpu_burst_history[CPU_BURST_HISTORY]; 
+    uint32_t io_operations;  
+    uint32_t preemption_count; 
     uint64_t cpu_time_accumulated;
     uint64_t last_scheduled_tick;
-    uint64_t wait_time;        
+    uint64_t wait_time;     
     TerminationReason term_reason;
     uint32_t exit_code;
     uint64_t termination_time;
     uint32_t parent_pid;
-    SecurityToken token;
+    MLFQSecurityToken token;
     MessageQueue ipc_queue;
     ProcessContext context;
-    SchedulerNode* scheduler_node;
+    MLFQSchedulerNode* scheduler_node;
     uint64_t creation_time;
-    char* ProcINFOPath;
-} ProcessControlBlock;
+    char ProcessRuntimePath[256];
+} MLFQProcessControlBlock;
 ```
 
 #### Key PCB Fields
@@ -418,24 +418,30 @@ The following functions and commands provide interfaces to the process managemen
     '-DVF_CONFIG_ENABLE_PCI',
     '-DVF_CONFIG_ENABLE_PS2',
     '-DVF_CONFIG_ENABLE_IDE',
+    '-DVF_CONFIG_ENABLE_VFCOMPOSITOR',
+    '-DVF_CONFIG_ENABLE_AHCI',
+    '-DVF_CONFIG_ENABLE_GENERIC_SOUND',
+    #'-DVF_CONFIG_ENABLE_VMWARE_SVGA_II',
     '-DVF_CONFIG_RTC_CENTURY',
     '-DVF_CONFIG_ENFORCE_MEMORY_PROTECTION',
     '-DVF_CONFIG_VM_HOST',
+    '-DVF_CONFIG_SNOOZE_ON_BOOT',
     '-DVF_CONFIG_PROCINFO_CREATE_DEFAULT',
     '-DVF_CONFIG_USE_VFSHELL',
     '-DVF_CONFIG_USE_DYNAMOX',
     '-DVF_CONFIG_USE_ASTRA',
     '-DVF_CONFIG_USE_CERBERUS',
-    '-DVF_CONFIG_CERBERUS_VFS_LOGGING',
-    '-DVF_CONFIG_CERBERUS_THREAT_REPORTING', 
-    #'-DVF_CONFIG_CERBERUS_STACK_PROTECTION',
+    #'-DVF_CONFIG_CERBERUS_VFS_LOGGING',
+    '-DVF_CONFIG_CERBERUS_THREAT_REPORTING',
+    '-DVF_CONFIG_CERBERUS_STACK_PROTECTION',
     '-DVF_CONFIG_SCHED_MLFQ',
-    '-DVF_CONFIG_PROCINFO_AUTO_CLEANUP',
+    #'-DVF_CONFIG_PROCINFO_AUTO_CLEANUP',
     #'-DVF_CONFIG_PANIC_OVERRIDE',
     ]
       ```
   - Setup options:
     ```jetbrainsmeson
     option('exclude_extra_objects', type : 'boolean', value : false, description : 'Exclude extra objects from the build') # MASSIVE effect!, smaller size & smoother
+    option('automatic_post', type : 'boolean', value : false, description : 'Perform automatic power on self-test after kernel initialization')
     ```
-> assembler-0 @ voidframe-kernel - 14:40 02/09/2025
+> assembler-0 @ voidframe-kernel - 18:57 - 13-09-2025

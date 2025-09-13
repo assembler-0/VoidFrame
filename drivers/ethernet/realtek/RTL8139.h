@@ -50,11 +50,13 @@ typedef struct {
     uint8_t* rx_buffer;
     uint8_t* tx_buffers[TX_BUFFER_COUNT];
     int current_tx_buffer;
+    uint16_t current_rx_offset;
 } Rtl8139Device;
 
 // Function Prototypes
 void Rtl8139_Init();
 void Rtl8139_SendPacket(void* data, uint32_t len);
 const Rtl8139Device* GetRtl8139Device();
+void Rtl8139_HandleReceive();
 
 #endif // RTL8139_H
