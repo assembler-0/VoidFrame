@@ -136,6 +136,10 @@ ninja runmin
 - Network
     - [x] RTL8139 (PCI)
     - [x] E1000   (PCI)
+- Network Interface
+    - [x] IP
+    - [x] ARP
+    - [x] ICMP
 - Sound
     - [x] SB16 (PCI)
     - [x] Generic PC speaker

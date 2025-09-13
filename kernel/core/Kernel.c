@@ -1,6 +1,6 @@
 // VoidFrame Kernel Entry File
 #include "Kernel.h"
-#include "realtek/RTL8139.h"
+
 #include "Compositor.h"
 #include "Console.h"
 #include "EXT/Ext2.h"
@@ -30,7 +30,7 @@
 #include "VFS.h"
 #include "VMem.h"
 #include "Vesa.h"
-#include "ethernet/intel/E1000.h"
+#include "ethernet/Network.h"
 #include "sound/Generic.h"
 #include "storage/AHCI.h"
 #include "stdbool.h"
@@ -725,13 +725,9 @@ static InitResultT PXS2(void) {
     PciInit();
     PrintKernelSuccess("System: PCI devices scanned\n");
 
-    PrintKernel("Info: Initializing RTL8139 Driver...\n");
-    Rtl8139_Init();
-    PrintKernelSuccess("System: RTL8139 Driver initialized\n");
-
-    PrintKernel("Info: Initializing E1000 Driver...\n");
-    E1000_Init();
-    PrintKernelSuccess("System: E1000 Driver initialized\n");
+    PrintKernel("Info: Initializing Network Stack...\n");
+    Net_Initialize();
+    PrintKernelSuccess("System: Network Stack initialized\n");
 #endif
 
 #ifdef VF_CONFIG_ENABLE_GENERIC_SOUND

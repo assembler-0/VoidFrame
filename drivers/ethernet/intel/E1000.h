@@ -86,5 +86,6 @@ typedef struct {
 int E1000_Init(void);
 int E1000_SendPacket(const void* data, uint16_t length);
 const E1000Device* E1000_GetDevice(void);
+void E1000_HandleReceive(void);
 
 #endif // VOIDFRAME_E1000_H

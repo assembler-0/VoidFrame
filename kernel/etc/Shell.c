@@ -1,9 +1,10 @@
 #include "Shell.h"
+#include "../../drivers/ethernet/interface/Icmp.h"
 #include "6502/6502.h"
-#include "realtek/RTL8139.h"
 #include "Cerberus.h"
 #include "Console.h"
 #include "Editor.h"
+#include "ExecLoader.h"
 #include "Format.h"
 #include "FsUtils.h"
 #include "ISA.h"
@@ -14,6 +15,7 @@
 #include "MemOps.h"
 #include "PCI/PCI.h"
 #include "PMem.h"
+#include "POST.h"
 #include "PS2.h"
 #include "Packet.h"
 #include "Panic.h"
@@ -26,11 +28,10 @@
 #include "VFS.h"
 #include "VMem.h"
 #include "intel/E1000.h"
+#include "realtek/RTL8139.h"
 #include "sound/Generic.h"
 #include "stdlib.h"
 #include "xHCI/xHCI.h"
-#include "ExecLoader.h"
-#include "POST.h"
 
 #define DATE __DATE__
 #define TIME __TIME__
@@ -1155,7 +1156,33 @@ static void RegDumpHandler(const char * args) {
     PrintKernelSuccess("Registers dumped.\n");
 }
 
+static void PingHandler(const char* args) {
+    char* ip_str = GetArg(args, 1);
+    if (!ip_str) {
+        PrintKernel("Usage: ping <ip_address>\n");
+        return;
+    }
+
+    uint8_t ip[4];
+    int i = 0;
+    char* octet = strtok(ip_str, '.');
+    while (octet != NULL && i < 4) {
+        ip[i++] = atoi(octet);
+        octet = strtok(NULL, '.');
+    }
+
+    if (i != 4) {
+        PrintKernel("Invalid IP address format.\n");
+        KernelFree(ip_str);
+        return;
+    }
+
+    IcmpSendEchoRequest(ip);
+    KernelFree(ip_str);
+}
+
 static const ShellCommand commands[] = {
+
     {"help", HelpHandler},
     {"ps", PSHandler},
     {"sched", SchedHandler},
@@ -1204,6 +1231,7 @@ static const ShellCommand commands[] = {
     {"6502", Entry6502},
     {"regdump", RegDumpHandler},
     {"post", POSTHandler},
+    {"ping", PingHandler},
 };
 
 void ExecuteCommand(const char* cmd) {
