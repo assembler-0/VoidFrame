@@ -66,11 +66,14 @@ void VMemInit(void) {
     __asm__ volatile("mov %%cr3, %0" : "=r"(pml4_phys_addr));
     pml4_phys_addr &= ~0xFFF; // Clear flags
 
-    // Initialize kernel space tracking
-    kernel_space.next_vaddr = VIRT_ADDR_SPACE_START;
+    // Initialize dual-region kernel space tracking
+    kernel_space.next_vaddr_low = VIRT_ADDR_SPACE_LOW_START;
+    kernel_space.next_vaddr_high = VIRT_ADDR_SPACE_HIGH_START;
     kernel_space.used_pages = 0;
     kernel_space.total_mapped = IDENTITY_MAP_SIZE;
     kernel_space.pml4 = (uint64_t*)pml4_phys_addr;
+    kernel_space.free_list_low = NULL;
+    kernel_space.free_list_high = NULL;
 
     // Now test identity mapping
     if (VMemGetPhysAddr(0x100000) != 0x100000) {
@@ -240,6 +243,12 @@ int VMemMapHuge(uint64_t vaddr, uint64_t paddr, uint64_t flags) {
     return VMEM_SUCCESS;
 }
 
+// Select allocation region based on size heuristic
+static int SelectRegion(uint64_t size) {
+    // Large allocations (>=2MB) go to lower canonical for better TLB efficiency
+    return (size >= (2 * 1024 * 1024)) ? 0 : 1;
+}
+
 void* VMemAlloc(uint64_t size) {
     if (size == 0) return NULL;
     size = PAGE_ALIGN_UP(size);
@@ -247,20 +256,22 @@ void* VMemAlloc(uint64_t size) {
     uint64_t vaddr = 0;
     irq_flags_t flags = SpinLockIrqSave(&vmem_lock);
 
-    // 1. Search the free list for a suitable block
+    int region = SelectRegion(size);
+    VMemFreeBlock** free_list = region ? &kernel_space.free_list_high : &kernel_space.free_list_low;
+    uint64_t* next_vaddr = region ? &kernel_space.next_vaddr_high : &kernel_space.next_vaddr_low;
+    uint64_t region_end = region ? VIRT_ADDR_SPACE_HIGH_END : VIRT_ADDR_SPACE_LOW_END;
+
+    // 1. Search the appropriate free list
     VMemFreeBlock* prev = NULL;
-    VMemFreeBlock* current = kernel_space.free_list;
+    VMemFreeBlock* current = *free_list;
     while (current) {
         if (current->size >= size) {
             vaddr = current->base;
-            if (current->size == size) { // Perfect fit
-                if (prev) {
-                    prev->next = current->next;
-                } else {
-                    kernel_space.free_list = current->next;
-                }
+            if (current->size == size) {
+                if (prev) prev->next = current->next;
+                else *free_list = current->next;
                 ReleaseFreeBlock(current);
-            } else { // Block is larger, split it
+            } else {
                 current->base += size;
                 current->size -= size;
             }
@@ -270,15 +281,22 @@ void* VMemAlloc(uint64_t size) {
         current = current->next;
     }
 
-    // 2. If no suitable block found, use the bump allocator
+    // 2. Use bump allocator if no free block found
     if (vaddr == 0) {
-        
-        if (kernel_space.next_vaddr + size > VIRT_ADDR_SPACE_END) {
-            SpinUnlockIrqRestore(&vmem_lock, flags);
-            return NULL; // Out of virtual address space
+        if (*next_vaddr + size > region_end) {
+            // Try other region if this one is full
+            region = 1 - region;
+            free_list = region ? &kernel_space.free_list_high : &kernel_space.free_list_low;
+            next_vaddr = region ? &kernel_space.next_vaddr_high : &kernel_space.next_vaddr_low;
+            region_end = region ? VIRT_ADDR_SPACE_HIGH_END : VIRT_ADDR_SPACE_LOW_END;
+            
+            if (*next_vaddr + size > region_end) {
+                SpinUnlockIrqRestore(&vmem_lock, flags);
+                return NULL;
+            }
         }
-        vaddr = kernel_space.next_vaddr;
-        kernel_space.next_vaddr += size;
+        vaddr = *next_vaddr;
+        *next_vaddr += size;
     }
 
     vmem_allocations++;
@@ -314,7 +332,7 @@ void VMemFree(void* vaddr, uint64_t size) {
     uint64_t start_vaddr = PAGE_ALIGN_DOWN((uint64_t)vaddr);
     size = PAGE_ALIGN_UP(size);
 
-    // 1. Unmap all pages and free the underlying physical frames
+    // 1. Unmap all pages and free physical frames
     for (uint64_t offset = 0; offset < size; offset += PAGE_SIZE) {
         uint64_t current_vaddr = start_vaddr + offset;
         uint64_t paddr = VMemGetPhysAddr(current_vaddr);
@@ -324,11 +342,14 @@ void VMemFree(void* vaddr, uint64_t size) {
         }
     }
 
-    // 2. Add the virtual address range back to the free list
+    // 2. Determine which region this address belongs to
     irq_flags_t flags = SpinLockIrqSave(&vmem_lock);
+    
+    int region = (start_vaddr >= VIRT_ADDR_SPACE_HIGH_START) ? 1 : 0;
+    VMemFreeBlock** free_list = region ? &kernel_space.free_list_high : &kernel_space.free_list_low;
 
     VMemFreeBlock* new_block = AllocFreeBlock();
-    if (!new_block) { // Should be rare, but possible
+    if (!new_block) {
         PANIC("VMemFree: Out of free list nodes");
         SpinUnlockIrqRestore(&vmem_lock, flags);
         return;
@@ -336,8 +357,8 @@ void VMemFree(void* vaddr, uint64_t size) {
     new_block->base = start_vaddr;
     new_block->size = size;
 
-    // Insert into sorted list and merge with neighbors if possible
-    VMemFreeBlock *prev = NULL, *current = kernel_space.free_list;
+    // Insert into appropriate sorted list and merge
+    VMemFreeBlock *prev = NULL, *current = *free_list;
     while (current && current->base < new_block->base) {
         prev = current;
         current = current->next;
@@ -354,19 +375,18 @@ void VMemFree(void* vaddr, uint64_t size) {
     // Merge with previous block?
     if (prev && prev->base + prev->size == new_block->base) {
         prev->size += new_block->size;
-        // If we also merged with next, link prev to next's next and free next
         if (new_block == current) {
              prev->next = current->next;
              ReleaseFreeBlock(current);
         }
         ReleaseFreeBlock(new_block);
-    } else if (new_block != current) { // No merge with previous, insert new_block
+    } else if (new_block != current) {
         if (prev) {
             new_block->next = prev->next;
             prev->next = new_block;
         } else {
-            new_block->next = kernel_space.free_list;
-            kernel_space.free_list = new_block;
+            new_block->next = *free_list;
+            *free_list = new_block;
         }
     }
 
@@ -789,13 +809,24 @@ void VMemFreeStack(void* stack_top, uint64_t size) {
 void VMemDumpFreeList(void) {
     irq_flags_t flags = SpinLockIrqSave(&vmem_lock);
     PrintKernel("[VMEM] Free List Dump:\n");
-    VMemFreeBlock* current = kernel_space.free_list;
-    if (!current) {
-        PrintKernel("  <Empty>\n");
-    }
+    
+    PrintKernel("  Lower Canonical (0-128TB):\n");
+    VMemFreeBlock* current = kernel_space.free_list_low;
+    if (!current) PrintKernel("    <Empty>\n");
     int i = 0;
     while(current) {
-        PrintKernel("  ["); PrintKernelInt(i++); PrintKernel("] Base: 0x");
+        PrintKernel("    ["); PrintKernelInt(i++); PrintKernel("] Base: 0x");
+        PrintKernelHex(current->base);
+        PrintKernel(", Size: "); PrintKernelInt(current->size / 1024); PrintKernel(" KB\n");
+        current = current->next;
+    }
+    
+    PrintKernel("  Higher Canonical (128-254TB):\n");
+    current = kernel_space.free_list_high;
+    if (!current) PrintKernel("    <Empty>\n");
+    i = 0;
+    while(current) {
+        PrintKernel("    ["); PrintKernelInt(i++); PrintKernel("] Base: 0x");
         PrintKernelHex(current->base);
         PrintKernel(", Size: "); PrintKernelInt(current->size / 1024); PrintKernel(" KB\n");
         current = current->next;

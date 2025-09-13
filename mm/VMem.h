@@ -40,17 +40,20 @@
 #define HUGE_PAGE_ALIGN_DOWN(addr) ((addr) & ~HUGE_PAGE_MASK)
 #define IS_HUGE_PAGE_ALIGNED(addr) (((addr) & HUGE_PAGE_MASK) == 0)
 
-// Virtual address space layout for Ring-0 Kernel
-// Kernel space is the top 1TB of the higher half (PML4 entries 510-511).
-// Heap space is the remaining ~126TB of the higher half.
+// OPTIMIZED: Ring-0 only kernel uses FULL canonical address space (256TB)
+// Lower canonical: 0x0000000000001000 - 0x00007FFFFFFFFFFF (128TB heap)
+// Higher canonical: 0xFFFF800000000000 - 0xFFFFFDFFFFFFFFFF (126TB heap)
+// Kernel code/data: 0xFFFFFE0000000000 - 0xFFFFFFFFFFFFFFFF (2TB)
 #define KERNEL_VIRTUAL_OFFSET 0xFFFFFE0000000000ULL
 #define KERNEL_VIRTUAL_BASE   KERNEL_VIRTUAL_OFFSET
 
-// Heap space layout - Non-overlapping canonical addresses
-#define VIRT_ADDR_SPACE_START 0xFFFF800000000000ULL
-#define VIRT_ADDR_SPACE_END   0xFFFFFE0000000000ULL  // End of heap, start of kernel
-#define KERNEL_SPACE_START    KERNEL_VIRTUAL_BASE    // Kernel starts here
-#define KERNEL_SPACE_END      0xFFFFFFFFFFFFFFFFULL  // Kernel ends at top
+// Dual-region heap layout for maximum space utilization
+#define VIRT_ADDR_SPACE_LOW_START  0x0000000000001000ULL  // Skip NULL page
+#define VIRT_ADDR_SPACE_LOW_END    0x00007FFFFFFFFFFFULL  // Lower canonical end
+#define VIRT_ADDR_SPACE_HIGH_START 0xFFFF800000000000ULL  // Higher canonical start
+#define VIRT_ADDR_SPACE_HIGH_END   0xFFFFFDFFFFFFFFFFULL  // Leave 2TB for kernel
+#define KERNEL_SPACE_START         KERNEL_VIRTUAL_BASE    // Kernel starts here
+#define KERNEL_SPACE_END           0xFFFFFFFFFFFFFFFFULL  // Kernel ends at top
 
 // Address conversion macros
 #define PHYS_TO_VIRT(paddr) ((void*)((uint64_t)(paddr) + KERNEL_VIRTUAL_OFFSET))
@@ -74,14 +77,16 @@ typedef struct VMemFreeBlock {
 } VMemFreeBlock;
 
 /**
- * @brief Virtual address space structure
+ * @brief Virtual address space structure with dual-region support
  */
 typedef struct {
-    uint64_t* pml4;          /**< Physical address of PML4 table */
-    uint64_t next_vaddr;     /**< Next virtual address for bump allocation */
-    uint64_t used_pages;     /**< Number of pages currently allocated */
-    uint64_t total_mapped;   /**< Total bytes mapped in this space */
-    VMemFreeBlock* free_list;/**< Head of the free list for VA space recycling */
+    uint64_t* pml4;                    /**< Physical address of PML4 table */
+    uint64_t next_vaddr_low;           /**< Next vaddr in lower canonical */
+    uint64_t next_vaddr_high;          /**< Next vaddr in higher canonical */
+    uint64_t used_pages;               /**< Number of pages currently allocated */
+    uint64_t total_mapped;             /**< Total bytes mapped in this space */
+    VMemFreeBlock* free_list_low;      /**< Free list for lower canonical */
+    VMemFreeBlock* free_list_high;     /**< Free list for higher canonical */
 } VirtAddrSpace;
 
 /**
