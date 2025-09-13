@@ -32,6 +32,9 @@
 #define IDE_CMD_READ_SECTORS    0x20
 #define IDE_CMD_WRITE_SECTORS   0x30
 #define IDE_CMD_IDENTIFY        0xEC
+#define IDE_CMD_PACKET          0xA0
+#define ATAPI_CMD_READ_10       0x28
+
 
 // Drive Selection
 #define IDE_DRIVE_MASTER    0
@@ -49,6 +52,7 @@ typedef struct {
     uint16_t ctrl_port;
     uint8_t drive_exists[2];  // master/slave
     char model[2][41];        // drive model strings
+    uint8_t is_atapi[2];
 } IdeChannel;
 
 // Core Functions
@@ -56,6 +60,8 @@ int IdeInit(void);
 int IdeReadSector(uint8_t drive, uint32_t lba, void* buffer);
 int IdeWriteSector(uint8_t drive, uint32_t lba, const uint8_t* buffer);
 int IdeGetDriveInfo(uint8_t drive, char* model_out);
+int IdeReadLBA2048(uint8_t drive, uint32_t lba, void* buffer);
+
 
 // Interrupt handlers
 void IDEPrimaryIRQH(void);

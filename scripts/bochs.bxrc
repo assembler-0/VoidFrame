@@ -1,0 +1,32 @@
+# VoidFrame Bochs Configuration
+# Bochs configuration for VoidFrame kernel testing
+
+# Memory configuration
+megs: 512
+
+# Boot from CD-ROM
+boot: cdrom
+
+# CD-ROM configuration
+ata0-master: type=cdrom, path="VoidFrame.iso", status=inserted
+
+# CPU configuration
+cpu: model=corei7_sandy_bridge_2600k, count=1, ips=50000000, reset_on_triple_fault=1
+
+
+# Serial port
+com1: enabled=1, file="serial.log"
+
+# Parallel port
+parport1: enabled=1, file="printer.out"
+
+# Debugger
+magic_break: enabled=1
+port_e9_hack: enabled=1
+
+# Clock
+clock: sync=realtime, time0=local
+
+# Keyboard and mouse
+keyboard: type=mf, serial_delay=250, paste_delay=100000, user_shortcut=none
+mouse: type=ps2, enabled=1
