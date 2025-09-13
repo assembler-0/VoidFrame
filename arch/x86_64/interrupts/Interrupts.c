@@ -95,7 +95,8 @@ asmlinkage void InterruptHandler(Registers* regs) {
             // If we get here, it's a serious kernel fault
             FaultContext ctx = {0};
             AnalyzeFault(regs, &ctx);
-            PrintDetailedFaultInfo(&ctx, regs);RegistersDumpT dump = {0};
+            PrintDetailedFaultInfo(&ctx, regs);
+            RegistersDumpT dump = {0};
             DumpRegisters(&dump);
             // Override with fault context where applicable
             dump.rip    = regs->rip;
@@ -116,6 +117,15 @@ asmlinkage void InterruptHandler(Registers* regs) {
             FaultContext ctx = {0};
             AnalyzeFault(regs, &ctx);
             PrintDetailedFaultInfo(&ctx, regs);
+            RegistersDumpT dump = {0};
+            DumpRegisters(&dump);
+            // Override with fault context where applicable
+            dump.rip    = regs->rip;
+            dump.cs     = regs->cs;
+            dump.rflags = regs->rflags;
+            dump.rsp    = regs->rsp;
+            dump.ss     = regs->ss;
+            PrintRegisters(&dump);
             PanicFromInterrupt(ctx.fault_reason, regs);
             break;
         }
@@ -125,7 +135,15 @@ asmlinkage void InterruptHandler(Registers* regs) {
             char int_str[20], rip_str[20];
             itoa(regs->interrupt_number, int_str);
             htoa(regs->rip, rip_str);
-
+            RegistersDumpT dump = {0};
+            DumpRegisters(&dump);
+            // Override with fault context where applicable
+            dump.rip    = regs->rip;
+            dump.cs     = regs->cs;
+            dump.rflags = regs->rflags;
+            dump.rsp    = regs->rsp;
+            dump.ss     = regs->ss;
+            PrintRegisters(&dump);
             strcpy(panic_message, "Unhandled Exception #");
             strcat(panic_message, int_str);
             strcat(panic_message, " at ");

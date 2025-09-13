@@ -177,7 +177,8 @@ static const HelpEntry system_cmds[] = {
     {"perf", "Show performance stats"},
     {"kill <pid>", "Terminate process"},
     {"memstat", "Show memory statistics"},
-    {"lscpu", "List CPU features"}
+    {"lscpu", "List CPU features"},
+    {"snoozer <on/off>", "Snooze messages from PrintKernel"},
 };
 
 static const HelpEntry file_cmds[] = {
@@ -330,6 +331,8 @@ static void MemstatHandler(const char * args) {
     PrintKernel("% fragmented, Used: ");
     PrintKernelInt(stats.used_physical_bytes / (1024*1024));
     PrintKernel("MB\n");
+    PrintVMemStats();
+    PrintHeapStats();
 }
 
 static void LsPCIHandler(const char * args) {
@@ -1181,8 +1184,25 @@ static void PingHandler(const char* args) {
     KernelFree(ip_str);
 }
 
-static const ShellCommand commands[] = {
+static void SnoozeHandler(const char* args) {
+    char* status = GetArg(args, 1);
+    if (!status) {
+        PrintKernel("Usage: snooze <on/off>\n");
+        return;
+    }
+    if (FastStrCmp(status, "on") == 0) {
+        Snooze();
+    } else if (FastStrCmp(status, "off") == 0) {
+        Unsnooze();
+    } else {
+        PrintKernel("Usage: snooze <on/off>\n");
+        KernelFree(status);
+        return;
+    }
+    KernelFree(status);
+}
 
+static const ShellCommand commands[] = {\
     {"help", HelpHandler},
     {"ps", PSHandler},
     {"sched", SchedHandler},
@@ -1232,6 +1252,7 @@ static const ShellCommand commands[] = {
     {"regdump", RegDumpHandler},
     {"post", POSTHandler},
     {"ping", PingHandler},
+    {"snooze", SnoozeHandler},
 };
 
 void ExecuteCommand(const char* cmd) {

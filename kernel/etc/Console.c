@@ -86,7 +86,6 @@ static void ConsolePutcharAt(char c, uint32_t x, uint32_t y, uint8_t color) {
 
 void ClearScreen(void) {
     SpinLock(&lock);
-
     if (use_vbe) {
         VBEConsoleClear();
     } else {

@@ -44,9 +44,6 @@ c_flags = [
     '-fstack-protector-strong',
     '-D_FORTIFY_SOURCE=2',
     '-fvisibility=hidden',
-    '-Wall',
-    '-Wpedantic',
-    '-Wextra',
 ]
 
 cpp_flags = c_flags + [
