@@ -134,6 +134,8 @@ void VMemFreeWithGuards(void* ptr, uint64_t size);
 void* VMemAllocStack(uint64_t size);
 void VMemFreeStack(void* stack_top, uint64_t size);
 
+// Huge page mapping
+int VMemMapHuge(uint64_t vaddr, uint64_t paddr, uint64_t flags);
 // MMIO-specific mapping functions (bypass RAM validation for hardware registers)
 int VMemMapMMIO(uint64_t vaddr, uint64_t paddr, uint64_t size, uint64_t flags);
 void VMemUnmapMMIO(uint64_t vaddr, uint64_t size);

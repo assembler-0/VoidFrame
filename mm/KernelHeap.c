@@ -48,6 +48,10 @@ static size_t total_allocated = 0;
 static size_t peak_allocated = 0;
 static FastCache fast_caches[NUM_SIZE_CLASSES];
 
+// Runtime-tunable knobs (with safe defaults)
+static volatile size_t g_small_alloc_threshold = SMALL_ALLOC_THRESHOLD;
+static volatile int g_fast_cache_capacity = FAST_CACHE_SIZE;
+
 // Validation level (can be reduced in production)
 static volatile int validation_level = 1; // 0=none, 1=basic, 2=full
 
@@ -160,7 +164,7 @@ static HeapBlock* FastCachePop(int size_class) {
 static void FastCachePush(HeapBlock* block, int size_class) {
     ASSERT(__sync_fetch_and_add(&kheap_lock, 0) != 0);
     FastCache* cache = &fast_caches[size_class];
-    if (cache->count >= FAST_CACHE_SIZE) return; // Cache full
+    if (cache->count >= g_fast_cache_capacity) return; // Cache full
 
     block->cache_next = cache->free_list;
     cache->free_list = block;
@@ -171,7 +175,7 @@ static void FastCachePush(HeapBlock* block, int size_class) {
 // Optimized free block search with early termination
 static HeapBlock* FindFreeBlock(size_t size) {
     // For small allocations, do a quick scan for exact/close fits
-    if (size <= SMALL_ALLOC_THRESHOLD) {
+    if (size <= g_small_alloc_threshold) {
         HeapBlock* first_fit = NULL;
         int blocks_scanned = 0;
 
@@ -227,7 +231,7 @@ static void SplitBlock(HeapBlock* block, size_t needed_size) {
 static HeapBlock* CreateNewBlock(size_t size) {
     // For small allocations, allocate larger chunks to reduce VMem calls
     size_t chunk_size = size;
-    if (size <= SMALL_ALLOC_THRESHOLD) {
+    if (size <= g_small_alloc_threshold) {
         chunk_size = (size < 4096) ? 4096 : PAGE_ALIGN_UP(size * 4);
     }
 
@@ -341,6 +345,9 @@ void* KernelMemoryAlloc(size_t size) {
         if (block) {
             fast_caches[size_class].hits++;
             InitBlock(block, actual_size, 0);
+            if (validation_level > 1) {
+                FastMemset(BlockToUser(block), 0xAA, actual_size); // poison on alloc (debug)
+            }
             total_allocated += actual_size;
             if (total_allocated > peak_allocated) {
                 peak_allocated = total_allocated;
@@ -366,11 +373,17 @@ void* KernelMemoryAlloc(size_t size) {
 
         SplitBlock(block, size);
         InitBlock(block, size, 0);
+        if (validation_level > 1) {
+            FastMemset(BlockToUser(block), 0xAA, size);
+        }
     } else {
         block = CreateNewBlock(size);
         if (!block) {
             SpinUnlockIrqRestore(&kheap_lock, flags);
             return NULL;
+        }
+        if (validation_level > 1) {
+            FastMemset(BlockToUser(block), 0xAA, size);
         }
     }
 
@@ -481,6 +494,7 @@ void PrintHeapStats(void) {
     size_t free_blocks = 0, used_blocks = 0;
     size_t free_bytes = 0, used_bytes = 0;
     size_t cached_blocks = 0;
+    size_t largest_free = 0;
 
     for (HeapBlock* block = heap_head; block; block = block->next) {
         if (!ValidateBlock(block, "stats")) continue;
@@ -488,6 +502,7 @@ void PrintHeapStats(void) {
         if (block->is_free) {
             free_blocks++;
             free_bytes += block->size;
+            if (block->size > largest_free) largest_free = block->size;
         } else {
             used_blocks++;
             used_bytes += block->size;
@@ -508,11 +523,17 @@ void PrintHeapStats(void) {
     PrintKernel("KB used, "); PrintKernelInt(free_bytes / 1024); PrintKernel("KB free\n");
     PrintKernel("[HEAP] Peak: "); PrintKernelInt(peak_allocated / 1024); PrintKernel("KB\n");
 
+    if (free_bytes > 0) {
+        int frag = (int)(((free_bytes - largest_free) * 100) / free_bytes);
+        PrintKernel("[HEAP] Fragmentation: "); PrintKernelInt(frag); PrintKernel("% (largest free block ");
+        PrintKernelInt(largest_free); PrintKernel(" bytes)\n");
+    }
+
     // Show cache efficiency
     PrintKernel("[HEAP] Cache stats:\n");
     for (int i = 0; i < NUM_SIZE_CLASSES; i++) {
         if (fast_caches[i].hits + fast_caches[i].misses > 0) {
-            int hit_rate = (fast_caches[i].hits * 100) / (fast_caches[i].hits + fast_caches[i].misses);
+            int hit_rate = (int)((fast_caches[i].hits * 100) / (fast_caches[i].hits + fast_caches[i].misses));
             PrintKernel("  "); PrintKernelInt(size_classes[i]); PrintKernel("B: ");
             PrintKernelInt(hit_rate); PrintKernel("% hit rate\n");
         }
@@ -532,6 +553,34 @@ void KernelHeapFlushCaches(void) {
             HeapBlock* block = FastCachePop(i);
             if (block) {
                 CoalesceWithAdjacent(block);
+            }
+        }
+    }
+
+    SpinUnlockIrqRestore(&kheap_lock, flags);
+}
+
+
+void KernelHeapTune(size_t small_alloc_threshold, int fast_cache_capacity) {
+    irq_flags_t flags = SpinLockIrqSave(&kheap_lock);
+
+    // Clamp to sane bounds
+    if (small_alloc_threshold < MIN_BLOCK_SIZE) small_alloc_threshold = MIN_BLOCK_SIZE;
+    if (small_alloc_threshold > 8192) small_alloc_threshold = 8192; // cap to keep chunking reasonable
+    if (fast_cache_capacity < 0) fast_cache_capacity = 0;
+    if (fast_cache_capacity > 1024) fast_cache_capacity = 1024; // prevent runaway memory in caches
+
+    g_small_alloc_threshold = AlignSize(small_alloc_threshold);
+    g_fast_cache_capacity = fast_cache_capacity;
+
+    // If capacity shrank, proactively trim caches and coalesce
+    for (int i = 0; i < NUM_SIZE_CLASSES; i++) {
+        while (fast_caches[i].count > g_fast_cache_capacity) {
+            HeapBlock* blk = FastCachePop(i);
+            if (blk) {
+                // Mark free and merge back to main free space
+                InitBlock(blk, size_classes[i], 1);
+                CoalesceWithAdjacent(blk);
             }
         }
     }
