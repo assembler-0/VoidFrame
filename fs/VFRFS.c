@@ -433,7 +433,7 @@ int FsListDir(const char* path) {
 
     FsNode* child = dir_node->children;
     if (!child) {
-        PrintKernel("(empty directory)\n");
+        PrintKernel("\n");
         return 0;
     }
 

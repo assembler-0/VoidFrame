@@ -17,4 +17,7 @@ void PrintHeapStats(void);
 void KernelHeapSetValidationLevel(int level);  // 0=none, 1=basic, 2=full
 void KernelHeapFlushCaches(void);
 
+// Runtime tuning knobs (safe to call at early boot or quiescent points)
+void KernelHeapTune(size_t small_alloc_threshold, int fast_cache_capacity);
+
 #endif // KHEAP_H

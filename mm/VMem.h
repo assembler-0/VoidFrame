@@ -125,7 +125,6 @@ void VMemFree(void* vaddr, uint64_t size);
 int VMemMap(uint64_t vaddr, uint64_t paddr, uint64_t flags);
 int VMemUnmap(uint64_t vaddr, uint64_t size);
 void PrintVMemStats(void);
-void VMemMapKernel(uint64_t kernel_phys_start, uint64_t kernel_phys_end);
 
 // Safer allocation with unmapped guard pages
 void* VMemAllocWithGuards(uint64_t size);
@@ -135,6 +134,8 @@ void VMemFreeWithGuards(void* ptr, uint64_t size);
 void* VMemAllocStack(uint64_t size);
 void VMemFreeStack(void* stack_top, uint64_t size);
 
+// Huge page mapping
+int VMemMapHuge(uint64_t vaddr, uint64_t paddr, uint64_t flags);
 // MMIO-specific mapping functions (bypass RAM validation for hardware registers)
 int VMemMapMMIO(uint64_t vaddr, uint64_t paddr, uint64_t size, uint64_t flags);
 void VMemUnmapMMIO(uint64_t vaddr, uint64_t size);

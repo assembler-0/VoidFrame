@@ -346,49 +346,44 @@ void VMemFree(void* vaddr, uint64_t size) {
 
     // 2. Determine which region this address belongs to
     irq_flags_t flags = SpinLockIrqSave(&vmem_lock);
-    
+
     int region = (start_vaddr >= VIRT_ADDR_SPACE_HIGH_START) ? 1 : 0;
     VMemFreeBlock** free_list = region ? &kernel_space.free_list_high : &kernel_space.free_list_low;
 
-    VMemFreeBlock* new_block = AllocFreeBlock();
-    if (!new_block) {
+    VMemFreeBlock* node = AllocFreeBlock();
+    if (!node) {
         SpinUnlockIrqRestore(&vmem_lock, flags);
         PANIC("VMemFree: Out of free list nodes");
     }
-    new_block->base = start_vaddr;
-    new_block->size = size;
+    node->base = start_vaddr;
+    node->size = size;
+    node->next = NULL;
 
-    // Insert into appropriate sorted list and merge
-    VMemFreeBlock *prev = NULL, *current = *free_list;
-    while (current && current->base < new_block->base) {
-        prev = current;
-        current = current->next;
+    // Insert sorted by base address
+    VMemFreeBlock* prev = NULL;
+    VMemFreeBlock* cur = *free_list;
+    while (cur && cur->base < node->base) {
+        prev = cur;
+        cur = cur->next;
     }
 
-    // Merge with next block?
-    if (current && new_block->base + new_block->size == current->base) {
-        current->base = new_block->base;
-        current->size += new_block->size;
-        ReleaseFreeBlock(new_block);
-        new_block = current;
+    // Link in
+    node->next = cur;
+    if (prev) prev->next = node; else *free_list = node;
+
+    // Coalesce with next
+    if (node->next && (node->base + node->size == node->next->base)) {
+        VMemFreeBlock* next = node->next;
+        node->size += next->size;
+        node->next = next->next;
+        ReleaseFreeBlock(next);
     }
 
-    // Merge with previous block?
-    if (prev && prev->base + prev->size == new_block->base) {
-        prev->size += new_block->size;
-        if (new_block == current) {
-             prev->next = current->next;
-             ReleaseFreeBlock(current);
-        }
-        ReleaseFreeBlock(new_block);
-    } else if (new_block != current) {
-        if (prev) {
-            new_block->next = prev->next;
-            prev->next = new_block;
-        } else {
-            new_block->next = *free_list;
-            *free_list = new_block;
-        }
+    // Coalesce with previous
+    if (prev && (prev->base + prev->size == node->base)) {
+        prev->size += node->size;
+        prev->next = node->next;
+        ReleaseFreeBlock(node);
     }
 
     vmem_frees++;
@@ -437,84 +432,38 @@ void VMemFreeWithGuards(void* ptr, uint64_t size) {
 }
 
 uint64_t VMemGetPhysAddr(uint64_t vaddr) {
-    uint64_t pdp_phys = VMemGetPageTablePhys((uint64_t)kernel_space.pml4, vaddr, 0, 0);
+    // Walk PML4 -> PDP -> PD. At PD, handle both 2MB (PAGE_LARGE) and 4KB pages.
+    uint64_t pml4_phys = (uint64_t)kernel_space.pml4;
+    uint64_t pdp_phys = VMemGetPageTablePhys(pml4_phys, vaddr, 0, 0);
     if (!pdp_phys) return 0;
 
     uint64_t pd_phys = VMemGetPageTablePhys(pdp_phys, vaddr, 1, 0);
     if (!pd_phys) return 0;
 
+    // Access PD
+    uint64_t* pd_virt = (pd_phys < IDENTITY_MAP_SIZE) ? (uint64_t*)pd_phys : (uint64_t*)PHYS_TO_VIRT(pd_phys);
+    int pd_index = (vaddr >> PD_SHIFT) & PT_INDEX_MASK;
+    uint64_t pde = pd_virt[pd_index];
+
+    if (!(pde & PAGE_PRESENT)) return 0;
+
+    if (pde & PAGE_LARGE) {
+        // 2MB page: physical base is 2MB aligned from PDE
+        uint64_t base = pde & PT_ADDR_MASK; // upper bits contain frame; PT_ADDR_MASK works for PD too
+        return (base & ~((uint64_t)HUGE_PAGE_SIZE - 1)) | (vaddr & (HUGE_PAGE_SIZE - 1));
+    }
+
+    // Otherwise, continue to PT for 4KB page
     uint64_t pt_phys = VMemGetPageTablePhys(pd_phys, vaddr, 2, 0);
     if (!pt_phys) return 0;
 
-    // Access PT through identity mapping if possible
-    uint64_t* pt_virt;
-    if (pt_phys < IDENTITY_MAP_SIZE) {
-        pt_virt = (uint64_t*)pt_phys;
-    } else {
-        pt_virt = (uint64_t*)PHYS_TO_VIRT(pt_phys);
-    }
+    uint64_t* pt_virt = (pt_phys < IDENTITY_MAP_SIZE) ? (uint64_t*)pt_phys : (uint64_t*)PHYS_TO_VIRT(pt_phys);
     int pt_index = (vaddr >> PT_SHIFT) & PT_INDEX_MASK;
+    uint64_t pte = pt_virt[pt_index];
 
-    if (!(pt_virt[pt_index] & PAGE_PRESENT)) return 0;
+    if (!(pte & PAGE_PRESENT)) return 0;
 
-    return (pt_virt[pt_index] & PT_ADDR_MASK) | (vaddr & PAGE_MASK);
-}
-
-void VMemMapKernel(uint64_t kernel_phys_start, uint64_t kernel_phys_end) {
-    (void)kernel_phys_start;
-    (void)kernel_phys_end;
-
-    PrintKernelSuccess("VMem: VMem: Mapping kernel sections...\n");
-
-    // Map .text section (read-only)
-    uint64_t text_start = PAGE_ALIGN_DOWN((uint64_t)_text_start);
-    uint64_t text_end = PAGE_ALIGN_UP((uint64_t)_text_end);
-    for (uint64_t paddr = text_start; paddr < text_end; paddr += PAGE_SIZE) {
-        uint64_t vaddr = paddr + KERNEL_VIRTUAL_OFFSET;
-        int result = VMemMap(vaddr, paddr, PAGE_PRESENT);
-        if (result != VMEM_SUCCESS) {
-            PANIC_CODE("VMemMapKernel: Failed to map .text page!", result);
-        }
-    }
-    PrintKernel("  .text mapped (RO): 0x"); PrintKernelHex(text_start); PrintKernel(" - 0x"); PrintKernelHex(text_end); PrintKernel("\n");
-
-    // Map .rodata section (read-only)
-    uint64_t rodata_start = PAGE_ALIGN_DOWN((uint64_t)_rodata_start);
-    uint64_t rodata_end = PAGE_ALIGN_UP((uint64_t)_rodata_end);
-    for (uint64_t paddr = rodata_start; paddr < rodata_end; paddr += PAGE_SIZE) {
-        uint64_t vaddr = paddr + KERNEL_VIRTUAL_OFFSET;
-        int result = VMemMap(vaddr, paddr, PAGE_PRESENT);
-        if (result != VMEM_SUCCESS) {
-            PANIC_CODE("VMemMapKernel: Failed to map .rodata page!", result);
-        }
-    }
-    PrintKernel("  .rodata mapped (RO): 0x"); PrintKernelHex(rodata_start); PrintKernel(" - 0x"); PrintKernelHex(rodata_end); PrintKernel("\n");
-
-    // Map .data section (read-write)
-    uint64_t data_start = PAGE_ALIGN_DOWN((uint64_t)_data_start);
-    uint64_t data_end = PAGE_ALIGN_UP((uint64_t)_data_end);
-    for (uint64_t paddr = data_start; paddr < data_end; paddr += PAGE_SIZE) {
-        uint64_t vaddr = paddr + KERNEL_VIRTUAL_OFFSET;
-        int result = VMemMap(vaddr, paddr, PAGE_WRITABLE);
-        if (result != VMEM_SUCCESS) {
-            PANIC_CODE("VMemMapKernel: Failed to map .data page!", result);
-        }
-    }
-    PrintKernel("  .data mapped (RW): 0x"); PrintKernelHex(data_start); PrintKernel(" - 0x"); PrintKernelHex(data_end); PrintKernel("\n");
-
-    // Map .bss section (read-write)
-    uint64_t bss_start = PAGE_ALIGN_DOWN((uint64_t)_bss_start);
-    uint64_t bss_end = PAGE_ALIGN_UP((uint64_t)_bss_end);
-    for (uint64_t paddr = bss_start; paddr < bss_end; paddr += PAGE_SIZE) {
-        uint64_t vaddr = paddr + KERNEL_VIRTUAL_OFFSET;
-        int result = VMemMap(vaddr, paddr, PAGE_WRITABLE);
-        if (result != VMEM_SUCCESS) {
-            PANIC_CODE("VMemMapKernel: Failed to map .bss page!", result);
-        }
-    }
-    PrintKernel("  .bss mapped (RW): 0x"); PrintKernelHex(bss_start); PrintKernel(" - 0x"); PrintKernelHex(bss_end); PrintKernel("\n");
-
-    PrintKernelSuccess("VMem: VMem: Kernel section mapping complete.\n");
+    return (pte & PT_ADDR_MASK) | (vaddr & PAGE_MASK);
 }
 
 int VMemIsPageMapped(uint64_t vaddr) {
@@ -536,30 +485,49 @@ void VMemFlushTLBSingle(uint64_t vaddr) {
 
 int VMemUnmap(uint64_t vaddr, uint64_t size) {
     if (size == 0) return VMEM_SUCCESS;
-    
-    size = PAGE_ALIGN_UP(size);
-    uint64_t num_pages = size / PAGE_SIZE;
-    
+
+    uint64_t start = PAGE_ALIGN_DOWN(vaddr);
+    uint64_t end = PAGE_ALIGN_UP(vaddr + size);
+    uint64_t num_pages = (end - start) / PAGE_SIZE;
+
     for (uint64_t i = 0; i < num_pages; i++) {
-        uint64_t current_vaddr = vaddr + (i * PAGE_SIZE);
-        
+        uint64_t current_vaddr = start + (i * PAGE_SIZE);
+
         irq_flags_t flags = SpinLockIrqSave(&vmem_lock);
-        
-        uint64_t pdp_phys = VMemGetPageTablePhys((uint64_t)kernel_space.pml4, current_vaddr, 0, 0);
+
+        uint64_t pml4_phys = (uint64_t)kernel_space.pml4;
+        uint64_t pdp_phys = VMemGetPageTablePhys(pml4_phys, current_vaddr, 0, 0);
         if (!pdp_phys) { SpinUnlockIrqRestore(&vmem_lock, flags); continue; }
 
         uint64_t pd_phys = VMemGetPageTablePhys(pdp_phys, current_vaddr, 1, 0);
         if (!pd_phys) { SpinUnlockIrqRestore(&vmem_lock, flags); continue; }
 
+        // Check for huge-page mapping (2MB) at PD level
+        uint64_t* pd_virt = (pd_phys < IDENTITY_MAP_SIZE) ? (uint64_t*)pd_phys : (uint64_t*)PHYS_TO_VIRT(pd_phys);
+        int pd_index = (current_vaddr >> PD_SHIFT) & PT_INDEX_MASK;
+        uint64_t pde = pd_virt[pd_index];
+        if ((pde & PAGE_PRESENT) && (pde & PAGE_LARGE)) {
+            // Only unmap if we are aligned and have enough remaining to cover the whole huge page
+            if (IS_HUGE_PAGE_ALIGNED(current_vaddr) && (end - current_vaddr) >= HUGE_PAGE_SIZE) {
+                pd_virt[pd_index] = 0;
+                kernel_space.used_pages -= (HUGE_PAGE_SIZE / PAGE_SIZE);
+                kernel_space.total_mapped -= HUGE_PAGE_SIZE;
+                SpinUnlockIrqRestore(&vmem_lock, flags);
+                // Flush once for the huge region
+                for (uint64_t off = 0; off < HUGE_PAGE_SIZE; off += PAGE_SIZE) {
+                    VMemFlushTLBSingle(current_vaddr + off);
+                }
+                // Skip the rest of the pages covered by this huge page
+                i += (HUGE_PAGE_SIZE / PAGE_SIZE) - 1;
+                continue;
+            }
+            // If not aligned/size insufficient, fall through to 4KB path (cannot partially unmap 2MB)
+        }
+
         uint64_t pt_phys = VMemGetPageTablePhys(pd_phys, current_vaddr, 2, 0);
         if (!pt_phys) { SpinUnlockIrqRestore(&vmem_lock, flags); continue; }
 
-        uint64_t* pt_virt;
-        if (pt_phys < IDENTITY_MAP_SIZE) {
-            pt_virt = (uint64_t*)pt_phys;
-        } else {
-            pt_virt = (uint64_t*)PHYS_TO_VIRT(pt_phys);
-        }
+        uint64_t* pt_virt = (pt_phys < IDENTITY_MAP_SIZE) ? (uint64_t*)pt_phys : (uint64_t*)PHYS_TO_VIRT(pt_phys);
         int pt_index = (current_vaddr >> PT_SHIFT) & PT_INDEX_MASK;
 
         if (pt_virt[pt_index] & PAGE_PRESENT) {
@@ -567,11 +535,11 @@ int VMemUnmap(uint64_t vaddr, uint64_t size) {
             kernel_space.used_pages--;
             kernel_space.total_mapped -= PAGE_SIZE;
         }
-        
+
         SpinUnlockIrqRestore(&vmem_lock, flags);
         VMemFlushTLBSingle(current_vaddr);
     }
-    
+
     return VMEM_SUCCESS;
 }
 
