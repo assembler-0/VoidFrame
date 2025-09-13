@@ -28,7 +28,7 @@ FaultResult HandlePageFault(Registers* regs) {
         .fault_addr = fault_addr,
         .error_code = regs->error_code,
         .rip = regs->rip,
-        .pid = MLFQGetCurrentProcess()->pid,  // Get current process ID
+        .pid = (regs->error_code & PF_USER) ? MLFQGetCurrentProcess()->pid : 0,
         .reason = "Unknown"
     };
     
@@ -54,17 +54,7 @@ FaultResult HandlePageFault(Registers* regs) {
 }
 
 int IsKernelFault(uint64_t fault_addr, uint64_t error_code) {
-    // Check if fault occurred in kernel mode
-    if (!(error_code & PF_USER)) {
-        return 1;  // Kernel mode fault
-    }
-    
-    // Check if accessing kernel address space
-    if (fault_addr >= KERNEL_SPACE_START) {
-        return 1;  // User trying to access kernel space
-    }
-    
-    return 0;  // User mode fault in user space
+    return (error_code & PF_USER) ? 0 : 1;
 }
 
 int IsNullPointerDereference(uint64_t fault_addr) {

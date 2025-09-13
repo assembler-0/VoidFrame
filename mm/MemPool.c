@@ -7,7 +7,6 @@ static int num_default_pools = 0;
 MemPool* CreateMemPool(uint64_t block_size, uint64_t initial_pages) {
     MemPool* pool = (MemPool*)VMemAlloc(sizeof(MemPool));
     if (!pool) return NULL;
-
     pool->magic = POOL_MAGIC;
     pool->block_size = block_size;
     pool->blocks_per_page = PAGE_SIZE / block_size;

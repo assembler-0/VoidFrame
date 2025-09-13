@@ -76,6 +76,8 @@ asmlinkage void InterruptHandler(Registers* regs) {
                     PrintKernelInt(MLFQGetCurrentProcess()->pid);
                     PrintKernelWarning(" due to page fault\n");
                     MLFQKillCurrentProcess("Page Fault (segmentation fault)");
+                    // Switch to the next ctx immediately
+                    MLFQSchedule(regs);
                     return;
                     
                 case FAULT_RETRY:

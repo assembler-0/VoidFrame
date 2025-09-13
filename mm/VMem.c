@@ -352,9 +352,8 @@ void VMemFree(void* vaddr, uint64_t size) {
 
     VMemFreeBlock* new_block = AllocFreeBlock();
     if (!new_block) {
-        PANIC("VMemFree: Out of free list nodes");
         SpinUnlockIrqRestore(&vmem_lock, flags);
-        return;
+        PANIC("VMemFree: Out of free list nodes");
     }
     new_block->base = start_vaddr;
     new_block->size = size;
