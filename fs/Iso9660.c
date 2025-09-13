@@ -16,34 +16,55 @@ static uint8_t cdrom_drive = 0xFF; // Auto-detect CD-ROM drive
 static int DetectCdromDrive(void) {
     if (cdrom_drive != 0xFF) return cdrom_drive;
     
+    PrintKernel("[ISO] Detecting CD-ROM...\n");
     uint8_t sector_buffer[512];
+    
     for (uint8_t drive = 0; drive < 4; drive++) {
-        for (int sector_offset = 0; sector_offset < 4; sector_offset++) {
-            if (IdeReadSector(drive, 16 * 4 + sector_offset, sector_buffer) == 0) {
-                for (int offset = 0; offset < 512 - 5; offset++) {
-                    if (FastMemcmp(sector_buffer + offset + 1, "CD001", 5) == 0 && 
-                        sector_buffer[offset] == 1) {
-                        cdrom_drive = drive;
-                        PrintKernelF("[ISO] CD-ROM detected on drive %d\n", drive);
-                        return drive;
-                    }
-                }
+        char model[41];
+        if (IdeGetDriveInfo(drive, model) == IDE_OK) {
+            PrintKernelF("[ISO] Drive %d: %s\n", drive, model);
+        } else {
+            continue;
+        }
+        
+        // Test reading sector 64 (16*4) for PVD
+        int result = IdeReadSector(drive, 64, sector_buffer);
+        PrintKernelF("[ISO] Drive %d sector 64 result: %d\n", drive, result);
+        
+        if (result == 0) {
+            PrintKernel("[ISO] Data: ");
+            for (int i = 0; i < 16; i++) {
+                PrintKernelF("%02X ", sector_buffer[i]);
+            }
+            PrintKernel("\n");
+            
+            if (sector_buffer[0] == 1 && FastMemcmp(sector_buffer + 1, "CD001", 5) == 0) {
+                cdrom_drive = drive;
+                PrintKernelF("[ISO] CD-ROM found on drive %d\n", drive);
+                return drive;
             }
         }
     }
     return -1;
 }
 
-// Function to read a sector from the ISO
+// Function to read a 2048-byte ISO sector
 static int ReadSector(uint32_t lba, void* buffer) {
     int drive = DetectCdromDrive();
-    if (drive < 0) return -1;
+    if (drive < 0) {
+        PrintKernel("[ISO] No CD-ROM available\n");
+        return -1;
+    }
     
-    uint32_t start_lba = lba * 4;
+    PrintKernelF("[ISO] Reading LBA %u from drive %d\n", lba, drive);
+    
+    // ISO uses 2048-byte sectors, IDE uses 512-byte sectors
+    uint32_t start_sector = lba * 4;
+    
     for (int i = 0; i < 4; i++) {
-        int result = IdeReadSector(drive, start_lba + i, (uint8_t*)buffer + (i * 512));
+        int result = IdeReadSector(drive, start_sector + i, (uint8_t*)buffer + (i * 512));
         if (result != 0) {
-            PrintKernelF("[ISO] Failed to read sector %u from drive %d\n", start_lba + i, drive);
+            PrintKernelF("[ISO] Failed sector %u (part %d)\n", start_sector + i, i);
             return -1;
         }
     }
@@ -113,32 +134,46 @@ int Iso9660Read(const char* path, void* buffer, uint32_t max_size) {
         return -1; // Out of memory
     }
 
-    // Find the Primary Volume Descriptor (PVD)
+    // Find the Primary Volume Descriptor (PVD) at LBA 16
+    PrintKernel("[ISO] Looking for Primary Volume Descriptor...\n");
     Iso9660Pvd* pvd = NULL;
-    for (uint32_t lba = 16; lba < 32; lba++) {
-        if (ReadSector(lba, sector_buffer) != 0) {
+    
+    if (ReadSector(16, sector_buffer) != 0) {
+        KernelFree(sector_buffer);
+        PrintKernelError("[ISO] Failed to read PVD sector 16\n");
+        return -1;
+    }
+    
+    // Debug: Show first 16 bytes of sector
+    PrintKernel("[ISO] First 16 bytes of sector 16: ");
+    for (int i = 0; i < 16; i++) {
+        PrintKernelF("%02X ", sector_buffer[i]);
+    }
+    PrintKernel("\n");
+    
+    Iso9660Pvd* cand = (Iso9660Pvd*)sector_buffer;
+    PrintKernelF("[ISO] PVD type: %d, ID: %.5s\n", cand->type, cand->id);
+    
+    if (cand->type == 1 && FastMemcmp(cand->id, "CD001", 5) == 0) {
+        PrintKernel("[ISO] Found valid PVD!\n");
+        pvd = KernelMemoryAlloc(ISO9660_SECTOR_SIZE);
+        if (!pvd) {
             KernelFree(sector_buffer);
-            PrintKernelError("Failed to read sector\n");
-            return -1; // Failed to read sector
+            PrintKernelError("[ISO] Out of memory for PVD\n");
+            return -1;
         }
-        Iso9660Pvd* cand = (Iso9660Pvd*)sector_buffer;
-        if (cand->type == 1 && FastMemcmp(cand->id, "CD001", 5) == 0) {
-            pvd = KernelMemoryAlloc(ISO9660_SECTOR_SIZE);
-            if (!pvd) {
-                KernelFree(sector_buffer);
-                PrintKernelError("Out of memory\n");
-                return -1;
-            }
-            FastMemcpy(pvd, sector_buffer, ISO9660_SECTOR_SIZE);
-            break;
-        }
+        FastMemcpy(pvd, sector_buffer, ISO9660_SECTOR_SIZE);
+    } else {
+        PrintKernelError("[ISO] Invalid PVD signature\n");
     }
     KernelFree(sector_buffer);
 
     if (!pvd) {
-        PrintKernelError("PVD not found\n");
-        return -1; // PVD not found
+        PrintKernelError("[ISO] PVD not found - not a valid ISO9660 filesystem\n");
+        return -1;
     }
+    
+    PrintKernel("[ISO] PVD found successfully\n");
 
     // Get the root directory entry
     Iso9660DirEntry* root_entry = (Iso9660DirEntry*)pvd->root_directory_record;

@@ -150,9 +150,9 @@ static void ARPTestHandler(const char * args) {
 
 static void VersionHandler(const char * args) {
     (void)args;
-    PrintKernelSuccess("VoidFrame v0.0.2-rc2\n");
+    PrintKernelSuccess("VoidFrame v0.0.2-development2\n");
     PrintKernelF("Built on %s at %s\n", DATE, TIME);
-    PrintKernelSuccess("VoidFrame Shell v0.0.2-rc2\n");
+    PrintKernelSuccess("VoidFrame Shell v0.0.2-development2\n");
 }
 
 typedef struct {
@@ -702,6 +702,12 @@ static void RmHandler(const char * args) {
 static void EchoHandler(const char * args) {
     char* text = GetArg(args, 1);
     char* file = GetArg(args, 2);
+    if (text && !file) {
+        PrintKernel(text);
+        PrintNewline();
+        KernelFree(text);
+        return;
+    }
     if (text && file) {
         char full_path[256];
         ResolvePath(file, full_path, 256);
@@ -1193,8 +1199,8 @@ void ExecuteCommand(const char* cmd) {
     char* cmd_name = GetArg(cmd, 0);
     if (!cmd_name) return;
     for (size_t i = 0; i < (sizeof(commands) / sizeof(ShellCommand)); i++) {
-        if (VfsIsFile(FormatS("%s/%s", DataDir, cmd_name))) {
-            const char* full = FormatS("%s/%s", DataDir, cmd_name);
+        if (VfsIsFile(FormatS("%s/%s", DataApps, cmd_name))) {
+            const char* full = FormatS("%s/%s", DataApps, cmd_name);
             const ExecLoadOptions opts = {
                 .privilege_level = PROC_PRIV_NORM,
                 .security_flags = 0,
@@ -1230,7 +1236,7 @@ void ShellInit(void) {
 }
 
 void ShellProcess(void) {
-    PrintKernelSuccess("System: VoidFrame Shell v0.0.2-rc2 ('help' for list of commands)\n");
+    PrintKernelSuccess("System: VoidFrame Shell v0.0.2-development2 ('help' for list of commands)\n");
     ExecuteCommand("help");
     while (1) {
         if (HasInput()) {
