@@ -138,12 +138,18 @@ static void PrintPciDeviceInfo(PciDevice device) {
     PrintKernel(")\n");
 }
 
-void PciEnumerate() {
+void PciInit() {
     PrintKernel("--- PCI Bus Enumeration ---\n");
     PciScanBus(PrintPciDeviceInfo);
 #ifdef VF_CONFIG_ENABLE_VIRTIO
     PciScanBus(PciVirtioHandler);
 #endif
+    PrintKernel("---------------------------\n");
+}
+
+void PciEnumerate() {
+    PrintKernel("--- PCI Bus Enumeration ---\n");
+    PciScanBus(PrintPciDeviceInfo);
     PrintKernel("---------------------------\n");
 }
 

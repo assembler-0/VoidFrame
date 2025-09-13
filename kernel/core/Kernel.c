@@ -722,7 +722,7 @@ static InitResultT PXS2(void) {
 
 #ifdef VF_CONFIG_ENABLE_PCI
     PrintKernel("Info: Scanning PCI devices...\n");
-    PciEnumerate();
+    PciInit();
     PrintKernelSuccess("System: PCI devices scanned\n");
 
     PrintKernel("Info: Initializing RTL8139 Driver...\n");
