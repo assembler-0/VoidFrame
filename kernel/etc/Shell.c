@@ -702,10 +702,21 @@ static void RmHandler(const char * args) {
 static void EchoHandler(const char * args) {
     char* text = GetArg(args, 1);
     char* file = GetArg(args, 2);
-    if (text && !file) {
-        PrintKernel(text);
-        PrintNewline();
-        KernelFree(text);
+    if (!file) {
+        // Print everything after "echo "
+        const char* p = args;
+        while (*p == ' ') p++;
+        if (FastStrnCmp(p, "echo", 4) == 0) {
+            p += 4;
+            while (*p == ' ') p++;
+        }
+        if (*p) {
+            PrintKernel(p);
+            PrintNewline();
+        } else {
+            PrintKernel("Usage: echo <text> [filename]\n");
+        }
+        if (text) KernelFree(text);
         return;
     }
     if (text && file) {

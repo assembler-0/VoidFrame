@@ -10,66 +10,40 @@
 
 #define ISO9660_SECTOR_SIZE 2048
 
-static uint8_t cdrom_drive = 0xFF; // Auto-detect CD-ROM drive
+static uint8_t cdrom_drive = 0xFF;
 
-// Function to detect CD-ROM drive
-static int DetectCdromDrive(void) {
-    if (cdrom_drive != 0xFF) return cdrom_drive;
-    
-    PrintKernel("[ISO] Detecting CD-ROM...\n");
-    uint8_t sector_buffer[512];
-    
-    for (uint8_t drive = 0; drive < 4; drive++) {
-        char model[41];
-        if (IdeGetDriveInfo(drive, model) == IDE_OK) {
-            PrintKernelF("[ISO] Drive %d: %s\n", drive, model);
-        } else {
-            continue;
-        }
-        
-        // Test reading sector 64 (16*4) for PVD
-        int result = IdeReadSector(drive, 64, sector_buffer);
-        PrintKernelF("[ISO] Drive %d sector 64 result: %d\n", drive, result);
-        
-        if (result == 0) {
-            PrintKernel("[ISO] Data: ");
-            for (int i = 0; i < 16; i++) {
-                PrintKernelF("%02X ", sector_buffer[i]);
-            }
-            PrintKernel("\n");
-            
-            if (sector_buffer[0] == 1 && FastMemcmp(sector_buffer + 1, "CD001", 5) == 0) {
-                cdrom_drive = drive;
-                PrintKernelF("[ISO] CD-ROM found on drive %d\n", drive);
-                return drive;
-            }
-        }
-    }
-    return -1;
-}
-
-// Function to read a 2048-byte ISO sector
 static int ReadSector(uint32_t lba, void* buffer) {
-    int drive = DetectCdromDrive();
-    if (drive < 0) {
-        PrintKernel("[ISO] No CD-ROM available\n");
-        return -1;
-    }
-    
-    PrintKernelF("[ISO] Reading LBA %u from drive %d\n", lba, drive);
-    
-    // ISO uses 2048-byte sectors, IDE uses 512-byte sectors
-    uint32_t start_sector = lba * 4;
-    
-    for (int i = 0; i < 4; i++) {
-        int result = IdeReadSector(drive, start_sector + i, (uint8_t*)buffer + (i * 512));
-        if (result != 0) {
-            PrintKernelF("[ISO] Failed sector %u (part %d)\n", start_sector + i, i);
+    if (cdrom_drive == 0xFF) {
+        PrintKernel("[ISO] Auto-detecting CD-ROM drive...\n");
+        for (uint8_t i = 0; i < 4; i++) {
+            PrintKernelF("[ISO] Checking drive %d...\n", i);
+            int result = IdeReadLBA2048(i, 16, buffer);
+            if (result == 0) {
+                Iso9660Pvd* pvd = (Iso9660Pvd*)buffer;
+                PrintKernelF("[ISO] Drive %d: PVD type: %d, ID: %.5s\n", i, pvd->type, pvd->id);
+                if (pvd->type == 1 && FastMemcmp(pvd->id, "CD001", 5) == 0) {
+                    cdrom_drive = i;
+                    PrintKernelF("[ISO] CD-ROM detected on drive %d\n", i);
+                    break;
+                }
+            } else {
+                PrintKernelF("[ISO] Drive %d: IdeReadLBA2048 failed with code %d\n", i, result);
+            }
+        }
+        if (cdrom_drive == 0xFF) {
+            PrintKernelError("[ISO] No CD-ROM drive found.\n");
             return -1;
         }
     }
+
+    if (IdeReadLBA2048(cdrom_drive, lba, buffer) != 0) {
+        PrintKernelF("[ISO] Failed to read LBA %u from drive %d\n", lba, cdrom_drive);
+        return -1;
+    }
+
     return 0;
 }
+
 
 static Iso9660DirEntry* FindFileInDir(uint32_t dir_lba, uint32_t dir_size, const char* filename) {
     uint8_t* sector_buffer = KernelMemoryAlloc(ISO9660_SECTOR_SIZE);
