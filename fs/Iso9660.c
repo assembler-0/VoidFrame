@@ -447,8 +447,6 @@ int Iso9660CopyFile(const char* iso_path, const char* vfs_path) {
     return 0; // Success
 }
 
-
-
 int Iso9660Copy(const char* iso_path, const char* vfs_path) {
     Iso9660DirEntry** entries = Iso9660ListDir(iso_path);
     if (!entries) {

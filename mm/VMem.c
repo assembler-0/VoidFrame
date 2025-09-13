@@ -460,63 +460,6 @@ uint64_t VMemGetPhysAddr(uint64_t vaddr) {
     return (pt_virt[pt_index] & PT_ADDR_MASK) | (vaddr & PAGE_MASK);
 }
 
-void VMemMapKernel(uint64_t kernel_phys_start, uint64_t kernel_phys_end) {
-    (void)kernel_phys_start;
-    (void)kernel_phys_end;
-
-    PrintKernelSuccess("VMem: VMem: Mapping kernel sections...\n");
-
-    // Map .text section (read-only)
-    uint64_t text_start = PAGE_ALIGN_DOWN((uint64_t)_text_start);
-    uint64_t text_end = PAGE_ALIGN_UP((uint64_t)_text_end);
-    for (uint64_t paddr = text_start; paddr < text_end; paddr += PAGE_SIZE) {
-        uint64_t vaddr = paddr + KERNEL_VIRTUAL_OFFSET;
-        int result = VMemMap(vaddr, paddr, PAGE_PRESENT);
-        if (result != VMEM_SUCCESS) {
-            PANIC_CODE("VMemMapKernel: Failed to map .text page!", result);
-        }
-    }
-    PrintKernel("  .text mapped (RO): 0x"); PrintKernelHex(text_start); PrintKernel(" - 0x"); PrintKernelHex(text_end); PrintKernel("\n");
-
-    // Map .rodata section (read-only)
-    uint64_t rodata_start = PAGE_ALIGN_DOWN((uint64_t)_rodata_start);
-    uint64_t rodata_end = PAGE_ALIGN_UP((uint64_t)_rodata_end);
-    for (uint64_t paddr = rodata_start; paddr < rodata_end; paddr += PAGE_SIZE) {
-        uint64_t vaddr = paddr + KERNEL_VIRTUAL_OFFSET;
-        int result = VMemMap(vaddr, paddr, PAGE_PRESENT);
-        if (result != VMEM_SUCCESS) {
-            PANIC_CODE("VMemMapKernel: Failed to map .rodata page!", result);
-        }
-    }
-    PrintKernel("  .rodata mapped (RO): 0x"); PrintKernelHex(rodata_start); PrintKernel(" - 0x"); PrintKernelHex(rodata_end); PrintKernel("\n");
-
-    // Map .data section (read-write)
-    uint64_t data_start = PAGE_ALIGN_DOWN((uint64_t)_data_start);
-    uint64_t data_end = PAGE_ALIGN_UP((uint64_t)_data_end);
-    for (uint64_t paddr = data_start; paddr < data_end; paddr += PAGE_SIZE) {
-        uint64_t vaddr = paddr + KERNEL_VIRTUAL_OFFSET;
-        int result = VMemMap(vaddr, paddr, PAGE_WRITABLE);
-        if (result != VMEM_SUCCESS) {
-            PANIC_CODE("VMemMapKernel: Failed to map .data page!", result);
-        }
-    }
-    PrintKernel("  .data mapped (RW): 0x"); PrintKernelHex(data_start); PrintKernel(" - 0x"); PrintKernelHex(data_end); PrintKernel("\n");
-
-    // Map .bss section (read-write)
-    uint64_t bss_start = PAGE_ALIGN_DOWN((uint64_t)_bss_start);
-    uint64_t bss_end = PAGE_ALIGN_UP((uint64_t)_bss_end);
-    for (uint64_t paddr = bss_start; paddr < bss_end; paddr += PAGE_SIZE) {
-        uint64_t vaddr = paddr + KERNEL_VIRTUAL_OFFSET;
-        int result = VMemMap(vaddr, paddr, PAGE_WRITABLE);
-        if (result != VMEM_SUCCESS) {
-            PANIC_CODE("VMemMapKernel: Failed to map .bss page!", result);
-        }
-    }
-    PrintKernel("  .bss mapped (RW): 0x"); PrintKernelHex(bss_start); PrintKernel(" - 0x"); PrintKernelHex(bss_end); PrintKernel("\n");
-
-    PrintKernelSuccess("VMem: VMem: Kernel section mapping complete.\n");
-}
-
 int VMemIsPageMapped(uint64_t vaddr) {
     return VMemGetPhysAddr(vaddr) != 0;
 }

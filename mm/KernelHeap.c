@@ -9,9 +9,11 @@ typedef struct HeapBlock {
     uint32_t magic;           // Magic number for corruption detection
     size_t size;              // User data size (not including header)
     uint8_t is_free;          // Boolean: 1 if free, 0 if allocated
-    struct HeapBlock* next;   // Next block in list
-    struct HeapBlock* prev;   // Previous block in list
+    uint8_t in_cache;         // Boolean: 1 if present in fast cache
+    struct HeapBlock* next;   // Next block in heap list (by physical order within a chunk)
+    struct HeapBlock* prev;   // Previous block in heap list
     uint32_t checksum;        // Header checksum for integrity
+    struct HeapBlock* cache_next; // Next block in fast cache list (separate linkage)
 } HeapBlock;
 
 // Magic constants
@@ -124,6 +126,8 @@ static void InitBlock(HeapBlock* block, size_t size, int is_free) {
     block->magic = is_free ? HEAP_MAGIC_FREE : HEAP_MAGIC_ALLOC;
     block->size = size;
     block->is_free = is_free ? 1 : 0;
+    block->in_cache = 0;           // Reset cache state on (re)initialization
+    block->cache_next = NULL;      // Clear cache linkage
     if (validation_level > 1) {
         block->checksum = ComputeChecksum(block);
     }
@@ -143,12 +147,12 @@ static HeapBlock* FastCachePop(int size_class) {
     if (!cache->free_list) return NULL;
 
     HeapBlock* block = cache->free_list;
-    cache->free_list = block->next;
+    cache->free_list = block->cache_next;
     cache->count--;
 
-    // Clear linkage
-    block->next = NULL;
-    block->prev = NULL;
+    // Clear cache linkage and flag
+    block->cache_next = NULL;
+    block->in_cache = 0;
     return block;
 }
 
@@ -158,11 +162,10 @@ static void FastCachePush(HeapBlock* block, int size_class) {
     FastCache* cache = &fast_caches[size_class];
     if (cache->count >= FAST_CACHE_SIZE) return; // Cache full
 
-    block->next = cache->free_list;
-    block->prev = NULL;
-    if (cache->free_list) cache->free_list->prev = block;
+    block->cache_next = cache->free_list;
     cache->free_list = block;
     cache->count++;
+    block->in_cache = 1;
 }
 
 // Optimized free block search with early termination
@@ -173,7 +176,7 @@ static HeapBlock* FindFreeBlock(size_t size) {
         int blocks_scanned = 0;
 
         for (HeapBlock* block = heap_head; block && blocks_scanned < 32; block = block->next, blocks_scanned++) {
-            if (block->is_free && block->size >= size) {
+            if (block->is_free && !block->in_cache && block->size >= size) {
                 if (block->size <= size * 2) { // Close fit
                     return block;
                 }
@@ -188,7 +191,7 @@ static HeapBlock* FindFreeBlock(size_t size) {
     size_t best_size = MAX_ALLOC_SIZE;
 
     for (HeapBlock* block = heap_head; block; block = block->next) {
-        if (block->is_free && block->size >= size && block->size < best_size) {
+        if (block->is_free && !block->in_cache && block->size >= size && block->size < best_size) {
             best = block;
             best_size = block->size;
             if (block->size == size) break; // Perfect fit
@@ -215,7 +218,7 @@ static void SplitBlock(HeapBlock* block, size_t needed_size) {
     if (block->next) block->next->prev = new_block;
     block->next = new_block;
 
-    // Update original block size
+    // Update original
     block->size = needed_size;
     UpdateChecksum(block);
 }
@@ -227,7 +230,7 @@ static HeapBlock* CreateNewBlock(size_t size) {
     if (size <= SMALL_ALLOC_THRESHOLD) {
         chunk_size = (size < 4096) ? 4096 : PAGE_ALIGN_UP(size * 4);
     }
-    
+
     size_t total_size = sizeof(HeapBlock) + chunk_size;
     void* mem = VMemAlloc(total_size);
     if (!mem) return NULL;
@@ -249,12 +252,46 @@ static HeapBlock* CreateNewBlock(size_t size) {
     return block;
 }
 
-// Coalesce adjacent free blocks (optimized)
+// Physical adjacency helper
+static inline int AreAdjacent(HeapBlock* a, HeapBlock* b) {
+    return (uint8_t*)b == ((uint8_t*)BlockToUser(a) + a->size);
+}
+
+// Remove a block from any fast cache it may be in
+static void CacheRemove(HeapBlock* blk) {
+    if (!blk->in_cache) return;
+    for (int i = 0; i < NUM_SIZE_CLASSES; i++) {
+        HeapBlock* prev = NULL;
+        HeapBlock* cur = fast_caches[i].free_list;
+        while (cur) {
+            if (cur == blk) {
+                if (prev) prev->cache_next = cur->cache_next;
+                else fast_caches[i].free_list = cur->cache_next;
+                fast_caches[i].count--;
+                blk->cache_next = NULL;
+                blk->in_cache = 0;
+                return;
+            }
+            prev = cur;
+            cur = cur->cache_next;
+        }
+    }
+    // Not found: clear flag defensively
+    blk->in_cache = 0;
+    blk->cache_next = NULL;
+}
+
+// Coalesce adjacent free blocks (optimized and safe)
 static void CoalesceWithAdjacent(HeapBlock* block) {
-    // Merge with next blocks
-    while (block->next && block->next->is_free) {
+    // Merge with next blocks only if physically adjacent
+    while (block->next && block->next->is_free && AreAdjacent(block, block->next)) {
         HeapBlock* next = block->next;
         if (!ValidateBlockFast(next)) break;
+
+        // If the neighbor is cached, remove it from cache first
+        if (next->in_cache) {
+            CacheRemove(next);
+        }
 
         block->size += sizeof(HeapBlock) + next->size;
         block->next = next->next;
@@ -262,8 +299,8 @@ static void CoalesceWithAdjacent(HeapBlock* block) {
         UpdateChecksum(block);
     }
 
-    // Let previous block merge with this one
-    if (block->prev && block->prev->is_free) {
+    // Let previous block merge with this one if physically adjacent
+    if (block->prev && block->prev->is_free && AreAdjacent(block->prev, block)) {
         CoalesceWithAdjacent(block->prev);
     }
 }
@@ -465,12 +502,12 @@ void PrintHeapStats(void) {
     SpinUnlockIrqRestore(&kheap_lock, flags);
 
     PrintKernel("[HEAP] Blocks: "); PrintKernelInt(used_blocks);
-    PrintKernel(" used, "); PrintKernelInt(free_blocks); PrintKernel(" free, ");
+    PrintKernel(", "); PrintKernelInt(free_blocks); PrintKernel(" free, ");
     PrintKernelInt(cached_blocks); PrintKernel(" cached\n");
     PrintKernel("[HEAP] Memory: "); PrintKernelInt(used_bytes / 1024);
     PrintKernel("KB used, "); PrintKernelInt(free_bytes / 1024); PrintKernel("KB free\n");
     PrintKernel("[HEAP] Peak: "); PrintKernelInt(peak_allocated / 1024); PrintKernel("KB\n");
-    
+
     // Show cache efficiency
     PrintKernel("[HEAP] Cache stats:\n");
     for (int i = 0; i < NUM_SIZE_CLASSES; i++) {

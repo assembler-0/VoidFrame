@@ -44,6 +44,7 @@ static void FreeNode(FsNode* node) {
     if (node && node >= fs_nodes && node < fs_nodes + MAX_FS_NODES) {
         if (node->data) {
             KernelFree(node->data);
+            node->data = NULL;
         }
         FastMemset(node, 0, sizeof(FsNode));
     }
@@ -105,7 +106,8 @@ FsNode* FsCreateNode(const char* name, FsNodeType type, FsNode* parent) {
     FsNode* node = AllocNode();
     if (!node) return NULL;
 
-    strncpy(node->name, name, MAX_FILENAME);
+    strncpy(node->name, name, MAX_FILENAME - 1);
+    node->name[MAX_FILENAME - 1] = '\0';
     node->type = type;
     node->parent = parent;
     node->created_time = GetCurrentTime();
@@ -433,7 +435,7 @@ int FsListDir(const char* path) {
 
     FsNode* child = dir_node->children;
     if (!child) {
-        PrintKernel("(empty directory)\n");
+        PrintKernel("\n");
         return 0;
     }
 

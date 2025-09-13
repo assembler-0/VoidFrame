@@ -125,7 +125,6 @@ void VMemFree(void* vaddr, uint64_t size);
 int VMemMap(uint64_t vaddr, uint64_t paddr, uint64_t flags);
 int VMemUnmap(uint64_t vaddr, uint64_t size);
 void PrintVMemStats(void);
-void VMemMapKernel(uint64_t kernel_phys_start, uint64_t kernel_phys_end);
 
 // Safer allocation with unmapped guard pages
 void* VMemAllocWithGuards(uint64_t size);
