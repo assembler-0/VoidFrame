@@ -15,10 +15,19 @@ static uint64_t vmem_allocations = 0;
 static uint64_t vmem_frees = 0;
 static uint64_t tlb_flushes = 0;
 
-// Pre-allocated pool for free list nodes
-#define MAX_FREE_BLOCKS 1024
-static VMemFreeBlock free_block_pool[MAX_FREE_BLOCKS];
-static VMemFreeBlock* free_block_head = NULL;
+// Buddy allocator constants
+#define BUDDY_MIN_ORDER 12  // 4KB pages
+#define BUDDY_MAX_ORDER 30  // 1GB max allocation
+#define BUDDY_NUM_ORDERS (BUDDY_MAX_ORDER - BUDDY_MIN_ORDER + 1)
+
+// Buddy free lists - one per order
+static VMemFreeBlock* buddy_free_lists[BUDDY_NUM_ORDERS];
+static uint64_t buddy_bitmap[(1ULL << (BUDDY_MAX_ORDER - BUDDY_MIN_ORDER)) / 64];
+
+// Pre-allocated pool for buddy nodes
+#define MAX_BUDDY_NODES 2048
+static VMemFreeBlock buddy_node_pool[MAX_BUDDY_NODES];
+static VMemFreeBlock* buddy_node_head = NULL;
 
 // TLB flush batching for efficiency
 #define MAX_TLB_BATCH 64
@@ -29,6 +38,10 @@ static uint32_t tlb_batch_count = 0;
 #define PT_CACHE_SIZE 16
 static void* pt_cache[PT_CACHE_SIZE];
 static uint32_t pt_cache_count = 0;
+
+// Buddy allocator regions
+static uint64_t buddy_region_start[2];
+static uint64_t buddy_region_size[2];
 
 extern uint64_t total_pages;
 extern uint8_t _kernel_phys_start[];
@@ -42,26 +55,112 @@ extern uint8_t _data_end[];
 extern uint8_t _bss_start[];
 extern uint8_t _bss_end[];
 
-static void InitFreeBlockPool(void) {
-    free_block_head = &free_block_pool[0];
-    for (int i = 0; i < MAX_FREE_BLOCKS - 1; ++i) {
-        free_block_pool[i].next = &free_block_pool[i + 1];
+static void InitBuddyNodePool(void) {
+    buddy_node_head = &buddy_node_pool[0];
+    for (int i = 0; i < MAX_BUDDY_NODES - 1; ++i) {
+        buddy_node_pool[i].next = &buddy_node_pool[i + 1];
     }
-    free_block_pool[MAX_FREE_BLOCKS - 1].next = NULL;
+    buddy_node_pool[MAX_BUDDY_NODES - 1].next = NULL;
 }
 
-static VMemFreeBlock* AllocFreeBlock(void) {
-    if (!free_block_head) {
-        return NULL; // Pool exhausted
-    }
-    VMemFreeBlock* block = free_block_head;
-    free_block_head = block->next;
-    return block;
+static VMemFreeBlock* AllocBuddyNode(void) {
+    if (!buddy_node_head) return NULL;
+    VMemFreeBlock* node = buddy_node_head;
+    buddy_node_head = node->next;
+    return node;
 }
 
-static void ReleaseFreeBlock(VMemFreeBlock* block) {
-    block->next = free_block_head;
-    free_block_head = block;
+static void ReleaseBuddyNode(VMemFreeBlock* node) {
+    node->next = buddy_node_head;
+    buddy_node_head = node;
+}
+
+static inline uint32_t GetOrder(uint64_t size) {
+    if (size <= PAGE_SIZE) return 0;
+    return 64 - __builtin_clzll(size - 1) - BUDDY_MIN_ORDER;
+}
+
+static inline uint64_t OrderToSize(uint32_t order) {
+    return 1ULL << (order + BUDDY_MIN_ORDER);
+}
+
+static inline uint64_t GetBuddyAddr(uint64_t addr, uint32_t order) {
+    return addr ^ OrderToSize(order);
+}
+
+static void BuddyAddFreeBlock(uint64_t addr, uint32_t order) {
+    if (order >= BUDDY_NUM_ORDERS) return;
+    
+    VMemFreeBlock* node = AllocBuddyNode();
+    if (!node) return;
+    
+    node->base = addr;
+    node->size = OrderToSize(order);
+    node->next = buddy_free_lists[order];
+    buddy_free_lists[order] = node;
+}
+
+static VMemFreeBlock* BuddyRemoveFreeBlock(uint64_t addr, uint32_t order) {
+    if (order >= BUDDY_NUM_ORDERS) return NULL;
+    
+    VMemFreeBlock* prev = NULL;
+    VMemFreeBlock* curr = buddy_free_lists[order];
+    
+    while (curr) {
+        if (curr->base == addr) {
+            if (prev) prev->next = curr->next;
+            else buddy_free_lists[order] = curr->next;
+            return curr;
+        }
+        prev = curr;
+        curr = curr->next;
+    }
+    return NULL;
+}
+
+static uint64_t BuddyAlloc(uint64_t size) {
+    uint32_t order = GetOrder(size);
+    if (order >= BUDDY_NUM_ORDERS) return 0;
+    
+    // Find smallest available block
+    for (uint32_t curr_order = order; curr_order < BUDDY_NUM_ORDERS; curr_order++) {
+        if (!buddy_free_lists[curr_order]) continue;
+        
+        VMemFreeBlock* block = buddy_free_lists[curr_order];
+        buddy_free_lists[curr_order] = block->next;
+        uint64_t addr = block->base;
+        ReleaseBuddyNode(block);
+        
+        // Split down to required order
+        while (curr_order > order) {
+            curr_order--;
+            uint64_t buddy_addr = addr + OrderToSize(curr_order);
+            BuddyAddFreeBlock(buddy_addr, curr_order);
+        }
+        
+        return addr;
+    }
+    
+    return 0; // No free blocks
+}
+
+static void BuddyFree(uint64_t addr, uint64_t size) {
+    uint32_t order = GetOrder(size);
+    if (order >= BUDDY_NUM_ORDERS) return;
+    
+    // Try to coalesce with buddy
+    while (order < BUDDY_NUM_ORDERS - 1) {
+        uint64_t buddy_addr = GetBuddyAddr(addr, order);
+        VMemFreeBlock* buddy = BuddyRemoveFreeBlock(buddy_addr, order);
+        
+        if (!buddy) break; // Buddy not free
+        
+        ReleaseBuddyNode(buddy);
+        if (buddy_addr < addr) addr = buddy_addr;
+        order++;
+    }
+    
+    BuddyAddFreeBlock(addr, order);
 }
 
 static inline int IsValidPhysAddr(uint64_t paddr) {
@@ -127,22 +226,47 @@ static void cache_page_table(void* pt) {
 }
 
 void VMemInit(void) {
-    InitFreeBlockPool();
+    InitBuddyNodePool();
+    
+    // Initialize buddy allocator
+    for (int i = 0; i < BUDDY_NUM_ORDERS; i++) {
+        buddy_free_lists[i] = NULL;
+    }
+    
+    // Set up buddy regions
+    buddy_region_start[0] = VIRT_ADDR_SPACE_LOW_START;
+    buddy_region_size[0] = VIRT_ADDR_SPACE_LOW_END - VIRT_ADDR_SPACE_LOW_START + 1;
+    buddy_region_start[1] = VIRT_ADDR_SPACE_HIGH_START;
+    buddy_region_size[1] = VIRT_ADDR_SPACE_HIGH_END - VIRT_ADDR_SPACE_HIGH_START + 1;
+    
+    // Add initial free blocks (largest possible)
+    for (int region = 0; region < 2; region++) {
+        uint64_t addr = buddy_region_start[region];
+        uint64_t remaining = buddy_region_size[region];
+        
+        while (remaining >= PAGE_SIZE) {
+            uint32_t order = BUDDY_NUM_ORDERS - 1;
+            while (order > 0 && OrderToSize(order) > remaining) {
+                order--;
+            }
+            
+            BuddyAddFreeBlock(addr, order);
+            uint64_t block_size = OrderToSize(order);
+            addr += block_size;
+            remaining -= block_size;
+        }
+    }
+    
     // Get current PML4 from CR3 (set by bootstrap)
     uint64_t pml4_phys_addr;
     __asm__ volatile("mov %%cr3, %0" : "=r"(pml4_phys_addr));
-    pml4_phys_addr &= ~0xFFF; // Clear flags
-
-    // Initialize dual-region kernel space tracking
-    kernel_space.next_vaddr_low = VIRT_ADDR_SPACE_LOW_START;
-    kernel_space.next_vaddr_high = VIRT_ADDR_SPACE_HIGH_START;
+    pml4_phys_addr &= ~0xFFF;
+    
+    kernel_space.pml4 = (uint64_t*)pml4_phys_addr;
     kernel_space.used_pages = 0;
     kernel_space.total_mapped = IDENTITY_MAP_SIZE;
-    kernel_space.pml4 = (uint64_t*)pml4_phys_addr;
-    kernel_space.free_list_low = NULL;
-    kernel_space.free_list_high = NULL;
-
-    // Now test identity mapping
+    
+    // Test identity mapping
     if (VMemGetPhysAddr(0x100000) != 0x100000) {
         PANIC("Bootstrap identity mapping failed - VALIDATION FAILED");
     }
@@ -150,7 +274,7 @@ void VMemInit(void) {
     if (VMemGetPhysAddr(probe) != probe) {
         PANIC("Bootstrap identity mapping failed at IDENTITY_MAP_SIZE boundary");
     }
-    PrintKernelSuccess("VMem: VMem initialized using existing PML4: ");
+    PrintKernelSuccess("VMem: Buddy allocator initialized with PML4: ");
     PrintKernelHex(pml4_phys_addr);
     PrintKernel("\n");
 }
@@ -258,67 +382,22 @@ int VMemMapHuge(uint64_t vaddr, uint64_t paddr, uint64_t flags) {
     return VMEM_SUCCESS;
 }
 
-// Select allocation region based on size heuristic
-static int SelectRegion(uint64_t size) {
-    // Large allocations (>=2MB) go to lower canonical for better TLB efficiency
-    return (size >= (2 * 1024 * 1024)) ? 0 : 1;
-}
-
 void* VMemAlloc(uint64_t size) {
     if (size == 0) return NULL;
     size = PAGE_ALIGN_UP(size);
-
-    uint64_t vaddr = 0;
+    
     irq_flags_t flags = SpinLockIrqSave(&vmem_lock);
-
-    int region = SelectRegion(size);
-    VMemFreeBlock** free_list = region ? &kernel_space.free_list_high : &kernel_space.free_list_low;
-    uint64_t* next_vaddr = region ? &kernel_space.next_vaddr_high : &kernel_space.next_vaddr_low;
-    uint64_t region_end = region ? VIRT_ADDR_SPACE_HIGH_END : VIRT_ADDR_SPACE_LOW_END;
-
-    // 1. Search the appropriate free list
-    VMemFreeBlock* prev = NULL;
-    VMemFreeBlock* current = *free_list;
-    while (current) {
-        if (current->size >= size) {
-            vaddr = current->base;
-            if (current->size == size) {
-                if (prev) prev->next = current->next;
-                else *free_list = current->next;
-                ReleaseFreeBlock(current);
-            } else {
-                current->base += size;
-                current->size -= size;
-            }
-            break;
-        }
-        prev = current;
-        current = current->next;
+    
+    uint64_t vaddr = BuddyAlloc(size);
+    if (!vaddr) {
+        SpinUnlockIrqRestore(&vmem_lock, flags);
+        return NULL;
     }
-
-    // 2. Use bump allocator if no free block found
-    if (vaddr == 0) {
-        uint64_t avail = (region_end >= *next_vaddr) ? (region_end - *next_vaddr + 1) : 0;
-        if (size > avail) {
-            region = 1 - region;
-            free_list = region ? &kernel_space.free_list_high : &kernel_space.free_list_low;
-            next_vaddr = region ? &kernel_space.next_vaddr_high : &kernel_space.next_vaddr_low;
-            region_end = region ? VIRT_ADDR_SPACE_HIGH_END : VIRT_ADDR_SPACE_LOW_END;
-            
-            uint64_t avail2 = (region_end >= *next_vaddr) ? (region_end - *next_vaddr + 1) : 0;
-            if (size > avail2) {
-                SpinUnlockIrqRestore(&vmem_lock, flags);
-                return NULL;
-            }
-        }
-        vaddr = *next_vaddr;
-        *next_vaddr += size;
-    }
-
+    
     vmem_allocations++;
     SpinUnlockIrqRestore(&vmem_lock, flags);
-
-    // 3. Map physical pages into the allocated virtual space
+    
+    // Map physical pages
     for (uint64_t offset = 0; offset < size; offset += PAGE_SIZE) {
         void* paddr = AllocPage();
         if (!paddr) {
@@ -333,13 +412,12 @@ void* VMemAlloc(uint64_t size) {
     }
     
     flush_tlb_batch();
-
-    // 4. Update stats and zero memory
+    
     flags = SpinLockIrqSave(&vmem_lock);
     kernel_space.used_pages += size / PAGE_SIZE;
     kernel_space.total_mapped += size;
     SpinUnlockIrqRestore(&vmem_lock, flags);
-
+    
     FastMemset((void*)vaddr, 0, size);
     return (void*)vaddr;
 }
@@ -350,7 +428,7 @@ void VMemFree(void* vaddr, uint64_t size) {
     uint64_t start_vaddr = PAGE_ALIGN_DOWN((uint64_t)vaddr);
     size = PAGE_ALIGN_UP(size);
 
-    // 1. Unmap all pages and free physical frames
+    // Unmap all pages and free physical frames
     for (uint64_t offset = 0; offset < size; offset += PAGE_SIZE) {
         uint64_t current_vaddr = start_vaddr + offset;
         uint64_t paddr = VMemGetPhysAddr(current_vaddr);
@@ -361,49 +439,11 @@ void VMemFree(void* vaddr, uint64_t size) {
     }
     
     flush_tlb_batch();
-
-    // 2. Determine which region this address belongs to
+    
     irq_flags_t flags = SpinLockIrqSave(&vmem_lock);
-
-    int region = (start_vaddr >= VIRT_ADDR_SPACE_HIGH_START) ? 1 : 0;
-    VMemFreeBlock** free_list = region ? &kernel_space.free_list_high : &kernel_space.free_list_low;
-
-    VMemFreeBlock* node = AllocFreeBlock();
-    if (!node) {
-        SpinUnlockIrqRestore(&vmem_lock, flags);
-        PANIC("VMemFree: Out of free list nodes");
-    }
-    node->base = start_vaddr;
-    node->size = size;
-    node->next = NULL;
-
-    // Insert sorted by base address
-    VMemFreeBlock* prev = NULL;
-    VMemFreeBlock* cur = *free_list;
-    while (cur && cur->base < node->base) {
-        prev = cur;
-        cur = cur->next;
-    }
-
-    // Link in
-    node->next = cur;
-    if (prev) prev->next = node; else *free_list = node;
-
-    // Coalesce with next
-    if (node->next && (node->base + node->size == node->next->base)) {
-        VMemFreeBlock* next = node->next;
-        node->size += next->size;
-        node->next = next->next;
-        ReleaseFreeBlock(next);
-    }
-
-    // Coalesce with previous
-    if (prev && (prev->base + prev->size == node->base)) {
-        prev->size += node->size;
-        prev->next = node->next;
-        ReleaseFreeBlock(node);
-    }
-
+    BuddyFree(start_vaddr, size);
+    kernel_space.used_pages -= size / PAGE_SIZE;
+    kernel_space.total_mapped -= size;
     vmem_frees++;
     SpinUnlockIrqRestore(&vmem_lock, flags);
 }
@@ -717,28 +757,29 @@ void VMemFreeStack(void* stack_top, uint64_t size) {
 
 void VMemDumpFreeList(void) {
     irq_flags_t flags = SpinLockIrqSave(&vmem_lock);
-    PrintKernel("[VMEM] Free List Dump:\n");
+    PrintKernel("[VMEM] Buddy Allocator Free Blocks:\n");
     
-    PrintKernel("  Lower Canonical (0-128TB):\n");
-    VMemFreeBlock* current = kernel_space.free_list_low;
-    if (!current) PrintKernel("    <Empty>\n");
-    int i = 0;
-    while(current) {
-        PrintKernel("    ["); PrintKernelInt(i++); PrintKernel("] Base: 0x");
-        PrintKernelHex(current->base);
-        PrintKernel(", Size: "); PrintKernelInt(current->size / 1024); PrintKernel(" KB\n");
-        current = current->next;
+    uint64_t total_free = 0;
+    for (uint32_t order = 0; order < BUDDY_NUM_ORDERS; order++) {
+        uint32_t count = 0;
+        VMemFreeBlock* current = buddy_free_lists[order];
+        while (current) {
+            count++;
+            current = current->next;
+        }
+        
+        if (count > 0) {
+            uint64_t block_size = OrderToSize(order);
+            uint64_t total_size = count * block_size;
+            total_free += total_size;
+            
+            PrintKernel("  Order "); PrintKernelInt(order);
+            PrintKernel(" ("); PrintKernelInt(block_size / 1024); PrintKernel("KB): ");
+            PrintKernelInt(count); PrintKernel(" blocks, ");
+            PrintKernelInt(total_size / (1024 * 1024)); PrintKernel("MB total\n");
+        }
     }
     
-    PrintKernel("  Higher Canonical (128-254TB):\n");
-    current = kernel_space.free_list_high;
-    if (!current) PrintKernel("    <Empty>\n");
-    i = 0;
-    while(current) {
-        PrintKernel("    ["); PrintKernelInt(i++); PrintKernel("] Base: 0x");
-        PrintKernelHex(current->base);
-        PrintKernel(", Size: "); PrintKernelInt(current->size / 1024); PrintKernel(" KB\n");
-        current = current->next;
-    }
+    PrintKernel("[VMEM] Total free: "); PrintKernelInt(total_free / (1024 * 1024)); PrintKernel("MB\n");
     SpinUnlockIrqRestore(&vmem_lock, flags);
 }

@@ -83,16 +83,12 @@ typedef struct VMemFreeBlock {
 } VMemFreeBlock;
 
 /**
- * @brief Virtual address space structure with dual-region support
+ * @brief Virtual address space structure
  */
 typedef struct {
     uint64_t* pml4;                    /**< Physical address of PML4 table */
-    uint64_t next_vaddr_low;           /**< Next vaddr in lower canonical */
-    uint64_t next_vaddr_high;          /**< Next vaddr in higher canonical */
     uint64_t used_pages;               /**< Number of pages currently allocated */
     uint64_t total_mapped;             /**< Total bytes mapped in this space */
-    VMemFreeBlock* free_list_low;      /**< Free list for lower canonical */
-    VMemFreeBlock* free_list_high;     /**< Free list for higher canonical */
 } VirtAddrSpace;
 
 /**
