@@ -150,8 +150,8 @@ void VBEDrawRect(uint32_t x, uint32_t y, uint32_t width, uint32_t height, uint32
     if (x >= vbe_info.width || y >= vbe_info.height) return;
 
     // Clip
-    if (x + width > vbe_info.width) width = vbe_info.width - x;
-    if (y + height > vbe_info.height) height = vbe_info.height - y;
+    if (width  > vbe_info.width  - x) width  = vbe_info.width  - x;
+    if (height > vbe_info.height - y) height = vbe_info.height - y;
     if (width == 0 || height == 0) return;
 
     uint32_t mapped = VBEMapColor(color);
@@ -334,15 +334,27 @@ void VBEShowSplash(void) {
     for (unsigned int i = 0; i < num_splash_images; i++) { // Loop
         const uint32_t* image_data = (const uint32_t*)splash_images[i];
         uint8_t* fb = (uint8_t*)vbe_info.framebuffer;
-
         // Copy entire scanlines at once instead of pixel-by-pixel
         for (uint32_t y = 0; y < vbe_info.height; y++) {
             // Calculate source and destination for this scanline
             const uint32_t* src = &image_data[y * vbe_info.width];
             uint8_t* dst = fb + (y * vbe_info.pitch);
-
-            // Copy entire scanline (width * 4 bytes) using optimized memcpy
-            FastMemcpy(dst, src, vbe_info.width * 4);
+            // Fast path: only when framebuffer uses 8:8:8 at 16/8/0 (0x00RRGGBB)
+            int direct_compatible =
+                (vbe_info.red_mask_size   == 8 && vbe_info.red_field_position   == 16) &&
+                (vbe_info.green_mask_size == 8 && vbe_info.green_field_position == 8)  &&
+                (vbe_info.blue_mask_size  == 8 && vbe_info.blue_field_position  == 0);
+            if (direct_compatible) {
+                FastMemcpy(dst, src, vbe_info.width * 4);
+            } else {
+                // Fallback: map each pixel
+                uint32_t* d32 = (uint32_t*)dst;
+                const uint32_t* s32 = src;
+                for (uint32_t x = 0; x < vbe_info.width; x++) {
+                    // Assume source is 0x00RRGGBB
+                    d32[x] = VBEMapColor(s32[x]);
+                }
+            }
         }
     }
 }
@@ -351,17 +363,31 @@ void VBEShowSplash(void) {
 #ifndef VF_CONFIG_EXCLUDE_EXTRA_OBJECTS
 void VBEShowPanic(void) {
     if (!vbe_initialized) return;
-    const uint32_t* image_data = (const uint32_t*)panic_images[0];
-    uint8_t* fb = (uint8_t*)vbe_info.framebuffer;
-
-    // Copy entire scanlines at once instead of pixel-by-pixel
-    for (uint32_t y = 0; y < vbe_info.height; y++) {
-        // Calculate source and destination for this scanline
-        const uint32_t* src = &image_data[y * vbe_info.width];
-        uint8_t* dst = fb + (y * vbe_info.pitch);
-
-        // Copy entire scanline (width * 4 bytes) using optimized memcpy
-        FastMemcpy(dst, src, vbe_info.width * 4);
+    for (unsigned int i = 0; i < num_panic_images; i++) { // Loop
+        const uint32_t* image_data = (const uint32_t*)panic_images[i];
+        uint8_t* fb = (uint8_t*)vbe_info.framebuffer;
+        // Copy entire scanlines at once instead of pixel-by-pixel
+        for (uint32_t y = 0; y < vbe_info.height; y++) {
+            // Calculate source and destination for this scanline
+            const uint32_t* src = &image_data[y * vbe_info.width];
+            uint8_t* dst = fb + (y * vbe_info.pitch);
+            // Fast path: only when framebuffer uses 8:8:8 at 16/8/0 (0x00RRGGBB)
+            int direct_compatible =
+                (vbe_info.red_mask_size   == 8 && vbe_info.red_field_position   == 16) &&
+                (vbe_info.green_mask_size == 8 && vbe_info.green_field_position == 8)  &&
+                (vbe_info.blue_mask_size  == 8 && vbe_info.blue_field_position  == 0);
+            if (direct_compatible) {
+                FastMemcpy(dst, src, vbe_info.width * 4);
+            } else {
+                // Fallback: map each pixel
+                uint32_t* d32 = (uint32_t*)dst;
+                const uint32_t* s32 = src;
+                for (uint32_t x = 0; x < vbe_info.width; x++) {
+                    // Assume source is 0x00RRGGBB
+                    d32[x] = VBEMapColor(s32[x]);
+                }
+            }
+        }
     }
 }
 #endif

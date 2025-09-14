@@ -171,17 +171,13 @@ void ConsoleSetColor(uint8_t color) {
     }
 }
 
-void SystemLog(const char * str) {
-    extern int IsVFSInitialized;
-    if (!IsVFSInitialized) return;
-    VfsWriteFile(SystemKernelLog, str, StringLength(str));
-}
-
 void PrintKernel(const char* str) {
     if (!str) return;
-    if (snooze) goto serial;
+    if (snooze) {
+        SerialWrite(str);
+        return;
+    }
     SpinLock(&lock);
-
     if (use_vbe) {
         VBEConsolePrint(str);
     } else {
@@ -191,10 +187,8 @@ void PrintKernel(const char* str) {
         }
         console.color = original_color;
     }
-serial:
     SpinUnlock(&lock);
     SerialWrite(str);
-    SystemLog(str);
 }
 
 void PrintKernelChar(const char c) {
@@ -290,15 +284,6 @@ void PrintKernelSuccessF(const char* format, ...) {
     Format(buffer, sizeof(buffer), format, args);
     va_end(args);
     PrintKernelSuccess(buffer);
-}
-
-void SystemLogF(const char * format, ... ) {
-    char buffer[1024];
-    va_list args;
-    va_start(args, format);
-    Format(buffer, sizeof(buffer), format, args);
-    va_end(args);
-    SystemLog(buffer);
 }
 
 void SerialWriteF(const char* format, ...) {
