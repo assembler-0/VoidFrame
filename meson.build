@@ -44,9 +44,6 @@ c_flags = [
     '-fstack-protector-strong',
     '-D_FORTIFY_SOURCE=2',
     '-fvisibility=hidden',
-    '-Wall',
-    '-Wpedantic',
-    '-Wextra',
 ]
 
 cpp_flags = c_flags + [
@@ -203,7 +200,7 @@ vf_config_flags =  [
     '-DVF_CONFIG_USE_ASTRA',
     '-DVF_CONFIG_USE_CERBERUS',
 #    '-DVF_CONFIG_CERBERUS_VFS_LOGGING',
-    '-DVF_CONFIG_CERBERUS_THREAT_REPORTING',
+#    '-DVF_CONFIG_CERBERUS_THREAT_REPORTING',
     '-DVF_CONFIG_CERBERUS_STACK_PROTECTION',
     '-DVF_CONFIG_SCHED_MLFQ',
 #    '-DVF_CONFIG_PROCINFO_AUTO_CLEANUP',

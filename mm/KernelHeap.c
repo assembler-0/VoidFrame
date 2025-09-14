@@ -47,6 +47,7 @@ static volatile int kheap_lock = 0;
 static size_t total_allocated = 0;
 static size_t peak_allocated = 0;
 static FastCache fast_caches[NUM_SIZE_CLASSES];
+static uint64_t alloc_counter = 0;  // For periodic coalescing
 
 // Runtime-tunable knobs (with safe defaults)
 static volatile size_t g_small_alloc_threshold = SMALL_ALLOC_THRESHOLD;
@@ -54,6 +55,9 @@ static volatile int g_fast_cache_capacity = FAST_CACHE_SIZE;
 
 // Validation level (can be reduced in production)
 static volatile int validation_level = 1; // 0=none, 1=basic, 2=full
+
+// Forward declaration
+static HeapBlock* CoalesceBlock(HeapBlock* block);
 
 // Simple checksum for header integrity
 static uint32_t ComputeChecksum(HeapBlock* block) {
@@ -164,7 +168,12 @@ static HeapBlock* FastCachePop(int size_class) {
 static void FastCachePush(HeapBlock* block, int size_class) {
     ASSERT(__sync_fetch_and_add(&kheap_lock, 0) != 0);
     FastCache* cache = &fast_caches[size_class];
-    if (cache->count >= g_fast_cache_capacity) return; // Cache full
+    
+    if (cache->count >= g_fast_cache_capacity) {
+        // Cache full - coalesce instead of caching
+        CoalesceBlock(block);
+        return;
+    }
 
     block->cache_next = cache->free_list;
     cache->free_list = block;
@@ -272,30 +281,24 @@ static void CacheRemove(HeapBlock* blk) {
                 if (prev) prev->cache_next = cur->cache_next;
                 else fast_caches[i].free_list = cur->cache_next;
                 fast_caches[i].count--;
-                blk->cache_next = NULL;
                 blk->in_cache = 0;
+                blk->cache_next = NULL;
                 return;
             }
             prev = cur;
             cur = cur->cache_next;
         }
     }
-    // Not found: clear flag defensively
-    blk->in_cache = 0;
-    blk->cache_next = NULL;
 }
 
-// Coalesce adjacent free blocks (optimized and safe)
-static void CoalesceWithAdjacent(HeapBlock* block) {
-    // Merge with next blocks only if physically adjacent
+// Coalesce adjacent free blocks
+static HeapBlock* CoalesceBlock(HeapBlock* block) {
+    if (!block || !block->is_free) return block;
+
+    // Coalesce with next block
     while (block->next && block->next->is_free && AreAdjacent(block, block->next)) {
         HeapBlock* next = block->next;
-        if (!ValidateBlockFast(next)) break;
-
-        // If the neighbor is cached, remove it from cache first
-        if (next->in_cache) {
-            CacheRemove(next);
-        }
+        CacheRemove(next);  // Remove from cache if present
 
         block->size += sizeof(HeapBlock) + next->size;
         block->next = next->next;
@@ -303,11 +306,37 @@ static void CoalesceWithAdjacent(HeapBlock* block) {
         UpdateChecksum(block);
     }
 
-    // Let previous block merge with this one if physically adjacent
-    if (block->prev && block->prev->is_free && AreAdjacent(block->prev, block)) {
-        CoalesceWithAdjacent(block->prev);
+    // Coalesce with previous block
+    while (block->prev && block->prev->is_free && AreAdjacent(block->prev, block)) {
+        HeapBlock* prev = block->prev;
+        CacheRemove(prev);  // Remove from cache if present
+
+        prev->size += sizeof(HeapBlock) + block->size;
+        prev->next = block->next;
+        if (block->next) block->next->prev = prev;
+        UpdateChecksum(prev);
+        block = prev;
+    }
+
+    return block;
+}
+
+// Flush cache and force coalescing (called periodically)
+static void FlushCacheAndCoalesce(void) {
+    for (int i = 0; i < NUM_SIZE_CLASSES; i++) {
+        FastCache* cache = &fast_caches[i];
+        while (cache->free_list) {
+            HeapBlock* block = cache->free_list;
+            cache->free_list = block->cache_next;
+            cache->count--;
+            
+            block->in_cache = 0;
+            block->cache_next = NULL;
+            CoalesceBlock(block);
+        }
     }
 }
+
 
 void KernelHeapInit() {
     heap_head = NULL;
@@ -332,6 +361,13 @@ void* KernelMemoryAlloc(size_t size) {
 
     size = AlignSize(size);
     if (size < MIN_BLOCK_SIZE) size = MIN_BLOCK_SIZE;
+    
+    // Periodic coalescing every 1000 allocations
+    if ((++alloc_counter % 1000) == 0) {
+        irq_flags_t flush_flags = SpinLockIrqSave(&kheap_lock);
+        FlushCacheAndCoalesce();
+        SpinUnlockIrqRestore(&kheap_lock, flush_flags);
+    }
 
     // Fast path for small allocations
     int size_class = GetSizeClass(size);
@@ -483,7 +519,7 @@ void KernelFree(void* ptr) {
     InitBlock(block, size, 1);
     total_allocated -= size;
 
-    CoalesceWithAdjacent(block);
+    CoalesceBlock(block);
 
     SpinUnlockIrqRestore(&kheap_lock, flags);
 }
@@ -552,7 +588,7 @@ void KernelHeapFlushCaches(void) {
         while (fast_caches[i].free_list) {
             HeapBlock* block = FastCachePop(i);
             if (block) {
-                CoalesceWithAdjacent(block);
+                CoalesceBlock(block);
             }
         }
     }
@@ -580,7 +616,7 @@ void KernelHeapTune(size_t small_alloc_threshold, int fast_cache_capacity) {
             if (blk) {
                 // Mark free and merge back to main free space
                 InitBlock(blk, size_classes[i], 1);
-                CoalesceWithAdjacent(blk);
+                CoalesceBlock(blk);
             }
         }
     }

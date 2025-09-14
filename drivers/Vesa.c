@@ -147,9 +147,34 @@ void VBEFillScreen(uint32_t color) {
 void VBEDrawRect(uint32_t x, uint32_t y, uint32_t width, uint32_t height, uint32_t color) {
     if (!vbe_initialized) return;
 
-    for (uint32_t row = y; row < y + height && row < vbe_info.height; row++) {
-        for (uint32_t col = x; col < x + width && col < vbe_info.width; col++) {
-            VBEPutPixel(col, row, color);
+    if (x >= vbe_info.width || y >= vbe_info.height) return;
+
+    // Clip
+    if (width  > vbe_info.width  - x) width  = vbe_info.width  - x;
+    if (height > vbe_info.height - y) height = vbe_info.height - y;
+    if (width == 0 || height == 0) return;
+
+    uint32_t mapped = VBEMapColor(color);
+
+    uint8_t* fb = (uint8_t*)vbe_info.framebuffer;
+    uint32_t pitch = vbe_info.pitch;
+
+    // Pattern buffer: 1 KiB = 256 pixels
+    uint32_t pattern[256];
+    for (uint32_t i = 0; i < 256; i++) pattern[i] = mapped;
+
+    uint64_t row_bytes = (uint64_t)width * 4u;
+
+    for (uint32_t r = 0; r < height; r++) {
+        uint8_t* dst = fb + (uint64_t)(y + r) * pitch + (uint64_t)x * 4u;
+        uint64_t remaining = row_bytes;
+        while (remaining >= sizeof(pattern)) {
+            FastMemcpy(dst, pattern, sizeof(pattern));
+            dst += sizeof(pattern);
+            remaining -= sizeof(pattern);
+        }
+        if (remaining) {
+            FastMemcpy(dst, pattern, remaining);
         }
     }
 }
@@ -187,21 +212,40 @@ void VBEDrawChar(uint32_t x, uint32_t y, char c, uint32_t fg_color, uint32_t bg_
         return; // Character out of bounds
     }
 
+    // Clip early if entirely outside
+    if (x >= vbe_info.width || y >= vbe_info.height) return;
+
     const unsigned char* glyph = console_font[(unsigned char)c];
+
+    // Pre-map colors
+    uint32_t fg = VBEMapColor(fg_color);
+    uint32_t bg = VBEMapColor(bg_color);
+
+    uint32_t max_w = vbe_info.width;
+    uint32_t max_h = vbe_info.height;
 
     // Use the font dimensions from font.h
     for (int row = 0; row < FONT_HEIGHT; row++) {
+        uint32_t py = y + (uint32_t)row;
+        if (py >= max_h) break; // Outside vertical bounds
+
         // Calculate which byte contains this row's data
         int byte_index = row * ((FONT_WIDTH + 7) / 8); // Number of bytes per row
 
-        for (int col = 0; col < FONT_WIDTH; col++) {
-            int bit_position = 7 - (col % 8); // MSB first
+        // Start of the destination row in framebuffer
+        uint32_t* dst_row = (uint32_t*)((uint8_t*)vbe_info.framebuffer + (uint64_t)py * vbe_info.pitch) + x;
 
-            if ((glyph[byte_index + (col / 8)] >> bit_position) & 1) {
-                VBEPutPixel(x + col, y + row, fg_color);
+        for (int col = 0; col < FONT_WIDTH; col++) {
+            uint32_t px = x + (uint32_t)col;
+            if (px >= max_w) break; // Outside horizontal bounds
+
+            int bit_position = 7 - (col % 8); // MSB first
+            uint8_t glyph_byte = glyph[byte_index + (col / 8)];
+            if ((glyph_byte >> bit_position) & 1) {
+                dst_row[col] = fg;
             } else {
                 // Always draw background to ensure proper clearing
-                VBEPutPixel(x + col, y + row, bg_color);
+                dst_row[col] = bg;
             }
         }
     }
@@ -288,32 +332,62 @@ void VBEShowSplash(void) {
     if (!vbe_initialized) return;
 
     for (unsigned int i = 0; i < num_splash_images; i++) { // Loop
-        const uint32_t* image_data = (const uint32_t*)splash_images[i % num_splash_images];
-
+        const uint32_t* image_data = (const uint32_t*)splash_images[i];
+        uint8_t* fb = (uint8_t*)vbe_info.framebuffer;
+        // Copy entire scanlines at once instead of pixel-by-pixel
         for (uint32_t y = 0; y < vbe_info.height; y++) {
-            for (uint32_t x = 0; x < vbe_info.width; x++) {
-                VBEPutPixel(x, y, image_data[y * vbe_info.width + x]);
+            // Calculate source and destination for this scanline
+            const uint32_t* src = &image_data[y * vbe_info.width];
+            uint8_t* dst = fb + (y * vbe_info.pitch);
+            // Fast path: only when framebuffer uses 8:8:8 at 16/8/0 (0x00RRGGBB)
+            int direct_compatible =
+                (vbe_info.red_mask_size   == 8 && vbe_info.red_field_position   == 16) &&
+                (vbe_info.green_mask_size == 8 && vbe_info.green_field_position == 8)  &&
+                (vbe_info.blue_mask_size  == 8 && vbe_info.blue_field_position  == 0);
+            if (direct_compatible) {
+                FastMemcpy(dst, src, vbe_info.width * 4);
+            } else {
+                // Fallback: map each pixel
+                uint32_t* d32 = (uint32_t*)dst;
+                const uint32_t* s32 = src;
+                for (uint32_t x = 0; x < vbe_info.width; x++) {
+                    // Assume source is 0x00RRGGBB
+                    d32[x] = VBEMapColor(s32[x]);
+                }
             }
         }
     }
-    delay(700000000);
 }
 #endif
 
 #ifndef VF_CONFIG_EXCLUDE_EXTRA_OBJECTS
 void VBEShowPanic(void) {
     if (!vbe_initialized) return;
-    const uint32_t* image_data = (const uint32_t*)panic_images[0];
-    uint8_t* fb = (uint8_t*)vbe_info.framebuffer;
-
-    // Copy entire scanlines at once instead of pixel-by-pixel
-    for (uint32_t y = 0; y < vbe_info.height; y++) {
-        // Calculate source and destination for this scanline
-        const uint32_t* src = &image_data[y * vbe_info.width];
-        uint8_t* dst = fb + (y * vbe_info.pitch);
-
-        // Copy entire scanline (width * 4 bytes) using optimized memcpy
-        FastMemcpy(dst, src, vbe_info.width * 4);
+    for (unsigned int i = 0; i < num_panic_images; i++) { // Loop
+        const uint32_t* image_data = (const uint32_t*)panic_images[i];
+        uint8_t* fb = (uint8_t*)vbe_info.framebuffer;
+        // Copy entire scanlines at once instead of pixel-by-pixel
+        for (uint32_t y = 0; y < vbe_info.height; y++) {
+            // Calculate source and destination for this scanline
+            const uint32_t* src = &image_data[y * vbe_info.width];
+            uint8_t* dst = fb + (y * vbe_info.pitch);
+            // Fast path: only when framebuffer uses 8:8:8 at 16/8/0 (0x00RRGGBB)
+            int direct_compatible =
+                (vbe_info.red_mask_size   == 8 && vbe_info.red_field_position   == 16) &&
+                (vbe_info.green_mask_size == 8 && vbe_info.green_field_position == 8)  &&
+                (vbe_info.blue_mask_size  == 8 && vbe_info.blue_field_position  == 0);
+            if (direct_compatible) {
+                FastMemcpy(dst, src, vbe_info.width * 4);
+            } else {
+                // Fallback: map each pixel
+                uint32_t* d32 = (uint32_t*)dst;
+                const uint32_t* s32 = src;
+                for (uint32_t x = 0; x < vbe_info.width; x++) {
+                    // Assume source is 0x00RRGGBB
+                    d32[x] = VBEMapColor(s32[x]);
+                }
+            }
+        }
     }
 }
 #endif

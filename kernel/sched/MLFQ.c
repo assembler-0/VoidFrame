@@ -1800,6 +1800,7 @@ void VFCompositorRequestInit(const char * str) {
     PrintKernelError("System: VFCompositor disabled in this build\n");
     return;
 #endif
+    Snooze();
     static uint32_t cached_vfc_pid = 0;
     if (cached_vfc_pid) {
         MLFQProcessControlBlock* p = MLFQGetCurrentProcessByPID(cached_vfc_pid);

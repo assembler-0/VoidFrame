@@ -783,7 +783,6 @@ asmlinkage void KernelMain(const uint32_t magic, const uint32_t info) {
 
     console.buffer = (volatile uint16_t*)VGA_BUFFER_ADDR;
 
-    ClearScreen();
     PrintKernelSuccess("System: VoidFrame Kernel - Version 0.0.2-development2 loaded\n");
     PrintKernel("Magic: ");
     PrintKernelHex(magic);
@@ -799,11 +798,9 @@ void KernelMainHigherHalf(void) {
 
     // Initialize core systems
     PXS2();
-    PrintKernelSuccess("System: Kernel initialization complete\n");
-    PrintKernelSuccess("System: Initializing interrupts...\n");
 
 #ifdef VF_CONFIG_SNOOZE_ON_BOOT
-	ClearScreen();
+    ClearScreen();
     Unsnooze();
 #endif
 
@@ -812,6 +809,9 @@ void KernelMainHigherHalf(void) {
 #ifdef VF_CONFIG_AUTOMATIC_POST
     ExecuteCommand("post");
 #endif
+
+    PrintKernelSuccess("System: Kernel initialization complete\n");
+    PrintKernelSuccess("System: Initializing interrupts...\n");
 
     sti();
 

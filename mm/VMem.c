@@ -15,10 +15,33 @@ static uint64_t vmem_allocations = 0;
 static uint64_t vmem_frees = 0;
 static uint64_t tlb_flushes = 0;
 
-// A pre-allocated pool for free list nodes to avoid dynamic allocation issues.
-#define MAX_FREE_BLOCKS 1024
-static VMemFreeBlock free_block_pool[MAX_FREE_BLOCKS];
-static VMemFreeBlock* free_block_head = NULL;
+// Buddy allocator constants
+#define BUDDY_MIN_ORDER 12  // 4KB pages
+#define BUDDY_MAX_ORDER 30  // 1GB max allocation
+#define BUDDY_NUM_ORDERS (BUDDY_MAX_ORDER - BUDDY_MIN_ORDER + 1)
+
+// Buddy free lists - one per order
+static VMemFreeBlock* buddy_free_lists[BUDDY_NUM_ORDERS];
+static uint64_t buddy_bitmap[(1ULL << (BUDDY_MAX_ORDER - BUDDY_MIN_ORDER)) / 64];
+
+// Pre-allocated pool for buddy nodes
+#define MAX_BUDDY_NODES 2048
+static VMemFreeBlock buddy_node_pool[MAX_BUDDY_NODES];
+static VMemFreeBlock* buddy_node_head = NULL;
+
+// TLB flush batching for efficiency
+#define MAX_TLB_BATCH 64
+static uint64_t tlb_batch[MAX_TLB_BATCH];
+static uint32_t tlb_batch_count = 0;
+
+// Identity-mapped page table cache for better allocation
+#define PT_CACHE_SIZE 16
+static void* pt_cache[PT_CACHE_SIZE];
+static uint32_t pt_cache_count = 0;
+
+// Buddy allocator regions
+static uint64_t buddy_region_start[2];
+static uint64_t buddy_region_size[2];
 
 extern uint64_t total_pages;
 extern uint8_t _kernel_phys_start[];
@@ -32,50 +55,218 @@ extern uint8_t _data_end[];
 extern uint8_t _bss_start[];
 extern uint8_t _bss_end[];
 
-static void InitFreeBlockPool(void) {
-    free_block_head = &free_block_pool[0];
-    for (int i = 0; i < MAX_FREE_BLOCKS - 1; ++i) {
-        free_block_pool[i].next = &free_block_pool[i + 1];
+static void InitBuddyNodePool(void) {
+    buddy_node_head = &buddy_node_pool[0];
+    for (int i = 0; i < MAX_BUDDY_NODES - 1; ++i) {
+        buddy_node_pool[i].next = &buddy_node_pool[i + 1];
     }
-    free_block_pool[MAX_FREE_BLOCKS - 1].next = NULL;
+    buddy_node_pool[MAX_BUDDY_NODES - 1].next = NULL;
 }
 
-static VMemFreeBlock* AllocFreeBlock(void) {
-    if (!free_block_head) {
-        return NULL; // Pool exhausted
+static VMemFreeBlock* AllocBuddyNode(void) {
+    if (!buddy_node_head) return NULL;
+    VMemFreeBlock* node = buddy_node_head;
+    buddy_node_head = node->next;
+    return node;
+}
+
+static void ReleaseBuddyNode(VMemFreeBlock* node) {
+    node->next = buddy_node_head;
+    buddy_node_head = node;
+}
+
+static inline uint32_t GetOrder(uint64_t size) {
+    if (size <= PAGE_SIZE) return 0;
+    return 64 - __builtin_clzll(size - 1) - BUDDY_MIN_ORDER;
+}
+
+static inline uint64_t OrderToSize(uint32_t order) {
+    return 1ULL << (order + BUDDY_MIN_ORDER);
+}
+
+static inline uint64_t GetBuddyAddr(uint64_t addr, uint32_t order) {
+    return addr ^ OrderToSize(order);
+}
+
+static void BuddyAddFreeBlock(uint64_t addr, uint32_t order) {
+    if (order >= BUDDY_NUM_ORDERS) return;
+    
+    VMemFreeBlock* node = AllocBuddyNode();
+    if (!node) return;
+    
+    node->base = addr;
+    node->size = OrderToSize(order);
+    node->next = buddy_free_lists[order];
+    buddy_free_lists[order] = node;
+}
+
+static VMemFreeBlock* BuddyRemoveFreeBlock(uint64_t addr, uint32_t order) {
+    if (order >= BUDDY_NUM_ORDERS) return NULL;
+    
+    VMemFreeBlock* prev = NULL;
+    VMemFreeBlock* curr = buddy_free_lists[order];
+    
+    while (curr) {
+        if (curr->base == addr) {
+            if (prev) prev->next = curr->next;
+            else buddy_free_lists[order] = curr->next;
+            return curr;
+        }
+        prev = curr;
+        curr = curr->next;
     }
-    VMemFreeBlock* block = free_block_head;
-    free_block_head = block->next;
-    return block;
+    return NULL;
 }
 
-static void ReleaseFreeBlock(VMemFreeBlock* block) {
-    block->next = free_block_head;
-    free_block_head = block;
+static uint64_t BuddyAlloc(uint64_t size) {
+    uint32_t order = GetOrder(size);
+    if (order >= BUDDY_NUM_ORDERS) return 0;
+    
+    // Find smallest available block
+    for (uint32_t curr_order = order; curr_order < BUDDY_NUM_ORDERS; curr_order++) {
+        if (!buddy_free_lists[curr_order]) continue;
+        
+        VMemFreeBlock* block = buddy_free_lists[curr_order];
+        buddy_free_lists[curr_order] = block->next;
+        uint64_t addr = block->base;
+        ReleaseBuddyNode(block);
+        
+        // Split down to required order
+        while (curr_order > order) {
+            curr_order--;
+            uint64_t buddy_addr = addr + OrderToSize(curr_order);
+            BuddyAddFreeBlock(buddy_addr, curr_order);
+        }
+        
+        return addr;
+    }
+    
+    return 0; // No free blocks
 }
 
-static inline int is_valid_phys_addr(uint64_t paddr) {
-    // Basic sanity check - adjust limits based on your system
+static void BuddyFree(uint64_t addr, uint64_t size) {
+    uint32_t order = GetOrder(size);
+    if (order >= BUDDY_NUM_ORDERS) return;
+    
+    // Try to coalesce with buddy
+    while (order < BUDDY_NUM_ORDERS - 1) {
+        uint64_t buddy_addr = GetBuddyAddr(addr, order);
+        VMemFreeBlock* buddy = BuddyRemoveFreeBlock(buddy_addr, order);
+        
+        if (!buddy) break; // Buddy not free
+        
+        ReleaseBuddyNode(buddy);
+        if (buddy_addr < addr) addr = buddy_addr;
+        order++;
+    }
+    
+    BuddyAddFreeBlock(addr, order);
+}
+
+static inline int IsValidPhysAddr(uint64_t paddr) {
     return (paddr != 0 && paddr < (total_pages * PAGE_SIZE));
 }
 
+static inline int IsValidVirtAddr(uint64_t vaddr) {
+    // Check canonical address ranges
+    return ((vaddr >= VIRT_ADDR_SPACE_LOW_START && vaddr <= VIRT_ADDR_SPACE_LOW_END) ||
+            (vaddr >= VIRT_ADDR_SPACE_HIGH_START && vaddr <= VIRT_ADDR_SPACE_HIGH_END) ||
+            (vaddr >= KERNEL_SPACE_START && vaddr <= KERNEL_SPACE_END));
+}
+
+static inline uint64_t* GetTableVirt(uint64_t phys_addr) {
+    return (phys_addr < IDENTITY_MAP_SIZE) ? 
+           (uint64_t*)phys_addr : (uint64_t*)PHYS_TO_VIRT(phys_addr);
+}
+
+static void flush_tlb_batch(void) {
+    if (tlb_batch_count == 0) return;
+    
+    if (tlb_batch_count > 8) {
+        VMemFlushTLB();
+    } else {
+        for (uint32_t i = 0; i < tlb_batch_count; i++) {
+            __asm__ volatile("invlpg (%0)" :: "r"(tlb_batch[i]) : "memory");
+        }
+    }
+    tlb_batch_count = 0;
+    tlb_flushes++;
+}
+
+static void add_to_tlb_batch(uint64_t vaddr) {
+    if (tlb_batch_count >= MAX_TLB_BATCH) {
+        flush_tlb_batch();
+    }
+    tlb_batch[tlb_batch_count++] = vaddr;
+}
+
+static void* alloc_identity_page_table(void) {
+    if (pt_cache_count > 0) {
+        return pt_cache[--pt_cache_count];
+    }
+    
+    for (uint32_t attempt = 0; attempt < 32; attempt++) {
+        void* candidate = AllocPage();
+        if (!candidate) break;
+        if ((uint64_t)candidate < IDENTITY_MAP_SIZE) {
+            FastZeroPage(candidate);
+            return candidate;
+        }
+        FreePage(candidate);
+    }
+    return NULL;
+}
+
+static void cache_page_table(void* pt) {
+    if (pt_cache_count < PT_CACHE_SIZE && (uint64_t)pt < IDENTITY_MAP_SIZE) {
+        pt_cache[pt_cache_count++] = pt;
+    } else {
+        FreePage(pt);
+    }
+}
+
 void VMemInit(void) {
-    InitFreeBlockPool();
+    InitBuddyNodePool();
+    
+    // Initialize buddy allocator
+    for (int i = 0; i < BUDDY_NUM_ORDERS; i++) {
+        buddy_free_lists[i] = NULL;
+    }
+    
+    // Set up buddy regions
+    buddy_region_start[0] = VIRT_ADDR_SPACE_LOW_START;
+    buddy_region_size[0] = VIRT_ADDR_SPACE_LOW_END - VIRT_ADDR_SPACE_LOW_START + 1;
+    buddy_region_start[1] = VIRT_ADDR_SPACE_HIGH_START;
+    buddy_region_size[1] = VIRT_ADDR_SPACE_HIGH_END - VIRT_ADDR_SPACE_HIGH_START + 1;
+    
+    // Add initial free blocks (largest possible)
+    for (int region = 0; region < 2; region++) {
+        uint64_t addr = buddy_region_start[region];
+        uint64_t remaining = buddy_region_size[region];
+        
+        while (remaining >= PAGE_SIZE) {
+            uint32_t order = BUDDY_NUM_ORDERS - 1;
+            while (order > 0 && OrderToSize(order) > remaining) {
+                order--;
+            }
+            
+            BuddyAddFreeBlock(addr, order);
+            uint64_t block_size = OrderToSize(order);
+            addr += block_size;
+            remaining -= block_size;
+        }
+    }
+    
     // Get current PML4 from CR3 (set by bootstrap)
     uint64_t pml4_phys_addr;
     __asm__ volatile("mov %%cr3, %0" : "=r"(pml4_phys_addr));
-    pml4_phys_addr &= ~0xFFF; // Clear flags
-
-    // Initialize dual-region kernel space tracking
-    kernel_space.next_vaddr_low = VIRT_ADDR_SPACE_LOW_START;
-    kernel_space.next_vaddr_high = VIRT_ADDR_SPACE_HIGH_START;
+    pml4_phys_addr &= ~0xFFF;
+    
+    kernel_space.pml4 = (uint64_t*)pml4_phys_addr;
     kernel_space.used_pages = 0;
     kernel_space.total_mapped = IDENTITY_MAP_SIZE;
-    kernel_space.pml4 = (uint64_t*)pml4_phys_addr;
-    kernel_space.free_list_low = NULL;
-    kernel_space.free_list_high = NULL;
-
-    // Now test identity mapping
+    
+    // Test identity mapping
     if (VMemGetPhysAddr(0x100000) != 0x100000) {
         PANIC("Bootstrap identity mapping failed - VALIDATION FAILED");
     }
@@ -83,49 +274,25 @@ void VMemInit(void) {
     if (VMemGetPhysAddr(probe) != probe) {
         PANIC("Bootstrap identity mapping failed at IDENTITY_MAP_SIZE boundary");
     }
-    PrintKernelSuccess("VMem: VMem initialized using existing PML4: ");
+    PrintKernelSuccess("VMem: Buddy allocator initialized with PML4: ");
     PrintKernelHex(pml4_phys_addr);
     PrintKernel("\n");
 }
 
-static uint64_t VMemGetPageTablePhys(uint64_t pml4_phys, uint64_t vaddr, int level, int create) {
-    if (!is_valid_phys_addr(pml4_phys)) return 0;
+static uint64_t VMemGetPageTablePhys(uint64_t pml4_phys, uint64_t vaddr, uint32_t level, int create) {
+    if (!IsValidPhysAddr(pml4_phys)) return 0;
 
-    // Access the table via identity map when available, otherwise via higher-half mapping
-    uint64_t* table_virt = (pml4_phys < IDENTITY_MAP_SIZE)
-        ? (uint64_t*)pml4_phys
-        : (uint64_t*)PHYS_TO_VIRT(pml4_phys);
-
-    int shift = 39 - (level * 9);
-    int index = (vaddr >> shift) & PT_INDEX_MASK;
-    if (index >= 512) return 0;
-
+    uint64_t* table_virt = GetTableVirt(pml4_phys);
+    uint32_t shift = 39U - (level * 9U);
+    uint32_t index = (vaddr >> shift) & PT_INDEX_MASK;
+    
     if (!(table_virt[index] & PAGE_PRESENT)) {
         if (!create) return 0;
 
-        // Allocate page-table memory from identity-mapped low memory to ensure accessibility
-        void* new_table_phys = NULL;
-        for (int attempt = 0; attempt < 32; attempt++) {
-            void* candidate = AllocPage();
-            if (!candidate) break;
-            if ((uint64_t)candidate < IDENTITY_MAP_SIZE) {
-                new_table_phys = candidate;
-                break;
-            }
-            // Not identity-mapped; return it to the pool and try again
-            FreePage(candidate);
-        }
-        if (!new_table_phys) return 0;
-        if (!is_valid_phys_addr((uint64_t)new_table_phys)) {
-            FreePage(new_table_phys);
+        void* new_table_phys = alloc_identity_page_table();
+        if (!new_table_phys || !IsValidPhysAddr((uint64_t)new_table_phys)) {
+            if (new_table_phys) FreePage(new_table_phys);
             return 0;
-        }
-
-        // Zero the new table using an address we can access
-        if ((uint64_t)new_table_phys < IDENTITY_MAP_SIZE) {
-            FastZeroPage(new_table_phys);
-        } else {
-            FastZeroPage(PHYS_TO_VIRT(new_table_phys));
         }
 
         table_virt[index] = (uint64_t)new_table_phys | PAGE_PRESENT | PAGE_WRITABLE;
@@ -136,194 +303,121 @@ static uint64_t VMemGetPageTablePhys(uint64_t pml4_phys, uint64_t vaddr, int lev
 }
 
 int VMemMap(uint64_t vaddr, uint64_t paddr, uint64_t flags) {
-    // Validate alignment
     if (!IS_PAGE_ALIGNED(vaddr) || !IS_PAGE_ALIGNED(paddr)) {
         return VMEM_ERROR_ALIGN;
     }
-
-    // Validate addresses
-    if (!is_valid_phys_addr(paddr)) {
+    if (!IsValidPhysAddr(paddr) || !IsValidVirtAddr(vaddr)) {
         return VMEM_ERROR_INVALID_ADDR;
     }
 
-    
-
     irq_flags_t irq_flags = SpinLockIrqSave(&vmem_lock);
 
-    // Get PDP table
     uint64_t pdp_phys = VMemGetPageTablePhys((uint64_t)kernel_space.pml4, vaddr, 0, 1);
     if (!pdp_phys) {
         SpinUnlockIrqRestore(&vmem_lock, irq_flags);
         return VMEM_ERROR_NOMEM;
     }
 
-    // Get PD table
     uint64_t pd_phys = VMemGetPageTablePhys(pdp_phys, vaddr, 1, 1);
     if (!pd_phys) {
         SpinUnlockIrqRestore(&vmem_lock, irq_flags);
         return VMEM_ERROR_NOMEM;
     }
 
-    // Get PT table
     uint64_t pt_phys = VMemGetPageTablePhys(pd_phys, vaddr, 2, 1);
     if (!pt_phys) {
         SpinUnlockIrqRestore(&vmem_lock, irq_flags);
         return VMEM_ERROR_NOMEM;
     }
 
-    // Access PT through identity mapping if possible
-    uint64_t* pt_virt;
-    if (pt_phys < IDENTITY_MAP_SIZE) {
-        pt_virt = (uint64_t*)pt_phys;
-    } else {
-        pt_virt = (uint64_t*)PHYS_TO_VIRT(pt_phys);
-    }
+    uint64_t* pt_virt = GetTableVirt(pt_phys);
+    uint32_t pt_index = (vaddr >> PT_SHIFT) & PT_INDEX_MASK;
 
-    int pt_index = (vaddr >> PT_SHIFT) & PT_INDEX_MASK;
-
-    // Check if already mapped
     if (pt_virt[pt_index] & PAGE_PRESENT) {
         SpinUnlockIrqRestore(&vmem_lock, irq_flags);
         return VMEM_ERROR_ALREADY_MAPPED;
     }
 
-    // Set the mapping
     pt_virt[pt_index] = paddr | flags | PAGE_PRESENT;
-
-    // Invalidate TLB
-    VMemFlushTLBSingle(vaddr);
+    add_to_tlb_batch(vaddr);
 
     SpinUnlockIrqRestore(&vmem_lock, irq_flags);
     return VMEM_SUCCESS;
 }
 
-// Map huge page in VMem.c
 int VMemMapHuge(uint64_t vaddr, uint64_t paddr, uint64_t flags) {
     if (!IS_HUGE_PAGE_ALIGNED(vaddr) || !IS_HUGE_PAGE_ALIGNED(paddr)) {
         return VMEM_ERROR_ALIGN;
     }
+    if (!IsValidPhysAddr(paddr) || !IsValidVirtAddr(vaddr)) {
+        return VMEM_ERROR_INVALID_ADDR;
+    }
 
     irq_flags_t irq_flags = SpinLockIrqSave(&vmem_lock);
 
-    if (!is_valid_phys_addr(paddr)) {
-        SpinUnlockIrqRestore(&vmem_lock, irq_flags);
-        return VMEM_ERROR_INVALID_ADDR;
-    }
-    // Get PDP table
     uint64_t pdp_phys = VMemGetPageTablePhys((uint64_t)kernel_space.pml4, vaddr, 0, 1);
     if (!pdp_phys) {
         SpinUnlockIrqRestore(&vmem_lock, irq_flags);
         return VMEM_ERROR_NOMEM;
     }
 
-    // Get PD table
     uint64_t pd_phys = VMemGetPageTablePhys(pdp_phys, vaddr, 1, 1);
     if (!pd_phys) {
         SpinUnlockIrqRestore(&vmem_lock, irq_flags);
         return VMEM_ERROR_NOMEM;
     }
 
-    // Access PD through identity mapping
-    uint64_t* pd_virt = (pd_phys < IDENTITY_MAP_SIZE) ?
-                        (uint64_t*)pd_phys : (uint64_t*)PHYS_TO_VIRT(pd_phys);
+    uint64_t* pd_virt = GetTableVirt(pd_phys);
+    uint32_t pd_index = (vaddr >> PD_SHIFT) & PT_INDEX_MASK;
 
-    int pd_index = (vaddr >> PD_SHIFT) & PT_INDEX_MASK;
-
-    // Check if already mapped
     if (pd_virt[pd_index] & PAGE_PRESENT) {
         SpinUnlockIrqRestore(&vmem_lock, irq_flags);
         return VMEM_ERROR_ALREADY_MAPPED;
     }
 
-    // Set huge page mapping (PS bit = 1 for 2MB pages)
     pd_virt[pd_index] = paddr | flags | PAGE_PRESENT | PAGE_LARGE;
+    add_to_tlb_batch(vaddr);
 
-    VMemFlushTLBSingle(vaddr);
     SpinUnlockIrqRestore(&vmem_lock, irq_flags);
     return VMEM_SUCCESS;
-}
-
-// Select allocation region based on size heuristic
-static int SelectRegion(uint64_t size) {
-    // Large allocations (>=2MB) go to lower canonical for better TLB efficiency
-    return (size >= (2 * 1024 * 1024)) ? 0 : 1;
 }
 
 void* VMemAlloc(uint64_t size) {
     if (size == 0) return NULL;
     size = PAGE_ALIGN_UP(size);
-
-    uint64_t vaddr = 0;
+    
     irq_flags_t flags = SpinLockIrqSave(&vmem_lock);
-
-    int region = SelectRegion(size);
-    VMemFreeBlock** free_list = region ? &kernel_space.free_list_high : &kernel_space.free_list_low;
-    uint64_t* next_vaddr = region ? &kernel_space.next_vaddr_high : &kernel_space.next_vaddr_low;
-    uint64_t region_end = region ? VIRT_ADDR_SPACE_HIGH_END : VIRT_ADDR_SPACE_LOW_END;
-
-    // 1. Search the appropriate free list
-    VMemFreeBlock* prev = NULL;
-    VMemFreeBlock* current = *free_list;
-    while (current) {
-        if (current->size >= size) {
-            vaddr = current->base;
-            if (current->size == size) {
-                if (prev) prev->next = current->next;
-                else *free_list = current->next;
-                ReleaseFreeBlock(current);
-            } else {
-                current->base += size;
-                current->size -= size;
-            }
-            break;
-        }
-        prev = current;
-        current = current->next;
+    
+    uint64_t vaddr = BuddyAlloc(size);
+    if (!vaddr) {
+        SpinUnlockIrqRestore(&vmem_lock, flags);
+        return NULL;
     }
-
-    // 2. Use bump allocator if no free block found
-    if (vaddr == 0) {
-        uint64_t avail = (region_end >= *next_vaddr) ? (region_end - *next_vaddr + 1) : 0;
-        if (size > avail) {
-            // Try other region if this one is full
-            region = 1 - region;
-            free_list = region ? &kernel_space.free_list_high : &kernel_space.free_list_low;
-            next_vaddr = region ? &kernel_space.next_vaddr_high : &kernel_space.next_vaddr_low;
-            region_end = region ? VIRT_ADDR_SPACE_HIGH_END : VIRT_ADDR_SPACE_LOW_END;
-            
-            uint64_t avail2 = (region_end >= *next_vaddr) ? (region_end - *next_vaddr + 1) : 0;
-            if (size > avail2) {
-                SpinUnlockIrqRestore(&vmem_lock, flags);
-                return NULL;
-            }
-        }
-        vaddr = *next_vaddr;
-        *next_vaddr += size;
-    }
-
+    
     vmem_allocations++;
     SpinUnlockIrqRestore(&vmem_lock, flags);
-
-    // 3. Map physical pages into the allocated virtual space
+    
+    // Map physical pages
     for (uint64_t offset = 0; offset < size; offset += PAGE_SIZE) {
         void* paddr = AllocPage();
         if (!paddr) {
-            VMemFree((void*)vaddr, size); // Rollback
+            VMemFree((void*)vaddr, size);
             return NULL;
         }
         if (VMemMap(vaddr + offset, (uint64_t)paddr, PAGE_WRITABLE) != VMEM_SUCCESS) {
             FreePage(paddr);
-            VMemFree((void*)vaddr, size); // Rollback
+            VMemFree((void*)vaddr, size);
             return NULL;
         }
     }
-
-    // 4. Update stats and zero memory
+    
+    flush_tlb_batch();
+    
     flags = SpinLockIrqSave(&vmem_lock);
     kernel_space.used_pages += size / PAGE_SIZE;
     kernel_space.total_mapped += size;
     SpinUnlockIrqRestore(&vmem_lock, flags);
-
+    
     FastMemset((void*)vaddr, 0, size);
     return (void*)vaddr;
 }
@@ -334,7 +428,7 @@ void VMemFree(void* vaddr, uint64_t size) {
     uint64_t start_vaddr = PAGE_ALIGN_DOWN((uint64_t)vaddr);
     size = PAGE_ALIGN_UP(size);
 
-    // 1. Unmap all pages and free physical frames
+    // Unmap all pages and free physical frames
     for (uint64_t offset = 0; offset < size; offset += PAGE_SIZE) {
         uint64_t current_vaddr = start_vaddr + offset;
         uint64_t paddr = VMemGetPhysAddr(current_vaddr);
@@ -343,49 +437,13 @@ void VMemFree(void* vaddr, uint64_t size) {
             FreePage((void*)paddr);
         }
     }
-
-    // 2. Determine which region this address belongs to
+    
+    flush_tlb_batch();
+    
     irq_flags_t flags = SpinLockIrqSave(&vmem_lock);
-
-    int region = (start_vaddr >= VIRT_ADDR_SPACE_HIGH_START) ? 1 : 0;
-    VMemFreeBlock** free_list = region ? &kernel_space.free_list_high : &kernel_space.free_list_low;
-
-    VMemFreeBlock* node = AllocFreeBlock();
-    if (!node) {
-        SpinUnlockIrqRestore(&vmem_lock, flags);
-        PANIC("VMemFree: Out of free list nodes");
-    }
-    node->base = start_vaddr;
-    node->size = size;
-    node->next = NULL;
-
-    // Insert sorted by base address
-    VMemFreeBlock* prev = NULL;
-    VMemFreeBlock* cur = *free_list;
-    while (cur && cur->base < node->base) {
-        prev = cur;
-        cur = cur->next;
-    }
-
-    // Link in
-    node->next = cur;
-    if (prev) prev->next = node; else *free_list = node;
-
-    // Coalesce with next
-    if (node->next && (node->base + node->size == node->next->base)) {
-        VMemFreeBlock* next = node->next;
-        node->size += next->size;
-        node->next = next->next;
-        ReleaseFreeBlock(next);
-    }
-
-    // Coalesce with previous
-    if (prev && (prev->base + prev->size == node->base)) {
-        prev->size += node->size;
-        prev->next = node->next;
-        ReleaseFreeBlock(node);
-    }
-
+    BuddyFree(start_vaddr, size);
+    kernel_space.used_pages -= size / PAGE_SIZE;
+    kernel_space.total_mapped -= size;
     vmem_frees++;
     SpinUnlockIrqRestore(&vmem_lock, flags);
 }
@@ -432,7 +490,6 @@ void VMemFreeWithGuards(void* ptr, uint64_t size) {
 }
 
 uint64_t VMemGetPhysAddr(uint64_t vaddr) {
-    // Walk PML4 -> PDP -> PD. At PD, handle both 2MB (PAGE_LARGE) and 4KB pages.
     uint64_t pml4_phys = (uint64_t)kernel_space.pml4;
     uint64_t pdp_phys = VMemGetPageTablePhys(pml4_phys, vaddr, 0, 0);
     if (!pdp_phys) return 0;
@@ -440,29 +497,25 @@ uint64_t VMemGetPhysAddr(uint64_t vaddr) {
     uint64_t pd_phys = VMemGetPageTablePhys(pdp_phys, vaddr, 1, 0);
     if (!pd_phys) return 0;
 
-    // Access PD
-    uint64_t* pd_virt = (pd_phys < IDENTITY_MAP_SIZE) ? (uint64_t*)pd_phys : (uint64_t*)PHYS_TO_VIRT(pd_phys);
-    int pd_index = (vaddr >> PD_SHIFT) & PT_INDEX_MASK;
+    uint64_t* pd_virt = GetTableVirt(pd_phys);
+    uint32_t pd_index = (vaddr >> PD_SHIFT) & PT_INDEX_MASK;
     uint64_t pde = pd_virt[pd_index];
 
     if (!(pde & PAGE_PRESENT)) return 0;
 
     if (pde & PAGE_LARGE) {
-        // 2MB page: physical base is 2MB aligned from PDE
-        uint64_t base = pde & PT_ADDR_MASK; // upper bits contain frame; PT_ADDR_MASK works for PD too
-        return (base & ~((uint64_t)HUGE_PAGE_SIZE - 1)) | (vaddr & (HUGE_PAGE_SIZE - 1));
+        uint64_t base = pde & PT_ADDR_MASK;
+        return (base & ~(HUGE_PAGE_SIZE - 1)) | (vaddr & (HUGE_PAGE_SIZE - 1));
     }
 
-    // Otherwise, continue to PT for 4KB page
     uint64_t pt_phys = VMemGetPageTablePhys(pd_phys, vaddr, 2, 0);
     if (!pt_phys) return 0;
 
-    uint64_t* pt_virt = (pt_phys < IDENTITY_MAP_SIZE) ? (uint64_t*)pt_phys : (uint64_t*)PHYS_TO_VIRT(pt_phys);
-    int pt_index = (vaddr >> PT_SHIFT) & PT_INDEX_MASK;
+    uint64_t* pt_virt = GetTableVirt(pt_phys);
+    uint32_t pt_index = (vaddr >> PT_SHIFT) & PT_INDEX_MASK;
     uint64_t pte = pt_virt[pt_index];
 
     if (!(pte & PAGE_PRESENT)) return 0;
-
     return (pte & PT_ADDR_MASK) | (vaddr & PAGE_MASK);
 }
 
@@ -490,56 +543,49 @@ int VMemUnmap(uint64_t vaddr, uint64_t size) {
     uint64_t end = PAGE_ALIGN_UP(vaddr + size);
     uint64_t num_pages = (end - start) / PAGE_SIZE;
 
+    irq_flags_t flags = SpinLockIrqSave(&vmem_lock);
+    
     for (uint64_t i = 0; i < num_pages; i++) {
         uint64_t current_vaddr = start + (i * PAGE_SIZE);
 
-        irq_flags_t flags = SpinLockIrqSave(&vmem_lock);
-
         uint64_t pml4_phys = (uint64_t)kernel_space.pml4;
         uint64_t pdp_phys = VMemGetPageTablePhys(pml4_phys, current_vaddr, 0, 0);
-        if (!pdp_phys) { SpinUnlockIrqRestore(&vmem_lock, flags); continue; }
+        if (!pdp_phys) continue;
 
         uint64_t pd_phys = VMemGetPageTablePhys(pdp_phys, current_vaddr, 1, 0);
-        if (!pd_phys) { SpinUnlockIrqRestore(&vmem_lock, flags); continue; }
+        if (!pd_phys) continue;
 
-        // Check for huge-page mapping (2MB) at PD level
-        uint64_t* pd_virt = (pd_phys < IDENTITY_MAP_SIZE) ? (uint64_t*)pd_phys : (uint64_t*)PHYS_TO_VIRT(pd_phys);
-        int pd_index = (current_vaddr >> PD_SHIFT) & PT_INDEX_MASK;
+        uint64_t* pd_virt = GetTableVirt(pd_phys);
+        uint32_t pd_index = (current_vaddr >> PD_SHIFT) & PT_INDEX_MASK;
         uint64_t pde = pd_virt[pd_index];
+        
         if ((pde & PAGE_PRESENT) && (pde & PAGE_LARGE)) {
-            // Only unmap if we are aligned and have enough remaining to cover the whole huge page
             if (IS_HUGE_PAGE_ALIGNED(current_vaddr) && (end - current_vaddr) >= HUGE_PAGE_SIZE) {
                 pd_virt[pd_index] = 0;
                 kernel_space.used_pages -= (HUGE_PAGE_SIZE / PAGE_SIZE);
                 kernel_space.total_mapped -= HUGE_PAGE_SIZE;
-                SpinUnlockIrqRestore(&vmem_lock, flags);
-                // Flush once for the huge region
-                for (uint64_t off = 0; off < HUGE_PAGE_SIZE; off += PAGE_SIZE) {
-                    VMemFlushTLBSingle(current_vaddr + off);
-                }
-                // Skip the rest of the pages covered by this huge page
+                add_to_tlb_batch(current_vaddr);
                 i += (HUGE_PAGE_SIZE / PAGE_SIZE) - 1;
                 continue;
             }
-            // If not aligned/size insufficient, fall through to 4KB path (cannot partially unmap 2MB)
         }
 
         uint64_t pt_phys = VMemGetPageTablePhys(pd_phys, current_vaddr, 2, 0);
-        if (!pt_phys) { SpinUnlockIrqRestore(&vmem_lock, flags); continue; }
+        if (!pt_phys) continue;
 
-        uint64_t* pt_virt = (pt_phys < IDENTITY_MAP_SIZE) ? (uint64_t*)pt_phys : (uint64_t*)PHYS_TO_VIRT(pt_phys);
-        int pt_index = (current_vaddr >> PT_SHIFT) & PT_INDEX_MASK;
+        uint64_t* pt_virt = GetTableVirt(pt_phys);
+        uint32_t pt_index = (current_vaddr >> PT_SHIFT) & PT_INDEX_MASK;
 
         if (pt_virt[pt_index] & PAGE_PRESENT) {
             pt_virt[pt_index] = 0;
             kernel_space.used_pages--;
             kernel_space.total_mapped -= PAGE_SIZE;
+            add_to_tlb_batch(current_vaddr);
         }
-
-        SpinUnlockIrqRestore(&vmem_lock, flags);
-        VMemFlushTLBSingle(current_vaddr);
     }
-
+    
+    flush_tlb_batch();
+    SpinUnlockIrqRestore(&vmem_lock, flags);
     return VMEM_SUCCESS;
 }
 
@@ -574,156 +620,90 @@ uint64_t VMemGetPML4PhysAddr(void) {
 }
 
 int VMemMapMMIO(uint64_t vaddr, uint64_t paddr, uint64_t size, uint64_t flags) {
-    PrintKernel("VMemMapMMIO: Mapping MMIO 0x"); PrintKernelHex(paddr);
-    PrintKernel(" -> 0x"); PrintKernelHex(vaddr);
-    PrintKernel(" (size: 0x"); PrintKernelHex(size); PrintKernel(")\n");
-
     if (!IS_PAGE_ALIGNED(vaddr) || !IS_PAGE_ALIGNED(paddr) || !IS_PAGE_ALIGNED(size)) {
-        PrintKernelError("VMemMapMMIO: ERROR - Alignment check failed\n");
         return VMEM_ERROR_ALIGN;
     }
+    if (!IsValidVirtAddr(vaddr)) {
+        return VMEM_ERROR_INVALID_ADDR;
+    }
 
-    
-
-    // Add MMIO-specific flags
     uint64_t mmio_flags = flags | PAGE_PRESENT | PAGE_NOCACHE | PAGE_WRITETHROUGH;
-
-    // Map each page in the MMIO region
     uint64_t num_pages = size / PAGE_SIZE;
+    
+    irq_flags_t irq_flags = SpinLockIrqSave(&vmem_lock);
+    
     for (uint64_t i = 0; i < num_pages; i++) {
         uint64_t current_vaddr = vaddr + (i * PAGE_SIZE);
         uint64_t current_paddr = paddr + (i * PAGE_SIZE);
 
-        irq_flags_t irq_flags = SpinLockIrqSave(&vmem_lock);
-
-        // Get PDP table (level 0)
         uint64_t pdp_phys = VMemGetPageTablePhys((uint64_t)kernel_space.pml4, current_vaddr, 0, 1);
         if (!pdp_phys) {
             SpinUnlockIrqRestore(&vmem_lock, irq_flags);
-            PrintKernelError("VMemMapMMIO: Failed to get/create PDP table\n");
             return VMEM_ERROR_NOMEM;
         }
 
-        // Get PD table (level 1)
         uint64_t pd_phys = VMemGetPageTablePhys(pdp_phys, current_vaddr, 1, 1);
         if (!pd_phys) {
             SpinUnlockIrqRestore(&vmem_lock, irq_flags);
-            PrintKernelError("VMemMapMMIO: Failed to get/create PD table\n");
             return VMEM_ERROR_NOMEM;
         }
 
-        // Get PT table (level 2)
         uint64_t pt_phys = VMemGetPageTablePhys(pd_phys, current_vaddr, 2, 1);
         if (!pt_phys) {
             SpinUnlockIrqRestore(&vmem_lock, irq_flags);
-            PrintKernelError("VMemMapMMIO: Failed to get/create PT table\n");
             return VMEM_ERROR_NOMEM;
         }
 
-        // Access PT through identity mapping if possible
-        uint64_t* pt_virt;
-        if (pt_phys < IDENTITY_MAP_SIZE) {
-            pt_virt = (uint64_t*)pt_phys;
-        } else {
-            pt_virt = (uint64_t*)PHYS_TO_VIRT(pt_phys);
-        }
+        uint64_t* pt_virt = GetTableVirt(pt_phys);
+        uint32_t pt_index = (current_vaddr >> PT_SHIFT) & PT_INDEX_MASK;
 
-        int pt_index = (current_vaddr >> PT_SHIFT) & PT_INDEX_MASK;
-
-        // Check if already mapped
         if (pt_virt[pt_index] & PAGE_PRESENT) {
             SpinUnlockIrqRestore(&vmem_lock, irq_flags);
-            PrintKernelError("VMemMapMMIO: Page already mapped at index ");
-            PrintKernelInt(pt_index); PrintKernel("\n");
             return VMEM_ERROR_ALREADY_MAPPED;
         }
 
-        // Set the mapping with MMIO flags
         pt_virt[pt_index] = current_paddr | mmio_flags;
-
-        SpinUnlockIrqRestore(&vmem_lock, irq_flags);
-
-        // Flush TLB for this page
-        VMemFlushTLBSingle(current_vaddr);
-
-        PrintKernel("VMemMapMMIO: Mapped page "); PrintKernelInt(i);
-        PrintKernel(" - PTE["); PrintKernelInt(pt_index); PrintKernel("] = 0x");
-        PrintKernelHex(pt_virt[pt_index]); PrintKernel("\n");
+        add_to_tlb_batch(current_vaddr);
     }
-
-    // Add a memory barrier to ensure all writes are complete
+    
+    flush_tlb_batch();
+    SpinUnlockIrqRestore(&vmem_lock, irq_flags);
     __asm__ volatile("mfence" ::: "memory");
-
-    PrintKernelSuccess("VMemMapMMIO: Successfully mapped ");
-    PrintKernelInt(num_pages); PrintKernel(" pages\n");
-
     return VMEM_SUCCESS;
 }
 
 void VMemUnmapMMIO(uint64_t vaddr, uint64_t size) {
-    PrintKernel("VMemUnmapMMIO: Unmapping MMIO at 0x"); PrintKernelHex(vaddr);
-    PrintKernel(" (size: 0x"); PrintKernelHex(size); PrintKernel(")\n");
-
-    if (!IS_PAGE_ALIGNED(vaddr) || !IS_PAGE_ALIGNED(size)) {
-        PrintKernel("VMemUnmapMMIO: ERROR - Address or size not page-aligned\n");
+    if (!IS_PAGE_ALIGNED(vaddr) || !IS_PAGE_ALIGNED(size) || size == 0) {
         return;
     }
 
     uint64_t num_pages = size / PAGE_SIZE;
-    if (num_pages == 0) {
-        PrintKernel("VMemUnmapMMIO: ERROR - Size is zero\n");
-        return;
-    }
-
     irq_flags_t irq_flags = SpinLockIrqSave(&vmem_lock);
     uint64_t pml4_phys = VMemGetPML4PhysAddr();
 
     for (uint64_t i = 0; i < num_pages; i++) {
         uint64_t current_vaddr = vaddr + (i * PAGE_SIZE);
 
-        // FIXED: Use the same pattern as all other code - get PDP first
         uint64_t pdp_phys = VMemGetPageTablePhys(pml4_phys, current_vaddr, 0, 0);
-        if (!pdp_phys) {
-            PrintKernel("VMemUnmapMMIO: Warning - Page "); PrintKernelInt(i);
-            PrintKernel(" PDP not found\n");
-            continue;
-        }
+        if (!pdp_phys) continue;
 
-        // Then get PD
         uint64_t pd_phys = VMemGetPageTablePhys(pdp_phys, current_vaddr, 1, 0);
-        if (!pd_phys) {
-            PrintKernel("VMemUnmapMMIO: Warning - Page "); PrintKernelInt(i);
-            PrintKernel(" PD not found\n");
-            continue;
-        }
+        if (!pd_phys) continue;
 
-        // Finally get PT (Level 2)
         uint64_t pt_phys = VMemGetPageTablePhys(pd_phys, current_vaddr, 2, 0);
-        if (!pt_phys) {
-            PrintKernel("VMemUnmapMMIO: Warning - Page "); PrintKernelInt(i);
-            PrintKernel(" was not mapped\n");
-            continue;
-        }
+        if (!pt_phys) continue;
 
-        // Access PT through identity mapping if possible
-        uint64_t* pt_table;
-        if (pt_phys < IDENTITY_MAP_SIZE) {
-            pt_table = (uint64_t*)pt_phys;
-        } else {
-            pt_table = (uint64_t*)PHYS_TO_VIRT(pt_phys);
-        }
-
-        uint64_t pt_index = (current_vaddr >> PT_SHIFT) & PT_INDEX_MASK;
+        uint64_t* pt_table = GetTableVirt(pt_phys);
+        uint32_t pt_index = (current_vaddr >> PT_SHIFT) & PT_INDEX_MASK;
 
         if (pt_table[pt_index] & PAGE_PRESENT) {
             pt_table[pt_index] = 0;
-            VMemFlushTLBSingle(current_vaddr);
+            add_to_tlb_batch(current_vaddr);
         }
     }
-
+    
+    flush_tlb_batch();
     SpinUnlockIrqRestore(&vmem_lock, irq_flags);
-    PrintKernel("VMemUnmapMMIO: Successfully unmapped ");
-    PrintKernelInt(num_pages); PrintKernel(" pages\n");
 }
 
 void* VMemAllocStack(uint64_t size) {
@@ -777,28 +757,29 @@ void VMemFreeStack(void* stack_top, uint64_t size) {
 
 void VMemDumpFreeList(void) {
     irq_flags_t flags = SpinLockIrqSave(&vmem_lock);
-    PrintKernel("[VMEM] Free List Dump:\n");
+    PrintKernel("[VMEM] Buddy Allocator Free Blocks:\n");
     
-    PrintKernel("  Lower Canonical (0-128TB):\n");
-    VMemFreeBlock* current = kernel_space.free_list_low;
-    if (!current) PrintKernel("    <Empty>\n");
-    int i = 0;
-    while(current) {
-        PrintKernel("    ["); PrintKernelInt(i++); PrintKernel("] Base: 0x");
-        PrintKernelHex(current->base);
-        PrintKernel(", Size: "); PrintKernelInt(current->size / 1024); PrintKernel(" KB\n");
-        current = current->next;
+    uint64_t total_free = 0;
+    for (uint32_t order = 0; order < BUDDY_NUM_ORDERS; order++) {
+        uint32_t count = 0;
+        VMemFreeBlock* current = buddy_free_lists[order];
+        while (current) {
+            count++;
+            current = current->next;
+        }
+        
+        if (count > 0) {
+            uint64_t block_size = OrderToSize(order);
+            uint64_t total_size = count * block_size;
+            total_free += total_size;
+            
+            PrintKernel("  Order "); PrintKernelInt(order);
+            PrintKernel(" ("); PrintKernelInt(block_size / 1024); PrintKernel("KB): ");
+            PrintKernelInt(count); PrintKernel(" blocks, ");
+            PrintKernelInt(total_size / (1024 * 1024)); PrintKernel("MB total\n");
+        }
     }
     
-    PrintKernel("  Higher Canonical (128-254TB):\n");
-    current = kernel_space.free_list_high;
-    if (!current) PrintKernel("    <Empty>\n");
-    i = 0;
-    while(current) {
-        PrintKernel("    ["); PrintKernelInt(i++); PrintKernel("] Base: 0x");
-        PrintKernelHex(current->base);
-        PrintKernel(", Size: "); PrintKernelInt(current->size / 1024); PrintKernel(" KB\n");
-        current = current->next;
-    }
+    PrintKernel("[VMEM] Total free: "); PrintKernelInt(total_free / (1024 * 1024)); PrintKernel("MB\n");
     SpinUnlockIrqRestore(&vmem_lock, flags);
 }
