@@ -4,6 +4,7 @@
 #include "VFS.h"
 #include "KernelHeap.h"
 #include "MemOps.h"
+#include "VMem.h"
 
 extern uint32_t g_multiboot_info_addr;
 
@@ -16,12 +17,16 @@ void InitRDLoad(void) {
     PrintKernelF("[INITRD] Multiboot info at 0x%08X\n", g_multiboot_info_addr);
     uint32_t total_size = *(uint32_t*)g_multiboot_info_addr;
     PrintKernelF("[INITRD] Total size: %u bytes\n", total_size);
-    
+
     struct MultibootTag* tag = (struct MultibootTag*)(g_multiboot_info_addr + 8);
     
     while (tag->type != MULTIBOOT2_TAG_TYPE_END) {
         if (tag->type == MULTIBOOT2_TAG_TYPE_MODULE) {
             struct MultibootModuleTag* mod = (struct MultibootModuleTag*)tag;
+            if (mod->mod_end <= mod->mod_start) {
+                PrintKernelWarning("[INITRD] Invalid module range; skipping\n");
+                continue;
+            }
             uint32_t mod_size = mod->mod_end - mod->mod_start;
             
             PrintKernelF("[INITRD] Module: %s\n", mod->cmdline);
@@ -33,11 +38,40 @@ void InitRDLoad(void) {
                 continue;
             }
             
-            // Map physical address to virtual (identity mapped in lower 4GB)
-            uint8_t* mod_data = (uint8_t*)(uintptr_t)mod->mod_start;
-            
+            // Map the module's physical range into kernel virtual space temporarily
+            uint64_t paddr_start = (uint64_t)mod->mod_start;
+            uint64_t paddr_end   = (uint64_t)mod->mod_end;
+            uint64_t paddr_len   = paddr_end - paddr_start;
+
+            uint64_t aligned_paddr = PAGE_ALIGN_DOWN(paddr_start);
+            uint64_t offset        = paddr_start - aligned_paddr;
+            uint64_t map_size      = PAGE_ALIGN_UP(offset + paddr_len);
+
+            void* temp_vaddr = VMemAlloc(map_size);
+            if (!temp_vaddr) {
+                PrintKernelF("[INITRD] Failed to allocate temp vaddr for module %s\n", mod->cmdline);
+                continue;
+            }
+
+            // Unmap the RAM pages that VMemAlloc mapped before remapping to module phys
+            int unmap_res = VMemUnmap((uint64_t)temp_vaddr, map_size);
+            if (unmap_res != VMEM_SUCCESS) {
+                PrintKernelF("[INITRD] Failed to unmap temp vaddr before MMIO map: %d\n", unmap_res);
+                VMemFree(temp_vaddr, map_size);
+                continue;
+            }
+
+            int map_res = VMemMapMMIO((uint64_t)temp_vaddr, aligned_paddr, map_size, PAGE_WRITABLE);
+            if (map_res != VMEM_SUCCESS) {
+                PrintKernelF("[INITRD] Failed to map module phys -> virt: %d\n", map_res);
+                VMemFree(temp_vaddr, map_size);
+                continue;
+            }
+
+            uint8_t* mod_data = (uint8_t*)temp_vaddr + offset;
+
             // Validate data is readable
-            if (mod_data[0] == 0 && mod_data[1] == 0 && mod_data[2] == 0) {
+            if (mod_size >= 3 && mod_data[0] == 0 && mod_data[1] == 0 && mod_data[2] == 0) {
                 PrintKernelWarning("[INITRD] Module data appears to be zeroed\n");
             }
             
@@ -63,6 +97,10 @@ void InitRDLoad(void) {
             } else {
                 PrintKernelF("[INITRD] Failed to copy %s\n", mod->cmdline);
             }
+
+            // Unmap and free temporary mapping
+            VMemUnmapMMIO((uint64_t)temp_vaddr, map_size);
+            VMemFree(temp_vaddr, map_size);
         }
         tag = (struct MultibootTag*)((uint8_t*)tag + ((tag->size + 7) & ~7));
     }
