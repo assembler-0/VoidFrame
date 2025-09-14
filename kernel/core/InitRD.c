@@ -61,7 +61,7 @@ void InitRDLoad(void) {
                 continue;
             }
 
-            int map_res = VMemMapMMIO((uint64_t)temp_vaddr, aligned_paddr, map_size, PAGE_WRITABLE);
+            int map_res = VMemMap((uint64_t)temp_vaddr, aligned_paddr, PAGE_WRITABLE | PAGE_PRESENT);
             if (map_res != VMEM_SUCCESS) {
                 PrintKernelF("[INITRD] Failed to map module phys -> virt: %d\n", map_res);
                 VMemFree(temp_vaddr, map_size);
@@ -99,7 +99,7 @@ void InitRDLoad(void) {
             }
 
             // Unmap and free temporary mapping
-            VMemUnmapMMIO((uint64_t)temp_vaddr, map_size);
+            VMemUnmap((uint64_t)temp_vaddr, map_size);
             VMemFree(temp_vaddr, map_size);
         }
         tag = (struct MultibootTag*)((uint8_t*)tag + ((tag->size + 7) & ~7));
