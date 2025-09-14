@@ -63,6 +63,7 @@ int IdeReadSector(uint8_t drive, uint32_t lba, void* buffer);
 int IdeWriteSector(uint8_t drive, uint32_t lba, const uint8_t* buffer);
 int IdeGetDriveInfo(uint8_t drive, char* model_out);
 int IdeReadLBA2048(uint8_t drive, uint32_t lba, void* buffer);
+int IdeIsAtapi(uint8_t drive);
 
 
 // Interrupt handlers

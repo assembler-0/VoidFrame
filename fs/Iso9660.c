@@ -135,23 +135,23 @@ int Iso9660Read(const char* path, void* buffer, uint32_t max_size) {
     // Find the Primary Volume Descriptor (PVD) at LBA 16
     PrintKernel("[ISO] Looking for Primary Volume Descriptor...\n");
     Iso9660Pvd* pvd = NULL;
-    
+
     if (ReadSector(16, sector_buffer) != 0) {
         KernelFree(sector_buffer);
         PrintKernelError("[ISO] Failed to read PVD sector 16\n");
         return -1;
     }
-    
+
     // Debug: Show first 16 bytes of sector
     PrintKernel("[ISO] First 16 bytes of sector 16: ");
     for (int i = 0; i < 16; i++) {
         PrintKernelF("%02X ", sector_buffer[i]);
     }
     PrintKernel("\n");
-    
+
     Iso9660Pvd* cand = (Iso9660Pvd*)sector_buffer;
     PrintKernelF("[ISO] PVD type: %d, ID: %.5s\n", cand->type, cand->id);
-    
+
     if (cand->type == 1 && FastMemcmp(cand->id, "CD001", 5) == 0) {
         PrintKernel("[ISO] Found valid PVD!\n");
         pvd = KernelMemoryAlloc(ISO9660_SECTOR_SIZE);
@@ -170,7 +170,7 @@ int Iso9660Read(const char* path, void* buffer, uint32_t max_size) {
         PrintKernelError("[ISO] PVD not found - not a valid ISO9660 filesystem\n");
         return -1;
     }
-    
+
     PrintKernel("[ISO] PVD found successfully\n");
 
     // Get the root directory entry

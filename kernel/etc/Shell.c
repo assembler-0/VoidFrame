@@ -8,6 +8,7 @@
 #include "Format.h"
 #include "FsUtils.h"
 #include "ISA.h"
+#include "InitRD.h"
 #include "Iso9660.h"
 #include "KernelHeap.h"
 #include "LPT/LPT.h"
@@ -1129,8 +1130,7 @@ static void MvHandler(const char* args) {
 void CloneSystemFiles(const char * args) {
     (void)args;
     PrintKernel("Info: Setup is copying system files...\n");
-    ExecuteCommand("isocp /bin /Data/Apps");
-    ExecuteCommand("isocp /boot/voidframe.krnl /System/Kernel/voidframe.krnl");
+    InitRDLoad();
 }
 
 static void PcBeepHandler(const char * args) {
@@ -1201,7 +1201,6 @@ static void SnoozeHandler(const char* args) {
     }
     KernelFree(status);
 }
-
 static const ShellCommand commands[] = {\
     {"help", HelpHandler},
     {"ps", PSHandler},

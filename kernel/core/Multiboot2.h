@@ -8,6 +8,7 @@
 #define MULTIBOOT2_TAG_TYPE_END        0
 #define MULTIBOOT2_TAG_TYPE_CMDLINE    1
 #define MULTIBOOT2_TAG_TYPE_BOOTLOADER_NAME 2
+#define MULTIBOOT2_TAG_TYPE_MODULE     3
 #define MULTIBOOT2_TAG_TYPE_MMAP       6
 #define MULTIBOOT2_TAG_TYPE_FRAMEBUFFER 8
 #define MULTIBOOT2_MEMORY_AVAILABLE    1
@@ -49,5 +50,12 @@ typedef struct {
     uint8_t  framebuffer_blue_field_position;
     uint8_t  framebuffer_blue_mask_size;
 } MultibootTagFramebuffer;
+
+struct MultibootModuleTag {
+    struct MultibootTag tag;
+    uint32_t mod_start;
+    uint32_t mod_end;
+    char cmdline[];
+};
 
 #endif

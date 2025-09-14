@@ -63,10 +63,10 @@ int VfsInit(void) {
     extern int ext2_initialized;
     if (ext2_initialized) {
         PrintKernel("[VFS] Attempting EXT2 mount...\n");
-        int disk_result = VfsMount(FormatS("%s/VFSystemDrive", DevicesStorage), VFS_EXT2, 0);
+        int disk_result = VfsMount(FormatS("%s/VFSystemDrive", RuntimeMounts), VFS_EXT2, 0);
 
         if (disk_result == 0) {
-            SerialWriteF("[VFS] EXT2 mounted at %s/VFSystemDrive\n", DevicesStorage);
+            SerialWriteF("[VFS] EXT2 mounted at %s/VFSystemDrive\n", RuntimeMounts);
         } else {
             SerialWrite("[VFS] EXT2 mount failed\n");
         }
@@ -77,10 +77,10 @@ int VfsInit(void) {
     extern int fat12_initialized;
     if (fat12_initialized) {
         PrintKernel("[VFS] Attempting FAT12 mount...\n");
-        int disk_result = VfsMount(FormatS("%s/VFSystemDrive", DevicesStorage), VFS_FAT12, 0);
+        int disk_result = VfsMount(FormatS("%s/VFSystemDrive", RuntimeMounts), VFS_FAT12, 0);
 
         if (disk_result == 0) {
-            SerialWriteF("[VFS] FAT12 mounted at %s/VFSystemDrive\n", DevicesStorage);
+            SerialWriteF("[VFS] FAT12 mounted at %s/VFSystemDrive\n", RuntimeMounts);
         } else {
             SerialWrite("[VFS] FAT12 mount failed\n");
         }

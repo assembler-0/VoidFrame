@@ -5,9 +5,11 @@
 #include "Console.h"
 #include "EXT/Ext2.h"
 #include "FAT/FAT1x.h"
+#include "Iso9660.h"
 #include "Gdt.h"
 #include "ISA.h"
 #include "Ide.h"
+#include "InitRD.h"
 #include "Idt.h"
 #include "Io.h"
 #include "KernelHeap.h"
@@ -44,7 +46,7 @@ extern uint8_t _kernel_phys_start[];
 extern uint8_t _kernel_phys_end[];
 
 // Global variable to store the Multiboot2 info address
-static uint32_t g_multiboot_info_addr = 0;
+uint32_t g_multiboot_info_addr = 0;
 bool g_svgaII_active = false;
 bool g_HasKernelStarted = false;
 
@@ -69,6 +71,16 @@ void ParseMultibootInfo(uint32_t info) {
             PrintKernel("    Framebuffer Tag found!\n");
         } else if (tag->type == MULTIBOOT2_TAG_TYPE_MMAP) {
             PrintKernel("    Memory Map Tag found\n");
+        } else if (tag->type == MULTIBOOT2_TAG_TYPE_MODULE) {
+            PrintKernel("    Module Tag found\n");
+            struct MultibootModuleTag* mod_tag = (struct MultibootModuleTag*)tag;
+            PrintKernel("      Start: 0x");
+            PrintKernelHex(mod_tag->mod_start);
+            PrintKernel(", End: 0x");
+            PrintKernelHex(mod_tag->mod_end);
+            PrintKernel("\n      Cmdline: ");
+            PrintKernel(mod_tag->cmdline);
+            PrintKernel("\n");
         }
         // Move to the next tag, ensuring 8-byte alignment
         tag = (struct MultibootTag*)((uint8_t*)tag + ((tag->size + 7) & ~7));
@@ -516,7 +528,7 @@ static void IRQUnmaskCoreSystems() {
     PrintKernelSuccess("System: IRQs unmasked\n");
 }
 
-void INITRD1() {
+void MakeRoot() {
     PrintKernel("INITRD: Creating rootfs on /...\n");
     //======================================================================
     // 1. Core Operating System - (Largely Read-Only at Runtime)
@@ -688,7 +700,7 @@ static InitResultT PXS2(void) {
     PrintKernelSuccess("System: VFRFS (VoidFrame RamFS) initialized\n");
 
     // Initrd
-    INITRD1();
+    MakeRoot();
     PrintKernelSuccess("System: INITRD (Stage 1) initialized\n");
 
     // Initialize VFS
@@ -696,18 +708,18 @@ static InitResultT PXS2(void) {
     VfsInit();
     PrintKernelSuccess("System: VFS initialized\n");
 
+#ifdef VF_CONFIG_LOAD_MB_MODULES
+    // Load multiboot modules
+    PrintKernel("Info: Loading multiboot modules...\n");
+    InitRDLoad();
+    PrintKernelSuccess("System: Multiboot modules loaded\n");
+#endif
+
 #ifdef VF_CONFIG_ENFORCE_MEMORY_PROTECTION
     ValidateMemoryLayout();
     PrintKernel("Info: Checking huge page support...\n");
     if (!CheckHugePageSupport()) PrintKernel("System: Huge pages not available\n");
     else PrintKernelSuccess("System: Huge pages available\n");
-#endif
-
-#ifdef VF_CONFIG_SCHED_MLFQ
-    // Initialize Process Management
-    PrintKernel("Info: Initializing MLFQ scheduler...\n");
-    MLFQSchedInit();
-    PrintKernelSuccess("System: MLFQ scheduler initialized\n");
 #endif
 
 #ifdef VF_CONFIG_ENABLE_ISA
@@ -765,6 +777,13 @@ static InitResultT PXS2(void) {
     PrintKernel("Info: Initializing LPT Driver...\n");
     LPT_Init();
     PrintKernelSuccess("System: LPT Driver initialized\n");
+#endif
+
+#ifdef VF_CONFIG_SCHED_MLFQ // Make calls to MLFQGetCurrentProcess() returns NULL for as long as possible before interrupts are enabled
+    // Initialize Process Management
+    PrintKernel("Info: Initializing MLFQ scheduler...\n");
+    MLFQSchedInit();
+    PrintKernelSuccess("System: MLFQ scheduler initialized\n");
 #endif
 
     // Unmask IRQs
