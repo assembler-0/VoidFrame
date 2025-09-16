@@ -2,7 +2,6 @@
 #include "../../mm/KernelHeap.h"
 #include "Console.h"
 #include "Io.h"
-#include "Pic.h"
 #include "SB16.h"
 #include "VMem.h"
 #include "stdint.h"

@@ -1,16 +1,16 @@
 // VoidFrame Kernel Entry File
 #include "Kernel.h"
 
+#include "Apic.h"
 #include "Compositor.h"
 #include "Console.h"
 #include "EXT/Ext2.h"
 #include "FAT/FAT1x.h"
-#include "Iso9660.h"
 #include "Gdt.h"
 #include "ISA.h"
 #include "Ide.h"
-#include "InitRD.h"
 #include "Idt.h"
+#include "InitRD.h"
 #include "Io.h"
 #include "KernelHeap.h"
 #include "LPT/LPT.h"
@@ -22,7 +22,6 @@
 #include "PMem.h"
 #include "PS2.h"
 #include "Panic.h"
-#include "Pic.h"
 #include "SVGAII.h"
 #include "Serial.h"
 #include "Shell.h"
@@ -34,9 +33,9 @@
 #include "Vesa.h"
 #include "ethernet/Network.h"
 #include "sound/Generic.h"
-#include "storage/AHCI.h"
 #include "stdbool.h"
 #include "stdint.h"
+#include "storage/AHCI.h"
 #include "xHCI/xHCI.h"
 
 void KernelMainHigherHalf(void);
@@ -519,12 +518,12 @@ void PXS1(const uint32_t info) {
 
 static void IRQUnmaskCoreSystems() {
     PrintKernel("Unmasking IRQs...\n");
-    PIC_enable_irq(0);
-    PIC_enable_irq(1);
-    PIC_enable_irq(12);
-    PIC_enable_irq(2);
-    PIC_enable_irq(14);
-    PIC_enable_irq(15);
+    ApicEnableIrq(0);
+    ApicEnableIrq(1);
+    ApicEnableIrq(12);
+    ApicEnableIrq(2);
+    ApicEnableIrq(14);
+    ApicEnableIrq(15);
     PrintKernelSuccess("System: IRQs unmasked\n");
 }
 
@@ -638,10 +637,10 @@ static InitResultT PXS2(void) {
     PrintKernelSuccess("System: IDT initialized\n");
 
     // Initialize PIC
-    PrintKernel("Info: Initializing PIC & PIT...\n");
-    PicInstall();
-    PitInstall();
-    PrintKernelSuccess("System: PIC & PIT initialized\n");
+    PrintKernel("Info: Installing APIC...\n");
+    ApicInstall();
+    ApicTimerInstall(250);
+    PrintKernelSuccess("System: APIC Installed\n");
 
 #ifdef VF_CONFIG_ENFORCE_MEMORY_PROTECTION
     PrintKernel("Info: Final memory health check...\n");

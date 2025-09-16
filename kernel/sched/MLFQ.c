@@ -1,4 +1,6 @@
 #include "MLFQ.h"
+
+#include "Apic.h"
 #include "Atomics.h"
 #include "Cerberus.h"
 #include "Compositor.h"
@@ -13,7 +15,6 @@
 #include "Ipc.h"
 #include "MemOps.h"
 #include "Panic.h"
-#include "Pic.h"
 #include "Serial.h"
 #include "Shell.h"
 #include "Spinlock.h"
@@ -74,7 +75,7 @@ static volatile uint32_t term_queue_count = 0;
 static uint64_t context_switches = 0;
 static uint64_t scheduler_calls = 0;
 
-extern uint16_t PIT_FREQUENCY_HZ;
+extern uint16_t APIC_HZ;
 char astra_path[1024];
 
 static int FastFFS(const uint64_t value) {
@@ -161,8 +162,8 @@ static uint32_t __attribute__((visibility("hidden"))) RemoveFromTerminationQueue
 
 
 uint64_t MLFQGetSystemTicks(void) {
-    extern volatile uint32_t PITTicks;
-    return PITTicks;
+    extern volatile uint32_t APICticks;
+    return APICticks;
 }
 
 static int __attribute__((visibility("hidden"))) ValidateToken(const MLFQSecurityToken* token, uint32_t pid_to_check) {
@@ -1284,7 +1285,7 @@ static __attribute__((visibility("hidden"))) void DynamoX(void) {
     Controller controller = {
         .min_freq = 200,        // Increased base responsiveness
         .max_freq = 2000,       // Higher ceiling for heavy loads
-        .current_freq = PIT_FREQUENCY_HZ,
+        .current_freq = APIC_HZ,
         .baseline_freq = 330,   // Smart baseline instead of minimum
         .learning_rate = (int32_t)(0.25f * FXP_SCALE),    // More aggressive learning
         .momentum = (int32_t)(0.8f * FXP_SCALE),          // Higher momentum for stability
@@ -1459,7 +1460,7 @@ static __attribute__((visibility("hidden"))) void DynamoX(void) {
                 HYSTERESIS_THRESHOLD / 2 : HYSTERESIS_THRESHOLD;
 
             if (ABSi(new_freq - controller.current_freq) > change_threshold) {
-                PitSetFrequency(new_freq);
+                ApicTimerSetFrequency(new_freq);
                 controller.current_freq = new_freq;
                 controller.stability_counter = 0;
 
@@ -1838,7 +1839,7 @@ void MLFQDumpPerformanceStats(void) {
     PrintKernelInt(MLFQscheduler.context_switch_overhead);
     PrintKernel(" ticks\n[PERF] System load: ");
     PrintKernelInt(MLFQscheduler.total_processes);
-    PrintKernel(" processes\n");
+    PrintKernel(" \n");
     
     // Show per-priority statistics
     for (int i = 0; i < MAX_PRIORITY_LEVELS; i++) {
@@ -1906,8 +1907,8 @@ void MLFQListProcesses(void) {
 }
 
 void MLFQDumpSchedulerState(void) {
-    PrintKernel("[SCHED] PIT frequency: ");
-    PrintKernelInt(PIT_FREQUENCY_HZ);
+    PrintKernel("[SCHED] Timer Frequency: ");
+    PrintKernelInt(APIC_HZ);
     PrintKernel("\n");
     PrintKernel("[SCHED] Current: ");
     PrintKernelInt(MLFQscheduler.current_running);

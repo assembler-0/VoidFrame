@@ -153,8 +153,10 @@ ninja runmin
     - [x] VGA text mode
 - Timer
     - [x] PIT
-    - [x] PIC
-    - [x] APIC (not working)
+    - [x] PIC (remnants)
+    - [x] APIC (with timer)
+    - [x] LAPIC
+    - [x] IOAPIC
     - [x] RTC
 - Generic
     - [x] PCI

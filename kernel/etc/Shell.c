@@ -1,6 +1,8 @@
 #include "Shell.h"
+
 #include "../../drivers/ethernet/interface/Icmp.h"
 #include "6502/6502.h"
+#include "Apic.h"
 #include "Cerberus.h"
 #include "Console.h"
 #include "Editor.h"
@@ -20,7 +22,6 @@
 #include "PS2.h"
 #include "Packet.h"
 #include "Panic.h"
-#include "Pic.h"
 #include "RTC/Rtc.h"
 #include "SB16.h"
 #include "Serial.h"
@@ -440,7 +441,7 @@ static void SetfreqHandler(const char * args) {
         KernelFree(freq_str);
         return;
     }
-    PitSetFrequency((uint16_t)freq_i);
+    ApicTimerSetFrequency((uint16_t)freq_i);
     KernelFree(freq_str);
 }
 
@@ -472,7 +473,7 @@ static void PicmaskHandler(const char * args) {
         PrintKernel("Usage: picmask <irq>\n");
         return;
     }
-    PIC_disable_irq(irq);
+    ApicDisableIrq(irq);
 }
 
 static void PicunmaskHandler(const char * args) {
@@ -487,7 +488,7 @@ static void PicunmaskHandler(const char * args) {
         PrintKernel("Usage: picunmask <irq>\n");
         return;
     }
-    PIC_enable_irq(irq);
+    ApicEnableIrq(irq);
 }
 
 static void CdHandler(const char * args) {
