@@ -1,4 +1,6 @@
 #include "PS2.h"
+
+#include "Console.h"
 #include "Io.h"
 #include "Vesa.h"
 
@@ -39,13 +41,19 @@ static char scancode_to_ascii_shift[] = {
     '*', 0, ' '
 };
 
-// Helper functions
-static void wait_for_input_buffer_empty(void) {
-    while (inb(KEYBOARD_STATUS_PORT) & 0x02);
+static int wait_for_input_buffer_empty(void) {
+    for (int i = 0; i < 100000; i++) {
+        if (!(inb(KEYBOARD_STATUS_PORT) & 0x02)) return 0;
+        __asm__ __volatile__("pause");
+    }
+    return -1;
 }
-
-static void wait_for_output_buffer_full(void) {
-    while (!(inb(KEYBOARD_STATUS_PORT) & 0x01));
+static int wait_for_output_buffer_full(void) {
+    for (int i = 0; i < 100000; i++) {
+        if (inb(KEYBOARD_STATUS_PORT) & 0x01) return 0;
+        __asm__ __volatile__("pause");
+    }
+    return -1;
 }
 
 void send_mouse_command(uint8_t cmd) {
@@ -59,7 +67,18 @@ void send_mouse_command(uint8_t cmd) {
 }
 
 void PS2Init(void) {
-    // Flush the keyboard controller's buffer
+    uint8_t status = inb(KEYBOARD_STATUS_PORT);
+    if (status & 0xC0) {  // Bits 6-7: timeout/parity errors
+        PrintKernelWarning("PS2: Controller errors detected, performing reset\n");
+    }
+
+    // More aggressive buffer flushing
+    int flush_attempts = 0;
+    while ((inb(KEYBOARD_STATUS_PORT) & 0x01) && flush_attempts++ < 32) {
+        inb(KEYBOARD_DATA_PORT);
+        // Small delay to let controller settle
+        for (volatile int i = 0; i < 1000; i++);
+    }
     while (inb(KEYBOARD_STATUS_PORT) & 0x01) {
         inb(KEYBOARD_DATA_PORT);
     }
@@ -221,9 +240,11 @@ static void ProcessMouseData(uint8_t data) {
 // Unified PS/2 Interrupt Handler
 void PS2Handler(void) {
     uint8_t status;
-    int max_packets = 10; // Process up to 10 packets per interrupt
 
-    while (max_packets-- > 0) {
+    // Drain the controller's output buffer completely to avoid losing IRQ edges
+    // If we return while the buffer is still full, additional edges may not fire
+    // (since the 8042 only toggles the IRQ line on transitions to non-empty).
+    while (1) {
         status = inb(KEYBOARD_STATUS_PORT);
         if (!(status & 0x01)) {
             break; // No more data

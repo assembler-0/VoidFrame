@@ -75,7 +75,7 @@ static volatile uint32_t term_queue_count = 0;
 static uint64_t context_switches = 0;
 static uint64_t scheduler_calls = 0;
 
-extern uint16_t APIC_HZ;
+extern volatile uint32_t APIC_HZ;
 char astra_path[1024];
 
 static int FastFFS(const uint64_t value) {
@@ -88,6 +88,11 @@ static int FastCLZ(const uint64_t value) {
 
 static void RequestSchedule(void) {
     need_schedule = 1;
+}
+
+static uint8_t GetCurrentActiveProcess(void) {
+    if (UNLIKELY(active_process_bitmap == 0)) return 0;
+    return __builtin_popcountll(active_process_bitmap);
 }
 
 static uint64_t SecureHash(const void* data, const uint64_t len, uint64_t salt) {
@@ -1311,7 +1316,7 @@ static __attribute__((visibility("hidden"))) void DynamoX(void) {
 
         if (time_delta >= SAMPLING_INTERVAL) {
             // Enhanced process and queue metrics
-            int process_count = __builtin_popcountll(active_process_bitmap);
+            int process_count = GetCurrentActiveProcess();
             int ready_count = __builtin_popcountll(ready_process_bitmap);
             uint64_t cs_delta = context_switches - last_context_switches;
 
@@ -1493,7 +1498,7 @@ static __attribute__((visibility("hidden"))) void DynamoX(void) {
                 SerialWrite("Hz | Load: ");
                 SerialWriteDec(load_percentage);
                 SerialWrite("% | CS: ");
-                SerialWriteDec(cs_rate >> FXP_SHIFT);
+                SerialWriteDec((uint32_t)context_switches);
                 SerialWrite(" | Mode: ");
                 SerialWriteDec(controller.adaptive_mode);
                 SerialWrite(" | Score: ");
@@ -1657,7 +1662,7 @@ static void Astra(void) {
                 PANIC("AS: Critical scheduler corruption - system compromised");
             }
 
-            uint32_t actual_count = __builtin_popcountll(active_process_bitmap);
+            uint32_t actual_count = GetCurrentActiveProcess();
             if (actual_count != process_count) {
                 PrintKernelError("Astra: CRITICAL: Process count corruption\n");
                 threat_level += 10;
@@ -1671,7 +1676,7 @@ static void Astra(void) {
         if (current_tick - last_sched_scan >= SCHED_CONSISTENCY_INTERVAL) {
             last_sched_scan = current_tick;
 
-            uint32_t popcount_processes = __builtin_popcountll(active_process_bitmap);
+            uint32_t popcount_processes = GetCurrentActiveProcess();
             if (UNLIKELY(popcount_processes != process_count)) {
                 PrintKernelError("Astra: CRITICAL: Process count/bitmap mismatch! System may be unstable.\n");
                 // This is a serious issue, but maybe not panic-worthy immediately.
@@ -1834,7 +1839,7 @@ void MLFQDumpPerformanceStats(void) {
     PrintKernel("\n[PERF] Security violations: ");
     PrintKernelInt(security_violation_count);
     PrintKernel("\n[PERF] Active processes: ");
-    PrintKernelInt(__builtin_popcountll(active_process_bitmap));
+    PrintKernelInt(GetCurrentActiveProcess());
     PrintKernel("\n[PERF] Avg context switch overhead: ");
     PrintKernelInt(MLFQscheduler.context_switch_overhead);
     PrintKernel(" ticks\n[PERF] System load: ");

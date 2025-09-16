@@ -39,4 +39,6 @@ uint8_t GetMouseButtons(void);
 int IsLeftButtonPressed(void);
 int IsRightButtonPressed(void);
 int IsMiddleButtonPressed(void);
+char GetChar(void);
+int HasInput(void);
 #endif

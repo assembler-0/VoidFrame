@@ -432,8 +432,8 @@ static void PrintBootstrapSummary(void) {
 
 // Pre-eXecutionSystem 1
 void PXS1(const uint32_t info) {
+    PICMaskAll();
     int sret = SerialInit();
-
     if (sret != 0) {
         PrintKernelWarning("[WARN] COM1 failed, probing other COM ports...\n");
         if (SerialInitPort(COM2) != 0 && SerialInitPort(COM3) != 0 &&SerialInitPort(COM4) != 0) {
@@ -518,10 +518,11 @@ void PXS1(const uint32_t info) {
 
 static void IRQUnmaskCoreSystems() {
     PrintKernel("Unmasking IRQs...\n");
-    ApicEnableIrq(0);
+    // Do not enable IRQ0 and IRQ2 under IOAPIC; vector 32 collision and no cascade on IOAPIC.
+    // ApicEnableIrq(0);
     ApicEnableIrq(1);
     ApicEnableIrq(12);
-    ApicEnableIrq(2);
+    // ApicEnableIrq(2);
     ApicEnableIrq(14);
     ApicEnableIrq(15);
     PrintKernelSuccess("System: IRQs unmasked\n");
@@ -636,9 +637,9 @@ static InitResultT PXS2(void) {
     IdtInstall();
     PrintKernelSuccess("System: IDT initialized\n");
 
-    // Initialize PIC
+    // Initialize APIC
     PrintKernel("Info: Installing APIC...\n");
-    ApicInstall();
+    if (!ApicInstall()) PANIC("Failed to initialize APIC");
     ApicTimerInstall(250);
     PrintKernelSuccess("System: APIC Installed\n");
 
@@ -655,9 +656,9 @@ static InitResultT PXS2(void) {
 
 #ifdef VF_CONFIG_ENABLE_PS2
     // Initialize keyboard
-    PrintKernel("Info: Initializing keyboard...\n");
+    PrintKernel("Info: Initializing PS/2 driver...\n");
     PS2Init();
-    PrintKernelSuccess("System: Keyboard initialized\n");
+    PrintKernelSuccess("System: PS/2 driver initialized\n");
 #endif
 
 #ifdef VF_CONFIG_USE_VFSHELL
@@ -692,6 +693,9 @@ static InitResultT PXS2(void) {
         PrintKernelWarning(" Skipping FAT1x & EXT2 initialization\n");
     }
 #endif
+
+    // Unmask IRQs
+    IRQUnmaskCoreSystems();
 
     // Initialize ram filesystem
     PrintKernel("Info: Initializing VFRFS...\n");
@@ -784,9 +788,6 @@ static InitResultT PXS2(void) {
     MLFQSchedInit();
     PrintKernelSuccess("System: MLFQ scheduler initialized\n");
 #endif
-
-    // Unmask IRQs
-    IRQUnmaskCoreSystems();
 
     return INIT_SUCCESS;
 }

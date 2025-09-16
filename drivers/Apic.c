@@ -37,7 +37,7 @@
 #define APIC_BASE_MSR_ENABLE            0x800
 
 #define IOAPIC_DEFAULT_PHYS_ADDR        0xFEC00000
-
+#define LAPIC_LVT_TIMER_SCALE_FACTOR    1
 // --- Global Variables ---
 static volatile uint32_t* s_lapic_base = NULL;
 static volatile uint32_t* s_ioapic_base = NULL;
@@ -48,6 +48,7 @@ volatile uint32_t APIC_HZ = 250;
 // --- Forward Declarations ---
 static void lapic_write(uint32_t reg, uint32_t value);
 static uint32_t lapic_read(uint32_t reg);
+static uint8_t lapic_get_id();
 static void ioapic_write(uint8_t reg, uint32_t value);
 static uint32_t ioapic_read(uint8_t reg);
 static void ioapic_set_entry(uint8_t index, uint64_t data);
@@ -81,6 +82,11 @@ static void lapic_write(uint32_t reg, uint32_t value) {
 
 static uint32_t lapic_read(uint32_t reg) {
     return s_lapic_base[reg / 4];
+}
+
+static uint8_t lapic_get_id() {
+    // LAPIC_ID register: bits 24..31 hold the APIC ID in xAPIC mode
+    return (uint8_t)(lapic_read(LAPIC_ID) >> 24);
 }
 
 static void ioapic_write(uint8_t reg, uint32_t value) {
@@ -134,13 +140,17 @@ void ApicSendEoi() {
 void ApicEnableIrq(uint8_t irq_line) {
     // IRQ line -> Vector 32 + IRQ
     // For now, a simple 1:1 mapping for legacy IRQs 0-15
-    // This sends the interrupt to the bootstrap processor (LAPIC ID 0)
+    // Route to the current CPU's LAPIC ID (BSP), not hard-coded 0
+    uint8_t dest_apic_id = lapic_get_id();
+
     uint64_t redirect_entry = (32 + irq_line); // Vector
-    redirect_entry |= (0b000 << 8); // Delivery Mode: Fixed
-    redirect_entry |= (0b0 << 11);  // Destination Mode: Physical
-    redirect_entry |= (0b0 << 15);  // Polarity: High
-    redirect_entry |= (0b0 << 13);  // Trigger Mode: Edge
-    redirect_entry |= ((uint64_t)0 << 56); // Destination: LAPIC ID 0
+    redirect_entry |= (0b000ull << 8);  // Delivery Mode: Fixed
+    redirect_entry |= (0b0ull << 11);   // Destination Mode: Physical
+    redirect_entry |= (0b0ull << 13);   // Trigger Mode: Edge
+    redirect_entry |= (0b0ull << 15);   // Polarity: High (active high)
+    // Unmask (bit 16 = 0)
+    // Destination field (bits 56..63)
+    redirect_entry |= ((uint64_t)dest_apic_id << 56);
 
     ioapic_set_entry(irq_line, redirect_entry);
 }
@@ -180,24 +190,19 @@ void ApicTimerSetFrequency(uint32_t frequency_hz) {
     if (frequency_hz == 0) return;
     s_apic_timer_freq_hz = frequency_hz;
     APIC_HZ = frequency_hz;
-    // To set the frequency, we need to know the APIC bus frequency.
-    // A simple but effective way is to calibrate against the PIT.
-    // 1. Tell LAPIC to count down from a large value.
-    // 2. Use the PIT to wait for a known duration (e.g., 10ms).
-    // 3. Read how much the LAPIC timer has decremented.
-    // This gives us ticks per 10ms, from which we can calculate ticks per second.
 
-    // For simplicity, this implementation will assume a fixed bus frequency.
-    // A more robust solution requires PIT calibration.
-    // Let's assume a 100MHz APIC bus clock for now.
-    uint32_t apic_bus_freq = 100000000;
-    uint32_t timer_divisor = 16;
-    uint32_t ticks_per_second = apic_bus_freq / timer_divisor;
-    uint32_t initial_count = ticks_per_second / frequency_hz;
+    // Use empirically-determined approach instead of the broken calculation
+    uint32_t initial_count = frequency_hz * LAPIC_LVT_TIMER_SCALE_FACTOR;
 
     lapic_write(LAPIC_TIMER_INIT_COUNT, initial_count);
-}
 
+    static bool warned = false;
+    if (!warned) {
+        PrintKernelF("APIC: Using empirical timer value (initial_count=%u for %uHz)\n",
+                    initial_count, frequency_hz);
+        warned = true;
+    }
+}
 
 // --- Private Setup Functions ---
 
@@ -212,7 +217,7 @@ static bool detect_apic() {
 static bool setup_lapic() {
     // Get LAPIC physical base address from MSR
     uint64_t lapic_base_msr = rdmsr(APIC_BASE_MSR);
-    uint64_t lapic_phys_base = lapic_base_msr & 0xFFFFFF000;
+    uint64_t lapic_phys_base = lapic_base_msr & 0xFFFFFFFFFFFFF000ULL;
 
     // Map the LAPIC into virtual memory
     s_lapic_base = (volatile uint32_t*)VMemAlloc(PAGE_SIZE);
@@ -234,13 +239,12 @@ static bool setup_lapic() {
     // Enable the LAPIC by setting the enable bit in the MSR and the spurious vector register
     wrmsr(APIC_BASE_MSR, lapic_base_msr | APIC_BASE_MSR_ENABLE);
 
-    // Set the spurious interrupt vector (0xFF) and enable the APIC software-wise
     lapic_write(LAPIC_SVR, 0x1FF);
-
     // Set TPR to 0 to accept all interrupts
     lapic_write(LAPIC_TPR, 0);
-
-    PrintKernelF("APIC: LAPIC enabled at physical addr 0x%x, mapped to 0x%x\n", lapic_phys_base, (uint64_t)s_lapic_base);
+    PrintKernelF("APIC: LAPIC enabled at physical addr 0x%llx, mapped to 0x%llx\n",
+                 (unsigned long long)lapic_phys_base,
+                 (unsigned long long)(uintptr_t)s_lapic_base);
     return true;
 }
 
