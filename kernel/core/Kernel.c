@@ -1,16 +1,16 @@
 // VoidFrame Kernel Entry File
 #include "Kernel.h"
 
+#include "APIC.h"
 #include "Compositor.h"
 #include "Console.h"
 #include "EXT/Ext2.h"
 #include "FAT/FAT1x.h"
-#include "Iso9660.h"
 #include "Gdt.h"
 #include "ISA.h"
 #include "Ide.h"
-#include "InitRD.h"
 #include "Idt.h"
+#include "InitRD.h"
 #include "Io.h"
 #include "KernelHeap.h"
 #include "LPT/LPT.h"
@@ -22,7 +22,6 @@
 #include "PMem.h"
 #include "PS2.h"
 #include "Panic.h"
-#include "Pic.h"
 #include "SVGAII.h"
 #include "Serial.h"
 #include "Shell.h"
@@ -34,9 +33,9 @@
 #include "Vesa.h"
 #include "ethernet/Network.h"
 #include "sound/Generic.h"
-#include "storage/AHCI.h"
 #include "stdbool.h"
 #include "stdint.h"
+#include "storage/AHCI.h"
 #include "xHCI/xHCI.h"
 
 void KernelMainHigherHalf(void);
@@ -433,8 +432,8 @@ static void PrintBootstrapSummary(void) {
 
 // Pre-eXecutionSystem 1
 void PXS1(const uint32_t info) {
+    PICMaskAll();
     int sret = SerialInit();
-
     if (sret != 0) {
         PrintKernelWarning("[WARN] COM1 failed, probing other COM ports...\n");
         if (SerialInitPort(COM2) != 0 && SerialInitPort(COM3) != 0 &&SerialInitPort(COM4) != 0) {
@@ -515,17 +514,6 @@ void PXS1(const uint32_t info) {
     const uint64_t new_stack_top = ((uint64_t)kernel_stack + KERNEL_VIRTUAL_OFFSET) + KERNEL_STACK_SIZE;
     const uint64_t higher_half_entry = (uint64_t)&KernelMainHigherHalf + KERNEL_VIRTUAL_OFFSET;
     SwitchToHigherHalf(pml4_addr, higher_half_entry, new_stack_top);
-}
-
-static void IRQUnmaskCoreSystems() {
-    PrintKernel("Unmasking IRQs...\n");
-    PIC_enable_irq(0);
-    PIC_enable_irq(1);
-    PIC_enable_irq(12);
-    PIC_enable_irq(2);
-    PIC_enable_irq(14);
-    PIC_enable_irq(15);
-    PrintKernelSuccess("System: IRQs unmasked\n");
 }
 
 void MakeRoot() {
@@ -637,11 +625,11 @@ static InitResultT PXS2(void) {
     IdtInstall();
     PrintKernelSuccess("System: IDT initialized\n");
 
-    // Initialize PIC
-    PrintKernel("Info: Initializing PIC & PIT...\n");
-    PicInstall();
-    PitInstall();
-    PrintKernelSuccess("System: PIC & PIT initialized\n");
+    // Initialize APIC
+    PrintKernel("Info: Installing APIC...\n");
+    if (!ApicInstall()) PANIC("Failed to initialize APIC");
+    ApicTimerInstall(250);
+    PrintKernelSuccess("System: APIC Installed\n");
 
 #ifdef VF_CONFIG_ENFORCE_MEMORY_PROTECTION
     PrintKernel("Info: Final memory health check...\n");
@@ -656,9 +644,9 @@ static InitResultT PXS2(void) {
 
 #ifdef VF_CONFIG_ENABLE_PS2
     // Initialize keyboard
-    PrintKernel("Info: Initializing keyboard...\n");
+    PrintKernel("Info: Initializing PS/2 driver...\n");
     PS2Init();
-    PrintKernelSuccess("System: Keyboard initialized\n");
+    PrintKernelSuccess("System: PS/2 driver initialized\n");
 #endif
 
 #ifdef VF_CONFIG_USE_VFSHELL
@@ -786,9 +774,6 @@ static InitResultT PXS2(void) {
     PrintKernelSuccess("System: MLFQ scheduler initialized\n");
 #endif
 
-    // Unmask IRQs
-    IRQUnmaskCoreSystems();
-
     return INIT_SUCCESS;
 }
 
@@ -802,7 +787,7 @@ asmlinkage void KernelMain(const uint32_t magic, const uint32_t info) {
 
     console.buffer = (volatile uint16_t*)VGA_BUFFER_ADDR;
 
-    PrintKernelSuccess("System: VoidFrame Kernel - Version 0.0.2-development2 loaded\n");
+    PrintKernelSuccess("System: VoidFrame Kernel - Version 0.0.2-development3 loaded\n");
     PrintKernel("Magic: ");
     PrintKernelHex(magic);
     PrintKernel(", Info: ");

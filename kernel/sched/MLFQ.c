@@ -1,4 +1,6 @@
 #include "MLFQ.h"
+
+#include "APIC.h"
 #include "Atomics.h"
 #include "Cerberus.h"
 #include "Compositor.h"
@@ -13,7 +15,6 @@
 #include "Ipc.h"
 #include "MemOps.h"
 #include "Panic.h"
-#include "Pic.h"
 #include "Serial.h"
 #include "Shell.h"
 #include "Spinlock.h"
@@ -74,7 +75,7 @@ static volatile uint32_t term_queue_count = 0;
 static uint64_t context_switches = 0;
 static uint64_t scheduler_calls = 0;
 
-extern uint16_t PIT_FREQUENCY_HZ;
+extern volatile uint32_t APIC_HZ;
 char astra_path[1024];
 
 static int FastFFS(const uint64_t value) {
@@ -87,6 +88,11 @@ static int FastCLZ(const uint64_t value) {
 
 static void RequestSchedule(void) {
     need_schedule = 1;
+}
+
+static uint8_t GetCurrentActiveProcess(void) {
+    if (UNLIKELY(active_process_bitmap == 0)) return 0;
+    return __builtin_popcountll(active_process_bitmap);
 }
 
 static uint64_t SecureHash(const void* data, const uint64_t len, uint64_t salt) {
@@ -161,8 +167,8 @@ static uint32_t __attribute__((visibility("hidden"))) RemoveFromTerminationQueue
 
 
 uint64_t MLFQGetSystemTicks(void) {
-    extern volatile uint32_t PITTicks;
-    return PITTicks;
+    extern volatile uint32_t APICticks;
+    return APICticks;
 }
 
 static int __attribute__((visibility("hidden"))) ValidateToken(const MLFQSecurityToken* token, uint32_t pid_to_check) {
@@ -1284,7 +1290,7 @@ static __attribute__((visibility("hidden"))) void DynamoX(void) {
     Controller controller = {
         .min_freq = 200,        // Increased base responsiveness
         .max_freq = 2000,       // Higher ceiling for heavy loads
-        .current_freq = PIT_FREQUENCY_HZ,
+        .current_freq = APIC_HZ,
         .baseline_freq = 330,   // Smart baseline instead of minimum
         .learning_rate = (int32_t)(0.25f * FXP_SCALE),    // More aggressive learning
         .momentum = (int32_t)(0.8f * FXP_SCALE),          // Higher momentum for stability
@@ -1310,7 +1316,7 @@ static __attribute__((visibility("hidden"))) void DynamoX(void) {
 
         if (time_delta >= SAMPLING_INTERVAL) {
             // Enhanced process and queue metrics
-            int process_count = __builtin_popcountll(active_process_bitmap);
+            int process_count = GetCurrentActiveProcess();
             int ready_count = __builtin_popcountll(ready_process_bitmap);
             uint64_t cs_delta = context_switches - last_context_switches;
 
@@ -1459,7 +1465,7 @@ static __attribute__((visibility("hidden"))) void DynamoX(void) {
                 HYSTERESIS_THRESHOLD / 2 : HYSTERESIS_THRESHOLD;
 
             if (ABSi(new_freq - controller.current_freq) > change_threshold) {
-                PitSetFrequency(new_freq);
+                ApicTimerSetFrequency(new_freq);
                 controller.current_freq = new_freq;
                 controller.stability_counter = 0;
 
@@ -1492,7 +1498,7 @@ static __attribute__((visibility("hidden"))) void DynamoX(void) {
                 SerialWrite("Hz | Load: ");
                 SerialWriteDec(load_percentage);
                 SerialWrite("% | CS: ");
-                SerialWriteDec(cs_rate >> FXP_SHIFT);
+                SerialWriteDec((uint32_t)context_switches);
                 SerialWrite(" | Mode: ");
                 SerialWriteDec(controller.adaptive_mode);
                 SerialWrite(" | Score: ");
@@ -1656,7 +1662,7 @@ static void Astra(void) {
                 PANIC("AS: Critical scheduler corruption - system compromised");
             }
 
-            uint32_t actual_count = __builtin_popcountll(active_process_bitmap);
+            uint32_t actual_count = GetCurrentActiveProcess();
             if (actual_count != process_count) {
                 PrintKernelError("Astra: CRITICAL: Process count corruption\n");
                 threat_level += 10;
@@ -1670,7 +1676,7 @@ static void Astra(void) {
         if (current_tick - last_sched_scan >= SCHED_CONSISTENCY_INTERVAL) {
             last_sched_scan = current_tick;
 
-            uint32_t popcount_processes = __builtin_popcountll(active_process_bitmap);
+            uint32_t popcount_processes = GetCurrentActiveProcess();
             if (UNLIKELY(popcount_processes != process_count)) {
                 PrintKernelError("Astra: CRITICAL: Process count/bitmap mismatch! System may be unstable.\n");
                 // This is a serious issue, but maybe not panic-worthy immediately.
@@ -1833,12 +1839,12 @@ void MLFQDumpPerformanceStats(void) {
     PrintKernel("\n[PERF] Security violations: ");
     PrintKernelInt(security_violation_count);
     PrintKernel("\n[PERF] Active processes: ");
-    PrintKernelInt(__builtin_popcountll(active_process_bitmap));
+    PrintKernelInt(GetCurrentActiveProcess());
     PrintKernel("\n[PERF] Avg context switch overhead: ");
     PrintKernelInt(MLFQscheduler.context_switch_overhead);
     PrintKernel(" ticks\n[PERF] System load: ");
     PrintKernelInt(MLFQscheduler.total_processes);
-    PrintKernel(" processes\n");
+    PrintKernel(" \n");
     
     // Show per-priority statistics
     for (int i = 0; i < MAX_PRIORITY_LEVELS; i++) {
@@ -1906,8 +1912,8 @@ void MLFQListProcesses(void) {
 }
 
 void MLFQDumpSchedulerState(void) {
-    PrintKernel("[SCHED] PIT frequency: ");
-    PrintKernelInt(PIT_FREQUENCY_HZ);
+    PrintKernel("[SCHED] Timer Frequency: ");
+    PrintKernelInt(APIC_HZ);
     PrintKernel("\n");
     PrintKernel("[SCHED] Current: ");
     PrintKernelInt(MLFQscheduler.current_running);

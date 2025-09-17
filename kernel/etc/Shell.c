@@ -1,6 +1,8 @@
 #include "Shell.h"
+
 #include "../../drivers/ethernet/interface/Icmp.h"
 #include "6502/6502.h"
+#include "APIC.h"
 #include "Cerberus.h"
 #include "Console.h"
 #include "Editor.h"
@@ -20,7 +22,6 @@
 #include "PS2.h"
 #include "Packet.h"
 #include "Panic.h"
-#include "Pic.h"
 #include "RTC/Rtc.h"
 #include "SB16.h"
 #include "Serial.h"
@@ -152,9 +153,9 @@ static void ARPTestHandler(const char * args) {
 
 static void VersionHandler(const char * args) {
     (void)args;
-    PrintKernelSuccess("VoidFrame v0.0.2-development2\n");
+    PrintKernelSuccess("VoidFrame v0.0.2-development3\n");
     PrintKernelF("Built on %s at %s\n", DATE, TIME);
-    PrintKernelSuccess("VoidFrame Shell v0.0.2-development2\n");
+    PrintKernelSuccess("VoidFrame Shell v0.0.2-development3\n");
 }
 
 typedef struct {
@@ -203,8 +204,8 @@ static const HelpEntry hw_cmds[] = {
     {"lsusb", "List USB devices"},
     {"beep <x>", "Send beep x times"},
     {"pcbeep <x>", "PC speaker beep  for <x> seconds (200hz)"},
-    {"picmask <irq>", "Mask IRQ"},
-    {"picunmask <irq>", "Unmask IRQ"},
+    {"irqmask <irq>", "Mask IRQ"},
+    {"irqunmask <irq>", "Unmask IRQ"},
     {"setfreq <hz>", "Set PIT timer frequency"},
     {"serialw <msg>", "Write to serial port"},
     {"parallelw <msg>", "Write to parallel port"}
@@ -440,7 +441,7 @@ static void SetfreqHandler(const char * args) {
         KernelFree(freq_str);
         return;
     }
-    PitSetFrequency((uint16_t)freq_i);
+    ApicTimerSetFrequency((uint16_t)freq_i);
     KernelFree(freq_str);
 }
 
@@ -460,34 +461,34 @@ static void KillHandler(const char * args) {
     MLFQKillProcess(pid);
 }
 
-static void PicmaskHandler(const char * args) {
+static void irqmaskHandler(const char * args) {
     char* irq_str = GetArg(args, 1);
     if (!irq_str) {
-        PrintKernel("Usage: picmask <irq>\n");
+        PrintKernel("Usage: irqmask <irq>\n");
         return;
     }
     int irq = atoi(irq_str);
     KernelFree(irq_str);
     if (irq < 0 || irq > 15) {
-        PrintKernel("Usage: picmask <irq>\n");
+        PrintKernel("Usage: irqmask <irq>\n");
         return;
     }
-    PIC_disable_irq(irq);
+    ApicDisableIrq(irq);
 }
 
-static void PicunmaskHandler(const char * args) {
+static void irqunmaskHandler(const char * args) {
     char* irq_str = GetArg(args, 1);
     if (!irq_str) {
-        PrintKernel("Usage: picunmask <irq>\n");
+        PrintKernel("Usage: irqunmask <irq>\n");
         return;
     }
     int irq = atoi(irq_str);
     KernelFree(irq_str);
     if (irq < 0 || irq > 15) {
-        PrintKernel("Usage: picunmask <irq>\n");
+        PrintKernel("Usage: irqunmask <irq>\n");
         return;
     }
-    PIC_enable_irq(irq);
+    ApicEnableIrq(irq);
 }
 
 static void CdHandler(const char * args) {
@@ -1208,8 +1209,8 @@ static const ShellCommand commands[] = {\
     {"perf", PerfHandler},
     {"time", TimeHandler},
     {"beep", BeepHandler},
-    {"picmask", PicmaskHandler},
-    {"picunmask", PicunmaskHandler},
+    {"irqmask", irqmaskHandler},
+    {"irqunmask", irqunmaskHandler},
     {"memstat", MemstatHandler},
     {"serialw", SerialWHandler},
     {"parallelw", ParallelWHandler},
@@ -1295,7 +1296,7 @@ void ShellInit(void) {
 }
 
 void ShellProcess(void) {
-    PrintKernelSuccess("System: VoidFrame Shell v0.0.2-development2 ('help' for list of commands)\n");
+    PrintKernelSuccess("System: VoidFrame Shell v0.0.2-development3 ('help' for list of commands)\n");
     ExecuteCommand("help");
     while (1) {
         if (HasInput()) {

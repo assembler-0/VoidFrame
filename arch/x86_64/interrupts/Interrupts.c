@@ -1,17 +1,18 @@
 #include "Interrupts.h"
-#include "Kernel.h"
+
+#include "APIC.h"
 #include "Atomics.h"
 #include "Console.h"
 #include "Ide.h"
+#include "Kernel.h"
 #include "MLFQ.h"
 #include "PS2.h"
-#include "Panic.h"
-#include "Pic.h"
-#include "StackTrace.h"
 #include "PageFaultHandler.h"
+#include "Panic.h"
+#include "StackTrace.h"
 #include "ethernet/Network.h"
 
-volatile uint32_t PITTicks = 0;
+volatile uint32_t APICticks = 0;
 
 // The C-level interrupt handler, called from the assembly stub
 asmlinkage void InterruptHandler(Registers* regs) {
@@ -21,33 +22,33 @@ asmlinkage void InterruptHandler(Registers* regs) {
     switch (regs->interrupt_number) {
         case 32: // Timer interrupt (IRQ 0)
             MLFQSchedule(regs);
-            AtomicInc(&PITTicks);
+            AtomicInc(&APICticks);
             Net_Poll();
-            PICSendEOI(regs->interrupt_number);
+            ApicSendEoi();
             return;
 
         case 33: // Keyboard interrupt (IRQ 1)
-            KeyboardHandler();
-            PICSendEOI(regs->interrupt_number);
+            PS2Handler();
+            ApicSendEoi();
             return;
 
         case 34:
-            PICSendEOI(regs->interrupt_number);
+            ApicSendEoi();
             return;
 
         case 44: // mouse (IRQ 12)
-            MouseHandler();
-            PICSendEOI(regs->interrupt_number);
+            PS2Handler();
+            ApicSendEoi();
             return;
 
         case 46: // IDE Primary (IRQ 14)
             IDEPrimaryIRQH();
-            PICSendEOI(regs->interrupt_number);
+            ApicSendEoi();
             return;
 
         case 47: // IDE Secondary (IRQ 15)
             IDESecondaryIRQH();
-            PICSendEOI(regs->interrupt_number);
+            ApicSendEoi();
             return;
 
         // Handle other hardware interrupts (34-45)
@@ -55,7 +56,7 @@ asmlinkage void InterruptHandler(Registers* regs) {
             PrintKernelWarning("[IRQ] Unhandled hardware interrupt: ");
             PrintKernelInt(regs->interrupt_number - 32);
             PrintKernelWarning("\n");
-            PICSendEOI(regs->interrupt_number);
+            ApicSendEoi();
             return;
     }
 

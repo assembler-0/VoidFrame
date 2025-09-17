@@ -1,4 +1,7 @@
 #include "PS2.h"
+
+#include "APIC.h"
+#include "Console.h"
 #include "Io.h"
 #include "Vesa.h"
 
@@ -39,15 +42,19 @@ static char scancode_to_ascii_shift[] = {
     '*', 0, ' '
 };
 
-// Helper functions
-static void wait_for_input_buffer_empty(void) {
-    int timeout = 100000;
-    while ((inb(KEYBOARD_STATUS_PORT) & 0x02) && --timeout);
+static int wait_for_input_buffer_empty(void) {
+    for (int i = 0; i < 100000; i++) {
+        if (!(inb(KEYBOARD_STATUS_PORT) & 0x02)) return 0;
+        __asm__ __volatile__("pause");
+    }
+    return -1;
 }
-
-static void wait_for_output_buffer_full(void) {
-    int timeout = 100000;
-    while (!(inb(KEYBOARD_STATUS_PORT) & 0x01) && --timeout);
+static int wait_for_output_buffer_full(void) {
+    for (int i = 0; i < 100000; i++) {
+        if (inb(KEYBOARD_STATUS_PORT) & 0x01) return 0;
+        __asm__ __volatile__("pause");
+    }
+    return -1;
 }
 
 void send_mouse_command(uint8_t cmd) {
@@ -61,7 +68,18 @@ void send_mouse_command(uint8_t cmd) {
 }
 
 void PS2Init(void) {
-    // Flush the keyboard controller's buffer
+    uint8_t status = inb(KEYBOARD_STATUS_PORT);
+    if (status & 0xC0) {  // Bits 6-7: timeout/parity errors
+        PrintKernelWarning("PS2: Controller errors detected, performing reset\n");
+    }
+
+    // More aggressive buffer flushing
+    int flush_attempts = 0;
+    while ((inb(KEYBOARD_STATUS_PORT) & 0x01) && flush_attempts++ < 32) {
+        inb(KEYBOARD_DATA_PORT);
+        // Small delay to let controller settle
+        for (volatile int i = 0; i < 1000; i++);
+    }
     while (inb(KEYBOARD_STATUS_PORT) & 0x01) {
         inb(KEYBOARD_DATA_PORT);
     }
@@ -114,19 +132,14 @@ void PS2Init(void) {
     mouse.x = mouse.y = 0;
     mouse.packet_index = 0;
     mouse.buttons = 0;
+
+    PrintKernel("Unmasking PS/2 driver IRQs\n");
+    ApicEnableIrq(1);
+    ApicEnableIrq(12);
+    PrintKernelSuccess("PS/2 driver IRQs unmaked\n");
 }
 
-void KeyboardHandler(void) {
-    uint8_t status = inb(KEYBOARD_STATUS_PORT);
-    if (!(status & 0x01)) return;
-
-    // If bit 5 is set, the data is for the mouse.
-    // In that case, the MouseHandler will deal with it, so we should ignore it.
-    if (status & 0x20) {
-        return;
-    }
-
-    uint8_t scancode = inb(KEYBOARD_DATA_PORT);
+static void ProcessKeyboardData(uint8_t scancode) {
     int key_released = scancode & 0x80;
     scancode &= 0x7F;
 
@@ -173,84 +186,86 @@ void KeyboardHandler(void) {
     }
 }
 
-void MouseHandler(void) {
-    uint8_t status = inb(KEYBOARD_STATUS_PORT);
-    if (!(status & 0x01)) return;
-
-    // Check if this is mouse data (bit 5 set in status)
-    if (!(status & 0x20)) return;
-
-    uint8_t data = inb(KEYBOARD_DATA_PORT);
-
+static void ProcessMouseData(uint8_t data) {
+    // This logic is now inside a dedicated function.
+    // It's only called when we are sure we have mouse data.
     mouse.packet[mouse.packet_index] = data;
     mouse.packet_index++;
 
-    // Standard PS2 mouse sends 3-byte packets
     if (mouse.packet_index >= 3) {
-        // Parse packet
+        mouse.packet_index = 0; // Reset early to prevent re-entry issues
         uint8_t flags = mouse.packet[0];
-        int8_t delta_x = (int8_t)mouse.packet[1];
-        int8_t delta_y = (int8_t)mouse.packet[2];
 
-        // Check if packet is valid (bit 3 should be set)
-        if (flags & 0x08) {
-            // Handle X overflow
-            if (flags & 0x40) {
-                delta_x = (flags & 0x10) ? -256 : 255;
-            } else if (flags & 0x10) {
-                delta_x = (delta_x == 0) ? 0 : (delta_x | 0xFFFFFF00);
-            }
+        // Basic validation: bit 3 must be 1
+        if (!(flags & 0x08)) {
+            return;
+        }
 
-            // Handle Y overflow
-            if (flags & 0x80) {
-                delta_y = (flags & 0x20) ? -256 : 255;
-            } else if (flags & 0x20) {
-                delta_y = (delta_y == 0) ? 0 : (delta_y | 0xFFFFFF00);
-            }
+        int16_t delta_x = mouse.packet[1];
+        int16_t delta_y = mouse.packet[2];
 
-            // Store previous button state to detect changes
-            uint8_t old_buttons = mouse.buttons;
+        if (flags & 0x10) delta_x |= 0xFF00; // X sign bit
+        if (flags & 0x20) delta_y |= 0xFF00; // Y sign bit
 
-            // Update state
-            mouse.x += delta_x;
-            mouse.y -= delta_y;
-            mouse.delta_x = delta_x;
-            mouse.delta_y = -delta_y;
-            mouse.buttons = flags & 0x07;
+        uint8_t old_buttons = mouse.buttons;
+        mouse.buttons = flags & 0x07;
 
-            // Clamp position to screen resolution
-            vbe_info_t* vbe = VBEGetInfo();
-            if (vbe) {
-                if (mouse.x < 0) mouse.x = 0;
-                if (mouse.y < 0) mouse.y = 0;
-                if (mouse.x >= (int)vbe->width) mouse.x = vbe->width - 1;
-                if (mouse.y >= (int)vbe->height) mouse.y = vbe->height - 1;
-            }
+        mouse.x += delta_x;
+        mouse.y -= delta_y; // PS/2 mouse Y-axis is inverted
+        mouse.delta_x += delta_x;
+        mouse.delta_y -= delta_y;
 
-            // --- Fire Events ---
-            if (OnMouseMove) {
-                OnMouseMove(mouse.x, mouse.y, mouse.delta_x, mouse.delta_y);
-            }
+        vbe_info_t* vbe = VBEGetInfo();
+        if (vbe) {
+            if (mouse.x < 0) mouse.x = 0;
+            if (mouse.y < 0) mouse.y = 0;
+            if (mouse.x >= (int)vbe->width) mouse.x = vbe->width - 1;
+            if (mouse.y >= (int)vbe->height) mouse.y = vbe->height - 1;
+        }
 
-            // Check for button presses/releases
-            uint8_t changed_buttons = mouse.buttons ^ old_buttons;
-            if (changed_buttons) {
-                for (int i = 0; i < 3; i++) {
-                    uint8_t mask = 1 << i;
-                    if (changed_buttons & mask) {
-                        if ((mouse.buttons & mask) && OnMouseButtonDown) {
-                            OnMouseButtonDown(mouse.x, mouse.y, i + 1);
-                        } else if (OnMouseButtonUp) {
-                            OnMouseButtonUp(mouse.x, mouse.y, i + 1);
-                        }
+        if (OnMouseMove) {
+            OnMouseMove(mouse.x, mouse.y, delta_x, -delta_y);
+        }
+
+        uint8_t changed_buttons = mouse.buttons ^ old_buttons;
+        if (changed_buttons) {
+            for (int i = 0; i < 3; i++) {
+                uint8_t mask = 1 << i;
+                if (changed_buttons & mask) {
+                    if ((mouse.buttons & mask) && OnMouseButtonDown) {
+                        OnMouseButtonDown(mouse.x, mouse.y, i + 1);
+                    } else if (OnMouseButtonUp) {
+                        OnMouseButtonUp(mouse.x, mouse.y, i + 1);
                     }
                 }
             }
         }
-
-        mouse.packet_index = 0;
     }
 }
+
+// Unified PS/2 Interrupt Handler
+void PS2Handler(void) {
+    uint8_t status;
+
+    // Drain the controller's output buffer completely to avoid losing IRQ edges
+    // If we return while the buffer is still full, additional edges may not fire
+    // (since the 8042 only toggles the IRQ line on transitions to non-empty).
+    while (1) {
+        status = inb(KEYBOARD_STATUS_PORT);
+        if (!(status & 0x01)) {
+            break; // No more data
+        }
+
+        uint8_t data = inb(KEYBOARD_DATA_PORT);
+
+        if (status & 0x20) {
+            ProcessMouseData(data);
+        } else {
+            ProcessKeyboardData(data);
+        }
+    }
+}
+
 
 // Existing keyboard functions (unchanged)
 char GetChar(void) {

@@ -1,228 +1,305 @@
 #include "APIC.h"
-#include "Console.h"
-#include "Io.h"
-// APIC base address (will be detected from MSR)
-static volatile uint32_t* apic_base = NULL;
-static volatile uint32_t* ioapic_base = NULL;
-static uint8_t apic_id = 0;
-static uint32_t ioapic_max_redirections = 0;
+#include "../include/Io.h"
+#include "../kernel/core/Kernel.h"
+#include "../kernel/etc/Console.h"
+#include "../mm/VMem.h"
+#include "Cpu.h"
+#include "Panic.h"
+#include "sound/Generic.h" // For PIT definitions
 
-// IRQ masking state (same as PIC for compatibility)
-static uint32_t irq_mask = 0xFFFFFFFF; // All masked initially
+// --- Register Definitions ---
 
-int ApicDetect(void) {
+// Local APIC registers (offsets from LAPIC base)
+#define LAPIC_ID                        0x0020  // LAPIC ID
+#define LAPIC_VER                       0x0030  // LAPIC Version
+#define LAPIC_TPR                       0x0080  // Task Priority
+#define LAPIC_EOI                       0x00B0  // EOI
+#define LAPIC_LDR                       0x00D0  // Logical Destination
+#define LAPIC_DFR                       0x00E0  // Destination Format
+#define LAPIC_SVR                       0x00F0  // Spurious Interrupt Vector
+#define LAPIC_ESR                       0x0280  // Error Status
+#define LAPIC_ICR_LOW                   0x0300  // Interrupt Command Reg low
+#define LAPIC_ICR_HIGH                  0x0310  // Interrupt Command Reg high
+#define LAPIC_LVT_TIMER                 0x0320  // LVT Timer
+#define LAPIC_LVT_LINT0                 0x0350  // LVT LINT0
+#define LAPIC_LVT_LINT1                 0x0360  // LVT LINT1
+#define LAPIC_LVT_ERROR                 0x0370  // LVT Error
+#define LAPIC_TIMER_INIT_COUNT          0x0380  // Initial Count (for Timer)
+#define LAPIC_TIMER_CUR_COUNT           0x0390  // Current Count (for Timer)
+#define LAPIC_TIMER_DIV                 0x03E0  // Divide Configuration
+
+// I/O APIC registers
+#define IOAPIC_REG_ID                   0x00    // ID Register
+#define IOAPIC_REG_VER                  0x01    // Version Register
+#define IOAPIC_REG_TABLE                0x10    // Redirection Table
+
+// --- Constants ---
+#define APIC_BASE_MSR                   0x1B
+#define APIC_BASE_MSR_ENABLE            0x800
+
+#define IOAPIC_DEFAULT_PHYS_ADDR        0xFEC00000
+#define LAPIC_LVT_TIMER_SCALE_FACTOR    1
+// --- Global Variables ---
+static volatile uint32_t* s_lapic_base = NULL;
+static volatile uint32_t* s_ioapic_base = NULL;
+static uint32_t s_apic_timer_freq_hz = 1000; // Default to 1KHz
+volatile uint32_t s_apic_timer_ticks = 0;
+volatile uint32_t APIC_HZ = 250;
+
+// --- Forward Declarations ---
+static void lapic_write(uint32_t reg, uint32_t value);
+static uint32_t lapic_read(uint32_t reg);
+static uint8_t lapic_get_id();
+static void ioapic_write(uint8_t reg, uint32_t value);
+static uint32_t ioapic_read(uint8_t reg);
+static void ioapic_set_entry(uint8_t index, uint64_t data);
+static bool detect_apic();
+static bool setup_lapic();
+static bool setup_ioapic();
+
+#define PIC1_COMMAND 0x20
+#define PIC1_DATA    0x21
+#define PIC2_COMMAND 0xA0
+#define PIC2_DATA    0xA1
+
+static uint16_t s_irq_mask = 0xFFFF; // All masked initially
+
+// Helper to write the cached mask to the PICs
+static void pic_write_mask() {
+    outb(PIC1_DATA, s_irq_mask & 0xFF);
+    outb(PIC2_DATA, (s_irq_mask >> 8) & 0xFF);
+}
+
+void PICMaskAll() {
+    s_irq_mask = 0xFFFF;
+    pic_write_mask();
+}
+
+// --- MMIO Functions ---
+
+static void lapic_write(uint32_t reg, uint32_t value) {
+    s_lapic_base[reg / 4] = value;
+}
+
+static uint32_t lapic_read(uint32_t reg) {
+    return s_lapic_base[reg / 4];
+}
+
+static uint8_t lapic_get_id() {
+    // LAPIC_ID register: bits 24..31 hold the APIC ID in xAPIC mode
+    return (uint8_t)(lapic_read(LAPIC_ID) >> 24);
+}
+
+static void ioapic_write(uint8_t reg, uint32_t value) {
+    // I/O APIC uses an index/data pair for access
+    s_ioapic_base[0] = reg;
+    s_ioapic_base[4] = value;
+}
+
+static uint32_t ioapic_read(uint8_t reg) {
+    s_ioapic_base[0] = reg;
+    return s_ioapic_base[4];
+}
+
+// Sets a redirection table entry in the I/O APIC
+static void ioapic_set_entry(uint8_t index, uint64_t data) {
+    ioapic_write(IOAPIC_REG_TABLE + index * 2, (uint32_t)data);
+    ioapic_write(IOAPIC_REG_TABLE + index * 2 + 1, (uint32_t)(data >> 32));
+}
+
+// --- Core APIC Functions ---
+
+// Main entry point to initialize the APIC system
+bool ApicInstall() {
+    if (!detect_apic()) {
+        PrintKernelError("APIC: No local APIC found or supported.\n");
+        return false;
+    }
+
+    PICMaskAll();
+
+    if (!setup_lapic()) {
+        PrintKernelError("APIC: Failed to setup Local APIC.\n");
+        return false;
+    }
+
+    if (!setup_ioapic()) {
+        PrintKernelError("APIC: Failed to setup I/O APIC.\n");
+        return false;
+    }
+
+    PrintKernelSuccess("APIC: Successfully initialized Local APIC and I/O APIC.\n");
+    return true;
+}
+
+void ApicSendEoi() {
+    lapic_write(LAPIC_EOI, 0);
+}
+
+// --- I/O APIC Interrupt Management ---
+
+void ApicEnableIrq(uint8_t irq_line) {
+    ASSERT(irq_line != 0 && irq_line != 2);
+    // IRQ line -> Vector 32 + IRQ
+    // For now, a simple 1:1 mapping for legacy IRQs 0-15
+    // Route to the current CPU's LAPIC ID (BSP), not hard-coded 0
+    uint8_t dest_apic_id = lapic_get_id();
+
+    uint64_t redirect_entry = (32 + irq_line); // Vector
+    redirect_entry |= (0b000ull << 8);  // Delivery Mode: Fixed
+    redirect_entry |= (0b0ull << 11);   // Destination Mode: Physical
+    redirect_entry |= (0b0ull << 13);   // Trigger Mode: Edge
+    redirect_entry |= (0b0ull << 15);   // Polarity: High (active high)
+    // Unmask (bit 16 = 0)
+    // Destination field (bits 56..63)
+    redirect_entry |= ((uint64_t)dest_apic_id << 56);
+
+    ioapic_set_entry(irq_line, redirect_entry);
+}
+
+void ApicDisableIrq(uint8_t irq_line) {
+    // To disable, we set the mask bit (bit 16)
+    uint64_t redirect_entry = (1 << 16);
+    ioapic_set_entry(irq_line, redirect_entry);
+}
+
+void ApicMaskAll() {
+    // Mask all 24 redirection entries in the I/O APIC
+    for (int i = 0; i < 24; i++) {
+        ApicDisableIrq(i);
+    }
+}
+
+// --- APIC Timer Management ---
+
+void ApicTimerInstall(uint32_t frequency_hz) {
+    s_apic_timer_freq_hz = frequency_hz;
+
+    // Calibrate and set the initial count
+    ApicTimerSetFrequency(s_apic_timer_freq_hz);
+
+    PrintKernelF("APIC: Timer installed at %d Hz.\n", frequency_hz);
+}
+
+void ApicTimerSetFrequency(uint32_t frequency_hz) {
+    if (frequency_hz == 0) return;
+    s_apic_timer_freq_hz = frequency_hz;
+    APIC_HZ = frequency_hz;
+
+    // 1. Configure PIT channel 2 for square wave mode (mode 3) at 100Hz
+    outb(PIT_COMMAND, 0xB6); // Channel 2, LSB/MSB, mode 3
+    uint16_t divisor = 11932; // 1193180 / 100
+    outb(PIT_CHANNEL_2, divisor & 0xFF);
+    outb(PIT_CHANNEL_2, (divisor >> 8) & 0xFF);
+
+    // 2. Enable PC speaker to connect PIT channel 2 output
+    uint8_t speaker_reg = inb(PC_SPEAKER_PORT);
+    outb(PC_SPEAKER_PORT, speaker_reg | 0x01);
+
+    // 3. Set APIC timer to one-shot mode with max initial count
+    lapic_write(LAPIC_LVT_TIMER, 32 | (0b00 << 17)); // Vector 32, one-shot mode
+    lapic_write(LAPIC_TIMER_INIT_COUNT, 0xFFFFFFFF);
+
+    // 4. Wait for a rising edge on PIT channel 2 output
+    while ((inb(PC_SPEAKER_PORT) & 0x20) != 0);
+    while ((inb(PC_SPEAKER_PORT) & 0x20) == 0);
+
+    // 5. Read the APIC timer count
+    uint32_t start_count = lapic_read(LAPIC_TIMER_CUR_COUNT);
+
+    // 6. Wait for the next rising edge
+    while ((inb(PC_SPEAKER_PORT) & 0x20) != 0);
+    while ((inb(PC_SPEAKER_PORT) & 0x20) == 0);
+
+    // 7. Read the APIC timer count again
+    uint32_t end_count = lapic_read(LAPIC_TIMER_CUR_COUNT);
+
+    // 8. Stop the PIT and APIC timer
+    outb(PC_SPEAKER_PORT, speaker_reg); // Restore speaker port
+    lapic_write(LAPIC_LVT_TIMER, 1 << 16); // Mask the timer
+
+    // 9. Calculate the number of ticks in 10ms (100 Hz)
+    uint32_t ticks_in_10ms = start_count - end_count;
+
+    // 10. Calculate the APIC timer frequency (with divider)
+    uint32_t bus_freq = ticks_in_10ms * 100;
+    lapic_write(LAPIC_TIMER_DIV, 0x3); // Divide by 16
+    uint32_t apic_freq = bus_freq / 16;
+
+    // 11. Calculate the required initial count for the desired frequency
+    uint32_t initial_count = apic_freq / frequency_hz;
+
+    // --- Set APIC Timer to Periodic Mode ---
+    lapic_write(LAPIC_LVT_TIMER, 32 | (0b01 << 17)); // Vector 32, periodic mode
+    lapic_write(LAPIC_TIMER_INIT_COUNT, initial_count);
+}
+
+
+// --- Private Setup Functions ---
+
+// Check for APIC presence via CPUID
+static bool detect_apic() {
     uint32_t eax, ebx, ecx, edx;
-    
-    // Check if CPUID is available first
     cpuid(1, &eax, &ebx, &ecx, &edx);
-    
-    // Check for APIC support (bit 9 of EDX)
-    if (!(edx & (1 << 9))) {
-        PrintKernelError("APIC: Local APIC not supported by CPU\n");
-        return 0;
+    return (edx & (1 << 9)) != 0; // Check for APIC feature bit
+}
+
+// Initialize the Local APIC
+static bool setup_lapic() {
+    // Get LAPIC physical base address from MSR
+    uint64_t lapic_base_msr = rdmsr(APIC_BASE_MSR);
+    uint64_t lapic_phys_base = lapic_base_msr & 0xFFFFFFFFFFFFF000ULL;
+
+    // Map the LAPIC into virtual memory
+    s_lapic_base = (volatile uint32_t*)VMemAlloc(PAGE_SIZE);
+    if (!s_lapic_base) {
+        PrintKernelError("APIC: Failed to allocate virtual memory for LAPIC.\n");
+        return false;
     }
-    
-    PrintKernelSuccess("APIC: Local APIC detected\n");
-    return 1;
-}
 
-int IoApicDetect(void) {
-    // For now, assume I/O APIC is at standard location 0xFEC00000
-    // In a full implementation, this would be detected via ACPI MADT
-    ioapic_base = (volatile uint32_t*)0xFEC00000;
-    
-    // Try to read I/O APIC version register
-    uint32_t version = IoApicRead(IOAPIC_REG_VERSION);
-    if (version == 0xFFFFFFFF) {
-        PrintKernelError("APIC: I/O APIC not found at standard location\n");
-        return 0;
+    if (VMemUnmap((uint64_t)s_lapic_base, PAGE_SIZE) != VMEM_SUCCESS) {
+        PrintKernelError("APIC: Failed to unmap LAPIC MMIO.\n");
+        return false;
     }
-    
-    ioapic_max_redirections = ((version >> 16) & 0xFF) + 1;
-    PrintKernelSuccess("APIC: I/O APIC detected with ");
-    PrintKernelInt(ioapic_max_redirections);
-    PrintKernel(" redirection entries\n");
-    return 1;
-}
 
-uint32_t ApicRead(uint32_t reg) {
-    if (!apic_base) return 0xFFFFFFFF;
-    return *(volatile uint32_t*)((uint8_t*)apic_base + reg);
-}
-
-void ApicWrite(uint32_t reg, uint32_t value) {
-    if (!apic_base) return;
-    *(volatile uint32_t*)((uint8_t*)apic_base + reg) = value;
-}
-
-uint32_t IoApicRead(uint32_t reg) {
-    if (!ioapic_base) return 0xFFFFFFFF;
-    *(volatile uint32_t*)((uint8_t*)ioapic_base + IOAPIC_REG_SELECT) = reg;
-    return *(volatile uint32_t*)((uint8_t*)ioapic_base + IOAPIC_REG_DATA);
-}
-
-void IoApicWrite(uint32_t reg, uint32_t value) {
-    if (!ioapic_base) return;
-    *(volatile uint32_t*)((uint8_t*)ioapic_base + IOAPIC_REG_SELECT) = reg;
-    *(volatile uint32_t*)((uint8_t*)ioapic_base + IOAPIC_REG_DATA) = value;
-}
-
-void ApicSetupLVT(void) {
-    // Configure Local Vector Table entries
-    
-    // Mask all LVT entries initially
-    ApicWrite(APIC_REG_LVT_TIMER, APIC_INT_MASKED);
-    ApicWrite(APIC_REG_LVT_THERMAL, APIC_INT_MASKED);
-    ApicWrite(APIC_REG_LVT_PERF, APIC_INT_MASKED);
-    ApicWrite(APIC_REG_LVT_ERROR, APIC_INT_MASKED);
-    
-    // Configure LINT0 and LINT1 for compatibility
-    // LINT0: External interrupts (for compatibility with PIC mode)
-    ApicWrite(APIC_REG_LVT_LINT0, APIC_DELMODE_EXTINT | APIC_INT_UNMASKED);
-    
-    // LINT1: NMI
-    ApicWrite(APIC_REG_LVT_LINT1, APIC_DELMODE_NMI | APIC_INT_UNMASKED);
-}
-
-void ApicInstall(void) {
-    PrintKernel("APIC: Starting Local APIC initialization...\n");
-    
-    // Detect APIC support
-    if (!ApicDetect()) {
-        PrintKernelError("APIC: Local APIC detection failed\n");
-        return;
+    if (VMemMapMMIO((uint64_t)s_lapic_base, lapic_phys_base, PAGE_SIZE, PAGE_WRITABLE | PAGE_NOCACHE) != VMEM_SUCCESS) {
+        PrintKernelError("APIC: Failed to map LAPIC MMIO.\n");
+        return false;
     }
-    
-    // Get APIC base address from MSR
-    uint64_t apic_msr = rdmsr(0x1B); // IA32_APIC_BASE MSR
-    uint64_t apic_base_addr = apic_msr & 0xFFFFF000;
-    
-    PrintKernel("APIC: Local APIC base address: ");
-    PrintKernelHex(apic_base_addr);
-    PrintKernel("\n");
-    
-    // Map APIC base address (in real implementation, use virtual memory)
-    apic_base = (volatile uint32_t*)apic_base_addr;
-    
-    // Enable APIC in MSR
-    wrmsr(0x1B, apic_msr | (1 << 11)); // Set APIC Global Enable bit
-    
-    // Get APIC ID
-    apic_id = (ApicRead(APIC_REG_ID) >> 24) & 0xFF;
-    PrintKernel("APIC: Local APIC ID: ");
-    PrintKernelInt(apic_id);
-    PrintKernel("\n");
-    
-    // Setup Spurious Interrupt Vector Register
-    // Vector 0xFF (255) for spurious interrupts, enable APIC
-    ApicWrite(APIC_REG_SIVR, 0xFF | (1 << 8));
-    
-    // Setup Local Vector Table
-    ApicSetupLVT();
-    
-    PrintKernelSuccess("APIC: Local APIC initialized\n");
-    
-    // Initialize I/O APIC
-    if (IoApicDetect()) {
-        // Set up I/O APIC redirection table entries for standard IRQs
-        // This maintains compatibility with existing IRQ assignments
-        
-        // IRQ 0 (Timer) -> Vector 32
-        IoApicWrite(IOAPIC_REG_REDTBL_BASE + 0*2, 32 | APIC_DELMODE_FIXED | APIC_INT_MASKED);
-        IoApicWrite(IOAPIC_REG_REDTBL_BASE + 0*2 + 1, apic_id << 24);
-        
-        // IRQ 1 (Keyboard) -> Vector 33
-        IoApicWrite(IOAPIC_REG_REDTBL_BASE + 1*2, 33 | APIC_DELMODE_FIXED | APIC_INT_MASKED);
-        IoApicWrite(IOAPIC_REG_REDTBL_BASE + 1*2 + 1, apic_id << 24);
-        
-        // IRQ 2 (Cascade/FAT12) -> Vector 34
-        IoApicWrite(IOAPIC_REG_REDTBL_BASE + 2*2, 34 | APIC_DELMODE_FIXED | APIC_INT_MASKED);
-        IoApicWrite(IOAPIC_REG_REDTBL_BASE + 2*2 + 1, apic_id << 24);
-        
-        // IRQ 12 (Mouse) -> Vector 44
-        IoApicWrite(IOAPIC_REG_REDTBL_BASE + 12*2, 44 | APIC_DELMODE_FIXED | APIC_INT_MASKED);
-        IoApicWrite(IOAPIC_REG_REDTBL_BASE + 12*2 + 1, apic_id << 24);
-        
-        // IRQ 14 (IDE Primary) -> Vector 46
-        IoApicWrite(IOAPIC_REG_REDTBL_BASE + 14*2, 46 | APIC_DELMODE_FIXED | APIC_INT_MASKED);
-        IoApicWrite(IOAPIC_REG_REDTBL_BASE + 14*2 + 1, apic_id << 24);
-        
-        // IRQ 15 (IDE Secondary) -> Vector 47
-        IoApicWrite(IOAPIC_REG_REDTBL_BASE + 15*2, 47 | APIC_DELMODE_FIXED | APIC_INT_MASKED);
-        IoApicWrite(IOAPIC_REG_REDTBL_BASE + 15*2 + 1, apic_id << 24);
-        
-        PrintKernelSuccess("APIC: I/O APIC initialized with IRQ mappings\n");
+
+    // Enable the LAPIC by setting the enable bit in the MSR and the spurious vector register
+    wrmsr(APIC_BASE_MSR, lapic_base_msr | APIC_BASE_MSR_ENABLE);
+
+    lapic_write(LAPIC_SVR, 0x1FF);
+    // Set TPR to 0 to accept all interrupts
+    lapic_write(LAPIC_TPR, 0);
+    PrintKernelF("APIC: LAPIC enabled at physical addr 0x%llx, mapped to 0x%llx\n",
+                 (unsigned long long)lapic_phys_base,
+                 (unsigned long long)(uintptr_t)s_lapic_base);
+    return true;
+}
+
+// Initialize the I/O APIC
+static bool setup_ioapic() {
+    // Map the I/O APIC into virtual memory. We assume the standard physical address.
+    s_ioapic_base = (volatile uint32_t*)VMemAlloc(PAGE_SIZE);
+    if (!s_ioapic_base) {
+        PrintKernelError("APIC: Failed to allocate virtual memory for I/O APIC.\n");
+        return false;
     }
-}
-
-void APIC_enable_irq(uint8_t irq_line) {
-    if (irq_line > 15) return;
-    
-    // Update our mask state
-    irq_mask &= ~(1 << irq_line);
-    
-    // Configure I/O APIC redirection table entry
-    if (ioapic_base && irq_line < ioapic_max_redirections) {
-        uint32_t vector = 32 + irq_line; // Same mapping as PIC
-        uint32_t low_reg = IOAPIC_REG_REDTBL_BASE + irq_line * 2;
-        uint32_t high_reg = low_reg + 1;
-        
-        // Configure redirection entry: vector, fixed delivery, edge triggered, active high
-        IoApicWrite(low_reg, vector | APIC_DELMODE_FIXED | APIC_TRIGMOD_EDGE | APIC_INTPOL_HIGH);
-        IoApicWrite(high_reg, apic_id << 24); // Target this CPU
+    VMemUnmap((uint64_t)s_ioapic_base, PAGE_SIZE);
+    if (VMemMapMMIO((uint64_t)s_ioapic_base, IOAPIC_DEFAULT_PHYS_ADDR, PAGE_SIZE, PAGE_WRITABLE | PAGE_NOCACHE) != VMEM_SUCCESS) {
+        PrintKernelError("APIC: Failed to map I/O APIC MMIO.\n");
+        return false;
     }
-}
 
-void APIC_disable_irq(uint8_t irq_line) {
-    if (irq_line > 15) return;
-    
-    // Update our mask state
-    irq_mask |= (1 << irq_line);
-    
-    // Mask the I/O APIC redirection table entry
-    if (ioapic_base && irq_line < ioapic_max_redirections) {
-        uint32_t vector = 32 + irq_line;
-        uint32_t low_reg = IOAPIC_REG_REDTBL_BASE + irq_line * 2;
-        uint32_t high_reg = low_reg + 1;
-        
-        // Mask the interrupt
-        IoApicWrite(low_reg, vector | APIC_DELMODE_FIXED | APIC_INT_MASKED);
-        IoApicWrite(high_reg, apic_id << 24);
-    }
-}
+    // Read the I/O APIC version to verify it's working
+    uint32_t version_reg = ioapic_read(IOAPIC_REG_VER);
+    uint8_t max_redirects = (version_reg >> 16) & 0xFF;
+    PrintKernelF("APIC: I/O APIC version %d, max redirects: %d\n", version_reg & 0xFF, max_redirects + 1);
 
-void ApicSendEOI(void) {
-    if (apic_base) {
-        ApicWrite(APIC_REG_EOI, 0);
-    }
-}
+    // Mask all interrupts initially
+    ApicMaskAll();
 
-void ApicSetupTimer(uint32_t frequency_hz) {
-    if (!apic_base) return;
-    
-    // For now, disable APIC timer and rely on existing PIT
-    ApicWrite(APIC_REG_LVT_TIMER, APIC_INT_MASKED);
-    
-    // Future: Implement APIC timer setup
-    // This would replace PIT functionality
-}
-
-void ApicEnable(void) {
-    if (!apic_base) return;
-    
-    // Enable APIC by setting bit 8 in SIVR
-    uint32_t sivr = ApicRead(APIC_REG_SIVR);
-    ApicWrite(APIC_REG_SIVR, sivr | (1 << 8));
-    
-    PrintKernelSuccess("APIC: Local APIC enabled\n");
-}
-
-void ApicDisable(void) {
-    if (!apic_base) return;
-    
-    // Disable APIC by clearing bit 8 in SIVR
-    uint32_t sivr = ApicRead(APIC_REG_SIVR);
-    ApicWrite(APIC_REG_SIVR, sivr & ~(1 << 8));
-    
-    PrintKernel("APIC: Local APIC disabled\n");
+    return true;
 }

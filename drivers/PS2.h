@@ -29,12 +29,8 @@ void __attribute__((weak)) OnMouseButtonUp(int x, int y, uint8_t button);
 
 //keyboard
 void PS2Init(void);
-void KeyboardHandler(void);
-char GetChar(void);
-int HasInput(void);
-//mouse
-void send_mouse_command(uint8_t cmd);
-void MouseHandler(void);
+// Unified PS/2 interrupt handler
+void PS2Handler(void);
 int GetMouseX(void);
 int GetMouseY(void);
 int GetMouseDeltaX(void);
@@ -43,4 +39,6 @@ uint8_t GetMouseButtons(void);
 int IsLeftButtonPressed(void);
 int IsRightButtonPressed(void);
 int IsMiddleButtonPressed(void);
+char GetChar(void);
+int HasInput(void);
 #endif
