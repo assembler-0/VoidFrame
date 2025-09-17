@@ -173,13 +173,6 @@ void ApicMaskAll() {
 void ApicTimerInstall(uint32_t frequency_hz) {
     s_apic_timer_freq_hz = frequency_hz;
 
-    // Set divide configuration to 16
-    lapic_write(LAPIC_TIMER_DIV, 0x3);
-
-    // Set the timer vector and mode (periodic)
-    // Vector 32 is typically the timer interrupt
-    lapic_write(LAPIC_LVT_TIMER, (32) | (0b001 << 17)); // Vector 32, Periodic mode
-
     // Calibrate and set the initial count
     ApicTimerSetFrequency(s_apic_timer_freq_hz);
 
@@ -191,18 +184,54 @@ void ApicTimerSetFrequency(uint32_t frequency_hz) {
     s_apic_timer_freq_hz = frequency_hz;
     APIC_HZ = frequency_hz;
 
-    // Use empirically-determined approach instead of the broken calculation
-    uint32_t initial_count = frequency_hz * LAPIC_LVT_TIMER_SCALE_FACTOR;
+    // 1. Configure PIT channel 2 for square wave mode (mode 3) at 100Hz
+    outb(PIT_COMMAND, 0xB6); // Channel 2, LSB/MSB, mode 3
+    uint16_t divisor = 11932; // 1193180 / 100
+    outb(PIT_CHANNEL_2, divisor & 0xFF);
+    outb(PIT_CHANNEL_2, (divisor >> 8) & 0xFF);
 
+    // 2. Enable PC speaker to connect PIT channel 2 output
+    uint8_t speaker_reg = inb(PC_SPEAKER_PORT);
+    outb(PC_SPEAKER_PORT, speaker_reg | 0x01);
+
+    // 3. Set APIC timer to one-shot mode with max initial count
+    lapic_write(LAPIC_LVT_TIMER, 32 | (0b00 << 17)); // Vector 32, one-shot mode
+    lapic_write(LAPIC_TIMER_INIT_COUNT, 0xFFFFFFFF);
+
+    // 4. Wait for a rising edge on PIT channel 2 output
+    while ((inb(PC_SPEAKER_PORT) & 0x20) != 0);
+    while ((inb(PC_SPEAKER_PORT) & 0x20) == 0);
+
+    // 5. Read the APIC timer count
+    uint32_t start_count = lapic_read(LAPIC_TIMER_CUR_COUNT);
+
+    // 6. Wait for the next rising edge
+    while ((inb(PC_SPEAKER_PORT) & 0x20) != 0);
+    while ((inb(PC_SPEAKER_PORT) & 0x20) == 0);
+
+    // 7. Read the APIC timer count again
+    uint32_t end_count = lapic_read(LAPIC_TIMER_CUR_COUNT);
+
+    // 8. Stop the PIT and APIC timer
+    outb(PC_SPEAKER_PORT, speaker_reg); // Restore speaker port
+    lapic_write(LAPIC_LVT_TIMER, 1 << 16); // Mask the timer
+
+    // 9. Calculate the number of ticks in 10ms (100 Hz)
+    uint32_t ticks_in_10ms = start_count - end_count;
+
+    // 10. Calculate the APIC timer frequency (with divider)
+    uint32_t bus_freq = ticks_in_10ms * 100;
+    lapic_write(LAPIC_TIMER_DIV, 0x3); // Divide by 16
+    uint32_t apic_freq = bus_freq / 16;
+
+    // 11. Calculate the required initial count for the desired frequency
+    uint32_t initial_count = apic_freq / frequency_hz;
+
+    // --- Set APIC Timer to Periodic Mode ---
+    lapic_write(LAPIC_LVT_TIMER, 32 | (0b01 << 17)); // Vector 32, periodic mode
     lapic_write(LAPIC_TIMER_INIT_COUNT, initial_count);
-
-    static bool warned = false;
-    if (!warned) {
-        PrintKernelF("APIC: Using empirical timer value (initial_count=%u for %uHz)\n",
-                    initial_count, frequency_hz);
-        warned = true;
-    }
 }
+
 
 // --- Private Setup Functions ---
 
