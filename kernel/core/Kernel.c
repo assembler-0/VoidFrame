@@ -1,7 +1,7 @@
 // VoidFrame Kernel Entry File
 #include "Kernel.h"
 
-#include "Apic.h"
+#include "APIC.h"
 #include "Compositor.h"
 #include "Console.h"
 #include "EXT/Ext2.h"
@@ -516,18 +516,6 @@ void PXS1(const uint32_t info) {
     SwitchToHigherHalf(pml4_addr, higher_half_entry, new_stack_top);
 }
 
-static void IRQUnmaskCoreSystems() {
-    PrintKernel("Unmasking IRQs...\n");
-    // Do not enable IRQ0 and IRQ2 under IOAPIC; vector 32 collision and no cascade on IOAPIC.
-    // ApicEnableIrq(0);
-    ApicEnableIrq(1);
-    ApicEnableIrq(12);
-    // ApicEnableIrq(2);
-    ApicEnableIrq(14);
-    ApicEnableIrq(15);
-    PrintKernelSuccess("System: IRQs unmasked\n");
-}
-
 void MakeRoot() {
     PrintKernel("INITRD: Creating rootfs on /...\n");
     //======================================================================
@@ -693,9 +681,6 @@ static InitResultT PXS2(void) {
         PrintKernelWarning(" Skipping FAT1x & EXT2 initialization\n");
     }
 #endif
-
-    // Unmask IRQs
-    IRQUnmaskCoreSystems();
 
     // Initialize ram filesystem
     PrintKernel("Info: Initializing VFRFS...\n");

@@ -1,6 +1,6 @@
 #include "Interrupts.h"
 
-#include "Apic.h"
+#include "APIC.h"
 #include "Atomics.h"
 #include "Console.h"
 #include "Ide.h"

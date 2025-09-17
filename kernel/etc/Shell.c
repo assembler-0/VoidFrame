@@ -2,7 +2,7 @@
 
 #include "../../drivers/ethernet/interface/Icmp.h"
 #include "6502/6502.h"
-#include "Apic.h"
+#include "APIC.h"
 #include "Cerberus.h"
 #include "Console.h"
 #include "Editor.h"

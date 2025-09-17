@@ -139,7 +139,7 @@ c_sources = [
     src_root + '/fs/EXT/Ext2.c',
     src_root + '/fs/Iso9660.c',
     src_root + '/fs/VFS.c',
-    src_root + '/drivers/Apic.c',
+    src_root + '/drivers/APIC.c',
     src_root + '/drivers/Serial.c',
     src_root + '/drivers/PS2.c',
     src_root + '/drivers/Ide.c',

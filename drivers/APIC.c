@@ -1,4 +1,4 @@
-#include "Apic.h"
+#include "APIC.h"
 #include "../include/Io.h"
 #include "../kernel/core/Kernel.h"
 #include "../kernel/etc/Console.h"

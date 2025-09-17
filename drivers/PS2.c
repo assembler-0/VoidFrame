@@ -1,5 +1,6 @@
 #include "PS2.h"
 
+#include "APIC.h"
 #include "Console.h"
 #include "Io.h"
 #include "Vesa.h"
@@ -131,6 +132,11 @@ void PS2Init(void) {
     mouse.x = mouse.y = 0;
     mouse.packet_index = 0;
     mouse.buttons = 0;
+
+    PrintKernel("Unmasking PS/2 driver IRQs\n");
+    ApicEnableIrq(1);
+    ApicEnableIrq(12);
+    PrintKernelSuccess("PS/2 driver IRQs unmaked\n");
 }
 
 static void ProcessKeyboardData(uint8_t scancode) {
