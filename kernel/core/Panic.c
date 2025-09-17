@@ -132,7 +132,6 @@ void __attribute__((noreturn)) KernelPanicHandler(const char* message, uint64_t 
             PrintKernel("[SYSTEM INFORMATION]\n");
             PrintKernel("----------------------\n");
             MLFQDumpSchedulerState();
-            MLFQDumpPerformanceStats();
 
             MemoryStats stats;
             GetDetailedMemoryStats(&stats);

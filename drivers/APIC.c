@@ -4,6 +4,7 @@
 #include "../kernel/etc/Console.h"
 #include "../mm/VMem.h"
 #include "Cpu.h"
+#include "Panic.h"
 #include "sound/Generic.h" // For PIT definitions
 
 // --- Register Definitions ---
@@ -138,6 +139,7 @@ void ApicSendEoi() {
 // --- I/O APIC Interrupt Management ---
 
 void ApicEnableIrq(uint8_t irq_line) {
+    ASSERT(irq_line != 0 && irq_line != 2);
     // IRQ line -> Vector 32 + IRQ
     // For now, a simple 1:1 mapping for legacy IRQs 0-15
     // Route to the current CPU's LAPIC ID (BSP), not hard-coded 0

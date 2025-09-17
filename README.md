@@ -14,7 +14,7 @@
 
 ![License](https://img.shields.io/badge/License-GPLv2-orange)
 
-![Version](https://img.shields.io/badge/Current%20Version-v0.0.2%20development2-blue)
+![Version](https://img.shields.io/badge/Current%20Version-v0.0.2%20development3-blue)
 
 ![Build](https://img.shields.io/badge/Build-passing-brightgreen)
 
@@ -151,8 +151,8 @@ ninja runmin
     - [x] Vesa (VBE)
     - [x] VMWare SVGA II
     - [x] VGA text mode
-- Timer
-    - [x] PIT
+- Timers
+    - [x] PIT (for APIC calibration)
     - [x] PIC (remnants)
     - [x] APIC (with timer)
     - [x] LAPIC
