@@ -3,6 +3,7 @@
 #include "APIC.h"
 #include "Atomics.h"
 #include "Console.h"
+#include "Format.h"
 #include "Ide.h"
 #include "Kernel.h"
 #include "MLFQ.h"
@@ -13,6 +14,10 @@
 #include "ethernet/Network.h"
 
 volatile uint32_t APICticks = 0;
+
+uint64_t ToIRQ(const uint64_t irn) {
+    return irn >= 32 && irn <= 255 ? irn - 32 : -1;
+}
 
 // The C-level interrupt handler, called from the assembly stub
 asmlinkage void InterruptHandler(Registers* regs) {
@@ -141,7 +146,7 @@ asmlinkage void InterruptHandler(Registers* regs) {
             dump.rsp    = regs->rsp;
             dump.ss     = regs->ss;
             PrintRegisters(&dump);
-            PanicFromInterrupt("Unrecoverable page fault", regs);
+            PanicFromInterrupt(FormatS("Unhandled exception %d", regs->interrupt_number - 32), regs);
         }
     }
 }
