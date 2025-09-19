@@ -397,12 +397,6 @@ static void __attribute__((visibility("hidden"))) ASTerminate(uint32_t pid, cons
         return;
     }
 
-    PrintKernelError("Astra: EXECUTING: PID ");
-    PrintKernelInt(pid);
-    PrintKernelError(" - ");
-    PrintKernelError(reason);
-    PrintKernelError("\n");
-
     // AS overrides ALL protections - even immune and critical
     uint32_t slot = proc - processes;
     proc->state = PROC_DYING;
@@ -445,6 +439,7 @@ static void __attribute__((visibility("hidden"))) ASTerminate(uint32_t pid, cons
         PrintKernel("System: Cleanup successful\n");
     }
 #endif
+    PrintKernelSuccessF("Astra: Terminated PID %d with reason %s\n", pid, reason);
 }
 
 static void __attribute__((visibility("hidden"))) SecurityViolationHandler(uint32_t violator_pid, const char* reason) {
@@ -1947,9 +1942,8 @@ void MLFQDumpSchedulerState(void) {
 
 void MLFQKillCurrentProcess(const char * reason) {
     MLFQProcessControlBlock* current = MLFQGetCurrentProcess();
-    if (current) {
-        ASTerminate(current->pid, reason);
-    }
+    if (current) ASTerminate(current->pid, reason);
+
 }
 
 // Get detailed process scheduling information

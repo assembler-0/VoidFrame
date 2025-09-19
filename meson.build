@@ -37,8 +37,8 @@ c_flags = [
     '-fno-builtin',
     '-ffreestanding',
     '-mno-red-zone',
-    '-fno-pie',
-    '-fno-pic',
+    '-fPIE',
+    '-fPIC',
     '-mcmodel=kernel',
     '-fcf-protection=full',
     '-fstack-protector-strong',
@@ -93,7 +93,8 @@ inc_dirs = [
     arch_root + '/cpu',
     arch_root + '/gdt',
     arch_root + '/idt',
-    arch_root + '/interrupts'
+    arch_root + '/interrupts',
+    arch_root + '/syscall',
 ]
 
 # Assembly sources (organized)
@@ -102,6 +103,7 @@ asm_sources = [
     arch_root + '/idt/IdtLoad.asm',
     arch_root + '/gdt/GdtTssFlush.asm',
     arch_root + '/interrupts/Interrupts.asm',
+    arch_root + '/syscall/SyscallEntry.asm',
     src_root + '/include/Switch.asm'
 ]
 
@@ -165,6 +167,7 @@ c_sources = [
     arch_root + '/idt/Idt.c',
     arch_root + '/gdt/Gdt.c',
     arch_root + '/interrupts/Interrupts.c',
+    arch_root + '/syscall/Syscall.c',
     arch_root + '/cpu/Cpu.c'
 ]
 
@@ -300,6 +303,7 @@ iso = custom_target('VoidFrame.iso',
 run_target('run',
            command : [qemu_system_x86_64.full_path(),
                       '-cpu', 'max',
+#                      '-bios', '/usr/share/edk2/x64/OVMF.4m.fd',
                       '-vga', 'vmware',
                       '-enable-kvm',
                       '-cdrom', 'VoidFrame.iso',
