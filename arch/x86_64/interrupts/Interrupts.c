@@ -3,6 +3,7 @@
 #include "APIC.h"
 #include "Atomics.h"
 #include "Console.h"
+#include "Format.h"
 #include "Ide.h"
 #include "Kernel.h"
 #include "MLFQ.h"
@@ -14,12 +15,16 @@
 
 volatile uint32_t APICticks = 0;
 
+uint64_t ToIRQ(const uint64_t irn) {
+    return irn >= 32 && irn <= 255 ? irn - 32 : -1;
+}
+
 // The C-level interrupt handler, called from the assembly stub
 asmlinkage void InterruptHandler(Registers* regs) {
     ASSERT(regs != NULL);
 
     // Handle hardware interrupts first
-    switch (regs->interrupt_number) {
+    if (regs->interrupt_number >= 32) switch (regs->interrupt_number) {
         case 32: // Timer interrupt (IRQ 0)
             MLFQSchedule(regs);
             AtomicInc(&APICticks);
@@ -58,12 +63,10 @@ asmlinkage void InterruptHandler(Registers* regs) {
             PrintKernelWarning("\n");
             ApicSendEoi();
             return;
+        default: break; // fallback to CPU exceptions (should not be possible as already clamped)
     }
 
-    // Handle CPU exceptions (0-31)
-    static char panic_message[256];
-
-    switch (regs->interrupt_number) {
+    else switch (regs->interrupt_number) {
         case 14: // Page Fault - Handle gracefully
         {
             FaultResult result = HandlePageFault(regs);
@@ -107,7 +110,6 @@ asmlinkage void InterruptHandler(Registers* regs) {
             dump.ss     = regs->ss;
             PrintRegisters(&dump);
             PanicFromInterrupt("Unrecoverable page fault", regs);
-            break;
         }
         
         case 6:  // Invalid Opcode
@@ -128,14 +130,13 @@ asmlinkage void InterruptHandler(Registers* regs) {
             dump.ss     = regs->ss;
             PrintRegisters(&dump);
             PanicFromInterrupt(ctx.fault_reason, regs);
-            break;
         }
 
         default: // All other exceptions
         {
-            char int_str[20], rip_str[20];
-            itoa(regs->interrupt_number, int_str);
-            htoa(regs->rip, rip_str);
+            FaultContext ctx = {0};
+            AnalyzeFault(regs, &ctx);
+            PrintDetailedFaultInfo(&ctx, regs);
             RegistersDumpT dump = {0};
             DumpRegisters(&dump);
             // Override with fault context where applicable
@@ -145,12 +146,7 @@ asmlinkage void InterruptHandler(Registers* regs) {
             dump.rsp    = regs->rsp;
             dump.ss     = regs->ss;
             PrintRegisters(&dump);
-            strcpy(panic_message, "Unhandled Exception #");
-            strcat(panic_message, int_str);
-            strcat(panic_message, " at ");
-            strcat(panic_message, rip_str);
-            PanicFromInterrupt(panic_message, regs);
-            break;
+            PanicFromInterrupt(FormatS("Unhandled exception %d", regs->interrupt_number - 32), regs);
         }
     }
 }
