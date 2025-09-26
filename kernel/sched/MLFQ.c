@@ -1097,7 +1097,7 @@ static __attribute__((visibility("hidden"))) uint32_t CreateSecureProcess(const 
     }
 
     // Initialize process with enhanced security and scheduling data
-    FormatA(processes[slot].name, sizeof(processes[slot].name), "%s", name ? name : "proc");
+    FormatA(processes[slot].name, sizeof(processes[slot].name), "%s", name ? name : FormatS("proc%d", slot));
     processes[slot].pid = new_pid;
     processes[slot].state = PROC_READY;
     processes[slot].stack = stack;

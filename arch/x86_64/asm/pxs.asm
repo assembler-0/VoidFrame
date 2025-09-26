@@ -306,7 +306,7 @@ pd_table3:  resb 4096
 pd_table4:  resb 4096
 
 align 16
-stack_bottom: resb 16384  ; 16KB stack
+stack_bottom: resb 32728  ; 16KB stack
 stack_top:
 
 section .data
