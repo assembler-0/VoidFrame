@@ -142,25 +142,40 @@ int Ext2Mount(BlockDevice* device, const char* mount_point) {
     PrintKernelF("EXT2: Inode size: %d bytes\n", volume.inode_size);
     PrintKernelF("EXT2: Block groups: %d\n", volume.num_groups);
 
-    uint32_t bgdt_size = volume.num_groups * sizeof(Ext2GroupDesc);
-    volume.group_descs = KernelMemoryAlloc(bgdt_size);
-    if (!volume.group_descs) {
+    uint32_t bgdt_bytes = volume.num_groups * sizeof(Ext2GroupDesc);
+    // Determine how many blocks are needed to store BGDT
+    uint32_t bgdt_blocks = (bgdt_bytes + volume.block_size - 1) / volume.block_size;
+    // Allocate buffer at block granularity
+    uint32_t bgdt_alloc_size = bgdt_blocks * volume.block_size;
+    uint8_t* bgdt_buffer = KernelMemoryAlloc(bgdt_alloc_size);
+    if (!bgdt_buffer) {
         PrintKernelF("EXT2: Failed to allocate memory for BGD table.\n");
         WriteUnlock(&volume.lock);
         return -1;
     }
-
+    // Read each BGDT block into buffer
     uint32_t bgdt_block = (volume.block_size == 1024) ? 2 : 1;
-    if (Ext2ReadBlock(bgdt_block, volume.group_descs) != 0) {
-        PrintKernelF("EXT2: Failed to read BGD table.\n");
-        KernelFree(volume.group_descs);
-        WriteUnlock(&volume.lock);
-        return -1;
+    for (uint32_t i = 0; i < bgdt_blocks; ++i) {
+        if (Ext2ReadBlock(bgdt_block + i, bgdt_buffer + i * volume.block_size) != 0) {
+            PrintKernelF("EXT2: Failed to read BGD table.\n");
+            KernelFree(bgdt_buffer);
+            WriteUnlock(&volume.lock);
+            return -1;
+        }
     }
+    // Assign descriptor pointer to the allocated buffer
+    volume.group_descs = (Ext2GroupDesc*)bgdt_buffer;
 
     PrintKernelF("EXT2: Mounting filesystem...\n");
     VfsCreateDir(mount_point);
-    VfsMount(mount_point, device, &ext2_driver);
+    if (VfsMount(mount_point, device, &ext2_driver) != 0) {
+        PrintKernelF("EXT2: Failed to register mount point %s\n", mount_point);
+        KernelFree(volume.group_descs);
+        volume.group_descs = NULL;
+        volume.device = NULL;
+        WriteUnlock(&volume.lock);
+        return -1;
+    }
     PrintKernelF("EXT2: Mounted filesystem\n");
 
     PrintKernelSuccess("EXT2: Filesystem initialized successfully.\n");

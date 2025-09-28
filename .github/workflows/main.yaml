@@ -28,6 +28,8 @@ jobs:
             grub-common \
             qemu-system-x86 \
             mtools \
+            lld \
+            llvm-objdump \
 
       - name: Compile & Link
         run: |

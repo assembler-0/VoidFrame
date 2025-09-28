@@ -778,6 +778,13 @@ void A20Test(void) {
     else PrintKernelSuccess("A20 is enabled - memory is not contiguous\n");
 }
 
+void StackUsage(void) {
+    uintptr_t current_sp;
+    __asm__ __volatile__("mov %%rsp, %0" : "=r"(current_sp));
+    size_t used = (uintptr_t)kernel_stack + KERNEL_STACK_SIZE - current_sp;
+    PrintKernelF("Stack used: %lu/%d bytes\n", used, KERNEL_STACK_SIZE);
+}
+
 asmlinkage void KernelMain(const uint32_t magic, const uint32_t info) {
     if (magic != MULTIBOOT2_BOOTLOADER_MAGIC) {
         ClearScreen();
@@ -805,6 +812,7 @@ void KernelMainHigherHalf(void) {
 
     // Initialize core systems
     PXS2();
+    StackUsage();
 
 #ifdef VF_CONFIG_SNOOZE_ON_BOOT
     ClearScreen();
