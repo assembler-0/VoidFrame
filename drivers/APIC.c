@@ -40,11 +40,13 @@
 #define IOAPIC_DEFAULT_PHYS_ADDR        0xFEC00000
 #define LAPIC_LVT_TIMER_SCALE_FACTOR    1
 // --- Global Variables ---
-static volatile uint32_t* s_lapic_base = NULL;
+volatile uint32_t* s_lapic_base = NULL;
 static volatile uint32_t* s_ioapic_base = NULL;
 static uint32_t s_apic_timer_freq_hz = 1000; // Default to 1KHz
 volatile uint32_t s_apic_timer_ticks = 0;
 volatile uint32_t APIC_HZ = 250;
+uint32_t s_apic_bus_freq = 0; // Cached bus frequency, non static for TSC.c access
+static bool s_calibrated = false; // Calibration flag
 
 // --- Forward Declarations ---
 static void lapic_write(uint32_t reg, uint32_t value);
@@ -186,51 +188,54 @@ void ApicTimerSetFrequency(uint32_t frequency_hz) {
     s_apic_timer_freq_hz = frequency_hz;
     APIC_HZ = frequency_hz;
 
-    // 1. Configure PIT channel 2 for square wave mode (mode 3) at 100Hz
-    outb(PIT_COMMAND, 0xB6); // Channel 2, LSB/MSB, mode 3
-    uint16_t divisor = 11932; // 1193180 / 100
-    outb(PIT_CHANNEL_2, divisor & 0xFF);
-    outb(PIT_CHANNEL_2, (divisor >> 8) & 0xFF);
-
-    // 2. Enable PC speaker to connect PIT channel 2 output
-    uint8_t speaker_reg = inb(PC_SPEAKER_PORT);
-    outb(PC_SPEAKER_PORT, speaker_reg | 0x01);
-
-    // 3. Set APIC timer to one-shot mode with max initial count
-    lapic_write(LAPIC_LVT_TIMER, 32 | (0b00 << 17)); // Vector 32, one-shot mode
-    lapic_write(LAPIC_TIMER_INIT_COUNT, 0xFFFFFFFF);
-
-    // 4. Wait for a rising edge on PIT channel 2 output
-    while ((inb(PC_SPEAKER_PORT) & 0x20) != 0);
-    while ((inb(PC_SPEAKER_PORT) & 0x20) == 0);
-
-    // 5. Read the APIC timer count
-    uint32_t start_count = lapic_read(LAPIC_TIMER_CUR_COUNT);
-
-    // 6. Wait for the next rising edge
-    while ((inb(PC_SPEAKER_PORT) & 0x20) != 0);
-    while ((inb(PC_SPEAKER_PORT) & 0x20) == 0);
-
-    // 7. Read the APIC timer count again
-    uint32_t end_count = lapic_read(LAPIC_TIMER_CUR_COUNT);
-
-    // 8. Stop the PIT and APIC timer
-    outb(PC_SPEAKER_PORT, speaker_reg); // Restore speaker port
-    lapic_write(LAPIC_LVT_TIMER, 1 << 16); // Mask the timer
-
-    // 9. Calculate the number of ticks in 10ms (100 Hz)
-    uint32_t ticks_in_10ms = start_count - end_count;
-
-    // 10. Calculate the APIC timer frequency (with divider)
-    uint32_t bus_freq = ticks_in_10ms * 100;
-    lapic_write(LAPIC_TIMER_DIV, 0x3); // Divide by 16
-    uint32_t apic_freq = bus_freq / 16;
-
-    // 11. Calculate the required initial count for the desired frequency
-    uint32_t initial_count = apic_freq / frequency_hz;
-
-    // --- Set APIC Timer to Periodic Mode ---
-    lapic_write(LAPIC_LVT_TIMER, 32 | (0b01 << 17)); // Vector 32, periodic mode
+    // Only calibrate once to avoid expensive operations
+    if (!s_calibrated) {
+        // Set divider first
+        lapic_write(LAPIC_TIMER_DIV, 0xB); // Divide by 1 (no division)
+        
+        // Configure PIT for calibration
+        outb(PIT_COMMAND, 0xB6);
+        uint16_t divisor = 11932; // 100Hz
+        outb(PIT_CHANNEL_2, divisor & 0xFF);
+        outb(PIT_CHANNEL_2, (divisor >> 8) & 0xFF);
+        
+        uint8_t speaker_reg = inb(PC_SPEAKER_PORT);
+        outb(PC_SPEAKER_PORT, speaker_reg | 0x01);
+        
+        // One-shot calibration
+        lapic_write(LAPIC_LVT_TIMER, 32 | (0b00 << 17));
+        lapic_write(LAPIC_TIMER_INIT_COUNT, 0xFFFFFFFF);
+        
+        // Wait with timeout
+        uint32_t timeout = 100000;
+        while ((inb(PC_SPEAKER_PORT) & 0x20) != 0 && --timeout);
+        while ((inb(PC_SPEAKER_PORT) & 0x20) == 0 && --timeout);
+        
+        uint32_t start_count = lapic_read(LAPIC_TIMER_CUR_COUNT);
+        
+        timeout = 100000;
+        while ((inb(PC_SPEAKER_PORT) & 0x20) != 0 && --timeout);
+        while ((inb(PC_SPEAKER_PORT) & 0x20) == 0 && --timeout);
+        
+        uint32_t end_count = lapic_read(LAPIC_TIMER_CUR_COUNT);
+        
+        outb(PC_SPEAKER_PORT, speaker_reg);
+        lapic_write(LAPIC_LVT_TIMER, 1 << 16);
+        
+        if (timeout > 0) {
+            uint32_t ticks_per_10ms = start_count - end_count;
+            s_apic_bus_freq = ticks_per_10ms * 100;
+            s_calibrated = true;
+            // PrintKernelF("APIC: Calibrated - ticks/10ms=%u, bus_freq=%u Hz\n", ticks_per_10ms, s_apic_bus_freq);
+        } else {
+            s_apic_bus_freq = 100000000; // Fallback: 100MHz
+            PrintKernelWarning("APIC: Calibration timeout, using fallback frequency\n");
+        }
+    }
+    
+    uint32_t initial_count = s_apic_bus_freq / frequency_hz;
+    // PrintKernelF("APIC: Setting timer - freq=%u Hz, bus_freq=%u, initial_count=%u\n", frequency_hz, s_apic_bus_freq, initial_count);
+    lapic_write(LAPIC_LVT_TIMER, 32 | (0b01 << 17)); // Periodic mode
     lapic_write(LAPIC_TIMER_INIT_COUNT, initial_count);
 }
 

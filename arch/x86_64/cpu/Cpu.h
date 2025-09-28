@@ -54,10 +54,6 @@ static inline uint64_t __attribute__((always_inline)) rdtsc(void) {
     return ((uint64_t)hi << 32) | lo;
 }
 
-static inline void __attribute__((always_inline)) delay(uint64_t cycles) {
-    while (cycles--) __asm__ volatile ("nop");
-}
-
 void DumpRegisters(RegistersDumpT* dump);
 void PrintRegisters(const RegistersDumpT* dump);
 

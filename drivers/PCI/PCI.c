@@ -1,7 +1,7 @@
 #include "PCI/PCI.h"
 #include "Console.h"
 #include "Io.h"
-#include "Cpu.h"
+#include "TSC.h"
 #include "stdbool.h"
 #include "stdint.h"
 #include "virtio/Virtio.h"

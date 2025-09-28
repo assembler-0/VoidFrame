@@ -2,7 +2,7 @@
 #include "../interface/Arp.h"
 #include "../interface/Ip.h"
 #include "Console.h"
-#include "Cpu.h"
+#include "TSC.h"
 #include "Io.h"
 #include "KernelHeap.h"
 #include "MemOps.h"

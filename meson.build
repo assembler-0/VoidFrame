@@ -1,6 +1,5 @@
 project('voidframe', 'c', 'cpp',
         version : '0.0.2-development3',
-        meson_version : '>=1.4.0',
         default_options : [
             'c_std=c11',
             'cpp_std=c++17',
@@ -201,6 +200,8 @@ fs_sources = files([
 # Driver sources
 driver_sources = files([
                            'drivers/APIC.c',
+                           'drivers/TSC.c',
+                           'drivers/ACPI.c',
                            'drivers/Serial.c',
                            'drivers/PS2.c',
                            'drivers/Ide.c',
@@ -406,13 +407,13 @@ iso = custom_target(
 run_target('run',
            command : [
                qemu_system_x86_64,
-               '-cpu', 'max',
+               '-cpu', 'host',
                '-vga', 'vmware',
                '-enable-kvm',
                '-cdrom', iso.full_path(),
                '-debugcon', 'file:bootstrap.log',
                '-serial', 'stdio',
-               '-no-reboot', '-no-shutdown',
+#               '-no-reboot', '-no-shutdown',
                '-m', '4G',
                '-drive', 'file=VoidFrameDisk.img,if=ide',
                '-drive', 'file=SataDisk.img,if=none,id=sata0',

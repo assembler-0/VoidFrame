@@ -1,6 +1,6 @@
 #include "AHCI.h"
 #include "Console.h"
-#include "Cpu.h"
+#include "TSC.h"
 #include "KernelHeap.h"
 #include "MemOps.h"
 #include "VMem.h"
@@ -48,7 +48,7 @@ static int AHCI_StopPort(int port) {
     while (timeout-- > 0) {
         cmd = AHCI_ReadPortReg(port, AHCI_PORT_CMD);
         if (!(cmd & AHCI_PORT_CMD_CR)) break;
-        delay(1000);
+        delay(500);
     }
     
     // Clear FRE bit
@@ -61,7 +61,7 @@ static int AHCI_StopPort(int port) {
     while (timeout-- > 0) {
         cmd = AHCI_ReadPortReg(port, AHCI_PORT_CMD);
         if (!(cmd & AHCI_PORT_CMD_FR)) break;
-        delay(1000);
+        delay(500);
     }
     
     return (timeout > 0) ? 0 : -1;
@@ -160,7 +160,7 @@ static int AHCI_SendCommand(int port, uint8_t command, uint64_t lba, uint16_t co
     while (timeout-- > 0) {
         uint32_t tfd = AHCI_ReadPortReg(port, AHCI_PORT_TFD);
         if (!(tfd & 0x88)) break; // BSY and DRQ clear
-        delay(1000);
+        delay(500);
     }
     if (timeout <= 0) return -1;
     
@@ -197,11 +197,11 @@ static int AHCI_SendCommand(int port, uint8_t command, uint64_t lba, uint16_t co
     AHCI_WritePortReg(port, AHCI_PORT_CI, 1);
     
     // Wait for completion
-    timeout = 5000;
+    timeout = 500;
     while (timeout-- > 0) {
         uint32_t ci = AHCI_ReadPortReg(port, AHCI_PORT_CI);
         if (!(ci & 1)) break;
-        delay(1000);
+        delay(50);
     }
     
     if (timeout <= 0) {
