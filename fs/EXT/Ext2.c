@@ -1,18 +1,19 @@
 #include "Ext2.h"
-#include "../VFS.h"
+
+#include "../../kernel/atomic/Spinlock.h"
 #include "../../kernel/etc/Console.h"
-#include "../../drivers/Ide.h"
+#include "../../kernel/etc/StringOps.h"
+#include "../../kernel/sched/MLFQ.h"
 #include "../../mm/KernelHeap.h"
 #include "../../mm/MemOps.h"
-#include "../../kernel/etc/StringOps.h"
-#include "../../kernel/atomic/Spinlock.h"
-#include "../../kernel/sched/MLFQ.h"
+#include "../VFS.h"
+#include "FileSystem.h"
 
 #define EXT2_SUPERBLOCK_OFFSET 1024
 #define EXT2_MAGIC 0xEF53
 
 typedef struct {
-    uint8_t drive;
+    BlockDevice* device;
     uint32_t block_size;
     uint32_t inode_size;
     uint32_t blocks_per_group;
@@ -24,85 +25,104 @@ typedef struct {
 } Ext2Volume;
 
 static Ext2Volume volume;
-int ext2_initialized = 0;
 
-// Helper to read a block from the disk
-int Ext2ReadBlock(uint32_t block, void* buffer) {
-    ReadLock(&volume.lock, MLFQGetCurrentProcess()->pid);
-    if (block >= volume.superblock.s_blocks_count) {
-        PrintKernelF("[EXT2] Block %u out of bounds (max: %u)",
-                     block, volume.superblock.s_blocks_count - 1);
-        ReadUnlock(&volume.lock, MLFQGetCurrentProcess()->pid);
-        return -1;
+int Ext2Detect(BlockDevice* device) {
+    PrintKernel("EXT2: Detecting EXT2 on device ");
+    PrintKernel(device->name);
+    PrintKernel("\n");
+    
+    uint8_t sb_buffer[1024];
+    int read_result = BlockDeviceRead(device->id, 2, 2, sb_buffer);
+    if (read_result != 0) {
+        PrintKernel("EXT2: Failed to read superblock from device ");
+        PrintKernel(device->name);
+        PrintKernel(" (error: ");
+        PrintKernelInt(read_result);
+        PrintKernel(")\n");
+        return 0;
     }
-    uint32_t sector_start = block * (volume.block_size / 512);
-    uint32_t num_sectors   = volume.block_size / 512;
-    for (uint32_t i = 0; i < num_sectors; i++) {
-        if (IdeReadSector(volume.drive,
-                          sector_start + i,
-                          (uint8_t*)buffer + (i * 512)) != IDE_OK) {
-            ReadUnlock(&volume.lock, MLFQGetCurrentProcess()->pid);
-            return -1;
-        }
+
+    Ext2Superblock* sb = (Ext2Superblock*)sb_buffer;
+    PrintKernel("EXT2: Superblock magic = 0x");
+    PrintKernelHex(sb->s_magic);
+    PrintKernel(" (expected 0x");
+    PrintKernelHex(EXT2_MAGIC);
+    PrintKernel(")\n");
+    
+    if (sb->s_magic == EXT2_MAGIC) {
+        PrintKernel("EXT2: Valid EXT2 filesystem detected on ");
+        PrintKernel(device->name);
+        PrintKernel("\n");
+        return 1;
     }
-    ReadUnlock(&volume.lock, MLFQGetCurrentProcess()->pid);
+
+    PrintKernel("EXT2: No EXT2 filesystem on ");
+    PrintKernel(device->name);
+    PrintKernel("\n");
     return 0;
 }
+
 
 static int Ext2WriteBlock(uint32_t block, const void* buffer) {
     WriteLock(&volume.lock, MLFQGetCurrentProcess()->pid);
     if (block >= volume.superblock.s_blocks_count) {
-        PrintKernelF("[EXT2] Block %u out of bounds (max: %u)\
-",
+        PrintKernelF("EXT2: Block %u out of bounds (max: %u)",
                      block, volume.superblock.s_blocks_count - 1);
         WriteUnlock(&volume.lock);
         return -1;
     }
-    uint32_t sector_start = block * (volume.block_size / 512);
     uint32_t num_sectors   = volume.block_size / 512;
-    for (uint32_t i = 0; i < num_sectors; i++) {
-        if (IdeWriteSector(volume.drive,
-                           sector_start + i,
-                           (uint8_t*)buffer + (i * 512)) != IDE_OK) {
-            WriteUnlock(&volume.lock);
-            return -1;
-        }
+    if (BlockDeviceWrite(volume.device->id, block * num_sectors, num_sectors, buffer) != 0) {
+        WriteUnlock(&volume.lock);
+        return -1;
     }
     WriteUnlock(&volume.lock);
     return 0;
 }
 
-int Ext2Init(uint8_t drive) {
-    WriteLock(&volume.lock, MLFQGetCurrentProcess()->pid);
-    if (ext2_initialized) {
-        WriteUnlock(&volume.lock);
-        return 0;
+// Helper to read a block from the disk
+int Ext2ReadBlock(uint32_t block, void* buffer) {
+    ReadLock(&volume.lock, MLFQGetCurrentProcess()->pid);
+    if (block >= volume.superblock.s_blocks_count) {
+        PrintKernelF("EXT2: Block %u out of bounds (max: %u)",
+                     block, volume.superblock.s_blocks_count - 1);
+        ReadUnlock(&volume.lock, MLFQGetCurrentProcess()->pid);
+        return -1;
     }
+    uint32_t num_sectors   = volume.block_size / 512;
+    if (BlockDeviceRead(volume.device->id, block * num_sectors, num_sectors, buffer) != 0) {
+        ReadUnlock(&volume.lock, MLFQGetCurrentProcess()->pid);
+        return -1;
+    }
+    ReadUnlock(&volume.lock, MLFQGetCurrentProcess()->pid);
+    return 0;
+}
+
+static FileSystemDriver ext2_driver = {"EXT2", Ext2Detect, Ext2Mount};
+
+int Ext2Mount(BlockDevice* device, const char* mount_point) {
     volume.lock = (rwlock_t){0};
+    WriteLock(&volume.lock, MLFQGetCurrentProcess()->pid);
 
-    volume.drive = drive;
+    volume.device = device;
 
-    // The superblock is 1024 bytes long and located at offset 1024.
-    // We assume 512-byte sectors, so we need to read 2 sectors starting from sector 2.
     uint8_t sb_buffer[1024];
-    if (IdeReadSector(drive, 2, sb_buffer) != IDE_OK || IdeReadSector(drive, 3, sb_buffer + 512) != IDE_OK) {
-        PrintKernelF("[EXT2] Failed to read superblock.\n");
+    if (BlockDeviceRead(device->id, 2, 2, sb_buffer) != 0) {
+        PrintKernelF("EXT2: Failed to read superblock.\n");
         WriteUnlock(&volume.lock);
         return -1;
     }
 
     FastMemcpy(&volume.superblock, sb_buffer, sizeof(Ext2Superblock));
 
-    // Check for EXT2 magic number
     if (volume.superblock.s_magic != EXT2_MAGIC) {
-        PrintKernelF("[EXT2] Invalid magic number. Not an EXT2 filesystem.\n");
+        PrintKernelF("EXT2: Invalid magic number. Not an EXT2 filesystem.\n");
         WriteUnlock(&volume.lock);
         return -1;
     }
 
-    // Calculate important values
-    if (volume.superblock.s_log_block_size > 10) {  // Max 1MB blocks
-        PrintKernelF("[EXT2] Invalid block size shift: %u\n",
+    if (volume.superblock.s_log_block_size > 10) {
+        PrintKernelF("EXT2: Invalid block size shift: %u\n",
                      volume.superblock.s_log_block_size);
         WriteUnlock(&volume.lock);
         return -1;
@@ -112,35 +132,53 @@ int Ext2Init(uint8_t drive) {
     volume.blocks_per_group = volume.superblock.s_blocks_per_group;
     volume.inodes_per_group = volume.superblock.s_inodes_per_group;
     if (volume.blocks_per_group == 0) {
-        PrintKernelF("[EXT2] Invalid blocks_per_group: 0\n");
+        PrintKernelF("EXT2: Invalid blocks_per_group: 0\n");
         WriteUnlock(&volume.lock);
         return -1;
     }
     volume.num_groups = (volume.superblock.s_blocks_count + volume.blocks_per_group - 1) / volume.blocks_per_group;
 
-    PrintKernelF("[EXT2] Block size: %d bytes\n", volume.block_size);
-    PrintKernelF("[EXT2] Inode size: %d bytes\n", volume.inode_size);
-    PrintKernelF("[EXT2] Block groups: %d\n", volume.num_groups);
+    PrintKernelF("EXT2: Block size: %d bytes\n", volume.block_size);
+    PrintKernelF("EXT2: Inode size: %d bytes\n", volume.inode_size);
+    PrintKernelF("EXT2: Block groups: %d\n", volume.num_groups);
 
-    // Read Block Group Descriptor Table
-    uint32_t bgdt_size = volume.num_groups * sizeof(Ext2GroupDesc);
-    volume.group_descs = KernelMemoryAlloc(bgdt_size);
-    if (!volume.group_descs) {
-        PrintKernelF("[EXT2] Failed to allocate memory for BGD table.\n");
+    uint32_t bgdt_bytes = volume.num_groups * sizeof(Ext2GroupDesc);
+    // Determine how many blocks are needed to store BGDT
+    uint32_t bgdt_blocks = (bgdt_bytes + volume.block_size - 1) / volume.block_size;
+    // Allocate buffer at block granularity
+    uint32_t bgdt_alloc_size = bgdt_blocks * volume.block_size;
+    uint8_t* bgdt_buffer = KernelMemoryAlloc(bgdt_alloc_size);
+    if (!bgdt_buffer) {
+        PrintKernelF("EXT2: Failed to allocate memory for BGD table.\n");
         WriteUnlock(&volume.lock);
         return -1;
     }
-
+    // Read each BGDT block into buffer
     uint32_t bgdt_block = (volume.block_size == 1024) ? 2 : 1;
-    if (Ext2ReadBlock(bgdt_block, volume.group_descs) != 0) {
-        PrintKernelF("[EXT2] Failed to read BGD table.\n");
+    for (uint32_t i = 0; i < bgdt_blocks; ++i) {
+        if (Ext2ReadBlock(bgdt_block + i, bgdt_buffer + i * volume.block_size) != 0) {
+            PrintKernelF("EXT2: Failed to read BGD table.\n");
+            KernelFree(bgdt_buffer);
+            WriteUnlock(&volume.lock);
+            return -1;
+        }
+    }
+    // Assign descriptor pointer to the allocated buffer
+    volume.group_descs = (Ext2GroupDesc*)bgdt_buffer;
+
+    PrintKernelF("EXT2: Mounting filesystem...\n");
+    VfsCreateDir(mount_point);
+    if (VfsMount(mount_point, device, &ext2_driver) != 0) {
+        PrintKernelF("EXT2: Failed to register mount point %s\n", mount_point);
         KernelFree(volume.group_descs);
+        volume.group_descs = NULL;
+        volume.device = NULL;
         WriteUnlock(&volume.lock);
         return -1;
     }
+    PrintKernelF("EXT2: Mounted filesystem\n");
 
-    PrintKernelSuccess("[EXT2] Filesystem initialized successfully.\n");
-    ext2_initialized = 1;
+    PrintKernelSuccess("EXT2: Filesystem initialized successfully.\n");
     WriteUnlock(&volume.lock);
     return 0;
 }
@@ -272,10 +310,7 @@ uint32_t Ext2FindInDir(Ext2Inode* dir_inode, const char* name) {
 
 uint32_t Ext2PathToInode(const char* path) {
     ReadLock(&volume.lock, MLFQGetCurrentProcess()->pid);
-    if (!ext2_initialized || !path) {
-        ReadUnlock(&volume.lock, MLFQGetCurrentProcess()->pid);
-        return 0;
-    }
+    
 
     if (path[0] == '/' && (path[1] == '\0' || path[1] == ' ')) {
         ReadUnlock(&volume.lock, MLFQGetCurrentProcess()->pid);
@@ -327,10 +362,6 @@ uint32_t Ext2PathToInode(const char* path) {
 
 int Ext2ReadFile(const char* path, void* buffer, uint32_t max_size) {
     ReadLock(&volume.lock, MLFQGetCurrentProcess()->pid);
-    if (!ext2_initialized) {
-        ReadUnlock(&volume.lock, MLFQGetCurrentProcess()->pid);
-        return -1;
-    }
 
     uint32_t inode_num = Ext2PathToInode(path);
     if (inode_num == 0) {
@@ -384,23 +415,19 @@ int Ext2ReadFile(const char* path, void* buffer, uint32_t max_size) {
 
 int Ext2WriteFile(const char* path, const void* buffer, uint32_t size) {
     WriteLock(&volume.lock, MLFQGetCurrentProcess()->pid);
-    if (!ext2_initialized) {
-        WriteUnlock(&volume.lock);
-        return -1;
-    }
 
     uint32_t inode_num = Ext2PathToInode(path);
 
     // If file doesn't exist, create it automatically
     if (inode_num == 0) {
         if (Ext2CreateFile(path) != 0) {
-            PrintKernelF("[EXT2] WriteFile: Failed to create file: %s\n", path);
+            PrintKernelF("EXT2: WriteFile: Failed to create file: %s\n", path);
             WriteUnlock(&volume.lock);
             return -1;
         }
         inode_num = Ext2PathToInode(path);
         if (inode_num == 0) {
-            PrintKernelF("[EXT2] WriteFile: Failed to find created file: %s\n", path);
+            PrintKernelF("EXT2: WriteFile: Failed to find created file: %s\n", path);
             WriteUnlock(&volume.lock);
             return -1;
         }
@@ -430,7 +457,7 @@ int Ext2WriteFile(const char* path, const void* buffer, uint32_t size) {
     for (int i = 0; i < 12; i++) {
         if (bytes_written >= (int)size) break;
         if (inode.i_block[i] == 0) {
-            PrintKernelF("[EXT2] WriteFile: Reached end of allocated blocks for %s. File extension not yet supported.\n", path);
+            PrintKernelF("EXT2: WriteFile: Reached end of allocated blocks for %s. File extension not yet supported.\n", path);
             break;
         }
 
@@ -482,10 +509,6 @@ int Ext2WriteFile(const char* path, const void* buffer, uint32_t size) {
 
 int Ext2ListDir(const char* path) {
     ReadLock(&volume.lock, MLFQGetCurrentProcess()->pid);
-    if (!ext2_initialized) {
-        ReadUnlock(&volume.lock, MLFQGetCurrentProcess()->pid);
-        return -1;
-    }
 
     uint32_t inode_num = Ext2PathToInode(path);
     if (inode_num == 0) {
@@ -734,10 +757,6 @@ static int Ext2AddDirEntry(uint32_t dir_inode_num, const char* name, uint32_t fi
 
 int Ext2CreateFile(const char* path) {
     WriteLock(&volume.lock, MLFQGetCurrentProcess()->pid);
-    if (!ext2_initialized) {
-        WriteUnlock(&volume.lock);
-        return -1;
-    }
 
     // Extract directory path and filename
     char dir_path[256] = "/";
@@ -770,7 +789,7 @@ int Ext2CreateFile(const char* path) {
     // Find parent directory
     uint32_t parent_inode_num = Ext2PathToInode(dir_path);
     if (parent_inode_num == 0) {
-        PrintKernelF("[EXT2] CreateFile: Parent directory not found: %s\n", dir_path);
+        PrintKernelF("EXT2: CreateFile: Parent directory not found: %s\n", dir_path);
         WriteUnlock(&volume.lock);
         return -1;
     }
@@ -778,7 +797,7 @@ int Ext2CreateFile(const char* path) {
     // Allocate new inode
     uint32_t new_inode_num = Ext2AllocateInode();
     if (new_inode_num == 0) {
-        PrintKernelF("[EXT2] CreateFile: Failed to allocate inode\n");
+        PrintKernelF("EXT2: CreateFile: Failed to allocate inode\n");
         WriteUnlock(&volume.lock);
         return -1;
     }
@@ -786,7 +805,7 @@ int Ext2CreateFile(const char* path) {
     // Allocate first data block
     uint32_t first_block = Ext2AllocateBlock();
     if (first_block == 0) {
-        PrintKernelF("[EXT2] CreateFile: Failed to allocate data block\n");
+        PrintKernelF("EXT2: CreateFile: Failed to allocate data block\n");
         WriteUnlock(&volume.lock);
         return -1;
     }
@@ -807,14 +826,14 @@ int Ext2CreateFile(const char* path) {
 
     // Write inode
     if (Ext2WriteInode(new_inode_num, &new_inode) != 0) {
-        PrintKernelF("[EXT2] CreateFile: Failed to write inode\n");
+        PrintKernelF("EXT2: CreateFile: Failed to write inode\n");
         WriteUnlock(&volume.lock);
         return -1;
     }
 
     // Add directory entry
     if (Ext2AddDirEntry(parent_inode_num, filename, new_inode_num, 1) != 0) { // 1 = regular file
-        PrintKernelF("[EXT2] CreateFile: Failed to add directory entry\n");
+        PrintKernelF("EXT2: CreateFile: Failed to add directory entry\n");
         WriteUnlock(&volume.lock);
         return -1;
     }
@@ -827,7 +846,7 @@ int Ext2CreateFile(const char* path) {
         KernelFree(zero_buffer);
     }
 
-    PrintKernelSuccessF("[EXT2] Created file: %s (inode %u)\n", path, new_inode_num);
+    PrintKernelSuccessF("EXT2: Created file: %s (inode %u)\n", path, new_inode_num);
     WriteUnlock(&volume.lock);
     return 0;
 }
@@ -836,11 +855,6 @@ int Ext2CreateFile(const char* path) {
 
 int Ext2CreateDir(const char* path) {
     WriteLock(&volume.lock, MLFQGetCurrentProcess()->pid);
-    if (!ext2_initialized) {
-        WriteUnlock(&volume.lock);
-        return -1;
-    }
-
     // Extract directory path and dirname
     char parent_path[256] = "/";
     char dirname[256];
@@ -872,7 +886,7 @@ int Ext2CreateDir(const char* path) {
     // Find parent directory
     uint32_t parent_inode_num = Ext2PathToInode(parent_path);
     if (parent_inode_num == 0) {
-        PrintKernelF("[EXT2] CreateDir: Parent directory not found: %s\n", parent_path);
+        PrintKernelF("EXT2: CreateDir: Parent directory not found: %s\n", parent_path);
         WriteUnlock(&volume.lock);
         return -1;
     }
@@ -880,7 +894,7 @@ int Ext2CreateDir(const char* path) {
     // Allocate new inode
     uint32_t new_inode_num = Ext2AllocateInode();
     if (new_inode_num == 0) {
-        PrintKernelF("[EXT2] CreateDir: Failed to allocate inode\n");
+        PrintKernelF("EXT2: CreateDir: Failed to allocate inode\n");
         WriteUnlock(&volume.lock);
         return -1;
     }
@@ -888,7 +902,7 @@ int Ext2CreateDir(const char* path) {
     // Allocate data block for directory entries
     uint32_t dir_block = Ext2AllocateBlock();
     if (dir_block == 0) {
-        PrintKernelF("[EXT2] CreateDir: Failed to allocate data block\n");
+        PrintKernelF("EXT2: CreateDir: Failed to allocate data block\n");
         WriteUnlock(&volume.lock);
         return -1;
     }
@@ -937,7 +951,7 @@ int Ext2CreateDir(const char* path) {
     if (Ext2WriteBlock(dir_block, dir_buffer) != 0 ||
         Ext2WriteInode(new_inode_num, &new_inode) != 0) {
         KernelFree(dir_buffer);
-        PrintKernelF("[EXT2] CreateDir: Failed to write directory data\n");
+        PrintKernelF("EXT2: CreateDir: Failed to write directory data\n");
         WriteUnlock(&volume.lock);
         return -1;
     }
@@ -946,7 +960,7 @@ int Ext2CreateDir(const char* path) {
 
     // Add directory entry to parent
     if (Ext2AddDirEntry(parent_inode_num, dirname, new_inode_num, 2) != 0) { // 2 = directory
-        PrintKernelF("[EXT2] CreateDir: Failed to add directory entry\n");
+        PrintKernelF("EXT2: CreateDir: Failed to add directory entry\n");
         WriteUnlock(&volume.lock);
         return -1;
     }
@@ -958,7 +972,7 @@ int Ext2CreateDir(const char* path) {
         Ext2WriteInode(parent_inode_num, &parent_inode);
     }
 
-    PrintKernelSuccessF("[EXT2] Created directory: %s (inode %u)\n", path, new_inode_num);
+    PrintKernelSuccessF("EXT2: Created directory: %s (inode %u)\n", path, new_inode_num);
     WriteUnlock(&volume.lock);
     return 0;
 }
@@ -1009,14 +1023,10 @@ static void Ext2FreeInode(uint32_t inode_num) {
 
 int Ext2Delete(const char* path) {
     WriteLock(&volume.lock, MLFQGetCurrentProcess()->pid);
-    if (!ext2_initialized) {
-        WriteUnlock(&volume.lock);
-        return -1;
-    }
 
     uint32_t inode_num = Ext2PathToInode(path);
     if (inode_num == 0) {
-        PrintKernelF("[EXT2] Delete: File not found: %s\n", path);
+        PrintKernelF("EXT2: Delete: File not found: %s\n", path);
         WriteUnlock(&volume.lock);
         return -1; // Not found
     }
@@ -1115,10 +1125,6 @@ end_delete_loop:
 
 int Ext2IsFile(const char* path) {
     ReadLock(&volume.lock, MLFQGetCurrentProcess()->pid);
-    if (!ext2_initialized) {
-        ReadUnlock(&volume.lock, MLFQGetCurrentProcess()->pid);
-        return 0;
-    }
     uint32_t inode_num = Ext2PathToInode(path);
     if (inode_num == 0) {
         ReadUnlock(&volume.lock, MLFQGetCurrentProcess()->pid);
@@ -1138,10 +1144,6 @@ int Ext2IsFile(const char* path) {
 
 int Ext2IsDir(const char* path) {
     ReadLock(&volume.lock, MLFQGetCurrentProcess()->pid);
-    if (!ext2_initialized) {
-        ReadUnlock(&volume.lock, MLFQGetCurrentProcess()->pid);
-        return 0;
-    }
     uint32_t inode_num = Ext2PathToInode(path);
     if (inode_num == 0) {
         ReadUnlock(&volume.lock, MLFQGetCurrentProcess()->pid);
@@ -1161,10 +1163,6 @@ int Ext2IsDir(const char* path) {
 
 uint64_t Ext2GetFileSize(const char* path) {
     ReadLock(&volume.lock, MLFQGetCurrentProcess()->pid);
-    if (!ext2_initialized) {
-        ReadUnlock(&volume.lock, MLFQGetCurrentProcess()->pid);
-        return 0;
-    }
     uint32_t inode_num = Ext2PathToInode(path);
     if (inode_num == 0) {
         ReadUnlock(&volume.lock, MLFQGetCurrentProcess()->pid);

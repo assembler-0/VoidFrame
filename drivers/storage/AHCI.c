@@ -4,6 +4,9 @@
 #include "KernelHeap.h"
 #include "MemOps.h"
 #include "VMem.h"
+#include "BlockDevice.h"
+#include "Format.h"
+#include "PCI/PCI.h"
 
 #define FIS_TYPE_REG_H2D    0x27
 #define ATA_CMD_READ_DMA_EX 0x25
@@ -11,6 +14,10 @@
 #define ATA_CMD_IDENTIFY    0xEC
 
 static AHCIController g_ahci_controller = {0};
+
+// Forward declarations
+static int AHCI_ReadBlocksWrapper(struct BlockDevice* device, uint64_t start_lba, uint32_t count, void* buffer);
+static int AHCI_WriteBlocksWrapper(struct BlockDevice* device, uint64_t start_lba, uint32_t count, const void* buffer);
 
 static uint32_t AHCI_ReadReg(uint32_t offset) {
     return *(volatile uint32_t*)(g_ahci_controller.mmio_base + offset);
@@ -215,6 +222,42 @@ static int AHCI_SendCommand(int port, uint8_t command, uint64_t lba, uint16_t co
     return 0;
 }
 
+static uint64_t AHCI_GetDriveCapacity(int port) {
+    // Allocate buffer for IDENTIFY data
+    uint16_t* identify_data = (uint16_t*)KernelMemoryAlloc(512);
+    if (!identify_data) return 0;
+    
+    // Send IDENTIFY command
+    int result = AHCI_SendCommand(port, ATA_CMD_IDENTIFY, 0, 1, identify_data, 0);
+    if (result != 0) {
+        KernelFree(identify_data);
+        return 0x1000000; // Fallback size (8GB)
+    }
+    
+    // Get total sectors from IDENTIFY data
+    // For LBA48: words 100-103 contain total sectors
+    // For LBA28: words 60-61 contain total sectors
+    uint64_t total_sectors = 0;
+    
+    // Check if LBA48 is supported (bit 10 of word 83)
+    if (identify_data[83] & (1 << 10)) {
+        // LBA48 - use words 100-103
+        total_sectors = *(uint64_t*)(identify_data + 100);
+    } else {
+        // LBA28 - use words 60-61
+        total_sectors = *(uint32_t*)(identify_data + 60);
+    }
+    
+    KernelFree(identify_data);
+    
+    // Sanity check
+    if (total_sectors == 0 || total_sectors > 0x1000000000ULL) {
+        return 0x1000000; // Fallback to 8GB
+    }
+    
+    return total_sectors;
+}
+
 int AHCI_Init(void) {
     PrintKernel("AHCI: Initializing AHCI driver...\n");
     
@@ -337,6 +380,38 @@ int AHCI_Init(void) {
             PrintKernel("AHCI: Port ");
             PrintKernelInt(i);
             PrintKernel(" initialized successfully\n");
+            
+            // Register as block device
+            char dev_name[16];
+            FormatA(dev_name, sizeof(dev_name), "sd%c", 'a' + i);
+            
+            // Get actual sector count from IDENTIFY command
+            uint64_t total_sectors = AHCI_GetDriveCapacity(i);
+            
+            PrintKernel("AHCI: Port ");
+            PrintKernelInt(i);
+            PrintKernel(" capacity: ");
+            PrintKernelInt(total_sectors);
+            PrintKernel(" sectors (");
+            PrintKernelInt((total_sectors * 512) / (1024 * 1024));
+            PrintKernel(" MB)\n");
+            
+            BlockDevice* dev = BlockDeviceRegister(
+                DEVICE_TYPE_AHCI,
+                512,
+                total_sectors,
+                dev_name,
+                (void*)(uintptr_t)i, // Port number as driver data
+                (ReadBlocksFunc)AHCI_ReadBlocksWrapper,
+                (WriteBlocksFunc)AHCI_WriteBlocksWrapper
+            );
+            
+            if (dev) {
+                PrintKernel("AHCI: Registered block device: ");
+                PrintKernel(dev_name);
+                PrintKernel("\n");
+                BlockDeviceDetectAndRegisterPartitions(dev);
+            }
         }
     }
     
@@ -363,4 +438,21 @@ int AHCI_WriteSectors(int port, uint64_t lba, uint16_t count, const void* buffer
 
 const AHCIController* AHCI_GetController(void) {
     return g_ahci_controller.initialized ? &g_ahci_controller : NULL;
+}
+
+// Wrapper functions for BlockDevice integration
+static int AHCI_ReadBlocksWrapper(struct BlockDevice* device, uint64_t start_lba, uint32_t count, void* buffer) {
+    if (!device || !device->driver_data) return -1;
+    int port = (uintptr_t)device->driver_data;
+    
+    // AHCI_ReadSectors expects sectors, not blocks, but they're the same for 512-byte sectors
+    return AHCI_ReadSectors(port, start_lba, count, buffer);
+}
+
+static int AHCI_WriteBlocksWrapper(struct BlockDevice* device, uint64_t start_lba, uint32_t count, const void* buffer) {
+    if (!device || !device->driver_data) return -1;
+    int port = (uintptr_t)device->driver_data;
+    
+    // AHCI_WriteSectors expects sectors, not blocks, but they're the same for 512-byte sectors
+    return AHCI_WriteSectors(port, start_lba, count, buffer);
 }

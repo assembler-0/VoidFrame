@@ -1,15 +1,81 @@
-// Generic FAT filesystem driver for FAT12/16
 #include "FAT1x.h"
+
 #include "Console.h"
-#include "Ide.h"
+#include "FileSystem.h"
 #include "KernelHeap.h"
 #include "MemOps.h"
 #include "MemPool.h"
 #include "StringOps.h"
+#include "VFS.h"
 
 static Fat1xVolume volume;
 static uint8_t* sector_buffer = NULL;
-int fat12_initialized = 0;  // Make global for VFS
+
+int Fat1xDetect(BlockDevice* device) {
+    uint8_t boot_sector[512];
+    if (BlockDeviceRead(device->id, 0, 1, boot_sector) != 0) {
+        return 0;
+    }
+
+    Fat1xBootSector* bs = (Fat1xBootSector*)boot_sector;
+    if (bs->jump[0] != 0xEB && bs->jump[0] != 0xE9) {
+        return 0;
+    }
+
+    if (FastMemcmp(bs->oem_name, "MSWIN4.1", 8) == 0 || FastMemcmp(bs->oem_name, "MSDOS5.0", 8) == 0) {
+        return 1;
+    }
+
+    return 0;
+}
+
+static FileSystemDriver fat_driver = {"FAT1x", Fat1xDetect, Fat1xMount};
+
+int Fat1xMount(BlockDevice* device, const char* mount_point) {
+    volume.device = device;
+
+    // Read boot sector
+    uint8_t boot_sector[512];
+    if (BlockDeviceRead(device->id, 0, 1, boot_sector) != 0) {
+        return -1;
+    }
+    FastMemcpy(&volume.boot, boot_sector, sizeof(Fat1xBootSector));
+
+    if (volume.boot.bytes_per_sector != 512) {
+        return -1;
+    }
+
+    sector_buffer = FastAlloc(POOL_SIZE_512);
+    if (!sector_buffer) {
+        return -1;
+    }
+
+    volume.fat_sector = volume.boot.reserved_sectors;
+    volume.root_sector = volume.fat_sector + (volume.boot.fat_count * volume.boot.sectors_per_fat);
+    uint32_t root_sectors = (volume.boot.root_entries * 32 + volume.boot.bytes_per_sector - 1) / volume.boot.bytes_per_sector;
+    volume.data_sector = volume.root_sector + root_sectors;
+
+    uint32_t fat_size = volume.boot.sectors_per_fat * 512;
+    volume.fat_table = KernelMemoryAlloc(fat_size);
+    if (!volume.fat_table) {
+        KernelFree(sector_buffer);
+        sector_buffer = NULL;
+        return -1;
+    }
+
+    for (int i = 0; i < volume.boot.sectors_per_fat; i++) {
+        if (BlockDeviceRead(device->id, volume.fat_sector + i, 1, volume.fat_table + (i * 512)) != 0) {
+            KernelFree(volume.fat_table);
+            volume.fat_table = NULL;
+            KernelFree(sector_buffer);
+            sector_buffer = NULL;
+            return -1;
+        }
+    }
+
+    VfsMount(mount_point, device, &fat_driver);
+    return 0;
+}
 
 void Fat12ConvertFilename(const char* filename, char* fat_name) {
     FastMemset(fat_name, ' ', 11);
@@ -26,63 +92,6 @@ void Fat12ConvertFilename(const char* filename, char* fat_name) {
         }
     }
 }
-
-int Fat1xInit(uint8_t drive) {
-    if (fat12_initialized) {
-        return 0;
-    }
-    volume.drive = drive;
-
-    // Read boot sector
-    uint8_t boot_sector[512];
-    if (IdeReadSector(drive, 0, boot_sector) != IDE_OK) {
-        return -1;
-    }
-    // Copy the parsed fields into our struct to avoid overflow
-    FastMemcpy(&volume.boot, boot_sector, sizeof(Fat1xBootSector));
-
-    // Validate sector size
-    // For now we only support 512-byte ATA sectors
-    if (volume.boot.bytes_per_sector != 512) {
-        return -1;
-    }
-
-    // Allocate sector buffer
-    sector_buffer = FastAlloc(POOL_SIZE_512);
-    if (!sector_buffer) {
-        return -1;
-    }
-
-    // Calculate important sectors
-    volume.fat_sector = volume.boot.reserved_sectors;
-    volume.root_sector = volume.fat_sector + (volume.boot.fat_count * volume.boot.sectors_per_fat);
-    uint32_t root_sectors = (volume.boot.root_entries * 32 + volume.boot.bytes_per_sector - 1) / volume.boot.bytes_per_sector;
-    volume.data_sector = volume.root_sector + root_sectors;
-
-    // Allocate and load FAT table
-    uint32_t fat_size = volume.boot.sectors_per_fat * 512;
-    volume.fat_table = KernelMemoryAlloc(fat_size);
-    if (!volume.fat_table) {
-        KernelFree(sector_buffer);
-        sector_buffer = NULL;
-        return -1;
-    }
-
-    // Read FAT table
-    for (int i = 0; i < volume.boot.sectors_per_fat; i++) {
-        if (IdeReadSector(drive, volume.fat_sector + i, volume.fat_table + (i * 512)) != IDE_OK) {
-            KernelFree(volume.fat_table);
-            volume.fat_table = NULL;
-            KernelFree(sector_buffer);
-            sector_buffer = NULL;
-            return -1;
-        }
-    }
-
-    fat12_initialized = 1;
-    return 0;
-}
-
 
 // Get next cluster from FAT table
 static uint16_t Fat12GetNextCluster(uint16_t cluster) {
@@ -116,7 +125,7 @@ static int Fat12WriteFat() {
     for (int i = 0; i < volume.boot.fat_count; i++) {
         uint32_t fat_start = volume.boot.reserved_sectors + (i * volume.boot.sectors_per_fat);
         for (int j = 0; j < volume.boot.sectors_per_fat; j++) {
-            if (IdeWriteSector(volume.drive, fat_start + j, volume.fat_table + (j * 512)) != IDE_OK) {
+            if (BlockDeviceWrite(volume.device->id, fat_start + j, 1, volume.fat_table + (j * 512)) != 0) {
                 return -1;
             }
         }
@@ -145,10 +154,8 @@ int Fat1xGetCluster(uint16_t cluster, uint8_t* buffer) {
 
     uint32_t sector = volume.data_sector + ((cluster - 2) * volume.boot.sectors_per_cluster);
 
-    for (int i = 0; i < volume.boot.sectors_per_cluster; i++) {
-        if (IdeReadSector(volume.drive, sector + i, buffer + (i * 512)) != IDE_OK) {
-            return -1;
-        }
+    if (BlockDeviceRead(volume.device->id, sector, volume.boot.sectors_per_cluster, buffer) != 0) {
+        return -1;
     }
 
     return 0;
@@ -193,7 +200,7 @@ static Fat1xDirEntry* Fat12FindEntry(const char* path, uint16_t* parent_cluster,
             // Search root directory
             uint32_t root_sectors = (volume.boot.root_entries * 32 + 511) / 512;
             for (uint32_t sector = 0; sector < root_sectors; sector++) {
-                if (IdeReadSector(volume.drive, volume.root_sector + sector, sector_buffer) != IDE_OK) {
+                if (BlockDeviceRead(volume.device->id, volume.root_sector + sector, 1, sector_buffer) != 0) {
                     return NULL;
                 }
 
@@ -258,7 +265,7 @@ static Fat1xDirEntry* Fat12FindEntry(const char* path, uint16_t* parent_cluster,
 
             // CRITICAL: Re-read the sector to return a valid pointer
             // This ensures sector_buffer contains the correct data
-            if (IdeReadSector(volume.drive, found_sector, sector_buffer) != IDE_OK) {
+            if (BlockDeviceRead(volume.device->id, found_sector, 1, sector_buffer) != 0) {
                 return NULL;
             }
             return &((Fat1xDirEntry*)sector_buffer)[found_offset];
@@ -283,7 +290,7 @@ static int Fat12FindDirectoryEntry(uint16_t parent_cluster, const char* fat_name
         uint32_t root_sectors = (volume.boot.root_entries * 32 + 511) / 512;
         for (uint32_t sector_idx = 0; sector_idx < root_sectors; sector_idx++) {
             uint32_t current_lba = volume.root_sector + sector_idx;
-            if (IdeReadSector(volume.drive, current_lba, sector_buffer) != IDE_OK) {
+            if (BlockDeviceRead(volume.device->id, current_lba, 1, sector_buffer) != 0) {
                 return -1;
             }
 
@@ -387,11 +394,9 @@ static int Fat12FindDirectoryEntry(uint16_t parent_cluster, const char* fat_name
     // Clear the new cluster
     FastMemset(cluster_buffer, 0, cluster_bytes);
     uint32_t new_cluster_lba = volume.data_sector + ((new_cluster - 2) * volume.boot.sectors_per_cluster);
-    for (int i = 0; i < volume.boot.sectors_per_cluster; i++) {
-        if (IdeWriteSector(volume.drive, new_cluster_lba + i, cluster_buffer + (i * 512)) != IDE_OK) {
-            KernelFree(cluster_buffer);
-            return -1;
-        }
+    if (BlockDeviceWrite(volume.device->id, new_cluster_lba, volume.boot.sectors_per_cluster, cluster_buffer) != 0) {
+        KernelFree(cluster_buffer);
+        return -1;
     }
 
     // Set the free entry location
@@ -571,16 +576,14 @@ int Fat1xCreateDir(const char* path) {
     // --- (The rest of the function remains the same) ---
     // Write the new directory's data cluster to disk
     uint32_t data_lba = volume.data_sector + ((new_cluster - 2) * volume.boot.sectors_per_cluster);
-    for (int i = 0; i < volume.boot.sectors_per_cluster; i++) {
-        if (IdeWriteSector(volume.drive, data_lba + i, cluster_buffer + (i * 512)) != IDE_OK) {
-            KernelFree(cluster_buffer);
-            return -1;
-        }
+    if (BlockDeviceWrite(volume.device->id, data_lba, volume.boot.sectors_per_cluster, cluster_buffer) != 0) {
+        KernelFree(cluster_buffer);
+        return -1;
     }
     // KernelFree(cluster_buffer); - double free?
 
     // Update the entry in the parent directory
-    if (IdeReadSector(volume.drive, entry_sector_lba, sector_buffer) != IDE_OK) return -1;
+    if (BlockDeviceRead(volume.device->id, entry_sector_lba, 1, sector_buffer) != 0) return -1;
 
     Fat1xDirEntry* new_dir_entry = &((Fat1xDirEntry*)sector_buffer)[entry_offset];
     FastMemcpy(new_dir_entry->name, fat_name, 11);
@@ -589,7 +592,7 @@ int Fat1xCreateDir(const char* path) {
     new_dir_entry->file_size = 0;
 
     // Write changes back to disk
-    if (IdeWriteSector(volume.drive, entry_sector_lba, sector_buffer) != IDE_OK) return -1;
+    if (BlockDeviceWrite(volume.device->id, entry_sector_lba, 1, sector_buffer) != 0) return -1;
     if (Fat12WriteFat() != 0) return -1;
 
     return 0;
@@ -751,11 +754,9 @@ int Fat1xWriteFile(const char* path, const void* buffer, uint32_t size) {
 
             // Write cluster to disk
             uint32_t cluster_lba = volume.data_sector + ((current_cluster - 2) * volume.boot.sectors_per_cluster);
-            for (int i = 0; i < volume.boot.sectors_per_cluster; i++) {
-                if (IdeWriteSector(volume.drive, cluster_lba + i, cluster_buf + (i * 512)) != IDE_OK) {
-                    KernelFree(cluster_buf);
-                    return -1;
-                }
+            if (BlockDeviceWrite(volume.device->id, cluster_lba, volume.boot.sectors_per_cluster, cluster_buf) != 0) {
+                KernelFree(cluster_buf);
+                return -1;
             }
             KernelFree(cluster_buf);
             bytes_written += to_write;
@@ -773,7 +774,7 @@ int Fat1xWriteFile(const char* path, const void* buffer, uint32_t size) {
     }
 
     // Update directory entry
-    if (IdeReadSector(volume.drive, entry_sector, sector_buffer) != IDE_OK) {
+    if (BlockDeviceRead(volume.device->id, entry_sector, 1, sector_buffer) != 0) {
         return -1;
     }
 
@@ -785,7 +786,7 @@ int Fat1xWriteFile(const char* path, const void* buffer, uint32_t size) {
     dir_entry->cluster_high = 0;
 
     // Write directory entry back
-    if (IdeWriteSector(volume.drive, entry_sector, sector_buffer) != IDE_OK) {
+    if (BlockDeviceWrite(volume.device->id, entry_sector, 1, sector_buffer) != 0) {
         return -1;
     }
 
@@ -996,7 +997,7 @@ int Fat1xDeleteFile(const char* path) {
     }
 
     // Mark directory entry as deleted
-    if (IdeReadSector(volume.drive, entry_sector, sector_buffer) != IDE_OK) {
+    if (BlockDeviceRead(volume.device->id, entry_sector, 1, sector_buffer) != 0) {
         return -1;
     }
 
@@ -1004,7 +1005,7 @@ int Fat1xDeleteFile(const char* path) {
     target_entry->name[0] = 0xE5;
 
     // Write changes back to disk
-    if (IdeWriteSector(volume.drive, entry_sector, sector_buffer) != IDE_OK) {
+    if (BlockDeviceWrite(volume.device->id, entry_sector, 1, sector_buffer) != 0) {
         return -1;
     }
 
@@ -1032,7 +1033,7 @@ int Fat1xListRoot(void) {
     uint32_t root_sectors = (volume.boot.root_entries * 32 + 511) / 512;
 
     for (uint32_t sector = 0; sector < root_sectors; sector++) {
-        if (IdeReadSector(volume.drive, volume.root_sector + sector, sector_buffer) != IDE_OK) {
+        if (BlockDeviceRead(volume.device->id, volume.root_sector + sector, 1, sector_buffer) != 0) {
             PrintKernel("Error reading root directory sector.\n");
             return -1;
         }

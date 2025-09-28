@@ -2,6 +2,8 @@
 
 #include <stdint.h>
 
+#include "BlockDevice.h"
+
 // FAT12 Boot Sector Structure
 typedef struct __attribute__((packed)) {
     uint8_t  jump[3];
@@ -50,7 +52,7 @@ typedef struct __attribute__((packed)) {
 #define FAT12_CLUSTER_EOF     0xFF8
 
 typedef struct {
-    uint8_t drive;
+    BlockDevice* device;
     Fat1xBootSector boot;
     uint8_t* fat_table;
     uint32_t fat_sector;
@@ -59,7 +61,8 @@ typedef struct {
 } Fat1xVolume;
 
 // Core Functions
-int Fat1xInit(uint8_t drive);
+int Fat1xMount(BlockDevice* device, const char* mount_point);
+int Fat1xDetect(BlockDevice* device);
 int Fat1xReadFile(const char* filename, void* buffer, uint32_t max_size);
 int Fat1xWriteFile(const char* filename, const void* buffer, uint32_t size);
 int Fat1xDeleteFile(const char* filename);

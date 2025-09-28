@@ -179,6 +179,7 @@ static const HelpEntry system_cmds[] = {
     {"perf", "Show performance stats"},
     {"kill <pid>", "Terminate process"},
     {"memstat", "Show memory statistics"},
+    {"stacksize", "Show stack usage"},
     {"lscpu", "List CPU features"},
     {"snoozer <on/off>", "Snooze messages from PrintKernel"},
 };
@@ -250,7 +251,7 @@ static void ShowHelpCategory(int cat_idx) {
 static void HelpHandler(const char * args) {
     char* category = GetArg(args, 1);
     int num_categories = sizeof(help_categories)/sizeof(HelpCategory);
-    
+
     if (!category) {
         PrintKernelSuccess("VoidFrame Shell Help\n");
         PrintKernel("Categories (use 'help <category>' or number):\n");
@@ -265,7 +266,7 @@ static void HelpHandler(const char * args) {
         KernelFree(category);
         return;
     }
-    
+
     // Check if it's a number
     int cat_num = atoi(category);
     if (cat_num > 0 && cat_num <= num_categories) {
@@ -273,7 +274,7 @@ static void HelpHandler(const char * args) {
         KernelFree(category);
         return;
     }
-    
+
     // Check category names
     for (int i = 0; i < num_categories; i++) {
         if (FastStrCmp(category, "system") == 0 && i == 0) {
@@ -297,7 +298,7 @@ static void HelpHandler(const char * args) {
             return;
         }
     }
-    
+
     PrintKernel("Unknown category. Use 'help' to see available categories.\n");
     KernelFree(category);
 }
@@ -339,7 +340,6 @@ static void MemstatHandler(const char * args) {
 
 static void LsPCIHandler(const char * args) {
     (void)args;
-    
     MLFQCreateProcess("PCIEnumerate", PciEnumerate);
 }
 
@@ -983,7 +983,7 @@ void PrintCpuFrequency() {
     }
 }
 
-    
+
 // The main shell command function
 void LsCPUHandler(const char* args) {
     (void)args;
@@ -996,74 +996,10 @@ void LsCPUHandler(const char* args) {
     PrintFeatures();
 }
 
-void MkfsHandler(const char* args) {
+void StackSizeHandler(const char* args) {
     (void)args;
-    PrintKernel("VFS: Creating roofs on /Devices/Storage/VFSystemDrive...\n");
-    //======================================================================
-    // 1. Core Operating System - (Largely Read-Only at Runtime)
-    //======================================================================
-    VfsCreateDir("/Devices/Storage/VFSystemDrive/System");
-    VfsCreateDir("/Devices/Storage/VFSystemDrive/System/Kernel");      // Kernel executable, modules, and symbols
-    VfsCreateDir("/Devices/Storage/VFSystemDrive/System/Boot");        // Bootloader and initial ramdisk images
-    VfsCreateDir("/Devices/Storage/VFSystemDrive/System/Drivers");     // Core hardware drivers bundled with the OS
-    VfsCreateDir("/Devices/Storage/VFSystemDrive/System/Libraries");   // Essential shared libraries (libc, etc.)
-    VfsCreateDir("/Devices/Storage/VFSystemDrive/System/Services");    // Executables for core system daemons
-    VfsCreateDir("/Devices/Storage/VFSystemDrive/System/Resources");   // System-wide resources like fonts, icons, etc.
-
-
-    //======================================================================
-    // 2. Variable Data and User Installations - (Read-Write)
-    //======================================================================
-    VfsCreateDir("/Devices/Storage/VFSystemDrive/Data");
-    VfsCreateDir("/Devices/Storage/VFSystemDrive/Data/Apps");          // User-installed applications reside here
-    VfsCreateDir("/Devices/Storage/VFSystemDrive/Data/Config");        // System-wide configuration files
-    VfsCreateDir("/Devices/Storage/VFSystemDrive/Data/Cache");         // System-wide caches
-    VfsCreateDir("/Devices/Storage/VFSystemDrive/Data/Logs");          // System and application logs
-    VfsCreateDir("/Devices/Storage/VFSystemDrive/Data/Spool");         // Spool directory for printing, mail, etc.
-    VfsCreateDir("/Devices/Storage/VFSystemDrive/Data/Temp");          // Temporary files that should persist across reboots
-
-
-    //======================================================================
-    // 3. Hardware and Device Tree - (Virtual, managed by kernel)
-    //======================================================================
-    VfsCreateDir("/Devices/Storage/VFSystemDrive/Devices");
-    VfsCreateDir("/Devices/Storage/VFSystemDrive/Devices/Cpu");        // Info for each CPU core (cpuid, status, etc.)
-    VfsCreateDir("/Devices/Storage/VFSystemDrive/Devices/Pci");        // Hierarchy of PCI/PCIe devices
-    VfsCreateDir("/Devices/Storage/VFSystemDrive/Devices/Usb");        // Hierarchy of USB devices
-    VfsCreateDir("/Devices/Storage/VFSystemDrive/Devices/Storage");    // Block devices like disks and partitions (hda, sda)
-    VfsCreateDir("/Devices/Storage/VFSystemDrive/Devices/Input");      // Keyboards, mice, tablets
-    VfsCreateDir("/Devices/Storage/VFSystemDrive/Devices/Gpu");        // Graphics processors
-    VfsCreateDir("/Devices/Storage/VFSystemDrive/Devices/Net");        // Network interfaces (eth0, wlan0)
-    VfsCreateDir("/Devices/Storage/VFSystemDrive/Devices/Acpi");       // ACPI tables and power information
-
-
-    //======================================================================
-    // 4. User Homes
-    //======================================================================
-    VfsCreateDir("/Devices/Storage/VFSystemDrive/Users");
-    VfsCreateDir("/Devices/Storage/VFSystemDrive/Users/Admin");        // Example administrator home
-    VfsCreateDir("/Devices/Storage/VFSystemDrive/Users/Admin/Desktop");
-    VfsCreateDir("/Devices/Storage/VFSystemDrive/Users/Admin/Documents");
-    VfsCreateDir("/Devices/Storage/VFSystemDrive/Users/Admin/Downloads");
-
-
-    //======================================================================
-    // 5. Live System State - (In-memory tmpfs, managed by kernel)
-    //======================================================================
-    VfsCreateDir("/Devices/Storage/VFSystemDrive/Runtime");
-    VfsCreateDir("/Devices/Storage/VFSystemDrive/Runtime/Processes");  // A directory for each running sched by PID
-    VfsCreateDir("/Devices/Storage/VFSystemDrive/Runtime/Services");   // Status and control files for running services
-    VfsCreateDir("/Devices/Storage/VFSystemDrive/Runtime/IPC");        // For sockets and other inter-sched communication
-    VfsCreateDir("/Devices/Storage/VFSystemDrive/Runtime/Mounts");     // Information on currently mounted filesystems
-}
-
-void nothing(void) {
-    while (1) MLFQYield();
-}
-
-void TestHandler(const char* args) {
-    (void)args;
-    MLFQCreateProcess("nothing", nothing);
+    extern void StackUsage(void);
+    StackUsage();
 }
 
 static void IsoCpHandler(const char* args) {
@@ -1240,8 +1176,7 @@ static const ShellCommand commands[] = {\
     {"size", SizeHandler},
     {"heapvallvl", KHeapValidationHandler},
     {"lscpu", LsCPUHandler},
-    {"mkfs", MkfsHandler},
-    {"test", TestHandler}, // internal uses
+    {"stacksize", StackSizeHandler},
     {"vfc", VFCompositorRequestInit}, // internal uses
     {"cp", CpHandler},
     {"mv", MvHandler},

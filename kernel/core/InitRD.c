@@ -9,13 +9,13 @@ extern uint32_t g_multiboot_info_addr;
 
 void InitRDLoad(void) {
     if (!g_multiboot_info_addr) {
-        PrintKernelWarning("[INITRD] No multiboot info available\n");
+        PrintKernelWarning("InitRD: No multiboot info available\n");
         return;
     }
 
-    PrintKernelF("[INITRD] Multiboot info at 0x%08X\n", g_multiboot_info_addr);
+    PrintKernelF("InitRD: Multiboot info at 0x%08X\n", g_multiboot_info_addr);
     uint32_t total_size = *(uint32_t*)g_multiboot_info_addr;
-    PrintKernelF("[INITRD] Total size: %u bytes\n", total_size);
+    PrintKernelF("InitRD: Total size: %u bytes\n", total_size);
     
     struct MultibootTag* tag = (struct MultibootTag*)(g_multiboot_info_addr + 8);
     
@@ -24,12 +24,12 @@ void InitRDLoad(void) {
             struct MultibootModuleTag* mod = (struct MultibootModuleTag*)tag;
             uint32_t mod_size = mod->mod_end - mod->mod_start;
             
-            PrintKernelF("[INITRD] Module: %s\n", mod->cmdline);
-            PrintKernelF("[INITRD] Start: 0x%08X, End: 0x%08X, Size: %u\n", 
+            PrintKernelF("InitRD: Module: %s\n", mod->cmdline);
+            PrintKernelF("InitRD: Start: 0x%08X, End: 0x%08X, Size: %u\n", 
                         mod->mod_start, mod->mod_end, mod_size);
             
             if (mod_size == 0 || mod_size > 16*1024*1024) {
-                PrintKernelF("[INITRD] Invalid module size, skipping\n");
+                PrintKernelF("InitRD: Invalid module size, skipping\n");
                 continue;
             }
             
@@ -38,11 +38,11 @@ void InitRDLoad(void) {
             
             // Validate data is readable
             if (mod_data[0] == 0 && mod_data[1] == 0 && mod_data[2] == 0) {
-                PrintKernelWarning("[INITRD] Module data appears to be zeroed\n");
+                PrintKernelWarning("InitRD: Module data appears to be zeroed\n");
             }
             
             // Debug: show first few bytes
-            PrintKernelF("[INITRD] First 16 bytes: ");
+            PrintKernelF("InitRD: First 16 bytes: ");
             for (int i = 0; i < 16 && i < mod_size; i++) {
                 PrintKernelF("%02X ", mod_data[i]);
             }
@@ -56,12 +56,12 @@ void InitRDLoad(void) {
                     break;
                 }
             }
-            PrintKernelF("[INITRD] Data type: %s\n", is_text ? "Text" : "Binary");
+            PrintKernelF("InitRD: Data type: %s\n", is_text ? "Text" : "Binary");
             
             if (VfsWriteFile(mod->cmdline, mod_data, mod_size) >= 0) {
-                PrintKernelF("[INITRD] Copied %s to VFS\n", mod->cmdline);
+                PrintKernelF("InitRD: Copied %s to VFS\n", mod->cmdline);
             } else {
-                PrintKernelF("[INITRD] Failed to copy %s\n", mod->cmdline);
+                PrintKernelF("InitRD: Failed to copy %s\n", mod->cmdline);
             }
         }
         tag = (struct MultibootTag*)((uint8_t*)tag + ((tag->size + 7) & ~7));

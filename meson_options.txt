@@ -1,2 +1,60 @@
-option('exclude_extra_objects', type : 'boolean', value : false, description : 'Exclude extra objects from the build') # MASSIVE effect!
-option('automatic_post', type : 'boolean', value : false, description : 'Perform automatic power on self-test after kernel initialization')
+# VoidFrame Kernel Build Options
+
+# Core build options
+option('exclude_extra_objects', 
+       type : 'boolean', 
+       value : false, 
+       description : 'Exclude extra objects from the build (MASSIVE effect!)')
+
+option('automatic_post', 
+       type : 'boolean', 
+       value : false, 
+       description : 'Perform automatic power on self-test after kernel initialization')
+
+# Debug options
+option('debug_symbols', 
+       type : 'boolean', 
+       value : false, 
+       description : 'Include debug symbols and enable debug mode')
+
+option('stack_protection', 
+       type : 'boolean', 
+       value : true, 
+       description : 'Enable stack protection features')
+
+# Feature toggles
+option('enable_vmware_svga', 
+       type : 'boolean', 
+       value : false, 
+       description : 'Enable VMware SVGA II driver')
+
+option('enable_cerberus_logging', 
+       type : 'boolean', 
+       value : false, 
+       description : 'Enable Cerberus VFS logging')
+
+option('enable_cerberus_reporting', 
+       type : 'boolean', 
+       value : false, 
+       description : 'Enable Cerberus threat reporting')
+
+option('enable_procinfo_cleanup', 
+       type : 'boolean', 
+       value : false, 
+       description : 'Enable automatic process info cleanup')
+
+option('enable_panic_override', 
+       type : 'boolean', 
+       value : false, 
+       description : 'Enable panic override functionality')
+
+# QEMU options
+option('qemu_memory', 
+       type : 'string', 
+       value : '4G', 
+       description : 'Amount of memory to allocate to QEMU')
+
+option('enable_kvm', 
+       type : 'boolean', 
+       value : true, 
+       description : 'Enable KVM acceleration in QEMU')

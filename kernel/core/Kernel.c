@@ -1,11 +1,8 @@
 // VoidFrame Kernel Entry File
 #include "Kernel.h"
-
 #include "APIC.h"
 #include "Compositor.h"
 #include "Console.h"
-#include "EXT/Ext2.h"
-#include "FAT/FAT1x.h"
 #include "Gdt.h"
 #include "ISA.h"
 #include "Ide.h"
@@ -37,6 +34,7 @@
 #include "stdint.h"
 #include "storage/AHCI.h"
 #include "xHCI/xHCI.h"
+#include "FileSystem.h"
 
 void KernelMainHigherHalf(void);
 #define KERNEL_STACK_SIZE (16 * 1024) // 16KB stack
@@ -663,53 +661,6 @@ static InitResultT PXS2(void) {
     PrintKernelSuccess("System: Shell initialized\n");
 #endif
 
-#ifdef VF_CONFIG_ENABLE_IDE
-    // Initialize IDE driver
-    PrintKernel("Info: Initializing IDE driver...\n");
-    const int ide_result = IdeInit();
-    if (ide_result == IDE_OK) {
-        PrintKernelSuccess("System: IDE driver initialized\n");
-
-        // Explicitly initialize FAT12 before VFS
-        PrintKernel("Info: Initializing FAT12...\n");
-        if (Fat1xInit(0) == 0) {
-            PrintKernelSuccess("System: FAT1x Driver initialized\n");
-        } else {
-            PrintKernelWarning("FAT1x initialization failed\n");
-        }
-
-        if (Ext2Init(0) == 0) {
-            PrintKernelSuccess("System: Ext2 Driver initialized\n");
-        } else {
-            PrintKernelWarning("Ext2 initialization failed\n");
-        }
-    } else {
-        PrintKernelWarning(" IDE initialization failed - no drives detected\n");
-        PrintKernelWarning(" Skipping FAT1x & EXT2 initialization\n");
-    }
-#endif
-
-    // Initialize ram filesystem
-    PrintKernel("Info: Initializing VFRFS...\n");
-    FsInit();
-    PrintKernelSuccess("System: VFRFS (VoidFrame RamFS) initialized\n");
-
-    // Initrd
-    MakeRoot();
-    PrintKernelSuccess("System: INITRD (Stage 1) initialized\n");
-
-    // Initialize VFS
-    PrintKernel("Info: Initializing VFS...\n");
-    VfsInit();
-    PrintKernelSuccess("System: VFS initialized\n");
-
-#ifdef VF_CONFIG_LOAD_MB_MODULES
-    // Load multiboot modules
-    PrintKernel("Info: Loading multiboot modules...\n");
-    InitRDLoad();
-    PrintKernelSuccess("System: Multiboot modules loaded\n");
-#endif
-
 #ifdef VF_CONFIG_ENFORCE_MEMORY_PROTECTION
     ValidateMemoryLayout();
     PrintKernel("Info: Checking huge page support...\n");
@@ -745,14 +696,6 @@ static InitResultT PXS2(void) {
     PrintKernel("Info: Initializing AHCI Driver...\n");
 #endif
 
-#ifdef VF_CONFIG_ENABLE_AHCI
-    if (AHCI_Init() == 0) {
-        PrintKernelSuccess("System: AHCI Driver initialized\n");
-    } else {
-        PrintKernelWarning("AHCI initialization failed\n");
-    }
-#endif
-
 #ifdef VF_CONFIG_ENABLE_VMWARE_SVGA_II
     if (SVGAII_DetectAndInitialize()) {
         g_svgaII_active = true;
@@ -774,6 +717,46 @@ static InitResultT PXS2(void) {
     PrintKernelSuccess("System: LPT Driver initialized\n");
 #endif
 
+    BlockDeviceInit();
+    FileSystemInit();
+
+#ifdef VF_CONFIG_ENABLE_IDE
+    // Initialize IDE driver
+    PrintKernel("Info: Initializing IDE driver...\n");
+    IdeInit();
+#endif
+
+#ifdef VF_CONFIG_ENABLE_AHCI
+    if (AHCI_Init() == 0) {
+        PrintKernelSuccess("System: AHCI Driver initialized\n");
+    } else {
+        PrintKernelWarning("AHCI initialization failed\n");
+    }
+#endif
+
+    // Initialize RFS
+    PrintKernel("Info: Initializing RFS...\n");
+    FsInit();
+    MakeRoot();
+    PrintKernelSuccess("System: RFS initialized\n");
+
+    // Initialize VFS
+    PrintKernel("Info: Initializing VFS...\n");
+    VfsInit();
+    PrintKernelSuccess("System: VFS initialized\n");
+
+    // Auto-mount filesystems after storage drivers are ready
+    PrintKernel("Info: Auto-mounting filesystems...\n");
+    FileSystemAutoMount();
+    PrintKernelSuccess("System: Filesystem auto-mount complete\n");
+
+#ifdef VF_CONFIG_LOAD_MB_MODULES
+    // Load multiboot modules
+    PrintKernel("Info: Loading multiboot modules...\n");
+    InitRDLoad();
+    PrintKernelSuccess("System: Multiboot modules loaded\n");
+#endif
+
 #ifdef VF_CONFIG_SCHED_MLFQ // Make calls to MLFQGetCurrentProcess() returns NULL for as long as possible before interrupts are enabled
     // Initialize Process Management
     PrintKernel("Info: Initializing MLFQ scheduler...\n");
@@ -784,6 +767,24 @@ static InitResultT PXS2(void) {
     return INIT_SUCCESS;
 }
 
+void A20Test(void) {
+    volatile uint32_t *low = (uint32_t*)0x000000;
+    volatile uint32_t *high = (uint32_t*)0x100000;
+
+    *low = 0x12345678;
+    *high = 0x87654321;
+
+    if (*low == *high) PrintKernelWarning("A20 is disabled - memory is contiguous\n");
+    else PrintKernelSuccess("A20 is enabled - memory is not contiguous\n");
+}
+
+void StackUsage(void) {
+    uintptr_t current_sp;
+    __asm__ __volatile__("mov %%rsp, %0" : "=r"(current_sp));
+    size_t used = (uintptr_t)kernel_stack + KERNEL_STACK_SIZE - current_sp;
+    PrintKernelF("Stack used: %lu/%d bytes\n", used, KERNEL_STACK_SIZE);
+}
+
 asmlinkage void KernelMain(const uint32_t magic, const uint32_t info) {
     if (magic != MULTIBOOT2_BOOTLOADER_MAGIC) {
         ClearScreen();
@@ -791,6 +792,8 @@ asmlinkage void KernelMain(const uint32_t magic, const uint32_t info) {
         PrintKernelHex(magic);
         PANIC("Unrecognized Multiboot2 magic.");
     }
+
+    A20Test();
 
     console.buffer = (volatile uint16_t*)VGA_BUFFER_ADDR;
 
@@ -809,6 +812,7 @@ void KernelMainHigherHalf(void) {
 
     // Initialize core systems
     PXS2();
+    StackUsage();
 
 #ifdef VF_CONFIG_SNOOZE_ON_BOOT
     ClearScreen();
