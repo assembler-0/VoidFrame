@@ -12,6 +12,7 @@ void TSCInit(void) {
     
     if (APIC_HZ == 0) {
         tsc_freq_hz = 3000000000ULL; // Fallback: 3GHz
+        tsc_calibrated = true; // no-op fix
         PrintKernelWarning("TSC: Using fallback frequency\n");
         return;
     }
@@ -19,7 +20,7 @@ void TSCInit(void) {
     // Use 10ms calibration period
     uint64_t start_tsc = rdtsc();
     uint32_t calibration_ticks = s_apic_bus_freq / 100; // 10 ms worth of APIC ticks
-    
+
     // Wait using APIC timer current count
     extern volatile uint32_t* s_lapic_base;
     uint32_t target = s_lapic_base[0x390/4] - calibration_ticks;
@@ -41,12 +42,15 @@ void delay_us(uint32_t microseconds) {
     while ((rdtsc() - start) < ticks);
 }
 
-void delay(const uint32_t milliseconds) {
-    delay_us(milliseconds * 1000);
-}
 
+void delay(uint32_t milliseconds) {
+    uint64_t us = (uint64_t)milliseconds * 1000ULL;
+    if (us > UINT32_MAX) us = UINT32_MAX;  // clamp to API
+    delay_us((uint32_t)us);
+}
 void delay_s(uint32_t seconds) {
-    delay(seconds * 1000);
+    if (seconds > UINT32_MAX / 1000U) seconds = UINT32_MAX / 1000U;
+    delay(seconds * 1000U);
 }
 
 uint64_t TSCGetFrequency(void) {

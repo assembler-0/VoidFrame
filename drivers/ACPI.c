@@ -12,7 +12,10 @@ static bool g_acpi_initialized = false;
 // Find RSDP in BIOS memory areas
 static ACPIRSDPv1* FindRSDP(void) {
     // Search in EBDA (Extended BIOS Data Area)
-    uint16_t ebda = *(uint16_t*)0x40E;
+    uint16_t ebda = 0;
+    if (VMemGetPhysAddr(0x40E) != 0) {
+        ebda = *(uint16_t*)0x40E;
+    }
     if (ebda) {
         uint8_t* ebda_ptr = (uint8_t*)(ebda << 4);
         for (uint32_t i = 0; i < 1024; i += 16) {
@@ -58,6 +61,7 @@ static void* MapACPITable(uint32_t phys_addr, uint32_t size) {
     }
     
     if (VMemMapMMIO((uint64_t)virt_addr, aligned_addr, aligned_size, PAGE_WRITABLE | PAGE_NOCACHE) != VMEM_SUCCESS) {
+        VMemFree(virt_addr, aligned_size);
         return NULL;
     }
     
@@ -83,27 +87,31 @@ bool ACPIInit(void) {
         PrintKernelError("ACPI: Invalid RSDP checksum\n");
         return false;
     }
-    
-    // Map RSDT
-    ACPIRSDT* rsdt = (ACPIRSDT*)MapACPITable(rsdp->rsdt_address, sizeof(ACPISDTHeader));
+
+    ACPIRSDT* rsdt = (ACPIRSDT*)MapACPITable(rsdp->rsdt_address,
+                                             sizeof(ACPISDTHeader));
     if (!rsdt) {
         PrintKernelError("ACPI: Failed to map RSDT\n");
         return false;
     }
-    
-    // Validate RSDT
+    // Validate RSDT signature
     if (FastMemcmp(rsdt->header.signature, ACPI_RSDT_SIG, 4) != 0) {
         PrintKernelError("ACPI: Invalid RSDT signature\n");
+        // Clean up the initial header‐only mapping
+        VMemUnmap((uint64_t)rsdt - (rsdp->rsdt_address & 0xFFF),
+                  ((sizeof(ACPISDTHeader) + (rsdp->rsdt_address & 0xFFF) + 0xFFF)
+                   & ~0xFFF));
         return false;
     }
-    
-    // Remap RSDT with correct size
+    // Remap with the full table length
     uint32_t rsdt_size = rsdt->header.length;
+    // Remember the old header mapping so we can free it afterward
+    void*    old_rsdt   = rsdt;
+    uint32_t old_offset = rsdp->rsdt_address & 0xFFF;
     rsdt = (ACPIRSDT*)MapACPITable(rsdp->rsdt_address, rsdt_size);
-    if (!rsdt) {
-        PrintKernelError("ACPI: Failed to remap RSDT\n");
-        return false;
-    }
+    // Now unmap the temporary header‐only region
+    VMemUnmap((uint64_t)old_rsdt - old_offset,
+              ((sizeof(ACPISDTHeader) + old_offset + 0xFFF) & ~0xFFF));
     
     PrintKernel("ACPI: RSDT mapped, length=");
     PrintKernelInt(rsdt_size);
@@ -112,19 +120,29 @@ bool ACPIInit(void) {
     // Find FADT
     uint32_t entries = (rsdt_size - sizeof(ACPISDTHeader)) / 4;
     for (uint32_t i = 0; i < entries; i++) {
-        ACPISDTHeader* header = (ACPISDTHeader*)MapACPITable(rsdt->table_pointers[i], sizeof(ACPISDTHeader));
+        ACPISDTHeader* header = (ACPISDTHeader*)MapACPITable(
+            rsdt->table_pointers[i],
+            sizeof(ACPISDTHeader)
+        );
         if (!header) continue;
-        
-        if (FastMemcmp(header->signature, ACPI_FADT_SIG, 4) == 0) {
+
+        bool is_fadt = FastMemcmp(header->signature, ACPI_FADT_SIG, 4) == 0;
+        uint32_t table_length = header->length;
+        uint32_t header_offset = rsdt->table_pointers[i] & 0xFFF;
+
+        // Unmap the header mapping now that we've inspected it
+        VMemUnmap(
+            (uint64_t)header - header_offset,
+            ( (sizeof(ACPISDTHeader) + header_offset + 0xFFF) & ~0xFFF )
+        );
+
+        if (is_fadt) {
             PrintKernel("ACPI: Found FADT\n");
-            g_fadt = (ACPIFADT*)MapACPITable(rsdt->table_pointers[i], header->length);
-            if (g_fadt && ValidateChecksum(g_fadt, g_fadt->header.length)) {
-                PrintKernel("ACPI: FADT validated, PM1A_CNT=0x");
-                PrintKernelHex(g_fadt->pm1a_control_block);
-                PrintKernel("\n");
-                g_acpi_initialized = true;
-                return true;
-            }
+            g_fadt = (ACPIFADT*)MapACPITable(
+                rsdt->table_pointers[i],
+                table_length
+            );
+            break;
         }
     }
     
@@ -160,7 +178,7 @@ void ACPIShutdown(void) {
         outw(g_fadt->pm1a_control_block, shutdown_values[i]);
         
         // Wait a bit
-        for (volatile int j = 0; j < 1000000; j++);
+        delay(10);
     }
     
     // Fallback methods
@@ -181,6 +199,10 @@ void ACPIReboot(void) {
 
     PrintKernel("ACPI: falling back to triple faulting...\n");
 
-    // Fallback: triple fault
-    __asm__ volatile("cli; hlt");
+    struct {
+        uint16_t limit;
+        uint64_t base;
+    } __attribute__((packed)) invalid_idt = { 0, 0 };
+    __asm__ volatile("lidt %0; int $0x03" :: "m"(invalid_idt));
+    __builtin_unreachable();
 }

@@ -634,7 +634,13 @@ static InitResultT PXS2(void) {
 
     // Initialize APIC
     PrintKernel("Info: Installing APIC...\n");
-    if (!ApicInstall()) PANIC("Failed to initialize APIC");
+    if (!ApicInstall())
+#ifndef VF_CONFIG_PANIC_OVERRIDE
+        PANIC("Failed to initialize APIC");
+#else
+        PrintKernelError("Failed to initialize APIC\n");
+#endif
+
     ApicTimerInstall(250);
     PrintKernelSuccess("System: APIC Installed\n");
     
