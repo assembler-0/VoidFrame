@@ -2,6 +2,7 @@
 
 #include "../../drivers/ethernet/interface/Icmp.h"
 #include "6502/6502.h"
+#include "ACPI.h"
 #include "APIC.h"
 #include "Cerberus.h"
 #include "Console.h"
@@ -182,6 +183,7 @@ static const HelpEntry system_cmds[] = {
     {"stacksize", "Show stack usage"},
     {"lscpu", "List CPU features"},
     {"snoozer <on/off>", "Snooze messages from PrintKernel"},
+    {"acpi sd/rb", "Shutdown (sd) or reboot (rb) via ACPI"},
 };
 
 static const HelpEntry file_cmds[] = {
@@ -1138,6 +1140,25 @@ static void SnoozeHandler(const char* args) {
     }
     KernelFree(status);
 }
+
+static void ACPIHandler(const char* args) {
+    char* status = GetArg(args, 1);
+    if (!status) {
+        PrintKernel("Usage: acpi sd/rb\n");
+        return;
+    }
+    if (FastStrCmp(status, "sd") == 0) {
+        ACPIShutdown();
+    } else if (FastStrCmp(status, "rb") == 0) {
+        ACPIReboot();
+    } else {
+        PrintKernel("Usage: acpi sd/rb\n");
+        KernelFree(status);
+        return;
+    }
+    KernelFree(status);
+}
+
 static const ShellCommand commands[] = {\
     {"help", HelpHandler},
     {"ps", PSHandler},
@@ -1188,6 +1209,7 @@ static const ShellCommand commands[] = {\
     {"post", POSTHandler},
     {"ping", PingHandler},
     {"snooze", SnoozeHandler},
+    {"acpi", ACPIHandler},
 };
 
 void ExecuteCommand(const char* cmd) {

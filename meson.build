@@ -202,6 +202,7 @@ fs_sources = files([
 driver_sources = files([
                            'drivers/APIC.c',
                            'drivers/TSC.c',
+                           'drivers/ACPI.c',
                            'drivers/Serial.c',
                            'drivers/PS2.c',
                            'drivers/Ide.c',
@@ -407,7 +408,7 @@ iso = custom_target(
 run_target('run',
            command : [
                qemu_system_x86_64,
-               '-cpu', 'max',
+               '-cpu', 'host',
                '-vga', 'vmware',
                '-enable-kvm',
                '-cdrom', iso.full_path(),
