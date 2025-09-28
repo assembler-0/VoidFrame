@@ -129,3 +129,64 @@ void RtcSetTime(const RtcDateTime *dateTime) {
     Rtc_WriteRegister(RTC_STATUS_B, statusB);
     Rtc_WriteRegister(RTC_CMOS_ADDRESS, RTC_STATUS_B); // Re-enable NMI
 }
+
+// Days in each month (non-leap year)
+static const uint16_t days_in_month[] = {31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31};
+
+static bool is_leap_year(uint16_t year) {
+    return (year % 4 == 0 && year % 100 != 0) || (year % 400 == 0);
+}
+
+uint64_t RtcGetUnixTime(void) {
+    RtcDateTime dt;
+    RtcReadTime(&dt);
+    
+    // Calculate days since Unix epoch (1970-01-01)
+    uint64_t days = 0;
+    
+    // Add days for complete years
+    for (uint16_t y = 1970; y < dt.year; y++) {
+        days += is_leap_year(y) ? 366 : 365;
+    }
+    
+    // Add days for complete months in current year
+    for (uint8_t m = 1; m < dt.month; m++) {
+        days += days_in_month[m - 1];
+        if (m == 2 && is_leap_year(dt.year)) days++; // February in leap year
+    }
+    
+    // Add remaining days
+    days += dt.day - 1;
+    
+    // Convert to seconds and add time
+    return days * 86400 + dt.hour * 3600 + dt.minute * 60 + dt.second;
+}
+
+void RtcSetUnixTime(uint64_t unix_time) {
+    RtcDateTime dt;
+    
+    // Extract time components
+    dt.second = unix_time % 60;
+    unix_time /= 60;
+    dt.minute = unix_time % 60;
+    unix_time /= 60;
+    dt.hour = unix_time % 24;
+    uint64_t days = unix_time / 24;
+    
+    // Calculate year
+    dt.year = 1970;
+    while (days >= (is_leap_year(dt.year) ? 366 : 365)) {
+        days -= is_leap_year(dt.year) ? 366 : 365;
+        dt.year++;
+    }
+    
+    // Calculate month and day
+    dt.month = 1;
+    while (days >= days_in_month[dt.month - 1] + (dt.month == 2 && is_leap_year(dt.year) ? 1 : 0)) {
+        days -= days_in_month[dt.month - 1] + (dt.month == 2 && is_leap_year(dt.year) ? 1 : 0);
+        dt.month++;
+    }
+    dt.day = days + 1;
+    
+    RtcSetTime(&dt);
+}

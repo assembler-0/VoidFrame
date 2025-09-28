@@ -157,6 +157,7 @@ ninja runmin
     - [x] LAPIC
     - [x] IOAPIC
     - [x] RTC
+    - [x] TSC (usable delay(), finally!)
 - Generic
     - [x] PCI
     - [x] ISA

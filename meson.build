@@ -201,6 +201,7 @@ fs_sources = files([
 # Driver sources
 driver_sources = files([
                            'drivers/APIC.c',
+                           'drivers/TSC.c',
                            'drivers/Serial.c',
                            'drivers/PS2.c',
                            'drivers/Ide.c',

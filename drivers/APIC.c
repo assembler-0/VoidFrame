@@ -40,12 +40,12 @@
 #define IOAPIC_DEFAULT_PHYS_ADDR        0xFEC00000
 #define LAPIC_LVT_TIMER_SCALE_FACTOR    1
 // --- Global Variables ---
-static volatile uint32_t* s_lapic_base = NULL;
+volatile uint32_t* s_lapic_base = NULL;
 static volatile uint32_t* s_ioapic_base = NULL;
 static uint32_t s_apic_timer_freq_hz = 1000; // Default to 1KHz
 volatile uint32_t s_apic_timer_ticks = 0;
 volatile uint32_t APIC_HZ = 250;
-static uint32_t s_apic_bus_freq = 0; // Cached bus frequency
+uint32_t s_apic_bus_freq = 0; // Cached bus frequency, non static for TSC.c access
 static bool s_calibrated = false; // Calibration flag
 
 // --- Forward Declarations ---
@@ -226,7 +226,7 @@ void ApicTimerSetFrequency(uint32_t frequency_hz) {
             uint32_t ticks_per_10ms = start_count - end_count;
             s_apic_bus_freq = ticks_per_10ms * 100;
             s_calibrated = true;
-            PrintKernelF("APIC: Calibrated - ticks/10ms=%u, bus_freq=%u Hz\n", ticks_per_10ms, s_apic_bus_freq);
+            // PrintKernelF("APIC: Calibrated - ticks/10ms=%u, bus_freq=%u Hz\n", ticks_per_10ms, s_apic_bus_freq);
         } else {
             s_apic_bus_freq = 100000000; // Fallback: 100MHz
             PrintKernelWarning("APIC: Calibration timeout, using fallback frequency\n");
@@ -234,7 +234,7 @@ void ApicTimerSetFrequency(uint32_t frequency_hz) {
     }
     
     uint32_t initial_count = s_apic_bus_freq / frequency_hz;
-    PrintKernelF("APIC: Setting timer - freq=%u Hz, bus_freq=%u, initial_count=%u\n", frequency_hz, s_apic_bus_freq, initial_count);
+    // PrintKernelF("APIC: Setting timer - freq=%u Hz, bus_freq=%u, initial_count=%u\n", frequency_hz, s_apic_bus_freq, initial_count);
     lapic_write(LAPIC_LVT_TIMER, 32 | (0b01 << 17)); // Periodic mode
     lapic_write(LAPIC_TIMER_INIT_COUNT, initial_count);
 }

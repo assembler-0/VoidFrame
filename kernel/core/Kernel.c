@@ -35,6 +35,7 @@
 #include "storage/AHCI.h"
 #include "xHCI/xHCI.h"
 #include "FileSystem.h"
+#include "TSC.h"
 
 void KernelMainHigherHalf(void);
 #define KERNEL_STACK_SIZE (16 * 1024) // 16KB stack
@@ -635,6 +636,10 @@ static InitResultT PXS2(void) {
     if (!ApicInstall()) PANIC("Failed to initialize APIC");
     ApicTimerInstall(250);
     PrintKernelSuccess("System: APIC Installed\n");
+    
+    // Initialize TSC for precise delays
+    TSCInit();
+    PrintKernelSuccess("System: TSC initialized\n");
 
 #ifdef VF_CONFIG_ENFORCE_MEMORY_PROTECTION
     PrintKernel("Info: Final memory health check...\n");

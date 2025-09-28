@@ -20,4 +20,8 @@ void RtcSetTime(const rtc_time_t *dateTime);
 uint8_t Rtc_BinaryToBcd(uint8_t binary);
 int Rtc_BcdToBinary(uint8_t bcd);
 
+// Unix timestamp functions
+uint64_t RtcGetUnixTime(void);
+void RtcSetUnixTime(uint64_t unix_time);
+
 #endif // VOIDFRAME_RTC_H

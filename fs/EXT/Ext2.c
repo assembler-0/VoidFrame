@@ -8,6 +8,7 @@
 #include "../../mm/MemOps.h"
 #include "../VFS.h"
 #include "FileSystem.h"
+#include "Rtc.h"
 
 #define EXT2_SUPERBLOCK_OFFSET 1024
 #define EXT2_MAGIC 0xEF53
@@ -1047,7 +1048,7 @@ int Ext2Delete(const char* path) {
     // TODO: Handle indirect blocks
 
     // Mark inode as deleted
-    inode.i_dtime = 0; // TODO: Get current time
+    inode.i_dtime = RtcGetUnixTime();
     inode.i_links_count = 0;
     if (Ext2WriteInode(inode_num, &inode) != 0) {
         WriteUnlock(&volume.lock);
