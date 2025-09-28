@@ -11,6 +11,8 @@
 #define FIS_TYPE_REG_H2D    0x27
 #define ATA_CMD_READ_DMA_EX 0x25
 #define ATA_CMD_WRITE_DMA_EX 0x35
+#define ATA_CMD_READ_SECTORS 0x20
+#define ATA_CMD_WRITE_SECTORS 0x30
 #define ATA_CMD_IDENTIFY    0xEC
 
 static AHCIController g_ahci_controller = {0};
@@ -48,7 +50,7 @@ static int AHCI_StopPort(int port) {
     while (timeout-- > 0) {
         cmd = AHCI_ReadPortReg(port, AHCI_PORT_CMD);
         if (!(cmd & AHCI_PORT_CMD_CR)) break;
-        delay(500);
+        delay_us(500);
     }
     
     // Clear FRE bit
@@ -61,7 +63,7 @@ static int AHCI_StopPort(int port) {
     while (timeout-- > 0) {
         cmd = AHCI_ReadPortReg(port, AHCI_PORT_CMD);
         if (!(cmd & AHCI_PORT_CMD_FR)) break;
-        delay(500);
+        delay_us(500);
     }
     
     return (timeout > 0) ? 0 : -1;
@@ -160,7 +162,7 @@ static int AHCI_SendCommand(int port, uint8_t command, uint64_t lba, uint16_t co
     while (timeout-- > 0) {
         uint32_t tfd = AHCI_ReadPortReg(port, AHCI_PORT_TFD);
         if (!(tfd & 0x88)) break; // BSY and DRQ clear
-        delay(500);
+        delay_us(500);
     }
     if (timeout <= 0) return -1;
     
@@ -201,14 +203,14 @@ static int AHCI_SendCommand(int port, uint8_t command, uint64_t lba, uint16_t co
     while (timeout-- > 0) {
         uint32_t ci = AHCI_ReadPortReg(port, AHCI_PORT_CI);
         if (!(ci & 1)) break;
-        delay(50);
+        delay_us(50);
     }
     
     if (timeout <= 0) {
         PrintKernel("AHCI: Command timeout\n");
         return -1;
     }
-    
+
     // Check for errors
     uint32_t is = AHCI_ReadPortReg(port, AHCI_PORT_IS);
     if (is & 0x40000000) { // Task file error
@@ -256,6 +258,24 @@ static uint64_t AHCI_GetDriveCapacity(int port) {
     }
     
     return total_sectors;
+}
+
+int AHCI_ReadSectors(int port, uint64_t lba, uint16_t count, void* buffer) {
+    if (!g_ahci_controller.initialized || !g_ahci_controller.ports[port].active) {
+        return -1;
+    }
+    
+    // Use DMA-based READ for AHCI
+    return AHCI_SendCommand(port, ATA_CMD_READ_DMA_EX, lba, count, buffer, 0);
+}
+
+int AHCI_WriteSectors(int port, uint64_t lba, uint16_t count, const void* buffer) {
+    if (!g_ahci_controller.initialized || !g_ahci_controller.ports[port].active) {
+        return -1;
+    }
+    
+    // Use DMA-based WRITE for AHCI
+    return AHCI_SendCommand(port, ATA_CMD_WRITE_DMA_EX, lba, count, (void*)buffer, 1);
 }
 
 int AHCI_Init(void) {
@@ -401,7 +421,7 @@ int AHCI_Init(void) {
                 512,
                 total_sectors,
                 dev_name,
-                (void*)(uintptr_t)i, // Port number as driver data
+                (void*)(uintptr_t)(i + 1), // Port number + 1 to avoid NULL
                 (ReadBlocksFunc)AHCI_ReadBlocksWrapper,
                 (WriteBlocksFunc)AHCI_WriteBlocksWrapper
             );
@@ -420,38 +440,38 @@ int AHCI_Init(void) {
     return 0;
 }
 
-int AHCI_ReadSectors(int port, uint64_t lba, uint16_t count, void* buffer) {
-    if (!g_ahci_controller.initialized || !g_ahci_controller.ports[port].active) {
-        return -1;
-    }
-    
-    return AHCI_SendCommand(port, ATA_CMD_READ_DMA_EX, lba, count, buffer, 0);
-}
-
-int AHCI_WriteSectors(int port, uint64_t lba, uint16_t count, const void* buffer) {
-    if (!g_ahci_controller.initialized || !g_ahci_controller.ports[port].active) {
-        return -1;
-    }
-    
-    return AHCI_SendCommand(port, ATA_CMD_WRITE_DMA_EX, lba, count, (void*)buffer, 1);
-}
-
 const AHCIController* AHCI_GetController(void) {
     return g_ahci_controller.initialized ? &g_ahci_controller : NULL;
 }
 
 // Wrapper functions for BlockDevice integration
 static int AHCI_ReadBlocksWrapper(struct BlockDevice* device, uint64_t start_lba, uint32_t count, void* buffer) {
-    if (!device || !device->driver_data) return -1;
-    int port = (uintptr_t)device->driver_data;
+    if (!device || !device->driver_data) {
+        PrintKernel("AHCI: Invalid device or driver_data\n");
+        return -1;
+    }
+    int port = (uintptr_t)device->driver_data - 1;
     
-    // AHCI_ReadSectors expects sectors, not blocks, but they're the same for 512-byte sectors
-    return AHCI_ReadSectors(port, start_lba, count, buffer);
+    PrintKernel("AHCI: Reading from port ");
+    PrintKernelInt(port);
+    PrintKernel(", LBA ");
+    PrintKernelInt(start_lba);
+    PrintKernel(", count ");
+    PrintKernelInt(count);
+    PrintKernel("\n");
+    
+    int result = AHCI_ReadSectors(port, start_lba, count, buffer);
+    if (result != 0) {
+        PrintKernel("AHCI: Read failed with error ");
+        PrintKernelInt(result);
+        PrintKernel("\n");
+    }
+    return result;
 }
 
 static int AHCI_WriteBlocksWrapper(struct BlockDevice* device, uint64_t start_lba, uint32_t count, const void* buffer) {
     if (!device || !device->driver_data) return -1;
-    int port = (uintptr_t)device->driver_data;
+    int port = (uintptr_t)device->driver_data - 1;
     
     // AHCI_WriteSectors expects sectors, not blocks, but they're the same for 512-byte sectors
     return AHCI_WriteSectors(port, start_lba, count, buffer);

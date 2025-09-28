@@ -502,12 +502,7 @@ static void CdHandler(const char * args) {
         char new_path[256];
         ResolvePath(dir, new_path, 256);
 
-        if (VfsIsDir(new_path)) {
-            FastMemcpy(current_dir, new_path, 256);
-            PrintKernel("VFS: DIRECTORY SWITCHED TO ");
-            PrintKernel(current_dir);
-            PrintKernel("\n");
-        } else {
+        if (!VfsIsDir(new_path)) {
             PrintKernel("cd: no such directory: ");
             PrintKernel(new_path);
             PrintKernel("\n");
