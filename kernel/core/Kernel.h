@@ -6,7 +6,7 @@
 # if defined(__i386__) && (defined(__GNUC__) || defined(__clang__))
 #  define asmlinkage __attribute__((regparm(0)))
 # else
-#  define asmlinkage
+#  define asmlinkage extern
 # endif
 #endif
 

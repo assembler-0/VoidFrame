@@ -2,6 +2,8 @@
 
 #include <stdint.h>
 
+#include "BlockDevice.h"
+
 // IDE Controller Ports
 #define IDE_PRIMARY_BASE    0x1F0
 #define IDE_SECONDARY_BASE  0x170
@@ -59,8 +61,8 @@ typedef struct {
 // Core Functions
 int IdeInit(void);
 int IdeIsInitialized(void);
-int IdeReadSector(uint8_t drive, uint32_t lba, void* buffer);
-int IdeWriteSector(uint8_t drive, uint32_t lba, const uint8_t* buffer);
+int IdeReadBlocks(BlockDevice* device, uint64_t start_lba, uint32_t count, void* buffer);
+int IdeWriteBlocks(BlockDevice* device, uint64_t start_lba, uint32_t count, const void* buffer);
 int IdeGetDriveInfo(uint8_t drive, char* model_out);
 int IdeReadLBA2048(uint8_t drive, uint32_t lba, void* buffer);
 int IdeIsAtapi(uint8_t drive);

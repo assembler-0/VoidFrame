@@ -1,21 +1,19 @@
 #pragma once
+#include "BlockDevice.h"
+#include "FileSystem.h"
 #include "stdbool.h"
 #include "stdint.h"
+struct BlockDevice;
+struct BlockDevice;
+struct FileSystemDriver;
 
 // VFS Mount Points
 #define VFS_MAX_MOUNTS 8
 
-typedef enum {
-    VFS_RAMFS = 0,
-    VFS_FAT12 = 1,
-    VFS_FAT16 = 2,
-    VFS_EXT2 = 3
-} VfsType;
-
 typedef struct {
     char mount_point[64];
-    VfsType type;
-    uint8_t drive;  // For disk-based FS
+    struct BlockDevice* device;
+    struct FileSystemDriver* fs_driver;
     int active;
 } VfsMountStruct;
 
@@ -56,7 +54,7 @@ static const char * RuntimeMounts = "/Runtime/Mounts";
 
 // VFS Functions
 int VfsInit(void);
-int VfsMount(const char* path, VfsType type, uint8_t drive);
+int VfsMount(const char* path, struct BlockDevice* device, struct FileSystemDriver* fs_driver);
 int VfsReadFile(const char* path, void* buffer, uint32_t max_size);
 int VfsWriteFile(const char* path, const void* buffer, uint32_t size);
 int VfsListDir(const char* path);

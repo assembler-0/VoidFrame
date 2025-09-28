@@ -1,5 +1,8 @@
 #pragma once
+#include "BlockDevice.h"
 #include "stdint.h"
+
+#include "BlockDevice.h"
 
 // Minimal EXT2 data structures
 
@@ -97,7 +100,8 @@ typedef struct {
 } __attribute__((packed)) Ext2DirEntry;
 
 // Function prototypes for VFS integration
-int Ext2Init(uint8_t drive);
+int Ext2Mount(BlockDevice* device, const char* mount_point);
+int Ext2Detect(BlockDevice* device);
 int Ext2ReadFile(const char* path, void* buffer, uint32_t max_size);
 int Ext2WriteFile(const char* path, const void* buffer, uint32_t size);
 int Ext2ListDir(const char* path);

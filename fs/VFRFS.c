@@ -105,7 +105,8 @@ FsNode* FsCreateNode(const char* name, FsNodeType type, FsNode* parent) {
     FsNode* node = AllocNode();
     if (!node) return NULL;
 
-    strncpy(node->name, name, MAX_FILENAME);
+    FastStrCopy(node->name, name, MAX_FILENAME - 1);
+    node->name[MAX_FILENAME - 1] = '\0';
     node->type = type;
     node->parent = parent;
     node->created_time = GetCurrentTime();
@@ -405,7 +406,8 @@ static FsNode* FsFindParent(const char* path, char* child_name_out) {
     // Extract child name
     const char* name_start = path + last_slash + 1;
     if (*name_start == '\0') return NULL; // Path ends in a slash like /a/b/
-    strncpy(child_name_out, name_start, MAX_FILENAME);
+    FastStrCopy(child_name_out, name_start, MAX_FILENAME - 1);
+    child_name_out[MAX_FILENAME - 1] = '\0';
 
     // Extract parent path
     char parent_path[MAX_PATH];
@@ -433,7 +435,6 @@ int FsListDir(const char* path) {
 
     FsNode* child = dir_node->children;
     if (!child) {
-        PrintKernel("\n");
         return 0;
     }
 

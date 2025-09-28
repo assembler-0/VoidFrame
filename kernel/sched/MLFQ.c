@@ -1728,7 +1728,9 @@ int MLFQSchedInit(void) {
     idle_proc->scheduler_node = NULL;
     idle_proc->creation_time = MLFQGetSystemTicks();
     FormatA(idle_proc->ProcessRuntimePath, sizeof(idle_proc->ProcessRuntimePath), "%s/%d", RuntimeServices, idle_proc->pid);
+#ifdef VF_CONFIG_PROCINFO_CREATE_DEFAULT
     if (VfsCreateDir(idle_proc->ProcessRuntimePath) != 0) PANIC("Failed to create ProcINFO directory");
+#endif
     // Securely initialize the token for the Idle Process
     MLFQSecurityToken* token = &idle_proc->token;
     token->magic = SECURITY_MAGIC;

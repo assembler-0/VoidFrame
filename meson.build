@@ -58,6 +58,7 @@ asm_flags = ['-f', 'elf64']
 
 # Include directories
 inc_dirs = [
+    src_root,
     src_root + '/include',
     src_root + '/kernel/atomic',
     src_root + '/kernel/core',
@@ -141,6 +142,9 @@ c_sources = [
     src_root + '/fs/EXT/Ext2.c',
     src_root + '/fs/Iso9660.c',
     src_root + '/fs/VFS.c',
+    src_root + '/fs/BlockDevice.c',
+    src_root + '/fs/FileSystem.c',
+    src_root + '/fs/MBR.c',
     src_root + '/drivers/APIC.c',
     src_root + '/drivers/Serial.c',
     src_root + '/drivers/PS2.c',
