@@ -30,7 +30,7 @@ It would be amazing if you could contribute to this project!
 
 ## Prerequisites
 
-- meson >= 1.0.0
+- meson >= 1.4.0
 - ninja >= 1.11
 - clang >= 18.0.0 (or any C-compliant compiler)
 - nasm >= 2.16
@@ -45,7 +45,6 @@ It would be amazing if you could contribute to this project!
 ```bash
 git clone https://github.com/assembler-0/VoidFrame.git
 cd VoidFrame
-python scripts/vfconfig.py
 meson setup build
 cd build
 ninja

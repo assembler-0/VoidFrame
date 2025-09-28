@@ -29,7 +29,7 @@ jobs:
             qemu-system-x86 \
             mtools \
             lld \
-            llvm-objdump \
+            llvm \
 
       - name: Compile & Link
         run: |

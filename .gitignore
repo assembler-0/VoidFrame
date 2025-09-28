@@ -1,4 +1,4 @@
-*.krnl
+*.krnlV
 isodir
 *.iso
 .idea
@@ -10,3 +10,4 @@ target
 .venv
 *cache*
 .amazonq
+*backup
