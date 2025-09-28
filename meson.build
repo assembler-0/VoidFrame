@@ -10,8 +10,9 @@ project('voidframe', 'c',
 
 clang = find_program('clang', required : true)
 clangpp = find_program('clang++', required : true)
-ld = find_program('ld', required : true)
+lld = find_program('ld.lld', required : true)
 nasm = find_program('nasm', required : true)
+llvm_objdump = find_program('llvm-objdump')
 grub_mkrescue = find_program('grub-mkrescue')
 qemu_img  = find_program('qemu-img')
 mkfs_fat  = find_program('mkfs.fat')
@@ -280,7 +281,7 @@ endif
 kernel = custom_target('voidframe.krnl',
                        input : obj_to_link,
                        output : 'voidframe.krnl',
-                       command : [ld.full_path(), '-T', meson.current_source_dir() + '/linker.ld', '-melf_x86_64', '--no-warn-rwx-segments', '-o', '@OUTPUT@'] + ['@INPUT@'],
+                       command : [lld.full_path(), '-T', meson.current_source_dir() + '/linker.ld', '-melf_x86_64', '-o', '@OUTPUT@'] + ['@INPUT@'],
                        build_by_default : true
 )
 
@@ -360,5 +361,12 @@ run_target('extra-img',
               mkfs_fat.full_path() + ' -F 16 VirtioDisk.img' + ' && ' +
               qemu_img.full_path() + ' create -f raw SataDisk.img 128M' + ' && ' +
               mkfs_fat.full_path() + ' -F 16 SataDisk.img'
+    ]
+)
+
+run_target('dump',
+    command: ['sh', '-c',
+              llvm_objdump.full_path() + ' -d ' + meson.current_build_dir() + '/voidframe.krnl > voidframe.dump' + ' && ' +
+              llvm_objdump.full_path() + ' -t ' + meson.current_build_dir() + '/voidframe.krnl > voidframe.sym'
     ]
 )

@@ -72,7 +72,7 @@ void ParseMBR(BlockDevice* device) {
         
         if (p->type != 0 && p->num_sectors > 0) {
             char part_name[32];
-            FormatS(part_name, sizeof(part_name), "%s-p%d", device->name, i + 1);
+            FormatA(part_name, sizeof(part_name), "%s-p%d", device->name, i + 1);
 
             PrintKernel("MBR: Registering partition ");
             PrintKernel(part_name);

@@ -734,6 +734,12 @@ static InitResultT PXS2(void) {
     }
 #endif
 
+    // Initialize RFS
+    PrintKernel("Info: Initializing RFS...\n");
+    FsInit();
+    MakeRoot();
+    PrintKernelSuccess("System: RFS initialized\n");
+
     // Initialize VFS
     PrintKernel("Info: Initializing VFS...\n");
     VfsInit();
@@ -743,12 +749,6 @@ static InitResultT PXS2(void) {
     PrintKernel("Info: Auto-mounting filesystems...\n");
     FileSystemAutoMount();
     PrintKernelSuccess("System: Filesystem auto-mount complete\n");
-
-    // Initialize RFS
-    PrintKernel("Info: Initializing RFS...\n");
-    FsInit();
-    MakeRoot();
-    PrintKernelSuccess("System: RFS initialized\n");
 
 #ifdef VF_CONFIG_LOAD_MB_MODULES
     // Load multiboot modules

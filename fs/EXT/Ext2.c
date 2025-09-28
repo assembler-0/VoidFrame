@@ -101,8 +101,8 @@ int Ext2ReadBlock(uint32_t block, void* buffer) {
 static FileSystemDriver ext2_driver = {"EXT2", Ext2Detect, Ext2Mount};
 
 int Ext2Mount(BlockDevice* device, const char* mount_point) {
-    WriteLock(&volume.lock, MLFQGetCurrentProcess()->pid);
     volume.lock = (rwlock_t){0};
+    WriteLock(&volume.lock, MLFQGetCurrentProcess()->pid);
 
     volume.device = device;
 
@@ -155,12 +155,6 @@ int Ext2Mount(BlockDevice* device, const char* mount_point) {
         PrintKernelF("EXT2: Failed to read BGD table.\n");
         KernelFree(volume.group_descs);
         WriteUnlock(&volume.lock);
-        return -1;
-    }
-
-    if (VfsIsDir(mount_point) != 0) {
-        PrintKernelF("EXT2: Mount point already exists and is a directory.\n");
-        KernelFree(volume.group_descs);
         return -1;
     }
 
