@@ -12,7 +12,9 @@
 #define PAGE_SIZE           4096
 #define PAGE_SHIFT          12
 #define PAGE_MASK           0xFFF
-#define IDENTITY_MAP_SIZE   (4ULL * 1024 * 1024 * 1024)  // Match bootstrap
+// Dynamic identity mapping size - determined at boot time
+extern uint64_t g_identity_map_size;
+#define IDENTITY_MAP_SIZE   g_identity_map_size
 
 // Page table entry flags
 #define PAGE_PRESENT        0x001

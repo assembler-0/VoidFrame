@@ -404,6 +404,14 @@ void PXS1(const uint32_t info) {
     PrintKernel("System: Initializing memory...\n");
     MemoryInit(g_multiboot_info_addr);
     PrintKernelSuccess("System: Memory initialized\n");
+    
+    // Update dynamic identity mapping size based on detected memory
+    extern uint64_t g_identity_map_size;
+    extern uint64_t total_pages;
+    g_identity_map_size = total_pages * PAGE_SIZE;
+    PrintKernel("System: Identity mapping size set to ");
+    PrintKernelInt(g_identity_map_size / (1024 * 1024));
+    PrintKernel("MB\n");
 
     // Create new PML4 with memory validation (ensure identity-mapped physical page)
     void* pml4_phys = NULL;
@@ -639,8 +647,6 @@ static InitResultT PXS2(void) {
     PrintKernel("Info: Initializing PC Speaker...\n");
     PCSpkr_Init();
     PrintKernelSuccess("System: PC Speaker initialized\n");
-
-    PrintKernel("Info: Initializing AHCI Driver...\n");
 #endif
 
 #ifdef VF_CONFIG_ENABLE_VMWARE_SVGA_II

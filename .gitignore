@@ -4,7 +4,6 @@ isodir
 .idea
 Meson-Build
 Makefile
-CMakeLists.txt
 *build*
 target
 .venv

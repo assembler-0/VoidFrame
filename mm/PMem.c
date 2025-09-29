@@ -5,12 +5,13 @@
 #include "Multiboot2.h"
 #include "Spinlock.h"
 
-// Max 4GB memory for now (1M pages)
+// Support up to 128GB memory with dynamic bitmap allocation
 #define MAX_PAGE_BUFFER_OVERHEAD (1024 * 1024) // 1MB
-#define MAX_PAGES ((4ULL * 1024 * 1024 * 1024 / PAGE_SIZE) + MAX_PAGE_BUFFER_OVERHEAD)
+#define MAX_SUPPORTED_MEMORY (128ULL * 1024 * 1024 * 1024) // 128GB
+#define MAX_PAGES (MAX_SUPPORTED_MEMORY / PAGE_SIZE)
 #define MAX_BITMAP_SIZE (MAX_PAGES / 8)
 #define BITMAP_WORD_SIZE 64
-#define BITMAP_WORDS (MAX_BITMAP_SIZE / 8)
+#define MAX_BITMAP_WORDS (MAX_BITMAP_SIZE / 8)
 
 extern uint8_t _kernel_phys_start[];
 extern uint8_t _kernel_phys_end[];
@@ -19,8 +20,9 @@ static uint64_t allocation_count = 0;
 static uint64_t free_count = 0;
 static uint64_t huge_pages_allocated = 0;
 
-// Use 64-bit words for faster bitmap operations
-static uint64_t page_bitmap[BITMAP_WORDS];
+// Use dynamic bitmap allocation based on actual memory size
+static uint64_t* page_bitmap = NULL;
+static uint64_t bitmap_words = 0;
 uint64_t total_pages = 0;
 static uint64_t used_pages = 0;
 static volatile int memory_lock = 0;
@@ -31,11 +33,13 @@ volatile mcs_node_t* memory_mcs_lock = NULL;
 
 // Fast bitmap operations using 64-bit words
 static inline void MarkPageUsed(uint64_t page_idx) {
-    if (page_idx >= total_pages) return;
+    if (page_idx >= total_pages || !page_bitmap) return;
 
     uint64_t word_idx = page_idx / 64;
     uint64_t bit_idx = page_idx % 64;
     uint64_t mask = 1ULL << bit_idx;
+
+    if (word_idx >= bitmap_words) return; // Safety check
 
     if (!(page_bitmap[word_idx] & mask)) {
         page_bitmap[word_idx] |= mask;
@@ -44,11 +48,13 @@ static inline void MarkPageUsed(uint64_t page_idx) {
 }
 
 static inline void MarkPageFree(uint64_t page_idx) {
-    if (page_idx >= total_pages) return;
+    if (page_idx >= total_pages || !page_bitmap) return;
 
     uint64_t word_idx = page_idx / 64;
     uint64_t bit_idx = page_idx % 64;
     uint64_t mask = 1ULL << bit_idx;
+
+    if (word_idx >= bitmap_words) return; // Safety check
 
     if (page_bitmap[word_idx] & mask) {
         page_bitmap[word_idx] &= ~mask;
@@ -57,10 +63,13 @@ static inline void MarkPageFree(uint64_t page_idx) {
 }
 
 int IsPageFree(uint64_t page_idx) {
-    if (page_idx >= total_pages) return 0;
+    if (page_idx >= total_pages || !page_bitmap) return 0;
 
     uint64_t word_idx = page_idx / 64;
     uint64_t bit_idx = page_idx % 64;
+    
+    if (word_idx >= bitmap_words) return 0; // Safety check
+    
     return !(page_bitmap[word_idx] & (1ULL << bit_idx));
 }
 
@@ -71,7 +80,6 @@ static inline int FindFirstFreeBit(uint64_t word) {
 }
 
 int MemoryInit(uint32_t multiboot_info_addr) {
-    FastMemset(page_bitmap, 0, sizeof(page_bitmap));
     used_pages = 0;
     allocation_failures = 0;
 
@@ -96,19 +104,60 @@ int MemoryInit(uint32_t multiboot_info_addr) {
         tag = (struct MultibootTag*)((uint8_t*)tag + ((tag->size + 7) & ~7));
     }
 
-    total_pages = max_physical_address / PAGE_SIZE;
+    total_pages = (max_physical_address + PAGE_SIZE - 1) / PAGE_SIZE;
+    
+    // Cap at MAX_PAGES to prevent excessive memory usage
     if (total_pages > MAX_PAGES) {
         total_pages = MAX_PAGES;
-        PrintKernelWarning("[WARN] Memory detected exceeds MAX_PAGES, capping at ");
+        PrintKernelWarning("Memory detected exceeds MAX_PAGES, capping at ");
         PrintKernelInt(MAX_PAGES * PAGE_SIZE / (1024 * 1024));
         PrintKernel("MB\n");
     }
 
-    PrintKernel("Info: Total physical memory detected: ");
-    PrintKernelInt(total_pages * PAGE_SIZE / (1024 * 1024));
-    PrintKernel("MB ( ");
-    PrintKernelInt(total_pages);
-    PrintKernel(" pages)\n");
+    // Calculate bitmap size needed
+    bitmap_words = (total_pages + 63) / 64; // Round up to 64-bit word boundary
+    uint64_t bitmap_size_bytes = bitmap_words * sizeof(uint64_t);
+
+    PrintKernelF("Info: Usable memory detected: %d MB (%d pages)",
+        (max_physical_address) / (1024 * 1024),
+        max_physical_address / PAGE_SIZE);
+
+    PrintKernel("Info: Bitmap size: ");
+    PrintKernelInt(bitmap_size_bytes / 1024);
+    PrintKernel("KB (");
+    PrintKernelInt(bitmap_words);
+    PrintKernel(" words)\n");
+
+    // Allocate bitmap memory from a high memory location to avoid conflicts
+    // Find a suitable location above 16MB but within identity-mapped space
+    uint64_t bitmap_start = 0x1000000; // Start searching at 16MB
+    uint64_t identity_limit = total_pages * PAGE_SIZE; // Don't go beyond detected memory
+    
+    // Make sure we don't exceed reasonable limits
+    if (identity_limit > MAX_SUPPORTED_MEMORY) {
+        identity_limit = MAX_SUPPORTED_MEMORY;
+    }
+    
+    // Align bitmap to page boundary and ensure it fits in identity-mapped space
+    bitmap_start = (bitmap_start + PAGE_SIZE - 1) & ~(PAGE_SIZE - 1);
+    
+    if (bitmap_start + bitmap_size_bytes > identity_limit) {
+        PrintKernelError("ERROR: Cannot fit bitmap in available memory space\n");
+        return -1;
+    }
+    
+    page_bitmap = (uint64_t*)bitmap_start;
+    FastMemset(page_bitmap, 0, bitmap_size_bytes);
+
+    // Reserve the bitmap memory itself
+    uint64_t bitmap_start_page = bitmap_start / PAGE_SIZE;
+    uint64_t bitmap_end_page = (bitmap_start + bitmap_size_bytes + PAGE_SIZE - 1) / PAGE_SIZE;
+    
+    PrintKernel("Info: Bitmap located at 0x");
+    PrintKernelHex(bitmap_start);
+    PrintKernel(" - 0x");
+    PrintKernelHex(bitmap_start + bitmap_size_bytes);
+    PrintKernel("\n");
 
     tag = (struct MultibootTag*)(uintptr_t)(multiboot_info_addr + 8); // Reset tag pointer
     while (tag->type != MULTIBOOT2_TAG_TYPE_END) {
@@ -146,6 +195,16 @@ int MemoryInit(uint32_t multiboot_info_addr) {
         MarkPageUsed(i);
     }
 
+    // Reserve the bitmap memory itself
+    for (uint64_t i = bitmap_start_page; i < bitmap_end_page; i++) {
+        MarkPageUsed(i);
+    }
+    PrintKernel("Info: Reserved bitmap pages from ");
+    PrintKernelInt(bitmap_start_page);
+    PrintKernel(" to ");
+    PrintKernelInt(bitmap_end_page);
+    PrintKernel("\n");
+
     // 2. Reserve the physical memory used by the kernel itself.
     const uint64_t kernel_start_addr = (uint64_t)_kernel_phys_start;
     const uint64_t kernel_end_addr = (uint64_t)_kernel_phys_end;
@@ -175,7 +234,10 @@ int MemoryInit(uint32_t multiboot_info_addr) {
 }
 
 
+
 void* AllocPage(void) {
+    if (!page_bitmap) return NULL; // Safety check
+    
     irq_flags_t flags = SpinLockIrqSave(&memory_lock);
 
     // Check low memory condition
@@ -190,10 +252,9 @@ void* AllocPage(void) {
 
     // Fast word-based search from hint
     uint64_t start_word = next_free_hint / 64;
-    uint64_t total_words = (total_pages + 63) / 64;
 
     // Search from hint word onwards
-    for (uint64_t word_idx = start_word; word_idx < total_words; word_idx++) {
+    for (uint64_t word_idx = start_word; word_idx < bitmap_words; word_idx++) {
         if (page_bitmap[word_idx] != ~0ULL) { // Not all bits set
             int bit_pos = FindFirstFreeBit(page_bitmap[word_idx]);
             if (bit_pos >= 0) {
