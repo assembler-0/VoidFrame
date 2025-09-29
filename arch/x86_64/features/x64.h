@@ -7,7 +7,14 @@
 typedef struct {
     bool sse;
     bool sse2;
-    bool osxsave; // Does the OS support XSAVE/XRSTOR? (Crucial for AVX)
+    bool sse3;
+    bool ssse3;
+    bool sse41;
+    bool sse42;
+    bool bmi1;
+    bool bmi2;
+    bool fma;
+    bool osxsave;
     bool avx;
     bool avx2;
 } CpuFeatures;

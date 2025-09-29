@@ -7,7 +7,7 @@
 #define PAGE_FAULT_HANDLER_H
 
 #include "stdint.h"
-#include "Cpu.h"
+#include "x64.h"
 
 // Page fault error code bits
 #define PF_PRESENT    0x01  // Page was present

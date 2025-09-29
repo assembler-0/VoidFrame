@@ -3,7 +3,7 @@
 #include "../kernel/core/Kernel.h"
 #include "../kernel/etc/Console.h"
 #include "../mm/VMem.h"
-#include "Cpu.h"
+#include "x64.h"
 #include "Panic.h"
 #include "sound/Generic.h" // For PIT definitions
 

@@ -186,72 +186,6 @@ void BootstrapMapPage(uint64_t pml4_phys, uint64_t vaddr, uint64_t paddr, uint64
     }
 }
 
-void CPUFeatureValidation(void) {
-    uint32_t eax, ebx, ecx, edx;
-
-    // Check for standard features (EAX=1)
-    __asm__ volatile("cpuid"
-                     : "=a"(eax), "=b"(ebx), "=c"(ecx), "=d"(edx)
-                     : "a"(1), "c"(0));
-
-    bool has_sse = (edx & (1 << 25)) != 0;
-    bool has_sse2 = (edx & (1 << 26)) != 0;
-    bool has_sse3 = (ecx & (1 << 0)) != 0;
-    bool has_ssse3 = (ecx & (1 << 9)) != 0;
-    bool has_sse4_1 = (ecx & (1 << 19)) != 0;
-    bool has_sse4_2 = (ecx & (1 << 20)) != 0;
-    bool has_avx = (ecx & (1 << 28)) != 0;
-
-    // Check for extended features (EAX=7, ECX=0)
-    __asm__ volatile("cpuid"
-                     : "=a"(eax), "=b"(ebx), "=c"(ecx), "=d"(edx)
-                     : "a"(7), "c"(0));
-
-
-    bool has_avx2 = (ebx & (1 << 5)) != 0;
-    bool has_bmi1 = (ebx & (1 << 3)) != 0;
-    bool has_bmi2 = (ebx & (1 << 8)) != 0;
-    // FMA (FMA3) is CPUID.(EAX=1):ECX[12]
-    __asm__ volatile("cpuid"
-                     : "=a"(eax), "=b"(ebx), "=c"(ecx), "=d"(edx)
-                     : "a"(1), "c"(0));
-    bool has_fma = (ecx & (1 << 12)) != 0;
-
-    if (!has_sse) {
-        PrintKernelWarning("System: This kernel requires SSE support but the extension is not found. (CPUID)\n");
-    }
-    if (!has_sse2) {
-        PrintKernelWarning("System: This kernel requires SSE2 support but the extension is not found. (CPUID)\n");
-    }
-    if (!has_sse3) {
-        PrintKernelWarning("System: This kernel requires SSE3 support but the extension is not found. (CPUID)\n");
-    }
-    if (!has_ssse3) {
-        PrintKernelWarning("System: This kernel requires SSSE3 support but the extension is not found. (CPUID)\n");
-    }
-    if (!has_sse4_1) {
-        PrintKernelWarning("System: This kernel requires SSE4.1 support but the extension is not found. (CPUID)\n");
-    }
-    if (!has_sse4_2) {
-        PrintKernelWarning("System: This kernel requires SSE4.2 support but the extension is not found. (CPUID)\n");
-    }
-    if (!has_avx) {
-        PrintKernelWarning("System: This kernel requires AVX support but the extension is not found. (CPUID)\n");
-    }
-    if (!has_avx2) {
-        PrintKernelWarning("System: This kernel requires AVX2 support (2013+ CPUs) but the extension is not found. (CPUID)\n");
-    }
-    if (!has_fma) {
-        PrintKernelWarning("System: This kernel requires FMA3 support but the extension is not found. (CPUID)\n");
-    }
-    if (!has_bmi1) {
-        PrintKernelWarning("System: This kernel requires BMI1 support but the extension is not found. (CPUID)\n");
-    }
-    if (!has_bmi2) {
-        PrintKernelWarning("System: This kernel requires BMI2 support but the extension is not found. (CPUID)\n");
-    }
-}
-
 // Memory hardening functions
 static void SetupMemoryProtection(void) {
     PrintKernel("System: Setting up memory protection...\n");
@@ -584,10 +518,6 @@ void MakeRoot() {
 
 // Pre-eXecutionSystem 2
 static InitResultT PXS2(void) {
-#ifndef VF_CONFIG_VM_HOST
-    // CPU feature validation
-    CPUFeatureValidation();
-#endif
 
     // Print bootstrap summary
     PrintBootstrapSummary();
@@ -649,11 +579,9 @@ static InitResultT PXS2(void) {
     PrintKernelSuccess("System: TSC initialized\n");
     
     // Initialize ACPI for power management
-    if (ACPIInit()) {
-        PrintKernelSuccess("System: ACPI initialized\n");
-    } else {
-        PrintKernelWarning("System: ACPI initialization failed\n");
-    }
+    if (ACPIInit()) PrintKernelSuccess("System: ACPI initialized\n");
+    else PrintKernelWarning("System: ACPI initialization failed\n");
+
 
 #ifdef VF_CONFIG_ENFORCE_MEMORY_PROTECTION
     PrintKernel("Info: Final memory health check...\n");

@@ -45,12 +45,22 @@ static inline void restore_irq_flags(irq_flags_t flags) {
     __asm__ volatile("pushq %0\n\tpopfq" : : "r"(flags));
 }
 
-static inline void __attribute__((always_inline)) cli(void) {
+static inline void __attribute__((always_inline, hot, flatten)) cli() {
+    __sync_synchronize();
+    __asm__ volatile("mfence; sfence; lfence" ::: "memory");
     __asm__ volatile("cli" ::: "memory");
+    __asm__ volatile("mfence; sfence; lfence" ::: "memory");
+    __sync_synchronize();
+    __builtin_ia32_serialize();
 }
 
-static inline void __attribute__((always_inline)) sti(void) {
+static inline void __attribute__((always_inline, hot, flatten)) sti() {
+    __sync_synchronize();
+    __asm__ volatile("mfence; sfence; lfence" ::: "memory");
     __asm__ volatile("sti" ::: "memory");
+    __asm__ volatile("mfence; sfence; lfence" ::: "memory");
+    __sync_synchronize();
+    __builtin_ia32_serialize();
 }
 
 // CPUID detection

@@ -1,10 +1,10 @@
 #ifndef VF_MLFQ_SCHED_H
 #define VF_MLFQ_SCHED_H
 
-#include "stdint.h"
 #include "Ipc.h"
-#include "Cpu.h"
 #include "Shared.h"
+#include "stdint.h"
+#include "x64.h"
 
 // =============================================================================
 // MLFQ Parameters (last update: 14/08/25)

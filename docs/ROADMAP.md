@@ -1,7 +1,7 @@
 # VoidFrame roadmap (v0.0.2-development4)
 
 ### Goals for v0.0.2-development4
-- Bidirectional file handling
+- Bidirectional filesystem handling
 - FS and Drive management
 - AHCI integration
 - Tune APIC timer

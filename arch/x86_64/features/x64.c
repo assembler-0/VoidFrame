@@ -1,9 +1,34 @@
-#include "Cpu.h"
+#include "x64.h"
 #include "Console.h"
 #include "Io.h"
-#include "stdbool.h"
 
 static CpuFeatures cpu_features = {0};
+
+static void CPUFeatureValidation(void) {
+    uint32_t eax, ebx, ecx, edx;
+
+    // Check for standard features (EAX=1)
+    __asm__ volatile("cpuid"
+                     : "=a"(eax), "=b"(ebx), "=c"(ecx), "=d"(edx)
+                     : "a"(1), "c"(0));
+
+    cpu_features.sse3 = (ecx & (1 << 0)) != 0;
+    cpu_features.ssse3 = (ecx & (1 << 9)) != 0;
+    cpu_features.sse41 = (ecx & (1 << 19)) != 0;
+    cpu_features.sse42 = (ecx & (1 << 20)) != 0;
+
+    __asm__ volatile("cpuid"
+                     : "=a"(eax), "=b"(ebx), "=c"(ecx), "=d"(edx)
+                     : "a"(7), "c"(0));
+
+    cpu_features.bmi1 = (ebx & (1 << 3)) != 0;
+    cpu_features.bmi2 = (ebx & (1 << 8)) != 0;
+    // FMA (FMA3) is CPUID.(EAX=1):ECX[12]
+    __asm__ volatile("cpuid"
+                     : "=a"(eax), "=b"(ebx), "=c"(ecx), "=d"(edx)
+                     : "a"(1), "c"(0));
+    cpu_features.fma = (ecx & (1 << 12)) != 0;
+}
 
 /**
  * @brief Initializes CPU features, detecting and enabling SSE and AVX.
@@ -24,7 +49,7 @@ void CpuInit(void) {
     cr4 |= (1 << 18); // Set OSXSAVE
 #endif
     __asm__ volatile("mov %0, %%cr4" :: "r"(cr4));
-    PrintKernelSuccess("VMem: CPU: CR4 configured for SSE/SSE2.\n");
+    PrintKernelSuccess("System: CPU: CR4 configured for SSE/SSE2.\n");
 
     // --- Step 2: Detect basic features and OSXSAVE support with CPUID ---
     // CPUID Leaf 1 provides basic feature flags.
@@ -38,20 +63,20 @@ void CpuInit(void) {
     // If this is not set, the OS is not allowed to set XCR0 to enable AVX.
     cpu_features.osxsave = (ecx >> 27) & 1;
     if (!cpu_features.osxsave) {
-        PrintKernelWarning("VMem: CPU: OSXSAVE not supported. AVX will be disabled.\n");
-        // We can still use SSE/SSE2, but AVX is impossible.
+        PrintKernelWarning("System: CPU: OSXSAVE not supported. AVX will be disabled.\n");
         cpu_features.avx = false;
         cpu_features.avx2 = false;
+        CPUFeatureValidation();
         return;
     }
-    PrintKernelSuccess("VMem: CPU: OSXSAVE supported.\n");
+    PrintKernelSuccess("System: CPU: OSXSAVE supported.\n");
 
     // --- Step 3: Enable AVX by setting the XCR0 Control Register ---
     // The OS must set bits 1 (SSE state) and 2 (AVX state) in XCR0.
     // This is done using the XSETBV instruction.
     uint64_t xcr0 = (1 << 1) | (1 << 2); // Enable SSE and AVX state saving
     __asm__ volatile("xsetbv" :: "c"(0), "a"((uint32_t)xcr0), "d"((uint32_t)(xcr0 >> 32)));
-    PrintKernelSuccess("VMem: CPU: XCR0 configured for AVX.\n");
+    PrintKernelSuccess("System: CPU: XCR0 configured for AVX.\n");
 
     // --- Step 4: Now that AVX is enabled, detect AVX and AVX2 features ---
     // CPUID Leaf 1, ECX bit 28 for AVX
@@ -64,12 +89,13 @@ void CpuInit(void) {
     cpu_features.avx2 = (ebx >> 5) & 1;
 
     // --- Final Report ---
-    PrintKernelF("VMem: CPU Features Initialized: SSE[%d] SSE2[%d] AVX[%d] AVX2[%d]\n",
+    PrintKernelF("System: CPU Features Initialized: SSE[%d] SSE2[%d] AVX[%d] AVX2[%d]\n",
         cpu_features.sse, cpu_features.sse2, cpu_features.avx, cpu_features.avx2);
 
     if (cpu_features.avx && !cpu_features.avx2) {
-        PrintKernelWarning("VMem: CPU: AVX1 detected. Some optimizations may be slower.\n");
+        PrintKernelWarning("System: CPU: AVX1 detected. Some optimizations may be slower.\n");
     }
+    CPUFeatureValidation();
 }
 
 CpuFeatures* GetCpuFeatures(void) {

@@ -1,7 +1,7 @@
 #include "MemOps.h"
-#include "Cpu.h"
 #include "Io.h"
 #include "Panic.h"
+#include "x64.h"
 
 void* memset(void* dest, int value, unsigned long size) {
     return FastMemset(dest, value, size);
