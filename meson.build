@@ -51,6 +51,7 @@ base_c_flags = [
     '-fno-builtin',
     '-ffreestanding',
     '-mno-red-zone',
+    '-mserialize',
     '-fPIE',
     '-fPIC',
     '-mcmodel=kernel',
@@ -230,7 +231,7 @@ arch_sources = files([
                          'arch/x86_64/gdt/Gdt.c',
                          'arch/x86_64/interrupts/Interrupts.c',
                          'arch/x86_64/syscall/Syscall.c',
-                         'arch/x86_64/cpu/Cpu.c'
+                         'arch/x86_64/features/x64.c'
                      ])
 
 # Include and font sources
@@ -295,7 +296,7 @@ inc_dirs_list = [
     'mm/security',
     'ports/6502',
     'ports',
-    'arch/x86_64/cpu',
+    'arch/x86_64/features',
     'arch/x86_64/gdt',
     'arch/x86_64/idt',
     'arch/x86_64/interrupts',
@@ -407,13 +408,13 @@ iso = custom_target(
 run_target('run',
            command : [
                qemu_system_x86_64,
-               '-cpu', 'host',
+               '-cpu', 'max',
                '-vga', 'vmware',
                '-enable-kvm',
                '-cdrom', iso.full_path(),
                '-debugcon', 'file:bootstrap.log',
                '-serial', 'stdio',
-#               '-no-reboot', '-no-shutdown',
+               '-no-reboot', '-no-shutdown',
                '-m', '4G',
                '-drive', 'file=VoidFrameDisk.img,if=ide',
                '-drive', 'file=SataDisk.img,if=none,id=sata0',

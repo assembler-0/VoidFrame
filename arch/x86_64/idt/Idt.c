@@ -365,7 +365,7 @@ int IdtInstall() {
     IdtSetGate(77, (uint64_t)isr77, kernelCodeSegment, flags);
     IdtSetGate(78, (uint64_t)isr78, kernelCodeSegment, flags);
     IdtSetGate(79, (uint64_t)isr79, kernelCodeSegment, flags);
-    IdtSetGate(80, (uint64_t)SyscallEntry, SYSCALL_SEGMENT_SELECTOR, IDT_INTERRUPT_GATE_KERNEL);
+    IdtSetGate(80, (uint64_t)SyscallEntry, kernelCodeSegment, flags);
     IdtSetGate(81, (uint64_t)isr81, kernelCodeSegment, flags);
     IdtSetGate(82, (uint64_t)isr82, kernelCodeSegment, flags);
     IdtSetGate(83, (uint64_t)isr83, kernelCodeSegment, flags);

@@ -9,7 +9,6 @@
 #include "Cerberus.h"
 #endif
 #include "Console.h"
-#include "Cpu.h"
 #include "Format.h"
 #include "Io.h"
 #include "Ipc.h"
@@ -23,6 +22,7 @@
 #include "VMem.h"
 #include "stdbool.h"
 #include "stdlib.h"
+#include "x64.h"
 
 #define offsetof(type, member) ((uint64_t)&(((type*)0)->member))
 

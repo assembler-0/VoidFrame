@@ -1,5 +1,5 @@
 #include "TSC.h"
-#include "Cpu.h"
+#include "x64.h"
 #include "Console.h"
 
 uint64_t tsc_freq_hz = 0;
