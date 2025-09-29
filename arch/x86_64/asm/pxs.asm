@@ -6,6 +6,7 @@ header_start:
     ; checksum = -(magic + arch + length)
     dd -(0xE85250D6 + 0 + (header_end - header_start))
 
+%ifdef VF_CONFIG_VESA_FB
     ; Framebuffer tag - request specific graphics mode
     align 8
 framebuffer_tag_start:
@@ -24,6 +25,7 @@ vbe_tag_start:
     dw 0        ; flags
     dd vbe_tag_end - vbe_tag_start ; size
 vbe_tag_end:
+%endif
 
     ; End tag - required
     align 8

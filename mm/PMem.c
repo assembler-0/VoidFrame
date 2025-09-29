@@ -104,12 +104,12 @@ int MemoryInit(uint32_t multiboot_info_addr) {
         tag = (struct MultibootTag*)((uint8_t*)tag + ((tag->size + 7) & ~7));
     }
 
-    total_pages = max_physical_address / PAGE_SIZE;
+    total_pages = (max_physical_address + PAGE_SIZE - 1) / PAGE_SIZE;
     
     // Cap at MAX_PAGES to prevent excessive memory usage
     if (total_pages > MAX_PAGES) {
         total_pages = MAX_PAGES;
-        PrintKernelWarning("[WARN] Memory detected exceeds MAX_PAGES, capping at ");
+        PrintKernelWarning("Memory detected exceeds MAX_PAGES, capping at ");
         PrintKernelInt(MAX_PAGES * PAGE_SIZE / (1024 * 1024));
         PrintKernel("MB\n");
     }
@@ -117,13 +117,11 @@ int MemoryInit(uint32_t multiboot_info_addr) {
     // Calculate bitmap size needed
     bitmap_words = (total_pages + 63) / 64; // Round up to 64-bit word boundary
     uint64_t bitmap_size_bytes = bitmap_words * sizeof(uint64_t);
-    
-    PrintKernel("Info: Total physical memory detected: ");
-    PrintKernelInt(total_pages * PAGE_SIZE / (1024 * 1024));
-    PrintKernel("MB ( ");
-    PrintKernelInt(total_pages);
-    PrintKernel(" pages)\n");
-    
+
+    PrintKernelF("Info: Usable memory detected: %d MB (%d pages)",
+        (max_physical_address) / (1024 * 1024),
+        max_physical_address / PAGE_SIZE);
+
     PrintKernel("Info: Bitmap size: ");
     PrintKernelInt(bitmap_size_bytes / 1024);
     PrintKernel("KB (");

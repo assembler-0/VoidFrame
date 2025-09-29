@@ -1,5 +1,6 @@
 project('voidframe', 'c', 'cpp',
         version : '0.0.2-development3',
+        meson_version : '>= 1.4.0',
         default_options : [
             'c_std=c11',
             'cpp_std=c++17',
@@ -112,6 +113,12 @@ vf_config_optional = [
     # '-DVF_CONFIG_PROCINFO_AUTO_CLEANUP',
     # '-DVF_CONFIG_PANIC_OVERRIDE',
 ]
+
+vf_config_asm = [
+    '-DVF_CONFIG_VESA_FB',
+]
+
+asm_flags += vf_config_asm
 
 vf_config_flags = vf_config_base
 if exclude_extra_objects
@@ -322,7 +329,7 @@ foreach asm_file : asm_sources
     asm_objects += asm_obj
 endforeach
 
-# Function to compile C files  
+# Function to compile C files
 c_objects = []
 foreach c_file : c_sources
     obj_name = '@0@_c.o'.format(c_file.full_path().split('/')[-1].split('.')[0])
@@ -415,7 +422,7 @@ run_target('run',
                '-debugcon', 'file:bootstrap.log',
                '-serial', 'stdio',
                '-no-reboot', '-no-shutdown',
-               '-m', '6G',
+               '-m', '4G',
                '-drive', 'file=VoidFrameDisk.img,if=ide',
                '-drive', 'file=SataDisk.img,if=none,id=sata0',
                '-device', 'ahci,id=ahci',
