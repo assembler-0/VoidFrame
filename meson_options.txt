@@ -22,32 +22,6 @@ option('stack_protection',
        value : true, 
        description : 'Enable stack protection features')
 
-# Feature toggles
-option('enable_vmware_svga', 
-       type : 'boolean', 
-       value : false, 
-       description : 'Enable VMware SVGA II driver')
-
-option('enable_cerberus_logging', 
-       type : 'boolean', 
-       value : false, 
-       description : 'Enable Cerberus VFS logging')
-
-option('enable_cerberus_reporting', 
-       type : 'boolean', 
-       value : false, 
-       description : 'Enable Cerberus threat reporting')
-
-option('enable_procinfo_cleanup', 
-       type : 'boolean', 
-       value : false, 
-       description : 'Enable automatic process info cleanup')
-
-option('enable_panic_override', 
-       type : 'boolean', 
-       value : false, 
-       description : 'Enable panic override functionality')
-
 # QEMU options
 option('qemu_memory', 
        type : 'string', 
@@ -58,3 +32,9 @@ option('enable_kvm',
        type : 'boolean', 
        value : true, 
        description : 'Enable KVM acceleration in QEMU')
+
+# Build options
+option('silent_build',
+       type : 'boolean',
+       value : false,
+       description : 'Snooze all warnings and info messages during build (-w)')

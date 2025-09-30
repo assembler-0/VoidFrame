@@ -39,6 +39,11 @@ src_root = meson.current_source_dir()
 arch_root = src_root / 'arch' / 'x86_64'
 
 # ============================================================================
+# Build Options
+# ============================================================================
+silent_build = get_option('silent_build')
+
+# ============================================================================
 # Compiler Flags
 # ============================================================================
 base_c_flags = [
@@ -59,6 +64,10 @@ base_c_flags = [
     '-fcf-protection=full',
     '-fvisibility=hidden',
 ]
+
+if silent_build
+    base_c_flags += ['-w']
+endif
 
 # Add conditional flags
 c_flags = base_c_flags
@@ -267,9 +276,7 @@ obj_sources = files([
 # Build Functions
 # ============================================================================
 
-# ============================================================================
 # Build Include Directories
-# ============================================================================
 inc_dirs_list = [
     '.',
     'include',
