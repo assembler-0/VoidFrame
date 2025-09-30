@@ -34,7 +34,7 @@ option('enable_kvm',
        description : 'Enable KVM acceleration in QEMU')
 
 # Build options
-option('slient_build',
+option('silent_build',
        type : 'boolean',
        value : false,
        description : 'Snooze all warnings and info messages during build (-w)')
