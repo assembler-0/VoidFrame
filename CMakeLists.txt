@@ -27,18 +27,23 @@ option(STACK_PROTECTION "Enable stack protection" ON)
 # ============================================================================ 
 # Compiler Flags
 # ============================================================================ 
-add_compile_options(-m64 -O2 -fno-omit-frame-pointer -finline-functions -foptimize-sibling-calls -nostdinc -nostdlib -fno-builtin -ffreestanding -mno-red-zone -mserialize -fPIE -fPIC -mcmodel=kernel -fcf-protection=full -fvisibility=hidden)
+set(C_FLAGS " -m64 -O2 -fno-omit-frame-pointer -finline-functions -foptimize-sibling-calls -nostdinc -nostdlib -fno-builtin -ffreestanding -mno-red-zone -mserialize -fPIE -fPIC -mcmodel=kernel -fcf-protection=full -fvisibility=hidden")
+
+if(SILENT_BUILD)
+    string(APPEND C_FLAGS " -w")
+endif()
 
 if(STACK_PROTECTION)
-    add_compile_options(-fstack-protector-strong -D_FORTIFY_SOURCE=2)
+    string(APPEND C_FLAGS " -fstack-protector-strong -D_FORTIFY_SOURCE=2")
 endif()
 
 if(DEBUG_SYMBOLS)
-    add_compile_options(-g -DDEBUG)
+    string(APPEND C_FLAGS " -g -DDEBUG")
 endif()
 
-set(CMAKE_CXX_FLAGS_INIT "${CMAKE_C_FLAGS_INIT} -fno-exceptions -fno-rtti -fno-threadsafe-statics")
-set(CMAKE_ASM_NASM_FLAGS_INIT " -f elf64")
+set(CMAKE_C_FLAGS "${C_FLAGS}")
+set(CMAKE_CXX_FLAGS "${C_FLAGS} -fno-exceptions -fno-rtti -fno-threadsafe-statics")
+set(CMAKE_ASM_NASM_FLAGS "-f elf64 -DVF_CONFIG_VESA_FB")
 
 # ============================================================================ 
 # VoidFrame Configuration Flags
@@ -75,8 +80,6 @@ endif()
 if(AUTOMATIC_POST)
     add_compile_definitions(VF_CONFIG_AUTOMATIC_POST)
 endif()
-
-set(CMAKE_ASM_NASM_FLAGS "${CMAKE_ASM_NASM_FLAGS} -DVF_CONFIG_VESA_FB")
 
 # ============================================================================ 
 # Source Files Organization
@@ -260,12 +263,25 @@ add_executable(voidframe.krnl
     ${C_SOURCES}
     ${CPP_SOURCES}
     ${ASM_SOURCES}
-    ${OBJ_SOURCES}
 )
 
+# Add extra object files if not excluded
+if(NOT EXCLUDE_EXTRA_OBJECTS)
+    target_sources(voidframe.krnl PRIVATE ${OBJ_SOURCES})
+endif()
+
+# Configure the linker to use ld.lld with proper arguments
 set_target_properties(voidframe.krnl PROPERTIES
-    OUTPUT_NAME "voidframe.krnl"
-    LINK_FLAGS "-T ${CMAKE_CURRENT_SOURCE_DIR}/voidframe.ld -melf_x86_64"
+    LINK_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/voidframe.ld"
+)
+
+# Set linker flags for this specific target
+target_link_options(voidframe.krnl PRIVATE 
+    -fuse-ld=lld
+    -T ${CMAKE_CURRENT_SOURCE_DIR}/voidframe.ld
+    -nostdlib
+    -static
+    -Wl,-melf_x86_64
 )
 
 # ============================================================================ 
@@ -273,9 +289,17 @@ set_target_properties(voidframe.krnl PROPERTIES
 # ============================================================================ 
 add_custom_command(
     OUTPUT VoidFrame.iso
-    COMMAND sh -c "cd ${CMAKE_CURRENT_BINARY_DIR} && mkdir -p isodir/boot/grub isodir/EFI/BOOT isodir/bin && cp $<TARGET_FILE:voidframe.krnl> isodir/boot/voidframe.krnl && cp ${CMAKE_CURRENT_SOURCE_DIR}/grub.cfg isodir/boot/grub/grub.cfg && cp ${CMAKE_CURRENT_SOURCE_DIR}/grub.cfg isodir/EFI/BOOT/grub.cfg && ${GRUB_MKRESCUE} --modules=\"multiboot2 part_msdos part_gpt fat\" --fonts=\"\" --locales=\"\" -o VoidFrame.iso isodir"
+    COMMAND ${CMAKE_COMMAND} -E make_directory ${CMAKE_CURRENT_BINARY_DIR}/isodir/boot/grub
+    COMMAND ${CMAKE_COMMAND} -E make_directory ${CMAKE_CURRENT_BINARY_DIR}/isodir/EFI/BOOT
+    COMMAND ${CMAKE_COMMAND} -E make_directory ${CMAKE_CURRENT_BINARY_DIR}/isodir/bin
+    COMMAND ${CMAKE_COMMAND} -E copy $<TARGET_FILE:voidframe.krnl> ${CMAKE_CURRENT_BINARY_DIR}/isodir/boot/voidframe.krnl
+    COMMAND ${CMAKE_COMMAND} -E copy ${CMAKE_CURRENT_SOURCE_DIR}/grub.cfg ${CMAKE_CURRENT_BINARY_DIR}/isodir/boot/grub/grub.cfg
+    COMMAND ${CMAKE_COMMAND} -E copy ${CMAKE_CURRENT_SOURCE_DIR}/grub.cfg ${CMAKE_CURRENT_BINARY_DIR}/isodir/EFI/BOOT/grub.cfg
+    COMMAND ${GRUB_MKRESCUE} --fonts= --locales= -o ${CMAKE_CURRENT_BINARY_DIR}/VoidFrame.iso ${CMAKE_CURRENT_BINARY_DIR}/isodir
     DEPENDS voidframe.krnl
+    WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
     COMMENT "Building VoidFrame.iso"
+    VERBATIM
 )
 
 add_custom_target(iso ALL DEPENDS VoidFrame.iso)
@@ -324,12 +348,12 @@ add_custom_target(runmin
 )
 
 add_custom_target(img
-    COMMAND sh -c "${QEMU_IMG} create -f qcow2 VoidFrameDisk.img 16G && ${MKFS_EXT2} VoidFrameDisk.img"
+    COMMAND ${QEMU_IMG} create -f qcow2 VoidFrameDisk.img 16G && ${MKFS_EXT2} VoidFrameDisk.img
     COMMENT "Creating disk images"
 )
 
 add_custom_target(extra-img
-    COMMAND sh -c "${QEMU_IMG} create -f raw VirtioDisk.img 128M && ${MKFS_FAT} -F 16 VirtioDisk.img && ${QEMU_IMG} create -f raw SataDisk.img 128M && ${MKFS_FAT} -F 16 SataDisk.img"
+    COMMAND ${QEMU_IMG} create -f raw VirtioDisk.img 128M && ${MKFS_FAT} -F 16 VirtioDisk.img && ${QEMU_IMG} create -f raw SataDisk.img 128M && ${MKFS_FAT} -F 16 SataDisk.img
     COMMENT "Creating extra disk images"
 )
 

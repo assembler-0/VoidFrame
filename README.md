@@ -1,6 +1,6 @@
-# [VoidFrame] - a syscall-less monolithic kernel 💫
+# [VoidFrame] - a ring 0 kernel 💫
 
-> A fast, simple, secure 64-bit monolithic written in C and assembly. With modern capabilities.
+> A fast, simple, secure 64-bit ring-0 kernel written in C and assembly. With modern capabilities.
 
 ---
 
@@ -16,51 +16,58 @@
 
 ![Version](https://img.shields.io/badge/Current%20Version-v0.0.2%20development3-blue)
 
-![Build](https://img.shields.io/badge/Build-passing-brightgreen)
+![CI/CD](https://github.com/assembler-0/VoidFrame/actions/workflows/main.yaml/badge.svg)
 
 ## About
 
-VoidFrame is a 64-bit syscall-less **monolithic** kernel (sounds weird and contradicting right?) designed for the x86_64 architecture written in C and assembly (nasm).
+VoidFrame is a 64-bit **ring-0** kernel designed for the x86_64 architecture written in C and assembly (nasm).
 This kernel was intended and targeted for people who want to learn about operating systems and want to make a piece of their own.
-As the designer of this kernel, I wanted to make something that is simple, fast, secure and easy to understand.
+As the designer of this kernel, I just wanted to make something that is simple, fast, secure and easy to understand.
 Which obviously means that it is not a perfect kernel. And it breaks all the time.
 But I have tried my hardest to bring many security features to the kernel.
 If you were to come across a bug, feel free to open an issue. Fork the repo and make a pull request.
 It would be amazing if you could contribute to this project!
 
-## Prerequisites
-
-- meson >= 1.4.0
-- ninja >= 1.11
-- clang >= 18.0.0 (or any C-compliant compiler)
-- nasm >= 2.16
-- qemu >= 7.0.0 (minimum, failed to run on Limbo emulator (v5.x))
-- mkfs.fat (dosfstools)
+## Prerequisites (development)
+- x64-compatible cpu (used: Intel i3-12100F)
+- POSIX-compliant OS (SysV ABI) (used: Arch Linux 6.16.9-arch1-1)
+- meson >= 1.4.0 (used: meson 1.9.1)
+- cmake >= 3.20 (used: cmake 4.1.1)
+- ninja >= 1.11 (used: ninja 1.21.1)
+- clang/++ >= 18.0.0 (used: 20.1.8)
+- nasm >= 2.16 (used: 2.16.03)
+- qemu >= 7.0.0 (used: 10.1.0)
+- mkfs.fat
 - mkfs.ext2
-- grub-mkrescue
+- grub-mkrescue (used: 2:2.12.r359.g19c698d12-1)
     - Note: depending on your distro, grub-mkrescue may require xorriso and mtools packages.
 
 ### Quickstart
 #### Full development setup
 ```bash
+# Meson
 git clone https://github.com/assembler-0/VoidFrame.git
 cd VoidFrame
 meson setup build
 cd build
-ninja
+ninja -j$(nproc)
 ninja img
 ninja extra-img
 ninja run
 ```
-#### Minimal setup
 ```bash
+# CMake
 git clone https://github.com/assembler-0/VoidFrame.git
 cd VoidFrame
-meson setup build -Dexclude_extra_objects=true
+mkdir build
 cd build
-ninja
-ninja runmin
+cmake .. -DCMAKE_BUILD_TYPE=Release -G Ninja
+ninja -j$(nproc)
+ninja img
+ninja extra-img
+ninja run
 ```
+
 
 ## Features
 ### Architecture
