@@ -36,6 +36,8 @@ add_compile_definitions(
 
 if(EXCLUDE_EXTRA_OBJECTS)
     add_compile_definitions(VF_CONFIG_EXCLUDE_EXTRA_OBJECTS)
-elseif(AUTOMATIC_POST)
+endif()
+
+if(AUTOMATIC_POST)
     add_compile_definitions(VF_CONFIG_AUTOMATIC_POST)
 endif()

@@ -21,7 +21,6 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y \
-            python3-pip \
             nasm \
             xorriso \
             grub-pc-bin \
@@ -30,49 +29,46 @@ jobs:
             mtools \
             lld \
             llvm \
-            cmake
-          pip3 install meson>=1.4.0
+            cmake \
+            ninja-build \
 
-      - name: Compile & Link (CMake & Meson)
+      - name: Compile & Link (CMake)
         run: |
-            meson setup meson-build -Dexclude_extra_objects=true -Dautomatic_post=true
-            ninja -C meson-build
             mkdir cmake-build
             cd cmake-build
             cmake .. -G Ninja
             cd ..
             ninja -C cmake-build
-            rm -rf cmake-build
 
       - name: Artifact Analysis
         run: |
-          timeout 30s ninja -C meson-build runmin || true
+          timeout 30s ninja -C cmake-build runmin || true
           
-          grep -q "1KCSWF23Z456789" meson-build/bootstrap.log
-          ! grep -i "panic\|fault\|crash\|oops\|error\|failed" meson-build/serial.log
+          grep -q "1KCSWF23Z456789" cmake-build/bootstrap.log
+          ! grep -i "panic\|fault\|crash\|oops\|error\|failed" cmake-build/serial.log
           
-          ls -la meson-build/voidframe.krnl
-          test -s meson-build/voidframe.krnl
+          ls -la cmake-build/voidframe.krnl
+          test -s cmake-build/voidframe.krnl
           
           # Check if ISO was created
-          ls -la meson-build/VoidFrame.iso
-          test -s meson-build/VoidFrame.iso
+          ls -la cmake-build/VoidFrame.iso
+          test -s cmake-build/VoidFrame.iso
           
-          file meson-build/voidframe.krnl | grep -q "ELF.*executable"
+          file cmake-build/voidframe.krnl | grep -q "ELF.*executable"
     
           # Verify kernel size is reasonable (not empty, not huge)
-          KERNEL_SIZE=$(stat -c%s meson-build/voidframe.krnl)
+          KERNEL_SIZE=$(stat -c%s cmake-build/voidframe.krnl)
           test $KERNEL_SIZE -gt 100000    # > 100KB
           test $KERNEL_SIZE -lt 10000000  # < 10MB
           
           # Check ISO bootability
-          file meson-build/VoidFrame.iso | grep -q "ISO.*bootable"
+          file cmake-build/VoidFrame.iso | grep -q "ISO.*bootable"
 
       - name: Upload kernel artifacts
         uses: actions/upload-artifact@v4
         with:
           name: voidframe-build-${{ github.sha }}
           path: |
-            meson-build/voidframe.krnl
-            meson-build/VoidFrame.iso
+            cmake-build/voidframe.krnl
+            cmake-build/VoidFrame.iso
           retention-days: 30

@@ -5,18 +5,15 @@
 ---
 
 - Roadmap/Features: [here!](docs/ROADMAP.md)
-- Structure: [here!](docs/STRUCTURE.md)
 - How it works: [here!](docs/ARCHITECTURE.md)
+- CMake Build and Configuration Guide: [here!](docs/CMAKE.md)
 
 ---
 
 ## Status
-
-![License](https://img.shields.io/badge/License-GPLv2-orange)
-
-![Version](https://img.shields.io/badge/Current%20Version-v0.0.2%20development3-blue)
-
 ![CI/CD](https://github.com/assembler-0/VoidFrame/actions/workflows/main.yaml/badge.svg)
+![License](https://img.shields.io/badge/License-GPLv2-blue)
+![Version](https://img.shields.io/badge/Current%20Version-v0.0.2%20development3-brightgreen)
 
 ## About
 
@@ -31,8 +28,7 @@ It would be amazing if you could contribute to this project!
 ## Prerequisites (development)
 - x64-compatible cpu (used: Intel i3-12100F)
 - POSIX-compliant OS (SysV ABI) (used: Arch Linux 6.16.9-arch1-1)
-- meson >= 1.4.0 (used: meson 1.9.1)
-- cmake >= 3.20 (used: cmake 4.1.1)
+- cmake >= 3.20 (used: cmake 4.1.2)
 - ninja >= 1.11 (used: ninja 1.21.1)
 - clang/++ >= 18.0.0 (used: 20.1.8)
 - nasm >= 2.16 (used: 2.16.03)
@@ -44,17 +40,6 @@ It would be amazing if you could contribute to this project!
 
 ### Quickstart
 #### Full development setup
-```bash
-# Meson
-git clone https://github.com/assembler-0/VoidFrame.git
-cd VoidFrame
-meson setup build
-cd build
-ninja -j$(nproc)
-ninja img
-ninja extra-img
-ninja run
-```
 ```bash
 # CMake
 git clone https://github.com/assembler-0/VoidFrame.git
@@ -90,6 +75,7 @@ ninja run
 - [x] Dynamic ML-inspired PIT frequency scaling (DynamoX)
 - [x] Virtual Memory (canonical)
 - [x] Physical Memory
+- [x] Dynamic memory mapping
 - [x] Memory Pool
 - [x] AVX2/SSE2 accelerated memory operations
 - [x] Memory & user protection

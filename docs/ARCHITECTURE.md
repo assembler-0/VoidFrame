@@ -1,4 +1,4 @@
-# The VoidFrame monolithic kernel 💫 v0.0.2-development3
+# The VoidFrame ring-0 kernel 💫 v0.0.2-development3
 
 ## Table of Contents
 
@@ -9,22 +9,21 @@
 - [Process Management](#process-management)
 - [Debugging and Development](#debugging-and-development)
 
-### Key Features
-- [here!](ROADMAP.md)
 ### System Requirements
 - Hardware requirements
   - AVX2/SSE2 support
   - 64-bit support
   - PS/2 keyboard and mouse (recommended)
-  - 16MB of RAM (minimum floor, 1% memory fragmentation as tested)
-  - 128MiB of RAM (or more) (recommended)
-  - FAT12/16-formatted IDE drive (optional)
-  - xHCI controller (optional)
-  - RTL8139 (optional)
-  - SB16 (optional)
+  - Minimum 32MB of ram
+  - IDE/AHCI drive with EXT2/FAT1x partitioning
+  - PCI device(s) (optional)
+  - APIC support
+  - PIT support
+  - Multiboot2 & GRUB support
+  - TSC support
+  - VESA (VBE) support (800x600 minimum, 32-bit color)
 - Supported architecture
   - x86_64
-  - aarch64 (soon?)
 
 ## Architecture
 
@@ -33,7 +32,7 @@
 - **Purpose**: Switch from protected mode to long mode and initialize the stack for the kernel
 - **Location**: `arch/x86_64/asm/pxs.asm`
 - **Key files**: `pxs.asm`
-- **Note**: If the kernel is run with `-debugcon stdio`, string: `1KCSWF23Z456789` will be expected at stdio, any missing characters will identify a major issue.
+- **Note**: If the kernel is run with `-debugcon stdio`, `1KCSWF23Z456789` is expected, any missing characters will identify a major issue.
 
 #### C-level Bootstrap: (PXS1 & PXS2)
 - **Purpose**: Initialize core kernel subsystems and jump to the higher half
@@ -46,6 +45,7 @@
 1. **Bootloader Phase**
     - GRUB loads /boot/voidframe.krnl @ 0x100000 (for obvious reason(s))
     - Request framebuffer and VESA (800x600)
+    - See: [grub.cfg](../grub.cfg) for more up-to-date details.
 
 2. **Assembly bootstrap**
     - File: `arch/x86_64/asm/pxs.asm`
@@ -62,6 +62,7 @@
     - Entered 64-bit mode (8)
     - Setup stack & Jump to kernel entry point (9)
     - Extra: (R!) Kernel returns.
+    - See: [pxs.asm](../arch/x86_64/asm/pxs.asm) for more up-to-date details.
 
 3. **PXS1**
     - Entry function: `KernelMain()` & `PXS1()`
@@ -75,6 +76,7 @@
     - Create new PML4
     - Identity-map kernel sections
     - Jump to Virtual half
+    - See: [Kernel.c](../kernel/core/Kernel.c) for more up-to-date details.
 
 4. **PXS2**
     - Entry function: `KernelMainHigherHalf()` & `PXS2()`
@@ -102,6 +104,7 @@
     - Start stack guard 
     - Setup memory protections
     - Enable interrupts
+    - See: [Kernel.c](../kernel/core/Kernel.c) for more up-to-date details.
 
 ## Memory Layout
 1. **Load**
@@ -125,31 +128,7 @@
     - It will track kernel space and test identity mapping. A faulty test will result in a kernel panic.
 7. **Heap**
     - The kernel heap is initialized using class-based memory pools.
-    - It is also started with validation_level = 1 (aka `KHEAP_VALIDATION_BASIC`, though, it could be changed at will).  
-8. **Layout**
-    - The memory layout is as follows:
-      ```
-      +---------------------+ 0xFFFFFFFFFFFFFFFFULL
-      |                     |
-      |                     |
-      |    Kernel Space     |
-      |                     |
-      |                     |
-      +---------------------+ 0xFFFFFE0000000000ULL
-      |                     |
-      |                     |
-      |                     |
-      |                     |
-      |                     |
-      |    Kernel Heap      |
-      |                     |
-      |                     |
-      |                     |
-      |                     |
-      |                     |
-      +---------------------+ 0xFFFF800000000000ULL
-      ```
-      Quite simple, isn't it?
+    - It is also started with validation_level = 1 (aka `KHEAP_VALIDATION_BASIC`, though, it could be changed at will).
 
 ## Process Management
 
@@ -265,7 +244,7 @@ Termination is a robust, multi-stage process designed to be safe and secure.
 
 The kernel employs a Multi-Level Feedback Queue (MLFQ) scheduler, a highly adaptive algorithm designed to achieve low latency for interactive tasks and high throughput for batch tasks.
 
-**File:** `Process.c`, `MLFQ.h`
+**File:** `MLFQ.c`, `MLFQ.h`
 
 #### Architecture
 
@@ -291,7 +270,7 @@ The `FastSchedule` function is invoked by the timer interrupt. Its logic is as f
 
 Astra is a dedicated, high-privilege system process that functions as a real-time security manager. Its primary mission is to ensure the integrity of the kernel and all running processes.
 
-**File:** `Process.c`
+**File:** `MLFQ.c`
 
 #### Security Tokens
 
@@ -391,57 +370,21 @@ The following functions and commands provide interfaces to the process managemen
     - GDB stub (soon?)
 - Development:
     - To develop the kernel, you *will* need the following tools:
+      - Linux (use other OS only if you can port the assembly code, but I dont see why you would want to)
       - clang (any kind, does not matter if its compiled for bare metal or for the kernel)
-      - meson (i was thinking of using Makefiles and the auto tools stack but the concept of having objects files everywhere is not attractive)
+      - CMake (meson failed me)
       - qemu (you obviously need this)
       - gdb (optional, I dont even know to hook it up)
       - nasm (for the bootloader and many other low-level things)
       - grub-mkrescue + its dependencies (for building the iso, since the current kernel implementation is not bootable yet)
-      - mkfs & qemu-img (or anything that can make disk image)
-      - ld (preferably from gnu ld (gcc or whatever), dont know why but lld is giving me issues)
+      - mkfs & qemu-img (or anything that can make disk images)
+      - ld.lld (any linker should work, just use lld for LLVM vibes)
 - Known issues:
   - The kernel is not *bootable* yet, its not an EFI stub, nor does it have a bootloader.
   - It is not a raw binary either, it needs to be loaded by a elf-compatible bootloader (in this case grub, but I am thinking of using a custom one, or just use grub for god’s sake).
-  - It can only support up to 4GiB of memory. (it would still *technically* work but again, you would only see 4GiB of memory in the kernel)
-  - The kernel is not multi-threaded, it is single-threaded.
-  - The fault handler is mid, any fault with bring down the system.
+  - No SMP support
+  - No UEFI support
+  - The fault handler is mid, any fault with bring down the system (most of the time).
   - It only works on qemu, for some reason??. ive tried Bochs, but it hardly ever gets to the shell, VBox is even worse.
   - The kernel's real hardware support is unknown, since I dont have a legacy BIOS pc :(.
-- Parameters:
-  - The kernel build options and flags are as follow (modify as needed)
-      ```jetbrainsmeson
-      vf_config_flags =  [
-    '-DVF_CONFIG_ENABLE_XHCI',
-    '-DVF_CONFIG_ENABLE_VIRTIO',
-    '-DVF_CONFIG_ENABLE_ISA',
-    '-DVF_CONFIG_ENABLE_LPT',
-    '-DVF_CONFIG_ENABLE_PCI',
-    '-DVF_CONFIG_ENABLE_PS2',
-    '-DVF_CONFIG_ENABLE_IDE',
-    '-DVF_CONFIG_ENABLE_VFCOMPOSITOR',
-    '-DVF_CONFIG_ENABLE_AHCI',
-    '-DVF_CONFIG_ENABLE_GENERIC_SOUND',
-    #'-DVF_CONFIG_ENABLE_VMWARE_SVGA_II',
-    '-DVF_CONFIG_RTC_CENTURY',
-    '-DVF_CONFIG_ENFORCE_MEMORY_PROTECTION',
-    '-DVF_CONFIG_VM_HOST',
-    '-DVF_CONFIG_SNOOZE_ON_BOOT',
-    '-DVF_CONFIG_PROCINFO_CREATE_DEFAULT',
-    '-DVF_CONFIG_USE_VFSHELL',
-    '-DVF_CONFIG_USE_DYNAMOX',
-    '-DVF_CONFIG_USE_ASTRA',
-    '-DVF_CONFIG_USE_CERBERUS',
-    #'-DVF_CONFIG_CERBERUS_VFS_LOGGING',
-    '-DVF_CONFIG_CERBERUS_THREAT_REPORTING',
-    '-DVF_CONFIG_CERBERUS_STACK_PROTECTION',
-    '-DVF_CONFIG_SCHED_MLFQ',
-    #'-DVF_CONFIG_PROCINFO_AUTO_CLEANUP',
-    #'-DVF_CONFIG_PANIC_OVERRIDE',
-    ]
-      ```
-  - Setup options:
-    ```jetbrainsmeson
-    option('exclude_extra_objects', type : 'boolean', value : false, description : 'Exclude extra objects from the build') # MASSIVE effect!, smaller size & smoother
-    option('automatic_post', type : 'boolean', value : false, description : 'Perform automatic power on self-test after kernel initialization')
-    ```
-> assembler-0 @ voidframe-kernel - 18:57 - 13-09-2025
+> assembler-0 @ voidframe - 19:02 - 01-10-2025

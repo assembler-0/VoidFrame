@@ -38,7 +38,7 @@ add_custom_target(runmin
         -no-reboot -no-shutdown
         -m 4G
         -boot d
-        DEPENDS iso
+        DEPENDS iso img extra-img
 )
 
 add_custom_target(img

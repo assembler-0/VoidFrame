@@ -5,9 +5,13 @@ set(C_FLAGS " -m64 -O2 -fno-omit-frame-pointer -finline-functions -foptimize-sib
 
 if(SILENT_BUILD)
     string(APPEND C_FLAGS " -w")
-elseif(STACK_PROTECTION)
+endif()
+
+if(STACK_PROTECTION)
     string(APPEND C_FLAGS " -fstack-protector-strong -D_FORTIFY_SOURCE=2")
-elseif(DEBUG_SYMBOLS)
+endif()
+
+if(DEBUG_SYMBOLS)
     string(APPEND C_FLAGS " -g3 -DDEBUG")
     string(APPEND CMAKE_ASM_NASM_FLAGS " -g -O0")
 endif()

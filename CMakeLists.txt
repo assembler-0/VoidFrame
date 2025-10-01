@@ -36,6 +36,7 @@ include(dependencies)
 include(flags)
 include(configuration)
 include(run)
+include(clang-x64)
 
 # ============================================================================ 
 # Source Files Organization
