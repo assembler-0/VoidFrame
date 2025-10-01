@@ -1,0 +1,23 @@
+# ============================================================================
+# Tool Dependencies
+# ============================================================================
+find_program(LLVM_OBJDUMP llvm-objdump)
+find_program(GRUB_MKRESCUE grub-mkrescue)
+find_program(QEMU_IMG qemu-img)
+find_program(MKFS_FAT mkfs.fat)
+find_program(MKFS_EXT2 mkfs.ext2)
+find_program(QEMU_SYSTEM_X86_64 qemu-system-x86_64)
+
+if (NOT LLVM_OBJDUMP)
+    message(WARNING "llvm-objdump not found. Please install LLVM.")
+elseif (NOT GRUB_MKRESCUE)
+    message(WARNING "grub-mkrescue not found. Please install GRUB.")
+elseif (NOT QEMU_IMG)
+    message(WARNING "qemu-img not found. Please install QEMU.")
+elseif (NOT MKFS_FAT)
+    message(WARNING "mkfs.fat not found. Please install dosfstools.")
+elseif (NOT MKFS_EXT2)
+    message(WARNING "mkfs.ext2 not found. Please install e2fsprogs.")
+elseif (NOT QEMU_SYSTEM_X86_64)
+    message(WARNING "qemu-system-x86_64 not found. Please install QEMU.")
+endif()
