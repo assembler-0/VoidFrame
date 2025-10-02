@@ -17,6 +17,7 @@ typedef struct {
     bool osxsave;
     bool avx;
     bool avx2;
+    bool avx512f;
 } CpuFeatures;
 
 // DO NOT TOUCH THIS STRUCTURE - must match interrupt ASM stack layout

@@ -46,7 +46,7 @@ git clone https://github.com/assembler-0/VoidFrame.git
 cd VoidFrame
 mkdir build
 cd build
-cmake .. -DCMAKE_BUILD_TYPE=Release -DCMAKE_TOOLCHAIN_FILE=cmake/toolchain/<linux/windows/macos>-x64.cmake -G Ninja
+cmake .. -DCMAKE_BUILD_TYPE=Release -DCMAKE_TOOLCHAIN_FILE=../cmake/toolchain/<linux/windows/macos>-x64.cmake -G Ninja
 ninja -j$(nproc)
 ninja img
 ninja extra-img

@@ -36,9 +36,9 @@ add_custom_target(runmin
         -debugcon file:bootstrap.log
         -serial file:serial.log
         -no-reboot -no-shutdown
-        -m 4G
+        -m 1G
         -boot d
-        DEPENDS iso img extra-img
+        DEPENDS iso
 )
 
 add_custom_target(img

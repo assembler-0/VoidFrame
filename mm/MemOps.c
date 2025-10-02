@@ -3,11 +3,24 @@
 #include "Panic.h"
 #include "x64.h"
 
-void* memset(void* dest, int value, unsigned long size) {
+#define PREFETCH_DISTANCE 256
+
+// Non-temporal store threshold (use NT stores for large copies to avoid cache pollution)
+#define NT_STORE_THRESHOLD 262144  // 256KB
+
+void* memset(void* restrict dest, int value, unsigned long size) {
     return FastMemset(dest, value, size);
 }
 
-void* FastMemset(void* dest, int value, uint64_t size) {
+void* memcpy(void* restrict dest, const void* restrict src, unsigned long size) {
+    return FastMemcpy(dest, src, size);
+}
+
+int memcmp(const void* restrict s1, const void* restrict s2, unsigned long size) {
+    return FastMemcmp(s1, s2, size);
+}
+
+void* FastMemset(void* restrict dest, int value, uint64_t size) {
     ASSERT(dest != NULL);
 
     if (size == 0) return dest;
@@ -16,9 +29,84 @@ void* FastMemset(void* dest, int value, uint64_t size) {
     uint8_t* d = (uint8_t*)dest;
     uint8_t val = (uint8_t)value;
 
-    // Use AVX2 if available for even better performance
-    if (features->avx2 && size >= 32) {
-        // Create 256-bit value
+    // Handle small sizes with optimized path
+    if (size < 32) {
+        // Use overlapping stores for sizes 16-31
+        if (size >= 16) {
+            uint64_t val64 = 0x0101010101010101ULL * val;
+            __asm__ volatile(
+                "movq %0, %%xmm0\n"
+                "punpcklqdq %%xmm0, %%xmm0\n"
+                "movdqu %%xmm0, (%1)\n"
+                "movdqu %%xmm0, -16(%1,%2)\n"
+                :
+                : "r"(val64), "r"(d), "r"(size)
+                : "xmm0", "memory"
+            );
+            return dest;
+        }
+
+        // For 8-15 bytes, use overlapping 64-bit stores
+        if (size >= 8) {
+            uint64_t val64 = 0x0101010101010101ULL * val;
+            *(uint64_t*)d = val64;
+            *(uint64_t*)(d + size - 8) = val64;
+            return dest;
+        }
+
+        // For 4-7 bytes, use overlapping 32-bit stores
+        if (size >= 4) {
+            uint32_t val32 = 0x01010101U * val;
+            *(uint32_t*)d = val32;
+            *(uint32_t*)(d + size - 4) = val32;
+            return dest;
+        }
+
+        // For 1-3 bytes
+        while (size--) *d++ = val;
+        return dest;
+    }
+
+    // AVX-512 path (if available) - highest performance
+    if (features->avx512f && size >= 64) {
+        uint64_t val64 = 0x0101010101010101ULL * val;
+
+        __asm__ volatile(
+            "vmovq %0, %%xmm0\n"
+            "vpbroadcastq %%xmm0, %%zmm0\n"
+            :
+            : "r"(val64)
+            : "xmm0", "zmm0"
+        );
+
+        // Align to 64 bytes if beneficial
+        if (size >= 128) {
+            while ((uintptr_t)d & 63) {
+                *d++ = val;
+                size--;
+            }
+        }
+
+        // Use non-temporal stores for very large buffers
+        if (size >= NT_STORE_THRESHOLD) {
+            while (size >= 64) {
+                __asm__ volatile("vmovntdq %%zmm0, (%0)" : : "r"(d) : "memory");
+                d += 64;
+                size -= 64;
+            }
+            __asm__ volatile("sfence" ::: "memory");
+        } else {
+            while (size >= 64) {
+                __asm__ volatile("vmovdqu64 %%zmm0, (%0)" : : "r"(d) : "memory");
+                d += 64;
+                size -= 64;
+            }
+        }
+
+        __asm__ volatile("vzeroupper" ::: "memory");
+    }
+    // AVX2 path with optimizations
+    else if (features->avx2 && size >= 32) {
         uint64_t val64 = 0x0101010101010101ULL * val;
 
         __asm__ volatile(
@@ -29,17 +117,39 @@ void* FastMemset(void* dest, int value, uint64_t size) {
             : "xmm0", "ymm0"
         );
 
+        // Align to 32 bytes for better performance on aligned stores
+        if (size >= 64) {
+            while ((uintptr_t)d & 31) {
+                *d++ = val;
+                size--;
+            }
+        }
+
+        // Unroll 4x for better throughput
+        while (size >= 128) {
+            __asm__ volatile(
+                "vmovdqa %%ymm0, (%0)\n"
+                "vmovdqa %%ymm0, 32(%0)\n"
+                "vmovdqa %%ymm0, 64(%0)\n"
+                "vmovdqa %%ymm0, 96(%0)\n"
+                :
+                : "r"(d)
+                : "memory"
+            );
+            d += 128;
+            size -= 128;
+        }
+
         while (size >= 32) {
             __asm__ volatile("vmovdqu %%ymm0, (%0)" : : "r"(d) : "memory");
             d += 32;
             size -= 32;
         }
 
-        // Clean up YMM registers
         __asm__ volatile("vzeroupper" ::: "memory");
     }
+    // SSE2 path
     else if (features->sse2 && size >= 16) {
-        // Original SSE2 path with better value construction
         uint64_t val64 = 0x0101010101010101ULL * val;
 
         __asm__ volatile(
@@ -50,29 +160,44 @@ void* FastMemset(void* dest, int value, uint64_t size) {
             : "xmm0"
         );
 
+        // Unroll 4x
+        while (size >= 64) {
+            __asm__ volatile(
+                "movdqu %%xmm0, (%0)\n"
+                "movdqu %%xmm0, 16(%0)\n"
+                "movdqu %%xmm0, 32(%0)\n"
+                "movdqu %%xmm0, 48(%0)\n"
+                :
+                : "r"(d)
+                : "memory"
+            );
+            d += 64;
+            size -= 64;
+        }
+
         while (size >= 16) {
             __asm__ volatile("movdqu %%xmm0, (%0)" : : "r"(d) : "memory");
             d += 16;
             size -= 16;
         }
     }
-    else if (size >= 8) {
-        // 64-bit aligned memset for smaller sizes
-        uint64_t val64 = 0x0101010101010101ULL * val;
 
-        while (size >= 8 && ((uintptr_t)d & 7) == 0) {
+    // Handle remaining bytes with 64-bit stores when possible
+    if (size >= 8) {
+        uint64_t val64 = 0x0101010101010101ULL * val;
+        while (size >= 8) {
             *(uint64_t*)d = val64;
             d += 8;
             size -= 8;
         }
     }
 
-    // Handle remaining bytes
+    // Final bytes
     while (size--) *d++ = val;
     return dest;
 }
 
-void* FastMemcpy(void* dest, const void* src, uint64_t size) {
+void* FastMemcpy(void* restrict dest, const void* restrict src, uint64_t size) {
     ASSERT(dest != NULL && src != NULL);
 
     if (size == 0) return dest;
@@ -80,130 +205,386 @@ void* FastMemcpy(void* dest, const void* src, uint64_t size) {
     uint8_t* d = (uint8_t*)dest;
     const uint8_t* s = (const uint8_t*)src;
 
+    // Handle overlap cases
+    if (d == s) return dest;
+
     CpuFeatures* features = GetCpuFeatures();
 
-    // Use AVX2 for large copies if available
-    if (features->avx2 && size >= 32) {
-        // AVX2 copy using an unaligned load and store for maximum safety.
-        // We save and restore ymm7 to be invisible to the calling code.
-        while (size >= 32) {
+    // Small copy optimization using overlapping loads/stores
+    if (size < 32) {
+        if (size >= 16) {
             __asm__ volatile(
-                "vmovdqu (%1), %%ymm7\n"  // Unaligned read from src
-                "vmovdqu %%ymm7, (%0)\n"  // Unaligned write to dest
+                "movdqu (%1), %%xmm0\n"
+                "movdqu -16(%1,%2), %%xmm1\n"
+                "movdqu %%xmm0, (%0)\n"
+                "movdqu %%xmm1, -16(%0,%2)\n"
+                :
+                : "r"(d), "r"(s), "r"(size)
+                : "xmm0", "xmm1", "memory"
+            );
+            return dest;
+        }
+
+        if (size >= 8 && d && s) {
+            *(uint64_t*)d = *(uint64_t*)s;
+            *(uint64_t*)(d + size - 8) = *(uint64_t*)(s + size - 8);
+            return dest;
+        }
+
+        if (size >= 4 && d && s) {
+            *(uint32_t*)d = *(uint32_t*)s;
+            *(uint32_t*)(d + size - 4) = *(uint32_t*)(s + size - 4);
+            return dest;
+        }
+
+        while (size-- && d && s) *d++ = *s++;
+        return dest;
+    }
+
+    // AVX-512 path
+    if (features->avx512f && size >= 64) {
+        // Align destination to 64 bytes if beneficial
+        if (size >= 256) {
+            while ((uintptr_t)d & 63 && d) {
+                *d++ = *s++;
+                size--;
+            }
+        }
+
+        // Use non-temporal stores for very large copies
+        if (size >= NT_STORE_THRESHOLD) {
+            // Prefetch ahead
+            while (size >= 256 && d && s) {
+                __asm__ volatile(
+                    "prefetchnta 256(%1)\n"
+                    "prefetchnta 320(%1)\n"
+                    "vmovdqu64 (%1), %%zmm0\n"
+                    "vmovdqu64 64(%1), %%zmm1\n"
+                    "vmovdqu64 128(%1), %%zmm2\n"
+                    "vmovdqu64 192(%1), %%zmm3\n"
+                    "vmovntdq %%zmm0, (%0)\n"
+                    "vmovntdq %%zmm1, 64(%0)\n"
+                    "vmovntdq %%zmm2, 128(%0)\n"
+                    "vmovntdq %%zmm3, 192(%0)\n"
+                    :
+                    : "r"(d), "r"(s)
+                    : "zmm0", "zmm1", "zmm2", "zmm3", "memory"
+                );
+                d += 256;
+                s += 256;
+                size -= 256;
+            }
+            __asm__ volatile("sfence" ::: "memory");
+        } else {
+            // Regular copy with 4x unrolling
+            while (size >= 256 && d && s) {
+                __asm__ volatile(
+                    "vmovdqu64 (%1), %%zmm0\n"
+                    "vmovdqu64 64(%1), %%zmm1\n"
+                    "vmovdqu64 128(%1), %%zmm2\n"
+                    "vmovdqu64 192(%1), %%zmm3\n"
+                    "vmovdqu64 %%zmm0, (%0)\n"
+                    "vmovdqu64 %%zmm1, 64(%0)\n"
+                    "vmovdqu64 %%zmm2, 128(%0)\n"
+                    "vmovdqu64 %%zmm3, 192(%0)\n"
+                    :
+                    : "r"(d), "r"(s)
+                    : "zmm0", "zmm1", "zmm2", "zmm3", "memory"
+                );
+                d += 256;
+                s += 256;
+                size -= 256;
+            }
+        }
+
+        while (size >= 64 && d && s) {
+            __asm__ volatile(
+                "vmovdqu64 (%1), %%zmm0\n"
+                "vmovdqu64 %%zmm0, (%0)\n"
                 :
                 : "r"(d), "r"(s)
-                : "memory", "ymm7"
+                : "zmm0", "memory"
+            );
+            d += 64;
+            s += 64;
+            size -= 64;
+        }
+
+        __asm__ volatile("vzeroupper" ::: "memory");
+    }
+    // AVX2 path with enhanced performance
+    else if (features->avx2 && size >= 32) {
+        // Align destination for better performance
+        if (size >= 128) {
+            while ((uintptr_t)d & 31 && d && s) {
+                *d++ = *s++;
+                size--;
+            }
+        }
+
+        // 4x unrolled loop with prefetching
+        while (size >= 128 && d && s) {
+            __asm__ volatile(
+                "prefetchnta 256(%1)\n"
+                "vmovdqu (%1), %%ymm0\n"
+                "vmovdqu 32(%1), %%ymm1\n"
+                "vmovdqu 64(%1), %%ymm2\n"
+                "vmovdqu 96(%1), %%ymm3\n"
+                "vmovdqa %%ymm0, (%0)\n"
+                "vmovdqa %%ymm1, 32(%0)\n"
+                "vmovdqa %%ymm2, 64(%0)\n"
+                "vmovdqa %%ymm3, 96(%0)\n"
+                :
+                : "r"(d), "r"(s)
+                : "ymm0", "ymm1", "ymm2", "ymm3", "memory"
+            );
+            d += 128;
+            s += 128;
+            size -= 128;
+        }
+
+        while (size >= 32 && d && s) {
+            __asm__ volatile(
+                "vmovdqu (%1), %%ymm0\n"
+                "vmovdqu %%ymm0, (%0)\n"
+                :
+                : "r"(d), "r"(s)
+                : "ymm0", "memory"
             );
             d += 32;
             s += 32;
             size -= 32;
         }
 
-        // IMPORTANT: Clean up the AVX state to prevent performance issues
-        // when mixing with older SSE code.
         __asm__ volatile("vzeroupper" ::: "memory");
     }
-
+    // SSE2 path with unrolling
     else if (features->sse2 && size >= 16) {
-        // SSE2 copy using unaligned load/store. Disable IRQs to avoid ISR clobber.
         irq_flags_t irqf = save_irq_flags();
         cli();
-        while (size >= 16) {
+
+        // 4x unrolled
+        while (size >= 64 && d && s) {
             __asm__ volatile(
-                "movdqu (%1), %%xmm7\n"   // Unaligned read from src
-                "movdqu %%xmm7, (%0)\n"   // Unaligned write to dest
+                "movdqu (%1), %%xmm0\n"
+                "movdqu 16(%1), %%xmm1\n"
+                "movdqu 32(%1), %%xmm2\n"
+                "movdqu 48(%1), %%xmm3\n"
+                "movdqu %%xmm0, (%0)\n"
+                "movdqu %%xmm1, 16(%0)\n"
+                "movdqu %%xmm2, 32(%0)\n"
+                "movdqu %%xmm3, 48(%0)\n"
                 :
                 : "r"(d), "r"(s)
-                : "memory", "xmm7"
+                : "xmm0", "xmm1", "xmm2", "xmm3", "memory"
+            );
+            d += 64;
+            s += 64;
+            size -= 64;
+        }
+
+        while (size >= 16 && d && s) {
+            __asm__ volatile(
+                "movdqu (%1), %%xmm0\n"
+                "movdqu %%xmm0, (%0)\n"
+                :
+                : "r"(d), "r"(s)
+                : "xmm0", "memory"
             );
             d += 16;
             s += 16;
             size -= 16;
         }
-        __asm__ volatile("sfence" ::: "memory");
+
         restore_irq_flags(irqf);
     }
 
-    if (size >= 8) {
-        // Byte-align destination first
-        while (((uintptr_t)d & 7) != 0 && size > 0) {
-            *d++ = *s++;
-            size--;
-        }
-
-        // If src is also aligned, we can use fast 64-bit moves
-        if (((uintptr_t)s & 7) == 0) {
-            uint64_t* d64 = (uint64_t*)d;
-            const uint64_t* s64 = (const uint64_t*)s;
-
-            while (size >= 64) {
-                d64[0] = s64[0]; d64[1] = s64[1]; d64[2] = s64[2]; d64[3] = s64[3];
-                d64[4] = s64[4]; d64[5] = s64[5]; d64[6] = s64[6]; d64[7] = s64[7];
-                d64 += 8;
-                s64 += 8;
-                size -= 64;
-            }
-            while (size >= 8) {
-                *d64++ = *s64++;
-                size -= 8;
-            }
-            d = (uint8_t*)d64;
-            s = (const uint8_t*)s64;
-        }
+    // Handle remainder with 64-bit copies when possible
+    while (size >= 8 && d && s) {
+        *(uint64_t*)d = *(uint64_t*)s;
+        d += 8;
+        s += 8;
+        size -= 8;
     }
 
-    // Handle the remainder
-    while (size > 0) {
-        *d++ = *s++;
-        size--;
-    }
+    // Final bytes
+    while (size-- && d && s) *d++ = *s++;
 
     return dest;
 }
 
-void FastZeroPage(void* page) {
+void FastZeroPage(void* restrict page) {
     ASSERT(page != NULL);
     CpuFeatures* features = GetCpuFeatures();
 
-    if (features->avx2) {
+    // AVX-512 path - fastest for page zeroing
+    if (features->avx512f) {
         irq_flags_t irqf = save_irq_flags();
         cli();
-        __asm__ volatile("vpxor %%ymm0, %%ymm0, %%ymm0" ::: "ymm0");
+
+        __asm__ volatile("vpxorq %%zmm0, %%zmm0, %%zmm0" ::: "zmm0");
 
         uint8_t* p = (uint8_t*)page;
-        for (int i = 0; i < 4096; i += 32) {
-            __asm__ volatile("vmovdqa %%ymm0, (%0)" : : "r"(p + i) : "memory");
+        // Unroll 4x for better throughput
+        for (int i = 0; i < 4096; i += 256) {
+            __asm__ volatile(
+                "vmovdqa64 %%zmm0, (%0)\n"
+                "vmovdqa64 %%zmm0, 64(%0)\n"
+                "vmovdqa64 %%zmm0, 128(%0)\n"
+                "vmovdqa64 %%zmm0, 192(%0)\n"
+                :
+                : "r"(p + i)
+                : "memory"
+            );
         }
 
         __asm__ volatile("vzeroupper" ::: "memory");
         __asm__ volatile("sfence" ::: "memory");
         restore_irq_flags(irqf);
-    } else if (features->sse2) {
+    }
+    // AVX2 path with better unrolling
+    else if (features->avx2) {
         irq_flags_t irqf = save_irq_flags();
         cli();
-        __asm__ volatile("pxor %%xmm0, %%xmm0" ::: "xmm0");
+
+        __asm__ volatile("vpxor %%ymm0, %%ymm0, %%ymm0" ::: "ymm0");
+
         uint8_t* p = (uint8_t*)page;
-        // Unroll for better performance
-        for (int i = 0; i < 4096; i += 64) {
+        // Unroll 8x for maximum throughput
+        for (int i = 0; i < 4096; i += 256) {
             __asm__ volatile(
-                "movdqa %%xmm0, 0(%0)\n"
+                "vmovdqa %%ymm0, (%0)\n"
+                "vmovdqa %%ymm0, 32(%0)\n"
+                "vmovdqa %%ymm0, 64(%0)\n"
+                "vmovdqa %%ymm0, 96(%0)\n"
+                "vmovdqa %%ymm0, 128(%0)\n"
+                "vmovdqa %%ymm0, 160(%0)\n"
+                "vmovdqa %%ymm0, 192(%0)\n"
+                "vmovdqa %%ymm0, 224(%0)\n"
+                :
+                : "r"(p + i)
+                : "memory"
+            );
+        }
+
+        __asm__ volatile("vzeroupper" ::: "memory");
+        __asm__ volatile("sfence" ::: "memory");
+        restore_irq_flags(irqf);
+    }
+    else if (features->sse2) {
+        irq_flags_t irqf = save_irq_flags();
+        cli();
+
+        __asm__ volatile("pxor %%xmm0, %%xmm0" ::: "xmm0");
+
+        uint8_t* p = (uint8_t*)page;
+        // Unroll 8x
+        for (int i = 0; i < 4096; i += 128) {
+            __asm__ volatile(
+                "movdqa %%xmm0, (%0)\n"
                 "movdqa %%xmm0, 16(%0)\n"
                 "movdqa %%xmm0, 32(%0)\n"
                 "movdqa %%xmm0, 48(%0)\n"
-                : : "r"(p + i) : "memory"
+                "movdqa %%xmm0, 64(%0)\n"
+                "movdqa %%xmm0, 80(%0)\n"
+                "movdqa %%xmm0, 96(%0)\n"
+                "movdqa %%xmm0, 112(%0)\n"
+                :
+                : "r"(p + i)
+                : "memory"
             );
         }
+
         __asm__ volatile("sfence" ::: "memory");
         restore_irq_flags(irqf);
-    } else {
-        // Fallback to optimized memset
+    }
+    else {
         FastMemset(page, 0, 4096);
     }
 }
 
-int FastMemcmp(const void* ptr1, const void* ptr2, uint64_t size) {
+int FastMemcmp(const void* restrict ptr1, const void* restrict ptr2, uint64_t size) {
     const uint8_t* p1 = (const uint8_t*)ptr1;
     const uint8_t* p2 = (const uint8_t*)ptr2;
+    CpuFeatures* features = GetCpuFeatures();
+
+    // AVX-512 comparison for large blocks
+    if (features->avx512f && size >= 64) {
+        while (size >= 64) {
+            uint64_t mask;
+            __asm__ volatile(
+                "vmovdqu64 (%1), %%zmm0\n"
+                "vmovdqu64 (%2), %%zmm1\n"
+                "vpcmpub $4, %%zmm0, %%zmm1, %%k1\n"  // Not equal comparison
+                "kmovq %%k1, %0\n"
+                : "=r"(mask)
+                : "r"(p1), "r"(p2)
+                : "zmm0", "zmm1", "k1"
+            );
+
+            if (mask != 0) {
+                // Find first differing byte
+                int idx = __builtin_ctzll(mask);
+                return (p1[idx] < p2[idx]) ? -1 : 1;
+            }
+
+            p1 += 64;
+            p2 += 64;
+            size -= 64;
+        }
+        __asm__ volatile("vzeroupper" ::: "memory");
+    }
+    // AVX2 comparison
+    else if (features->avx2 && size >= 32) {
+        while (size >= 32) {
+            int result;
+            __asm__ volatile(
+                "vmovdqu (%1), %%ymm0\n"
+                "vmovdqu (%2), %%ymm1\n"
+                "vpcmpeqb %%ymm0, %%ymm1, %%ymm2\n"
+                "vpmovmskb %%ymm2, %0\n"
+                : "=r"(result)
+                : "r"(p1), "r"(p2)
+                : "ymm0", "ymm1", "ymm2"
+            );
+
+            if (result != -1) {
+                // Find first differing byte
+                int idx = __builtin_ctz(~result);
+                return (p1[idx] < p2[idx]) ? -1 : 1;
+            }
+
+            p1 += 32;
+            p2 += 32;
+            size -= 32;
+        }
+        __asm__ volatile("vzeroupper" ::: "memory");
+    }
+    // SSE2 comparison
+    else if (features->sse2 && size >= 16) {
+        while (size >= 16) {
+            int result;
+            __asm__ volatile(
+                "movdqu (%1), %%xmm0\n"
+                "movdqu (%2), %%xmm1\n"
+                "pcmpeqb %%xmm0, %%xmm1\n"
+                "pmovmskb %%xmm1, %0\n"
+                : "=r"(result)
+                : "r"(p1), "r"(p2)
+                : "xmm0", "xmm1"
+            );
+
+            if (result != 0xFFFF) {
+                // Find first differing byte
+                int idx = __builtin_ctz(~result);
+                return (p1[idx] < p2[idx]) ? -1 : 1;
+            }
+
+            p1 += 16;
+            p2 += 16;
+            size -= 16;
+        }
+    }
 
     // 64-bit comparison for aligned data
     if (size >= 8 && ((uintptr_t)p1 & 7) == 0 && ((uintptr_t)p2 & 7) == 0) {
@@ -211,30 +592,34 @@ int FastMemcmp(const void* ptr1, const void* ptr2, uint64_t size) {
         const uint64_t* q2 = (const uint64_t*)p2;
 
         while (size >= 8) {
-            if (*q1 != *q2) {
-                // Found difference, need to find which byte
-                p1 = (const uint8_t*)q1;
-                p2 = (const uint8_t*)q2;
-                for (int i = 0; i < 8; i++) {
-                    if (p1[i] < p2[i]) return -1;
-                    if (p1[i] > p2[i]) return 1;
-                }
+            uint64_t v1 = *q1;
+            uint64_t v2 = *q2;
+
+            if (v1 != v2) {
+                // Use bswap to compare in big-endian order (byte-by-byte)
+                v1 = __builtin_bswap64(v1);
+                v2 = __builtin_bswap64(v2);
+                return (v1 < v2) ? -1 : 1;
             }
+
             q1++;
             q2++;
             size -= 8;
         }
+
         p1 = (const uint8_t*)q1;
         p2 = (const uint8_t*)q2;
     }
 
-    // Compare remaining bytes
+    // Final byte-by-byte comparison
     while (size > 0) {
-        if (*p1 < *p2) return -1;
-        if (*p1 > *p2) return 1;
+        if (*p1 != *p2) {
+            return (*p1 < *p2) ? -1 : 1;
+        }
         p1++;
         p2++;
         size--;
     }
+
     return 0;
 }
