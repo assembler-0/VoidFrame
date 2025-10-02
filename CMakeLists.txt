@@ -18,6 +18,16 @@ else()
     message(FATAL_ERROR "Unsupported host system: ${CMAKE_HOST_SYSTEM_NAME}")
 endif()
 
+message("CMake Toolchain: ${CMAKE_TOOLCHAIN_FILE}")
+message("CMake Generator: ${CMAKE_GENERATOR}")
+message("CMake Build Type: ${CMAKE_BUILD_TYPE}")
+message("CMake Source Directory: ${CMAKE_SOURCE_DIR}")
+message("CMake Binary Directory: ${CMAKE_BINARY_DIR}")
+message("CMake Current Source Directory: ${CMAKE_CURRENT_SOURCE_DIR}")
+message("CMake Current Binary Directory: ${CMAKE_CURRENT_BINARY_DIR}")
+message("CMake Host System Name: ${CMAKE_HOST_SYSTEM_NAME}")
+message("CMake Host System Processor: ${CMAKE_HOST_SYSTEM_PROCESSOR}")
+
 # ============================================================================
 # Standard Configuration
 # ============================================================================
@@ -30,13 +40,12 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 # Module Path & Includes
 # ============================================================================
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_SOURCE_DIR}/cmake")
+include(run)
 include(features)
 include(variable)
 include(dependencies)
 include(flags)
 include(configuration)
-include(run)
-include(clang-x64)
 
 # ============================================================================ 
 # Source Files Organization

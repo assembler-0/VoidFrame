@@ -26,7 +26,7 @@ add_custom_target(run
         -parallel file:printer.out
         -drive file=VirtioDisk.img,format=raw,id=virtio_disk,if=none
         -device virtio-blk-pci,drive=virtio_disk,disable-legacy=on
-        DEPENDS iso
+        DEPENDS iso img extra-img
 )
 
 add_custom_target(runmin
