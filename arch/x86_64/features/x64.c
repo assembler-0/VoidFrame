@@ -63,9 +63,10 @@ void CpuInit(void) {
     // If this is not set, the OS is not allowed to set XCR0 to enable AVX.
     cpu_features.osxsave = (ecx >> 27) & 1;
     if (!cpu_features.osxsave) {
-        PrintKernelWarning("System: CPU: OSXSAVE not supported. AVX will be disabled.\n");
+        PrintKernelWarning("System: CPU: OSXSAVE not supported. AVX/2/512F will be disabled.\n");
         cpu_features.avx = false;
         cpu_features.avx2 = false;
+        cpu_features.avx512f = false;
         CPUFeatureValidation();
         return;
     }

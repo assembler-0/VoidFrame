@@ -36,14 +36,15 @@ jobs:
         run: |
             mkdir cmake-build
             cd cmake-build
-            cmake .. -G Ninja
+            cmake .. -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_TOOLCHAIN_FILE=../cmake/toolchain/linux-x64.cmake
             cd ..
-            ninja -C cmake-build
+            ninja -C cmake-build -j $(nproc)
 
       - name: Artifact Analysis
         run: |
-          timeout 30s ninja -C cmake-build runmin || true
-          
+          cd cmake-build
+          timeout 30s ninja runmin || true
+          cd ..
           grep -q "1KCSWF23Z456789" cmake-build/bootstrap.log
           ! grep -i "panic\|fault\|crash\|oops\|error\|failed" cmake-build/serial.log
           
@@ -71,4 +72,4 @@ jobs:
           path: |
             cmake-build/voidframe.krnl
             cmake-build/VoidFrame.iso
-          retention-days: 30
+          retention-days: 10

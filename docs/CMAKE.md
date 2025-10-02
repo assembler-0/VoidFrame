@@ -23,13 +23,6 @@ This is the main entry point for the build system. It performs the following tas
 
 The `/cmake` directory contains several `.cmake` files that handle specific parts of the build configuration.
 
-### `clang-x64.cmake`
-
-This file configures the build to use the Clang toolchain for cross-compilation to an x86_64 target.
--   Sets the C and CXX compilers to `clang` and `clang++`.
--   Sets the assembler to `nasm`.
--   Configures the linker to use `lld`.
-
 ### `configuration.cmake`
 
 This file defines several build options that can be configured when running CMake.

@@ -17,6 +17,7 @@ typedef struct {
     bool osxsave;
     bool avx;
     bool avx2;
+    bool avx512f;
 } CpuFeatures;
 
 // DO NOT TOUCH THIS STRUCTURE - must match interrupt ASM stack layout
@@ -59,6 +60,17 @@ static inline uint64_t __attribute__((always_inline)) rdtsc(void) {
     uint32_t lo, hi;
     __asm__ volatile ("rdtsc" : "=a"(lo), "=d"(hi));
     return ((uint64_t)hi << 32) | lo;
+}
+
+static inline void __attribute__((always_inline)) __full_mem_prot_init(void) {
+    __sync_synchronize();
+    __asm__ volatile("mfence; sfence; lfence" ::: "memory");
+}
+
+static inline void __attribute__((always_inline)) __full_mem_prot_end(void) {
+    __asm__ volatile("mfence; sfence; lfence" ::: "memory");
+    __sync_synchronize();
+    __builtin_ia32_serialize();
 }
 
 void DumpRegisters(RegistersDumpT* dump);

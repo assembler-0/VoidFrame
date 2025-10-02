@@ -18,6 +18,26 @@ else()
     message(FATAL_ERROR "Unsupported host system: ${CMAKE_HOST_SYSTEM_NAME}")
 endif()
 
+if(NOT CMAKE_TOOLCHAIN_FILE)
+    message(FATAL_ERROR "CMAKE_TOOLCHAIN_FILE is not set. Please provide a toolchain file.")
+else()
+    message(STATUS "Using toolchain file: ${CMAKE_TOOLCHAIN_FILE}")
+endif()
+
+if(CMAKE_GENERATOR STREQUAL "Ninja")
+    message(STATUS "CMake: Generator: ${CMAKE_GENERATOR}")
+else()
+    message(WARNING "CMake: Non-Ninja generator detected: ${CMAKE_GENERATOR}. Ninja is recommended.")
+endif()
+
+message(STATUS "CMake Build Type: ${CMAKE_BUILD_TYPE}")
+message(STATUS "CMake Source Directory: ${CMAKE_SOURCE_DIR}")
+message(STATUS "CMake Binary Directory: ${CMAKE_BINARY_DIR}")
+message(STATUS "CMake Current Source Directory: ${CMAKE_CURRENT_SOURCE_DIR}")
+message(STATUS "CMake Current Binary Directory: ${CMAKE_CURRENT_BINARY_DIR}")
+message(STATUS "CMake Host System Name: ${CMAKE_HOST_SYSTEM_NAME}")
+message(STATUS "CMake Host System Processor: ${CMAKE_HOST_SYSTEM_PROCESSOR}")
+
 # ============================================================================
 # Standard Configuration
 # ============================================================================
@@ -30,13 +50,12 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 # Module Path & Includes
 # ============================================================================
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_SOURCE_DIR}/cmake")
+include(run)
 include(features)
 include(variable)
 include(dependencies)
 include(flags)
 include(configuration)
-include(run)
-include(clang-x64)
 
 # ============================================================================ 
 # Source Files Organization
