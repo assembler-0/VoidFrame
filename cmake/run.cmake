@@ -42,13 +42,16 @@ add_custom_target(runmin
 )
 
 add_custom_target(img
-        COMMAND ${QEMU_IMG} create -f qcow2 VoidFrameDisk.img 16G && ${MKFS_EXT2} VoidFrameDisk.img
+        COMMAND ${QEMU_IMG} create -f qcow2 VoidFrameDisk.img 16G
+        COMMAND ${MKFS_EXT2} VoidFrameDisk.img
         COMMENT "Creating disk images"
 )
 
 add_custom_target(extra-img
-        COMMAND ${QEMU_IMG} create -f raw VirtioDisk.img 128M && ${MKFS_FAT} -F 16 VirtioDisk.img
-        COMMAND ${QEMU_IMG} create -f raw SataDisk.img 128M && ${MKFS_FAT} -F 16 SataDisk.img
+        COMMAND ${QEMU_IMG} create -f raw VirtioDisk.img 128M
+        COMMAND ${MKFS_FAT} -F 16 VirtioDisk.img
+        COMMAND ${QEMU_IMG} create -f raw SataDisk.img 128M
+        COMMAND ${MKFS_FAT} -F 16 SataDisk.img
         COMMENT "Creating extra disk images"
 )
 
