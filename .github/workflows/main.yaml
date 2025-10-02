@@ -37,37 +37,39 @@ jobs:
             mkdir cmake-build
             cd cmake-build
             cmake .. -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_TOOLCHAIN_FILE=../cmake/toolchain/linux-x64.cmake
-            ninja -j$(nproc)
+            cd ..
+            ninja -C cmake-build -j $(nproc)
 
       - name: Artifact Analysis
         run: |
+          cd cmake-build
           timeout 30s ninja runmin || true
+          cd ..
+          grep -q "1KCSWF23Z456789" cmake-build/bootstrap.log
+          ! grep -i "panic\|fault\|crash\|oops\|error\|failed" cmake-build/serial.log
           
-          grep -q "1KCSWF23Z456789" bootstrap.log
-          ! grep -i "panic\|fault\|crash\|oops\|error\|failed" serial.log
-          
-          ls -la voidframe.krnl
-          test -s voidframe.krnl
+          ls -la cmake-build/voidframe.krnl
+          test -s cmake-build/voidframe.krnl
           
           # Check if ISO was created
-          ls -la VoidFrame.iso
-          test -s VoidFrame.iso
+          ls -la cmake-build/VoidFrame.iso
+          test -s cmake-build/VoidFrame.iso
           
-          file voidframe.krnl | grep -q "ELF.*executable"
+          file cmake-build/voidframe.krnl | grep -q "ELF.*executable"
     
           # Verify kernel size is reasonable (not empty, not huge)
-          KERNEL_SIZE=$(stat -c%s voidframe.krnl)
+          KERNEL_SIZE=$(stat -c%s cmake-build/voidframe.krnl)
           test $KERNEL_SIZE -gt 100000    # > 100KB
           test $KERNEL_SIZE -lt 10000000  # < 10MB
           
           # Check ISO bootability
-          file VoidFrame.iso | grep -q "ISO.*bootable"
+          file cmake-build/VoidFrame.iso | grep -q "ISO.*bootable"
 
       - name: Upload kernel artifacts
         uses: actions/upload-artifact@v4
         with:
           name: voidframe-build-${{ github.sha }}
           path: |
-            voidframe.krnl
-            VoidFrame.iso
-          retention-days: 30
+            cmake-build/voidframe.krnl
+            cmake-build/VoidFrame.iso
+          retention-days: 10
