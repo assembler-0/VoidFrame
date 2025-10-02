@@ -6,7 +6,7 @@
 #define PREFETCH_DISTANCE 256
 
 // Non-temporal store threshold (use NT stores for large copies to avoid cache pollution)
-#define NT_STORE_THRESHOLD 262144  // 256KB
+#define NT_STORE_THRESHOLD (4 * 1024 * 1024)  // 4MB - safer for kernel operations
 
 void* memset(void* restrict dest, int value, unsigned long size) {
     return FastMemset(dest, value, size);
@@ -89,12 +89,22 @@ void* FastMemset(void* restrict dest, int value, uint64_t size) {
 
         // Use non-temporal stores for very large buffers
         if (size >= NT_STORE_THRESHOLD) {
+            irq_flags_t irqf = save_irq_flags();
+            cli();
+            
+            // Ensure cache line alignment for NT operations
+            while ((uintptr_t)d & 63) {
+                *d++ = val;
+                size--;
+            }
+            
             while (size >= 64) {
                 __asm__ volatile("vmovntdq %%zmm0, (%0)" : : "r"(d) : "memory");
                 d += 64;
                 size -= 64;
             }
-            __asm__ volatile("sfence" ::: "memory");
+            __asm__ volatile("mfence" ::: "memory");  // Full memory barrier for NT stores
+            restore_irq_flags(irqf);
         } else {
             while (size >= 64) {
                 __asm__ volatile("vmovdqu64 %%zmm0, (%0)" : : "r"(d) : "memory");
@@ -253,6 +263,15 @@ void* FastMemcpy(void* restrict dest, const void* restrict src, uint64_t size) {
 
         // Use non-temporal stores for very large copies
         if (size >= NT_STORE_THRESHOLD) {
+            irq_flags_t irqf = save_irq_flags();
+            cli();
+            
+            // Ensure cache line alignment for NT operations
+            while ((uintptr_t)d & 63 && d && s) {
+                *d++ = *s++;
+                size--;
+            }
+            
             // Prefetch ahead
             while (size >= 256 && d && s) {
                 __asm__ volatile(
@@ -274,7 +293,8 @@ void* FastMemcpy(void* restrict dest, const void* restrict src, uint64_t size) {
                 s += 256;
                 size -= 256;
             }
-            __asm__ volatile("sfence" ::: "memory");
+            __asm__ volatile("mfence" ::: "memory");  // Full memory barrier for NT stores
+            restore_irq_flags(irqf);
         } else {
             // Regular copy with 4x unrolling
             while (size >= 256 && d && s) {
@@ -439,7 +459,7 @@ void FastZeroPage(void* restrict page) {
         }
 
         __asm__ volatile("vzeroupper" ::: "memory");
-        __asm__ volatile("sfence" ::: "memory");
+        __asm__ volatile("mfence" ::: "memory");  // Full memory barrier for page operations  
         restore_irq_flags(irqf);
     }
     // AVX2 path with better unrolling
@@ -468,7 +488,7 @@ void FastZeroPage(void* restrict page) {
         }
 
         __asm__ volatile("vzeroupper" ::: "memory");
-        __asm__ volatile("sfence" ::: "memory");
+        __asm__ volatile("mfence" ::: "memory");  // Full memory barrier for page operations
         restore_irq_flags(irqf);
     }
     else if (features->sse2) {
@@ -495,7 +515,7 @@ void FastZeroPage(void* restrict page) {
             );
         }
 
-        __asm__ volatile("sfence" ::: "memory");
+        __asm__ volatile("mfence" ::: "memory");  // Full memory barrier for page operations
         restore_irq_flags(irqf);
     }
     else {

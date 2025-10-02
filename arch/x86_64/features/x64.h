@@ -62,6 +62,17 @@ static inline uint64_t __attribute__((always_inline)) rdtsc(void) {
     return ((uint64_t)hi << 32) | lo;
 }
 
+static inline void __attribute__((always_inline)) __full_mem_prot_init(void) {
+    __sync_synchronize();
+    __asm__ volatile("mfence; sfence; lfence" ::: "memory");
+}
+
+static inline void __attribute__((always_inline)) __full_mem_prot_end(void) {
+    __asm__ volatile("mfence; sfence; lfence" ::: "memory");
+    __sync_synchronize();
+    __builtin_ia32_serialize();
+}
+
 void DumpRegisters(RegistersDumpT* dump);
 void PrintRegisters(const RegistersDumpT* dump);
 
