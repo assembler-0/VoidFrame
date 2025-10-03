@@ -23,7 +23,7 @@ target("voidframe")
     -- Toolchain Configuration
     -- ========================================================================
     -- Use nasm for assembly files
-    set_toolchains("nasm")
+    set_toolchains("clang","nasm")
 
     -- ========================================================================
     -- Source Files

@@ -56,7 +56,7 @@ bash -c "$(curl -fsSL https://xmake.io/shget.text)"
 sudo dnf install -y cmake meson ninja-build clang nasm qemu-system-x86 dosfstools e2fsprogs grub2-tools-extra xorriso mtools
 
 # Install xmake via the official script
-bash -c "$(curl -fsSL https://xmake.io/shget.text)"
+curl -fsSL https://xmake.io/shget.text | bash
 ```
 
 </details>
