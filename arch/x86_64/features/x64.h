@@ -53,6 +53,20 @@ typedef struct {
     uint64_t fs_base, gs_base, kernel_gs_base;
 } RegistersDumpT;
 
+#define _full_mem_prot_start() {\
+    __sync_synchronize();\
+    __asm__ volatile("mfence; sfence; lfence" ::: "memory");\
+}
+#define _full_mem_prot_end() {\
+__asm__ volatile("mfence; sfence; lfence" ::: "memory");\
+__sync_synchronize();\
+__builtin_ia32_serialize();\
+}
+#define _full_mem_prot_end_intel() {\
+    __asm__ volatile("mfence; sfence; lfence" ::: "memory");\
+    __sync_synchronize();\
+}
+
 void CpuInit(void);
 CpuFeatures* GetCpuFeatures(void);
 
@@ -62,15 +76,10 @@ static inline uint64_t __attribute__((always_inline)) rdtsc(void) {
     return ((uint64_t)hi << 32) | lo;
 }
 
-static inline void __attribute__((always_inline)) __full_mem_prot_init(void) {
-    __sync_synchronize();
-    __asm__ volatile("mfence; sfence; lfence" ::: "memory");
-}
-
-static inline void __attribute__((always_inline)) __full_mem_prot_end(void) {
-    __asm__ volatile("mfence; sfence; lfence" ::: "memory");
-    __sync_synchronize();
-    __builtin_ia32_serialize();
+static inline uint64_t __attribute__((always_inline)) rdtscp(void) {
+    uint32_t lo, hi;
+    __asm__ volatile ("rdtscp" : "=a"(lo), "=d"(hi) :: "rcx");
+    return ((uint64_t)hi << 32) | lo;
 }
 
 void DumpRegisters(RegistersDumpT* dump);

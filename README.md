@@ -6,7 +6,7 @@
 
 - Roadmap/Features: [here!](docs/ROADMAP.md)
 - How it works: [here!](docs/ARCHITECTURE.md)
-- CMake Build and Configuration Guide: [here!](docs/CMAKE.md)
+- Development Guide: [here!](docs/DEVELOPMENT.md)
 
 ---
 
@@ -29,6 +29,8 @@ It would be amazing if you could contribute to this project!
 - x64-compatible cpu (used: Intel i3-12100F)
 - POSIX-compliant OS (SysV ABI) (used: Arch Linux 6.16.9-arch1-1)
 - cmake >= 3.20 (used: cmake 4.1.2)
+- meson >= 1.4 (used: meson 1.9.1)
+- xmake >= 3.0 (used: xmake v3.0.3+20250922)
 - ninja >= 1.11 (used: ninja 1.21.1)
 - clang/++ >= 18.0.0 (used: 20.1.8)
 - nasm >= 2.16 (used: 2.16.03)
@@ -41,6 +43,17 @@ It would be amazing if you could contribute to this project!
 ### Quickstart
 #### Full development setup
 ```bash
+# Meson
+git clone https://github.com/assembler-0/VoidFrame.git
+cd VoidFrame
+meson setup build
+cd build
+ninja -j$(nproc)
+ninja img
+ninja extra-img
+ninja run
+```
+```bash
 # CMake
 git clone https://github.com/assembler-0/VoidFrame.git
 cd VoidFrame
@@ -48,11 +61,18 @@ mkdir build
 cd build
 cmake .. -DCMAKE_BUILD_TYPE=Release -DCMAKE_TOOLCHAIN_FILE=../cmake/toolchain/<linux/windows/macos>-x64.cmake -G Ninja
 ninja -j$(nproc)
-ninja img
-ninja extra-img
 ninja run
 ```
-
+```bash
+# XMake
+git clone https://github.com/assembler-0/VoidFrame.git
+cd VoidFrame
+xmake f -p linux -a x86_64 --toolchain=clang
+xmake
+xmake img
+xmake extra-img
+xmake run
+```
 
 ## Features
 ### Architecture

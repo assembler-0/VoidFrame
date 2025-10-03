@@ -360,25 +360,6 @@ The following functions and commands provide interfaces to the process managemen
 | `DumpSchedulerState()`        | A debug command that prints detailed internal statistics about the scheduler, including queue depths and load.                   |
 | `DumpPerformanceStats()`      | A debug command that prints performance counters like total context switches and security violations.                            |
 
-## Debugging and Development
-- Debugging:
-  - The VoidFrame kenrel offers multiple debugging options:
-    - Serial output (COM1, COM2, COM3, COM4)
-    - LPT ports
-    - VGA text mode fallback
-    - VESA framebuffer console
-    - GDB stub (soon?)
-- Development:
-    - To develop the kernel, you *will* need the following tools:
-      - Linux (use other OS only if you can port the assembly code, but I dont see why you would want to)
-      - clang (any kind, does not matter if its compiled for bare metal or for the kernel)
-      - CMake (meson failed me)
-      - qemu (you obviously need this)
-      - gdb (optional, I dont even know to hook it up)
-      - nasm (for the bootloader and many other low-level things)
-      - grub-mkrescue + its dependencies (for building the iso, since the current kernel implementation is not bootable yet)
-      - mkfs & qemu-img (or anything that can make disk images)
-      - ld.lld (any linker should work, just use lld for LLVM vibes)
 - Known issues:
   - The kernel is not *bootable* yet, its not an EFI stub, nor does it have a bootloader.
   - It is not a raw binary either, it needs to be loaded by a elf-compatible bootloader (in this case grub, but I am thinking of using a custom one, or just use grub for god’s sake).
