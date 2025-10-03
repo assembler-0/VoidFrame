@@ -89,8 +89,7 @@ void* FastMemset(void* restrict dest, int value, uint64_t size) {
 
         // Use non-temporal stores for very large buffers
         if (size >= NT_STORE_THRESHOLD) {
-            irq_flags_t irqf = save_irq_flags();
-            cli();
+            _full_mem_prot_start();
             
             // Ensure cache line alignment for NT operations
             while ((uintptr_t)d & 63) {
@@ -103,8 +102,11 @@ void* FastMemset(void* restrict dest, int value, uint64_t size) {
                 d += 64;
                 size -= 64;
             }
-            __asm__ volatile("mfence" ::: "memory");  // Full memory barrier for NT stores
-            restore_irq_flags(irqf);
+#ifdef VF_CONFIG_INTEL
+            _full_mem_prot_end_intel();
+#else
+            _full_mem_prot_end();
+#endif
         } else {
             while (size >= 64) {
                 __asm__ volatile("vmovdqu64 %%zmm0, (%0)" : : "r"(d) : "memory");
@@ -218,6 +220,22 @@ void* FastMemcpy(void* restrict dest, const void* restrict src, uint64_t size) {
     // Handle overlap cases
     if (d == s) return dest;
 
+    // If regions overlap and destination starts within source, perform backward copy to avoid corruption
+    if (d > s && d < s + size) {
+        d += size;
+        s += size;
+        while (size >= 8) {
+            d -= 8; s -= 8;
+            *(uint64_t*)d = *(const uint64_t*)s;
+            size -= 8;
+        }
+        while (size--) {
+            d--; s--;
+            *d = *s;
+        }
+        return dest;
+    }
+
     CpuFeatures* features = GetCpuFeatures();
 
     // Small copy optimization using overlapping loads/stores
@@ -263,8 +281,7 @@ void* FastMemcpy(void* restrict dest, const void* restrict src, uint64_t size) {
 
         // Use non-temporal stores for very large copies
         if (size >= NT_STORE_THRESHOLD) {
-            irq_flags_t irqf = save_irq_flags();
-            cli();
+            _full_mem_prot_start();
             
             // Ensure cache line alignment for NT operations
             while ((uintptr_t)d & 63 && d && s) {
@@ -293,8 +310,7 @@ void* FastMemcpy(void* restrict dest, const void* restrict src, uint64_t size) {
                 s += 256;
                 size -= 256;
             }
-            __asm__ volatile("mfence" ::: "memory");  // Full memory barrier for NT stores
-            restore_irq_flags(irqf);
+            _full_mem_prot_end();
         } else {
             // Regular copy with 4x unrolling
             while (size >= 256 && d && s) {
@@ -380,8 +396,6 @@ void* FastMemcpy(void* restrict dest, const void* restrict src, uint64_t size) {
     }
     // SSE2 path with unrolling
     else if (features->sse2 && size >= 16) {
-        irq_flags_t irqf = save_irq_flags();
-        cli();
 
         // 4x unrolled
         while (size >= 64 && d && s) {
@@ -416,7 +430,6 @@ void* FastMemcpy(void* restrict dest, const void* restrict src, uint64_t size) {
             size -= 16;
         }
 
-        restore_irq_flags(irqf);
     }
 
     // Handle remainder with 64-bit copies when possible

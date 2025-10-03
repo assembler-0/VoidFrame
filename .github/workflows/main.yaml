@@ -38,13 +38,11 @@ jobs:
             cd cmake-build
             cmake .. -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_TOOLCHAIN_FILE=../cmake/toolchain/linux-x64.cmake
             cd ..
-            ninja -C cmake-build -j $(nproc)
+            ninja -C cmake-build -j$(nproc) iso
 
       - name: Artifact Analysis
         run: |
-          cd cmake-build
-          timeout 30s ninja runmin || true
-          cd ..
+          timeout 7s ninja -C cmake-build runmin || true
           grep -q "1KCSWF23Z456789" cmake-build/bootstrap.log
           ! grep -i "panic\|fault\|crash\|oops\|error\|failed" cmake-build/serial.log
           
