@@ -174,21 +174,91 @@ void AnalyzeFault(Registers* regs, FaultContext* ctx) {
     
     // Analyze specific fault types
     switch (regs->interrupt_number) {
+        case 0:  // Divide by Zero
+            ctx->fault_reason = "Divide by Zero";
+            break;
+        case 1:  // Debug
+            ctx->fault_reason = "Debug";
+            break;
+        case 2:  // NMI
+            ctx->fault_reason = "NMI";
+            break;
+        case 3:  // Breakpoint
+            ctx->fault_reason = "Breakpoint";
+            break;
+        case 4:  // Overflow
+            ctx->fault_reason = "Overflow";
+            break;
+        case 5:  // Bound Range Exceeded
+            ctx->fault_reason = "Bound Range Exceeded";
+            break;
         case 6: // Invalid Opcode
             AnalyzeInvalidOpcode(regs->rip, ctx);
             break;
-            
+        case 7:  // Device Not Available
+            ctx->fault_reason = "Device Not Available";
+            break;
+        case 8:  // Double Fault
+            ctx->fault_reason = "Double fault";
+            break;
+        case 9:  // Coprocessor Segment Overrun
+            ctx->fault_reason = "Coprocessor Segment Overrun";
+            break;
+        case 10: // Invalid TSS
+            ctx->fault_reason = "Invalid TSS";
+            break;
+        case 11: // Segment Not Present
+            ctx->fault_reason = "Segment Not Present";
+            break;
+        case 12: // Stack Fault
+            ctx->fault_reason = "Stack Fault";
+            break;
         case 13: // General Protection Fault
             AnalyzeGPF(regs->error_code, ctx);
             break;
-            
         case 14: // Page Fault
             __asm__ volatile("mov %%cr2, %0" : "=r"(ctx->fault_address));
             AnalyzePageFault(ctx->fault_address, regs->error_code, ctx);
             break;
-            
+        case 15: // Reserved
+            ctx->fault_reason = "Reserved 15";
+            break;
+        case 16: // x87 FPU Floating-Point exception
+            ctx->fault_reason = "x87 FPU Floating-Point exception";
+            break;
+        case 17: // Alignment Check
+            ctx->fault_reason = "Alignment Check";
+            break;
+        case 18: // Machine Check
+            ctx->fault_reason = "Machine Check";
+            break;
+        case 19: // SIMD Floating-Point exception
+            ctx->fault_reason = "SIMD Floating-Point exception";
+            break;
+        case 20: // Virtualization exception
+            ctx->fault_reason = "Virtualization exception";
+            break;
+        case 21: // Control protocol exception
+            ctx->fault_reason = "Control protocol exception";
+            break;
+        case 22 ... 27: // Reserved
+            ctx->fault_reason = "Reserved 22-27";
+            break;
+        case 28: // Hypervisor injection exception
+            ctx->fault_reason = "Hypervisor injection exception";
+            break;
+        case 29: // VMM communication exception
+            ctx->fault_reason = "VMM communication exception";
+            break;
+        case 30: // Security exception
+            ctx->fault_reason = "Security exception";
+            break;
+        case 31: // Reserved
+            ctx->fault_reason = "Reserved 31";
+            break;
+
         default:
-            ctx->fault_reason = "Unknown fault type";
+            ctx->fault_reason = "Unknown fault type or reserved";
             break;
     }
 }

@@ -2,6 +2,7 @@
 #define IO_H
 
 #include "stdint.h"
+#include "x64.h"
 
 static inline void outb(uint16_t port, uint8_t val) {
     __asm__ volatile ("outb %0, %1" : : "a"(val), "Nd"(port));
@@ -46,21 +47,23 @@ static inline void restore_irq_flags(irq_flags_t flags) {
 }
 
 static inline void __attribute__((always_inline, hot, flatten)) cli() {
-    __sync_synchronize();
-    __asm__ volatile("mfence; sfence; lfence" ::: "memory");
+    _full_mem_prot_start();
     __asm__ volatile("cli" ::: "memory");
-    __asm__ volatile("mfence; sfence; lfence" ::: "memory");
-    __sync_synchronize();
-    __builtin_ia32_serialize();
+#ifdef VF_CONFIG_INTEL
+    _full_mem_prot_end_intel();
+#else
+    _full_mem_prot_end();
+#endif
 }
 
 static inline void __attribute__((always_inline, hot, flatten)) sti() {
-    __sync_synchronize();
-    __asm__ volatile("mfence; sfence; lfence" ::: "memory");
+    _full_mem_prot_start();
     __asm__ volatile("sti" ::: "memory");
-    __asm__ volatile("mfence; sfence; lfence" ::: "memory");
-    __sync_synchronize();
-    __builtin_ia32_serialize();
+#ifdef VF_CONFIG_INTEL
+    _full_mem_prot_end_intel();
+#else
+    _full_mem_prot_end();
+#endif
 }
 
 // CPUID detection

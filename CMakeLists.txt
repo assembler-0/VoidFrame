@@ -282,7 +282,7 @@ add_custom_target(iso ALL DEPENDS VoidFrame.iso)
 # ============================================================================
 # Run Targets
 # ============================================================================
-add_custom_target(
+add_custom_target(run
         COMMAND ${QEMU_SYSTEM_X86_64}
         -cpu max
         -vga vmware

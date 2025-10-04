@@ -46,3 +46,5 @@ BlockDevice* BlockDeviceGet(int id);
 int BlockDeviceRead(int device_id, uint64_t start_lba, uint32_t count, void* buffer);
 int BlockDeviceWrite(int device_id, uint64_t start_lba, uint32_t count, const void* buffer);
 void BlockDeviceDetectAndRegisterPartitions(BlockDevice* drive);
+void BlockDevicePrint(const char* args);
+BlockDevice* SearchBlockDevice(const char* name);

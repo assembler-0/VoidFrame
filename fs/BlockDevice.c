@@ -1,6 +1,5 @@
 #include "BlockDevice.h"
 #include "MBR.h"
-#include "KernelHeap.h"
 #include "StringOps.h"
 #include "Console.h"
 
@@ -81,6 +80,32 @@ void BlockDeviceDetectAndRegisterPartitions(BlockDevice* drive) {
     if (!drive || drive->type == DEVICE_TYPE_PARTITION) {
         return; // Don't partition a partition
     }
-
     ParseMBR(drive);
+}
+
+void BlockDevicePrint(const char* args) {
+    (void)args;
+    PrintKernel("BlockDevice: Registered devices:\n");
+    for (int i = 0; i < g_next_device_id; i++) {
+        BlockDevice* dev = &g_block_devices[i];
+        if (!dev) continue;
+        PrintKernel("BlockDevice: ID=");
+        PrintKernelInt(dev->id);
+        PrintKernel(", type=");
+        PrintKernelInt(dev->type);
+        PrintKernel(", blocks=");
+        PrintKernelInt(dev->total_blocks);
+        PrintKernel(", name=");
+        PrintKernel(dev->name);
+        PrintKernel("\n");
+    }
+}
+
+BlockDevice* SearchBlockDevice(const char* name) {
+    for (int i = 0; i < g_next_device_id; i++) {
+        BlockDevice* dev = &g_block_devices[i];
+        if (!dev) continue;
+        if (FastStrCmp(dev->name, name) == 0) return dev;
+    }
+    return NULL;
 }
