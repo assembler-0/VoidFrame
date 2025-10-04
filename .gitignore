@@ -7,6 +7,6 @@ Makefile
 cmake-build-*
 target
 .venv
-*cache*
+__pycache__
 .amazonq
 *backup

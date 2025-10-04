@@ -6,6 +6,17 @@ project(VoidFrame VERSION 0.0.2 LANGUAGES C CXX ASM_NASM)
 enable_language(ASM_NASM)
 
 # ============================================================================
+# Module Path & Includes
+# ============================================================================
+list(APPEND CMAKE_MODULE_PATH "${CMAKE_SOURCE_DIR}/cmake")
+include(cache)
+include(features)
+include(variable)
+include(dependencies)
+include(flags)
+include(configuration)
+
+# ============================================================================
 # Platform Checks
 # ============================================================================
 if(CMAKE_HOST_SYSTEM_NAME STREQUAL "Linux")
@@ -37,6 +48,7 @@ message(STATUS "CMake Current Source Directory: ${CMAKE_CURRENT_SOURCE_DIR}")
 message(STATUS "CMake Current Binary Directory: ${CMAKE_CURRENT_BINARY_DIR}")
 message(STATUS "CMake Host System Name: ${CMAKE_HOST_SYSTEM_NAME}")
 message(STATUS "CMake Host System Processor: ${CMAKE_HOST_SYSTEM_PROCESSOR}")
+message(STATUS "VoidFrame Scheduler: ${VF_SCHEDULER}")
 
 # ============================================================================
 # Standard Configuration
@@ -45,16 +57,6 @@ set(CMAKE_C_STANDARD 11)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_C_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
-
-# ============================================================================
-# Module Path & Includes
-# ============================================================================
-list(APPEND CMAKE_MODULE_PATH "${CMAKE_SOURCE_DIR}/cmake")
-include(features)
-include(variable)
-include(dependencies)
-include(flags)
-include(configuration)
 
 # ============================================================================ 
 # Source Files Organization
@@ -77,6 +79,7 @@ set(KERNEL_CORE_SOURCES
 
 set(SCHED_SOURCES
     kernel/sched/MLFQ.c
+    kernel/sched/EEVDF.c
 )
 
 set(KERNEL_ETC_SOURCES
