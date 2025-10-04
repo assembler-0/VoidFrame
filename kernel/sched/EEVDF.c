@@ -1,8 +1,6 @@
 #include "EEVDF.h"
-
 #include "APIC.h"
 #include "Atomics.h"
-#include "Cerberus.h"
 #include "Compositor.h"
 #include "KernelHeap.h"
 #ifdef VF_CONFIG_USE_CERBERUS
@@ -14,6 +12,7 @@
 #include "Ipc.h"
 #include "MemOps.h"
 #include "Panic.h"
+#include "Shell.h"
 #include "Spinlock.h"
 #include "VFS.h"
 #include "VMem.h"
@@ -323,6 +322,11 @@ static void EEVDFRBInsertFixup(EEVDFRunqueue* rq, EEVDFRBNode* z) {
 
 // Insert into red-black tree ordered by vruntime
 static void EEVDFRBInsert(EEVDFRunqueue* rq, EEVDFProcessControlBlock* p) {
+    // Check if process is already in tree
+    if (p->rb_node) {
+        PANIC("EEVDFRBInsert: Process already in tree");
+    }
+    
     EEVDFRBNode* node = EEVDFAllocRBNode(p - processes);
     if (!node) return;
     
@@ -439,7 +443,13 @@ static void EEVDFRBDelete(EEVDFRunqueue* rq, EEVDFProcessControlBlock* p) {
         if (node->right) {
             rq->rb_leftmost = EEVDFRBFirst(node->right);
         } else {
-            rq->rb_leftmost = node->parent;
+            // Find the next leftmost node by walking up and finding next in-order
+            EEVDFRBNode* parent = node->parent;
+            while (parent && node == parent->left) {
+                node = parent;
+                parent = parent->parent;
+            }
+            rq->rb_leftmost = parent;
         }
     }
     
@@ -665,7 +675,7 @@ void EEVDFUpdateClock(EEVDFRunqueue* rq) {
 
 void EEVDFSchedule(Registers* regs) {
     irq_flags_t flags = SpinLockIrqSave(&scheduler_lock);
-    
+
     AtomicInc(&scheduler_calls);
     AtomicInc(&eevdf_scheduler.tick_counter);
     
@@ -675,7 +685,7 @@ void EEVDFSchedule(Registers* regs) {
     
     // Update clock
     EEVDFUpdateClock(rq);
-    
+
     // Handle current task
     if (LIKELY(old_slot != 0 && old_slot < EEVDF_MAX_PROCESSES)) {
         prev = &processes[old_slot];
@@ -689,33 +699,14 @@ void EEVDFSchedule(Registers* regs) {
         
         // Update runtime statistics
         EEVDFUpdateCurr(rq, prev);
-        
+
         // Check if task should continue running
         if (LIKELY(prev->state == PROC_RUNNING)) {
             prev->state = PROC_READY;
             ready_process_bitmap |= (1ULL << old_slot);
             
-            // Re-enqueue if it still has time left and is still the best choice
-            uint64_t slice_ns = EEVDFCalcSlice(rq, prev);
-            uint64_t runtime = GetNS() - prev->exec_start;
-            
-            if (runtime < slice_ns) {
-                // Task still has time, but check if there's a better choice
-                EEVDFProcessControlBlock* next_best = EEVDFPickNext(rq);
-                if (next_best && next_best != prev) {
-                    // There's a better task to run
-                    EEVDFEnqueueTask(rq, prev);
-                } else {
-                    // Continue running current task
-                    prev->state = PROC_RUNNING;
-                    ready_process_bitmap &= ~(1ULL << old_slot);
-                    SpinUnlockIrqRestore(&scheduler_lock, flags);
-                    return;
-                }
-            } else {
-                // Time slice expired, re-enqueue
-                EEVDFEnqueueTask(rq, prev);
-            }
+            // Re-enqueue the task (it was dequeued when it started running)
+            EEVDFEnqueueTask(rq, prev);
         }
     }
     
@@ -729,19 +720,29 @@ pick_next:;
         next_slot = next - processes;
         
         if (UNLIKELY(next_slot >= EEVDF_MAX_PROCESSES || next->state != PROC_READY)) {
+            // Remove invalid process from tree to prevent infinite loop
+            EEVDFDequeueTask(rq, next);
             goto pick_next;
         }
         
         // Dequeue the selected task
         EEVDFDequeueTask(rq, next);
     }
-    
+
     // Context switch
     rq->current_slot = next_slot;
     current_process = next_slot;
     
     if (LIKELY(next_slot != 0)) {
         EEVDFProcessControlBlock* new_proc = &processes[next_slot];
+        
+        // Validate process before switching
+        if (UNLIKELY(!new_proc->stack || new_proc->context.rip == 0)) {
+            // Invalid process, fall back to idle
+            next_slot = 0;
+            goto switch_to_idle;
+        }
+        
         new_proc->state = PROC_RUNNING;
         ready_process_bitmap &= ~(1ULL << next_slot);
         
@@ -749,10 +750,13 @@ pick_next:;
         new_proc->slice_ns = EEVDFCalcSlice(rq, new_proc);
         
         FastMemcpy(regs, &new_proc->context, sizeof(Registers));
+
         AtomicInc(&context_switches);
         eevdf_scheduler.switch_count++;
     }
-    
+
+switch_to_idle:
+
     SpinUnlockIrqRestore(&scheduler_lock, flags);
 }
 
@@ -805,7 +809,9 @@ int EEVDFSchedInit(void) {
     
     process_count = 1;
     active_process_bitmap |= 1ULL;
-    
+
+    EEVDFCreateProcess("shell", ShellProcess);
+
     return 0;
 }
 
@@ -827,7 +833,6 @@ uint32_t EEVDFCreateProcess(const char* name, void (*entry_point)(void)) {
         SpinUnlockIrqRestore(&scheduler_lock, flags);
         PANIC("EEVDFCreateProcess: No free process slots");
     }
-    
     // Allocate PID
     uint32_t new_pid = 0;
     SpinLock(&pid_lock);
@@ -841,7 +846,7 @@ uint32_t EEVDFCreateProcess(const char* name, void (*entry_point)(void)) {
         }
     }
     SpinUnlock(&pid_lock);
-    
+
     if (new_pid == 0) {
         FreeSlotFast(slot);
         SpinUnlockIrqRestore(&scheduler_lock, flags);
@@ -850,7 +855,7 @@ uint32_t EEVDFCreateProcess(const char* name, void (*entry_point)(void)) {
     
     // Clear process structure
     FastMemset(&processes[slot], 0, sizeof(EEVDFProcessControlBlock));
-    
+
     // Allocate stack
     void* stack = VMemAllocStack(EEVDF_STACK_SIZE);
     if (UNLIKELY(!stack)) {
@@ -858,7 +863,7 @@ uint32_t EEVDFCreateProcess(const char* name, void (*entry_point)(void)) {
         SpinUnlockIrqRestore(&scheduler_lock, flags);
         PANIC("EEVDFCreateProcess: Failed to allocate stack");
     }
-    
+
     // Initialize process
     EEVDFProcessControlBlock* proc = &processes[slot];
     FormatA(proc->name, sizeof(proc->name), "%s", name ? name : FormatS("proc%d", slot));
@@ -868,11 +873,11 @@ uint32_t EEVDFCreateProcess(const char* name, void (*entry_point)(void)) {
     proc->privilege_level = EEVDF_PROC_PRIV_NORM;
     proc->creation_time = EEVDFGetSystemTicks();
     EEVDFSetTaskNice(proc, EEVDF_DEFAULT_NICE);
-    
+
     // Set virtual time to current minimum to ensure fairness
     proc->vruntime = eevdf_scheduler.rq.min_vruntime;
     proc->exec_start = GetNS();
-    
+
     // Initialize security token
     EEVDFSecurityToken* token = &proc->token;
     token->magic = EEVDF_SECURITY_MAGIC;
@@ -881,15 +886,16 @@ uint32_t EEVDFCreateProcess(const char* name, void (*entry_point)(void)) {
     token->flags = EEVDF_PROC_FLAG_NONE;
     token->creation_tick = proc->creation_time;
     token->checksum = EEVDFCalculateSecureChecksum(token, new_pid);
-    
+
     // Set up context
-    uint64_t rsp = (uint64_t)stack + EEVDF_STACK_SIZE;
+    // VMemAllocStack already returns the stack top, so we can use it directly
+    uint64_t rsp = (uint64_t)stack;
     rsp &= ~0xF; // 16-byte alignment
-    
+
     // Push exit stub as return address
     rsp -= 8;
     *(uint64_t*)rsp = (uint64_t)ProcessExitStubEEVDF;
-    
+
     proc->context.rsp = rsp;
     proc->context.rip = (uint64_t)entry_point;
     proc->context.rflags = 0x202;
@@ -900,18 +906,19 @@ uint32_t EEVDFCreateProcess(const char* name, void (*entry_point)(void)) {
     proc->ipc_queue.head = 0;
     proc->ipc_queue.tail = 0;
     proc->ipc_queue.count = 0;
-    
+
     FormatA(proc->ProcessRuntimePath, sizeof(proc->ProcessRuntimePath), "%s/%d", RuntimeProcesses, new_pid);
     
     // Update counters
     __sync_fetch_and_add(&process_count, 1);
     ready_process_bitmap |= (1ULL << slot);
     eevdf_scheduler.total_processes++;
-    
+
     // Add to scheduler
     EEVDFEnqueueTask(&eevdf_scheduler.rq, proc);
-    
+
     SpinUnlockIrqRestore(&scheduler_lock, flags);
+
     return new_pid;
 }
 
