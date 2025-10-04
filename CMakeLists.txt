@@ -77,6 +77,7 @@ set(KERNEL_CORE_SOURCES
 
 set(SCHED_SOURCES
     kernel/sched/MLFQ.c
+    kernel/sched/EEVDF.c
 )
 
 set(KERNEL_ETC_SOURCES

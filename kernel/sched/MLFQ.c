@@ -51,7 +51,7 @@ static volatile uint32_t current_process = 0;
 static volatile uint32_t process_count = 0;
 static volatile int need_schedule = 0;
 static volatile int scheduler_lock = 0;
-rwlock_t process_table_rwlock = {0};
+rwlock_t process_table_rwlock_mlfq = {0};
 
 // Security subsystem
 uint32_t security_manager_pid = 0;
@@ -1239,15 +1239,15 @@ MLFQProcessControlBlock* MLFQGetCurrentProcess(void) {
 
 MLFQProcessControlBlock* MLFQGetCurrentProcessByPID(uint32_t pid) {
     MLFQProcessControlBlock* current = MLFQGetCurrentProcess();
-    ReadLock(&process_table_rwlock, current->pid);
+    ReadLock(&process_table_rwlock_mlfq, current->pid);
     for (int i = 0; i < MAX_PROCESSES; i++) {
         if (processes[i].pid == pid && processes[i].state != PROC_TERMINATED) {
             MLFQProcessControlBlock* found = &processes[i];
-            ReadUnlock(&process_table_rwlock, current->pid);
+            ReadUnlock(&process_table_rwlock_mlfq, current->pid);
             return found;
         }
     }
-    ReadUnlock(&process_table_rwlock, current->pid);
+    ReadUnlock(&process_table_rwlock_mlfq, current->pid);
     return NULL;
 }
 
@@ -1950,7 +1950,7 @@ void MLFQKillCurrentProcess(const char * reason) {
 
 // Get detailed process scheduling information
 void MLFQGetProcessStats(uint32_t pid, uint32_t* cpu_time, uint32_t* io_ops, uint32_t* preemptions) {
-    ReadLock(&process_table_rwlock, pid);
+    ReadLock(&process_table_rwlock_mlfq, pid);
     MLFQProcessControlBlock* proc = MLFQGetCurrentProcessByPID(pid);
     if (!proc) {
         if (cpu_time) *cpu_time = 0;
@@ -1962,5 +1962,5 @@ void MLFQGetProcessStats(uint32_t pid, uint32_t* cpu_time, uint32_t* io_ops, uin
     if (cpu_time) *cpu_time = (uint32_t)proc->cpu_time_accumulated;
     if (io_ops) *io_ops = proc->io_operations;
     if (preemptions) *preemptions = proc->preemption_count;
-    ReadUnlock(&process_table_rwlock, pid);
+    ReadUnlock(&process_table_rwlock_mlfq, pid);
 }

@@ -24,6 +24,7 @@ add_compile_definitions(
         VF_CONFIG_USE_CERBERUS
         VF_CONFIG_CERBERUS_STACK_PROTECTION
         VF_CONFIG_SCHED_MLFQ
+#        VF_CONFIG_SCHED_EEVDF
         VF_CONFIG_INTEL
 )
 
