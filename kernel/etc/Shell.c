@@ -205,6 +205,7 @@ static const HelpEntry hw_cmds[] = {
     {"lspci", "List PCI devices"},
     {"lsisa", "List ISA devices"},
     {"lsusb", "List USB devices"},
+    {"lsblk", "List Block devices"},
     {"beep <x>", "Send beep x times"},
     {"pcbeep <x>", "PC speaker beep  for <x> seconds (200hz)"},
     {"irqmask <irq>", "Mask IRQ"},
@@ -1205,6 +1206,7 @@ static const ShellCommand commands[] = {\
     {"ping", PingHandler},
     {"snooze", SnoozeHandler},
     {"acpi", ACPIHandler},
+    {"lsblk", BlockDevicePrint},
 };
 
 void ExecuteCommand(const char* cmd) {

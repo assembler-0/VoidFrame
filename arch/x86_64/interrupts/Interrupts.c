@@ -46,6 +46,10 @@ asmlinkage void InterruptHandler(Registers* regs) {
             ApicSendEoi();
             return;
 
+        case 45: // FPU error IRQ 13
+            ApicSendEoi();
+            return;
+
         case 46: // IDE Primary (IRQ 14)
             IDEPrimaryIRQH();
             ApicSendEoi();
@@ -57,7 +61,7 @@ asmlinkage void InterruptHandler(Registers* regs) {
             return;
 
         // Handle other hardware interrupts (34-45)
-        case 35 ... 43: case 45: // passthrough
+        case 35 ... 43: // passthrough
             PrintKernelWarning("[IRQ] Unhandled hardware interrupt: ");
             PrintKernelInt(regs->interrupt_number - 32);
             PrintKernelWarning("\n");
@@ -67,56 +71,61 @@ asmlinkage void InterruptHandler(Registers* regs) {
     }
 
     else switch (regs->interrupt_number) {
-        case 14: // Page Fault - Handle gracefully
-        {
-            FaultResult result = HandlePageFault(regs);
-            
-            switch (result) {
-                case FAULT_HANDLED:
-                    // Fault was handled, continue execution
-                    return;
-                    
-                case FAULT_KILL_PROCESS:
-                    // Kill the offending process
-                    PrintKernelWarning("Killing process ");
-                    PrintKernelInt(MLFQGetCurrentProcess()->pid);
-                    PrintKernelWarning(" due to page fault\n");
-                    MLFQKillCurrentProcess("Page Fault (segmentation fault)");
-                    // Switch to the next ctx immediately
-                    MLFQSchedule(regs);
-                    return;
-                    
-                case FAULT_RETRY:
-                    // Retry the instruction
-                    return;
-                    
-                case FAULT_PANIC_KERNEL:
-                default:
-                    // Fall through to panic handling
-                    break;
-            }
-            
-            // If we get here, it's a serious kernel fault
-            FaultContext ctx = {0};
-            AnalyzeFault(regs, &ctx);
-            PrintDetailedFaultInfo(&ctx, regs);
-            RegistersDumpT dump = {0};
-            DumpRegisters(&dump);
-            // Override with fault context where applicable
-            dump.rip    = regs->rip;
-            dump.cs     = regs->cs;
-            dump.rflags = regs->rflags;
-            dump.rsp    = regs->rsp;
-            dump.ss     = regs->ss;
-            PrintRegisters(&dump);
-            PanicFromInterrupt("Unrecoverable page fault", regs);
-        }
-        
+        case 0:  // Divide by Zero
+        case 1:  // Debug
+        case 2:  // NMI
+        case 3:  // Breakpoint
+        case 4:  // Overflow
+        case 5:  // Bound Range Exceeded
         case 6:  // Invalid Opcode
-        case 8:  // Double Fault  
+        case 7:  // Device Not Available
+        case 8:  // Double Fault
+        case 9:  // Coprocessor Segment Overrun
+        case 10: // Invalid TSS
+        case 11: // Segment Not Present
+        case 12: // Stack Fault
         case 13: // General Protection Fault
+        case 14: // Page Fault
+        case 15: // Reserved
+        case 16: // x87 FPU Floating-Point exception
+        case 17: // Alignment Check
+        case 18: // Machine Check
+        case 19: // SIMD Floating-Point exception
+        case 20: // Virtualization exception
+        case 21: // Control protocol exception
+        case 22 ... 27: // Reserved
+        case 28: // Hypervisor injection exception
+        case 29: // VMM communication exception
+        case 30: // Security exception
+        case 31: // Reserved
         {
-            // These are still serious - analyze and panic
+            if (regs->interrupt_number == 14) {
+                FaultResult result = HandlePageFault(regs);
+                switch (result) {
+                    case FAULT_HANDLED:
+                        // Fault was handled, continue execution
+                        return;
+
+                    case FAULT_KILL_PROCESS:
+                        // Kill the offending process
+                        PrintKernelWarning("Killing process ");
+                        PrintKernelInt(MLFQGetCurrentProcess()->pid);
+                        PrintKernelWarning(" due to page fault\n");
+                        MLFQKillCurrentProcess("Page Fault (segmentation fault)");
+                        // Switch to the next ctx immediately
+                        MLFQSchedule(regs);
+                        return;
+
+                    case FAULT_RETRY:
+                        // Retry the instruction
+                        return;
+
+                    case FAULT_PANIC_KERNEL:
+                    default:
+                        // Fall through to panic handling
+                        break;
+                }
+            }
             FaultContext ctx = {0};
             AnalyzeFault(regs, &ctx);
             PrintDetailedFaultInfo(&ctx, regs);
@@ -132,21 +141,9 @@ asmlinkage void InterruptHandler(Registers* regs) {
             PanicFromInterrupt(ctx.fault_reason, regs);
         }
 
-        default: // All other exceptions
+        default:
         {
-            FaultContext ctx = {0};
-            AnalyzeFault(regs, &ctx);
-            PrintDetailedFaultInfo(&ctx, regs);
-            RegistersDumpT dump = {0};
-            DumpRegisters(&dump);
-            // Override with fault context where applicable
-            dump.rip    = regs->rip;
-            dump.cs     = regs->cs;
-            dump.rflags = regs->rflags;
-            dump.rsp    = regs->rsp;
-            dump.ss     = regs->ss;
-            PrintRegisters(&dump);
-            PanicFromInterrupt(FormatS("Unhandled exception %d", regs->interrupt_number - 32), regs);
+            // All handled
         }
     }
 }

@@ -58,13 +58,13 @@ typedef struct {
     __asm__ volatile("mfence; sfence; lfence" ::: "memory");\
 }
 #define _full_mem_prot_end() {\
-__asm__ volatile("mfence; sfence; lfence" ::: "memory");\
-__sync_synchronize();\
-__builtin_ia32_serialize();\
+    __asm__ volatile("mfence; sfence; lfence" ::: "memory");\
+    __sync_synchronize();\
 }
 #define _full_mem_prot_end_intel() {\
     __asm__ volatile("mfence; sfence; lfence" ::: "memory");\
     __sync_synchronize();\
+    __builtin_ia32_serialize();\
 }
 
 void CpuInit(void);
