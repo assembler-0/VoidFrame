@@ -113,6 +113,7 @@ vf_config_base = [
     '-DVF_CONFIG_USE_CERBERUS',
     '-DVF_CONFIG_CERBERUS_STACK_PROTECTION',
     '-DVF_CONFIG_SCHED_MLFQ',
+#    '-DVF_CONFIG_SCHED_EEVDF',
 ]
 
 vf_config_optional = [
@@ -162,6 +163,7 @@ kernel_core_sources = files([
 # Scheduler sources
 sched_sources = files([
                           'kernel/sched/MLFQ.c',
+                          'kernel/sched/EEVDF.c',
                       ])
 
 # Kernel utilities

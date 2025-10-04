@@ -20,9 +20,7 @@ class CNameMangler:
             'double', 'else', 'enum', 'extern', 'float', 'for', 'goto', 'if',
             'int', 'long', 'register', 'return', 'short', 'signed', 'sizeof', 'static',
             'struct', 'switch', 'typedef', 'union', 'unsigned', 'void', 'volatile', 'while',
-            # Common libc functions you might not want to mangle
             'printf', 'malloc', 'free', 'memcpy', 'strlen', 'strcmp',
-            # Your kernel entry points you might want to keep
             'kmain', '_start', 'kernel_main'
         }
         self.protected_functions = set()

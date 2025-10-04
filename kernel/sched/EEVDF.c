@@ -59,7 +59,7 @@ const uint32_t eevdf_nice_to_wmult[40] = {
 static EEVDFProcessControlBlock processes[EEVDF_MAX_PROCESSES] ALIGNED_CACHE;
 static volatile uint32_t next_pid = 1;
 static uint64_t pid_bitmap[EEVDF_MAX_PROCESSES / 64 + 1] = {0};
-static irq_flags_t pid_lock = 0;
+static volatile irq_flags_t pid_lock = 0;
 static volatile uint32_t current_process = 0;
 static volatile uint32_t process_count = 0;
 static volatile int need_schedule = 0;
@@ -151,6 +151,9 @@ void EEVDFSetTaskNice(EEVDFProcessControlBlock* p, int nice) {
 // =============================================================================
 
 uint64_t EEVDFCalcDelta(uint64_t delta_exec, uint32_t weight, uint32_t lw) {
+    if (lw == 0) {
+        lw = EEVDF_NICE_0_LOAD;
+    }
     uint64_t fact = (weight << 16) / lw; // Shifted for precision
     return (delta_exec * fact) >> 16;
 }

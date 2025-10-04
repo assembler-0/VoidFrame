@@ -19,7 +19,7 @@
 // Nice level constants
 #define EEVDF_NICE_WIDTH 4                     // Nice level width (log2)
 #define EEVDF_NICE_0_LOAD 1024                // Load weight for nice 0
-#define EEVDF_MIN_NICE -20
+#define EEVDF_MIN_NICE (-20)
 #define EEVDF_MAX_NICE 19
 #define EEVDF_DEFAULT_NICE 0
 
@@ -220,9 +220,5 @@ void EEVDFDumpPerformanceStats(void);
 void EEVDFSetTaskNice(EEVDFProcessControlBlock* p, int nice);
 uint32_t EEVDFNiceToWeight(int nice);
 uint32_t EEVDFNiceToWmult(int nice);
-
-// Security functions (same interface as MLFQ)
-void EEVDFListProcesses(void);
-void EEVDFGetProcessStats(uint32_t pid, uint32_t* cpu_time, uint32_t* io_ops, uint32_t* preemptions);
 
 #endif // VF_EEVDF_SCHED_H

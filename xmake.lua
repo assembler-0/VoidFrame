@@ -8,7 +8,7 @@ set_version("0.0.2-development3")
 set_languages("c11", "cxx17")
 
 -- Force clang toolchain
-set_toolchains("clang")
+set_toolchains("clang", "nasm")
 
 -- ============================================================================
 -- Target: voidframe kernel
@@ -45,6 +45,7 @@ target("voidframe")
 
         -- Scheduler sources
         "kernel/sched/MLFQ.c",
+        "kernel/sched/EEVDF.c",
 
         -- Kernel utilities
         "kernel/etc/Shell.c",
@@ -237,6 +238,7 @@ target("voidframe")
         "VF_CONFIG_USE_CERBERUS",
         "VF_CONFIG_CERBERUS_STACK_PROTECTION",
         "VF_CONFIG_SCHED_MLFQ"
+--         "VF_CONFIG_SCHED_EEVDF"
     )
 
     add_asdefines(

@@ -23,8 +23,6 @@ add_compile_definitions(
         VF_CONFIG_USE_ASTRA
         VF_CONFIG_USE_CERBERUS
         VF_CONFIG_CERBERUS_STACK_PROTECTION
-        VF_CONFIG_SCHED_MLFQ
-#        VF_CONFIG_SCHED_EEVDF
         VF_CONFIG_INTEL
 )
 
@@ -42,4 +40,12 @@ endif()
 
 if(AUTOMATIC_POST)
     add_compile_definitions(VF_CONFIG_AUTOMATIC_POST)
+endif()
+
+if(VF_SCHEDULER STREQUAL "MLFQ")
+    add_compile_definitions(VF_CONFIG_SCHED_MLFQ)
+elseif(VF_SCHEDULER STREQUAL "EEVDF")
+    add_compile_definitions(VF_CONFIG_SCHED_EEVDF)
+else()
+    message(FATAL_ERROR "Invalid scheduler: ${VF_SCHEDULER}. Have you pass: -DVF_SCHEDULER=<MLFQ/EEVDF>?.")
 endif()
