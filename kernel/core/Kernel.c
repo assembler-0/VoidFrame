@@ -1,8 +1,10 @@
 // VoidFrame Kernel Entry File
 #include "Kernel.h"
+#include "ACPI.h"
 #include "APIC.h"
 #include "Compositor.h"
 #include "Console.h"
+#include "FileSystem.h"
 #include "Gdt.h"
 #include "ISA.h"
 #include "Ide.h"
@@ -11,7 +13,6 @@
 #include "Io.h"
 #include "KernelHeap.h"
 #include "LPT/LPT.h"
-#include "MLFQ.h"
 #include "MemOps.h"
 #include "MemPool.h"
 #include "Multiboot2.h"
@@ -20,10 +21,12 @@
 #include "PS2.h"
 #include "Panic.h"
 #include "SVGAII.h"
+#include "Scheduler.h"
 #include "Serial.h"
 #include "Shell.h"
 #include "StackGuard.h"
 #include "Switch.h"
+#include "TSC.h"
 #include "VFRFS.h"
 #include "VFS.h"
 #include "VMem.h"
@@ -34,9 +37,6 @@
 #include "stdint.h"
 #include "storage/AHCI.h"
 #include "xHCI/xHCI.h"
-#include "FileSystem.h"
-#include "TSC.h"
-#include "ACPI.h"
 
 void KernelMainHigherHalf(void);
 #define KERNEL_STACK_SIZE (16 * 1024) // 16KB stack
@@ -710,13 +710,7 @@ static InitResultT PXS2(void) {
     PrintKernelSuccess("System: Multiboot modules loaded\n");
 #endif
 
-#ifdef VF_CONFIG_SCHED_MLFQ // Make calls to MLFQGetCurrentProcess() returns NULL for as long as possible before interrupts are enabled
-    // Initialize Process Management
-    PrintKernel("Info: Initializing MLFQ scheduler...\n");
-    MLFQSchedInit();
-    PrintKernelSuccess("System: MLFQ scheduler initialized\n");
-#endif
-
+    SchedulerInit();
     return INIT_SUCCESS;
 }
 
@@ -786,9 +780,9 @@ void KernelMainHigherHalf(void) {
     while (1) {
         if (g_svgaII_active || VBEIsInitialized()) {
             WindowManagerRun();
-            MLFQYield();
+            Yield();
         } else {
-            MLFQYield();
+            Yield();
         }
     }
 

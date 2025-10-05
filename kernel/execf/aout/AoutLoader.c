@@ -2,7 +2,7 @@
 #include "../../mm/VMem.h"
 #include "../../mm/MemOps.h"
 #include "Console.h"
-#include "MLFQ.h"
+#include "Scheduler.h"
 #include "VFS.h"
 
 #define MAX_AOUT_FILE_SIZE (2 * 1024 * 1024)
@@ -140,7 +140,7 @@ uint32_t CreateProcessFromAout(const char* filename, const AoutLoadOptions* opti
     void* entry_point = (uint8_t*)process_memory + hdr->a_entry;
 
     // Create process
-    uint32_t pid = MLFQCreateProcess(filename, (void (*)(void))entry_point);
+    uint32_t pid = CreateProcess(filename, (void (*)(void))entry_point);
 
     // Cleanup
     VMemFreeWithGuards(aout_data, file_size);

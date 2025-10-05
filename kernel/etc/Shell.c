@@ -1,10 +1,8 @@
 #include "Shell.h"
-
 #include "../../drivers/ethernet/interface/Icmp.h"
 #include "6502/6502.h"
 #include "ACPI.h"
 #include "APIC.h"
-#include "Cerberus.h"
 #include "Console.h"
 #include "Editor.h"
 #include "ExecLoader.h"
@@ -15,9 +13,10 @@
 #include "Iso9660.h"
 #include "KernelHeap.h"
 #include "LPT/LPT.h"
-#include "MLFQ.h"
+#include "Scheduler.h"
 #include "MemOps.h"
 #include "PCI/PCI.h"
+#include "Compositor.h"
 #include "PMem.h"
 #include "POST.h"
 #include "PS2.h"
@@ -149,7 +148,7 @@ static void ClearHandler(const char * args) {
 
 static void ARPTestHandler(const char * args) {
     (void)args;
-    MLFQCreateProcess("ARPTest", ArpRequestTestProcess);
+    CreateProcess("ARPTest", ArpRequestTestProcess);
 }
 
 static void VersionHandler(const char * args) {
@@ -308,17 +307,17 @@ static void HelpHandler(const char * args) {
 
 static void PSHandler(const char * args) {
     (void)args;
-    MLFQListProcesses();
+    ListProcesses();
 }
 
 static void PerfHandler(const char * args) {
     (void)args;
-    MLFQDumpPerformanceStats();
+    DumpPerformanceStats();
 }
 
 static void SchedHandler(const char * args) {
     (void)args;
-    MLFQDumpSchedulerState();
+    DumpSchedulerState();
 }
 
 static void LsISAHandler(const char * args) {
@@ -343,7 +342,7 @@ static void MemstatHandler(const char * args) {
 
 static void LsPCIHandler(const char * args) {
     (void)args;
-    MLFQCreateProcess("PCIEnumerate", PciEnumerate);
+    CreateProcess("PCIEnumerate", PciEnumerate);
 }
 
 static void VmemFreeListHandler(const char * args) {
@@ -387,7 +386,7 @@ static void PanicHandler(const char * args) {
 
 static void LsUSBHandler(const char * args) {
     (void)args;
-    MLFQCreateProcess("xHCIEnumerate", xHCIEnumerate);
+    CreateProcess("xHCIEnumerate", xHCIEnumerate);
 }
 
 static void BeepHandler(const char * args) {
@@ -461,7 +460,7 @@ static void KillHandler(const char * args) {
         PrintKernel("Usage: kill <pid>\n");
         return;
     }
-    MLFQKillProcess(pid);
+    KillProcess(pid);
 }
 
 static void irqmaskHandler(const char * args) {
@@ -502,12 +501,12 @@ static void CdHandler(const char * args) {
     } else {
         char new_path[256];
         ResolvePath(dir, new_path, 256);
-
         if (!VfsIsDir(new_path)) {
             PrintKernel("cd: no such directory: ");
             PrintKernel(new_path);
             PrintKernel("\n");
         }
+        else FastMemcpy(current_dir, new_path, 256);
         KernelFree(dir);
     }
 }
@@ -1274,7 +1273,7 @@ void ShellProcess(void) {
                 PrintKernel(str); // Echo character
             }
         } else {
-            MLFQYield();
+            Yield();
         }
     }
 }

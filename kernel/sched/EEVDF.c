@@ -762,6 +762,7 @@ switch_to_idle:
 }
 
 int EEVDFSchedInit(void) {
+    PrintKernel("System: Initializing EEVDF scheduler...\n");
     // Initialize process array
     FastMemset(processes, 0, sizeof(EEVDFProcessControlBlock) * EEVDF_MAX_PROCESSES);
     
@@ -811,8 +812,23 @@ int EEVDFSchedInit(void) {
     process_count = 1;
     active_process_bitmap |= 1ULL;
 
-    EEVDFCreateProcess("shell", ShellProcess);
+#ifdef VF_CONFIG_USE_VFSHELL
+    // Create shell process
+    PrintKernel("System: Creating shell process...\n");
+    const uint32_t shell_pid = EEVDFCreateProcess("VFShell", ShellProcess);
+    if (!shell_pid) {
+#ifndef VF_CONFIG_PANIC_OVERRIDE
+        PANIC("CRITICAL: Failed to create shell process");
+#else
+        PrintKernelError("CRITICAL: Failed to create shell process\n");
+#endif
+    }
+    PrintKernelSuccess("System: Shell created with PID: ");
+    PrintKernelInt(shell_pid);
+    PrintKernel("\n");
+#endif
 
+    PrintKernelSuccess("System: EEVDF scheduler initialized\n");
     return 0;
 }
 

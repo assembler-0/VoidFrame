@@ -1,9 +1,9 @@
 #include "Editor.h"
 #include "Console.h"
 #include "KernelHeap.h"
-#include "MLFQ.h"
 #include "MemOps.h"
 #include "PS2.h"
+#include "Scheduler.h"
 #include "StringOps.h"
 #include "VFS.h"
 
@@ -48,7 +48,7 @@ static void EditorGotoLinePrompt(void) {
     int len = 0;
     while (1) {
         while (!HasInput()) {
-            MLFQYield();
+            Yield();
         }
         char c = GetChar();
         if (c == '\n' || c == '\r') {
@@ -238,7 +238,7 @@ void EditorOpen(const char* filename) {
         EditorRefresh();
         
         while (!HasInput()) {
-            MLFQYield();
+            Yield();
         }
         
         char c = GetChar();
@@ -251,7 +251,7 @@ void EditorOpen(const char* filename) {
         if (c == 17) { // Ctrl+Q
             if (dirty) {
                 PrintKernel("\nUnsaved changes! Press Ctrl+Q again to quit.\n");
-                while (!HasInput()) MLFQYield();
+                while (!HasInput()) Yield();
                 if (GetChar() != 17) continue;
             }
             break;

@@ -1,15 +1,13 @@
 #include "Interrupts.h"
-
 #include "APIC.h"
 #include "Atomics.h"
 #include "Console.h"
-#include "Format.h"
 #include "Ide.h"
 #include "Kernel.h"
-#include "MLFQ.h"
 #include "PS2.h"
 #include "PageFaultHandler.h"
 #include "Panic.h"
+#include "Scheduler.h"
 #include "StackTrace.h"
 #include "ethernet/Network.h"
 
@@ -26,7 +24,7 @@ asmlinkage void InterruptHandler(Registers* regs) {
     // Handle hardware interrupts first
     if (regs->interrupt_number >= 32) switch (regs->interrupt_number) {
         case 32: // Timer interrupt (IRQ 0)
-            MLFQSchedule(regs);
+            Schedule(regs);
             AtomicInc(&APICticks);
             Net_Poll();
             ApicSendEoi();
@@ -109,11 +107,11 @@ asmlinkage void InterruptHandler(Registers* regs) {
                     case FAULT_KILL_PROCESS:
                         // Kill the offending process
                         PrintKernelWarning("Killing process ");
-                        PrintKernelInt(MLFQGetCurrentProcess()->pid);
+                        PrintKernelInt(GetCurrentProcess()->pid);
                         PrintKernelWarning(" due to page fault\n");
-                        MLFQKillCurrentProcess("Page Fault (segmentation fault)");
+                        KillCurrentProcess("Page Fault (segmentation fault)");
                         // Switch to the next ctx immediately
-                        MLFQSchedule(regs);
+                        Schedule(regs);
                         return;
 
                     case FAULT_RETRY:
