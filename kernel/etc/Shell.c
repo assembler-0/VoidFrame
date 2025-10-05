@@ -34,6 +34,7 @@
 #include "sound/Generic.h"
 #include "stdlib.h"
 #include "xHCI/xHCI.h"
+#include "KernelHeapRust.h"
 
 #define DATE __DATE__
 #define TIME __TIME__
@@ -363,7 +364,24 @@ static void AllocHandler(const char * args) {
         KernelFree(size_str);
         return;
     }
-    KernelMemoryAlloc((uint32_t)size);
+    if (!KernelMemoryAlloc((uint32_t)size)) PrintKernelErrorF("Allocation for %d bytes failed\n", size);
+    KernelFree(size_str);
+}
+
+static void RsAllocHandler(const char * args) {
+    char* size_str = GetArg(args, 1);
+    if (!size_str) {
+        PrintKernel("Usage: alloc <size>\n");
+        KernelFree(size_str);
+        return;
+    }
+    int size = atoi(size_str);
+    if (size <= 0) {
+        PrintKernel("Usage: alloc <size>\n");
+        KernelFree(size_str);
+        return;
+    }
+    if (!rust_kmalloc((uint32_t)size)) PrintKernelErrorF("Allocation for %d bytes failed\n", size);
     KernelFree(size_str);
 }
 
@@ -1182,6 +1200,7 @@ static const ShellCommand commands[] = {\
     {"mkdir", MkdirHandler},
     {"touch", TouchHandler},
     {"alloc", AllocHandler},
+    {"rs-alloc", RsAllocHandler},
     {"panic", PanicHandler},
     {"kill", KillHandler},
     {"rm", RmHandler},
