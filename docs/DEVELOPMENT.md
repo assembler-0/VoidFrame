@@ -9,7 +9,7 @@ This document provides instructions for setting up a development environment for
 To build and run VoidFrame, you will need a specific set of tools. The primary development environment is a POSIX-compliant OS (like Linux or macOS) with an x86_64 CPU.
 
 ### Required Tools:
-- **Build Systems:** At least one of `cmake`, `meson`, or `xmake`.
+- **Build Systems:** At least one of `cmake`, `meson`.
 - **Compiler Toolchain:** `clang` (C/C++ compiler) and `nasm` (assembler).
 - **Build Executor:** `ninja`.
 - **Emulator:** `qemu`.
@@ -29,7 +29,7 @@ Here are the commands to install the required dependencies on various platforms.
 
 ```bash
 # Update package list and install dependencies
-sudo pacman -Syu cmake meson xmake ninja clang nasm qemu-full dosfstools e2fsprogs grub xorriso mtools
+sudo pacman -Syu cmake meson ninja clang nasm qemu-full dosfstools e2fsprogs grub xorriso mtools
 ```
 
 </details>
@@ -41,9 +41,6 @@ sudo pacman -Syu cmake meson xmake ninja clang nasm qemu-full dosfstools e2fspro
 # Update package list and install dependencies
 sudo apt update
 sudo apt install -y cmake meson ninja-build clang nasm qemu-system-x86 dosfstools e2fsprogs grub-pc-bin xorriso mtools
-
-# Install xmake via the official script
-bash -c "$(curl -fsSL https://xmake.io/shget.text)"
 ```
 
 </details>
@@ -54,9 +51,6 @@ bash -c "$(curl -fsSL https://xmake.io/shget.text)"
 ```bash
 # Install dependencies
 sudo dnf install -y cmake meson ninja-build clang nasm qemu-system-x86 dosfstools e2fsprogs grub2-tools-extra xorriso mtools
-
-# Install xmake via the official script
-curl -fsSL https://xmake.io/shget.text | bash
 ```
 
 </details>
@@ -70,7 +64,7 @@ It is recommended to use [Homebrew](https://brew.sh/) to install packages on mac
 
 ```bash
 # Install dependencies via Homebrew
-brew install cmake meson xmake ninja llvm nasm qemu e2fsprogs dosfstools grub
+brew install cmake meson ninja llvm nasm qemu e2fsprogs dosfstools grub
 
 # Add LLVM to your PATH so the build system can find clang
 echo 'export PATH="/usr/local/opt/llvm/bin:$PATH"' >> ~/.zshrc
@@ -130,22 +124,4 @@ ninja
 
 # 4. Run the kernel in QEMU
 ninja run
-```
-
-
-### Using XMake (less actively maintained)
-
-```bash
-# 1. Configure the project (only needs to be done once)
-xmake f -p linux -a x86_64 --toolchain=clang
-
-# 2. Build the kernel
-xmake
-
-# 3. Create disk images (if they don't exist)
-xmake img
-xmake extra-img
-
-# 4. Run the kernel in QEMU
-xmake run
 ```
