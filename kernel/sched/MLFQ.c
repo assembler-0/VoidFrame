@@ -26,13 +26,6 @@
 
 #define offsetof(type, member) ((uint64_t)&(((type*)0)->member))
 
-// Security flags
-#define PROC_FLAG_NONE          0U
-#define PROC_FLAG_IMMUNE        (1U << 0)
-#define PROC_FLAG_CRITICAL      (1U << 1)
-#define PROC_FLAG_SUPERVISOR    (1U << 3)
-#define PROC_FLAG_CORE          (PROC_FLAG_IMMUNE | PROC_FLAG_SUPERVISOR | PROC_FLAG_CRITICAL)
-
 // Performance optimizations
 #define LIKELY(x)               __builtin_expect(!!(x), 1)
 #define UNLIKELY(x)             __builtin_expect(!!(x), 0)
