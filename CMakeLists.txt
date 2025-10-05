@@ -107,10 +107,10 @@ set(EXECF_SOURCES
 set(MM_SOURCES
     mm/PMem.c
     mm/MemOps.c
-    mm/KernelHeap.c
     mm/VMem.c
     mm/StackGuard.c
     mm/MemPool.c
+    mm/KernelHeap.c
     mm/trace/StackTrace.c
     mm/security/Cerberus.c
     mm/PageFaultHandler.c
@@ -192,6 +192,11 @@ if(NOT EXCLUDE_EXTRA_OBJECTS)
 endif()
 
 # ============================================================================ 
+# Rust Memory Management
+# ============================================================================ 
+add_subdirectory(mm/rust)
+
+# ============================================================================ 
 # Build Include Directories
 # ============================================================================ 
 include_directories(
@@ -247,6 +252,9 @@ add_executable(voidframe.krnl
 if(NOT EXCLUDE_EXTRA_OBJECTS)
     target_sources(voidframe.krnl PRIVATE ${OBJ_SOURCES})
 endif()
+
+# Link Rust heap library
+target_link_libraries(voidframe.krnl PRIVATE rust_heap)
 
 # Configure the linker to use ld.lld with proper arguments
 set_target_properties(voidframe.krnl PROPERTIES
