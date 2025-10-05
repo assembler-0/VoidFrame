@@ -61,9 +61,10 @@ cd build
 cmake .. -DCMAKE_BUILD_TYPE=Release \
     -DCMAKE_TOOLCHAIN_FILE=../cmake/toolchain/<linux/windows/macos>-x64.cmake \
     -G Ninja \
-    -DVF_SCHEDULER=<MLFQ/EEVDF> \ # Optional, default: MLFQ
+    -DVF_SCHEDULER=<MLFQ/EEVDF> \ # Optional, default: EEVDF
 ccmake . # Optinal, tune as needed
-cmake --build .
+ninja -j$(nproc)
+ninja run
 ```
 
 ## Features
