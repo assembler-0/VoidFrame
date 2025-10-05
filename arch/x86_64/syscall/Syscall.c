@@ -1,12 +1,12 @@
 #include "Syscall.h"
 #include "Console.h"
-#include "MLFQ.h"
+#include "Scheduler.h"
 
 uint64_t SyscallHandler(uint64_t syscall_num, uint64_t arg1, uint64_t arg2, uint64_t arg3) {
     switch (syscall_num) {
         case SYS_EXIT:
-            MLFQKillCurrentProcess("SYS_EXIT");
-            MLFQYield();
+            KillCurrentProcess("SYS_EXIT");
+            Yield();
             return arg1;
 
         case SYS_WRITE:

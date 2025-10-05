@@ -3,8 +3,7 @@
 #include "../../mm/MemOps.h"
 #include "../../mm/VMem.h"
 #include "Console.h"
-#include "Panic.h"
-#include "MLFQ.h"
+#include "Scheduler.h"
 #include "VFS.h"
 
 #define MAX_PE_FILE_SIZE (4 * 1024 * 1024)
@@ -110,7 +109,7 @@ uint32_t CreateProcessFromPE(const char* filename, const PELoadOptions* options)
     }
 
     // Security check
-    MLFQProcessControlBlock* creator = MLFQGetCurrentProcess();
+    CurrentProcessControlBlock* creator = GetCurrentProcess();
     if (!creator) {
         PrintKernelError("PE: No current process\n");
         return 0;
@@ -214,7 +213,7 @@ uint32_t CreateProcessFromPE(const char* filename, const PELoadOptions* options)
     void* entry_point = (uint8_t*)process_memory + opt->entry_point;
 
     // Create process
-    uint32_t pid = MLFQCreateProcess(filename, (void (*)(void))entry_point);
+    uint32_t pid = CreateProcess(filename, (void (*)(void))entry_point);
 
     // Cleanup
     VMemFreeWithGuards(pe_data, file_size);

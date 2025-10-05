@@ -8,7 +8,7 @@
 #include "Vesa.h"
 #include "Pallete.h"
 #include "Spinlock.h"
-
+#include "Scheduler.h"
 // --- Globals ---
 #define MAX_WINDOWS 16
 static Window* g_window_list_head = NULL;
@@ -28,6 +28,38 @@ typedef struct {
 static WindowStateMapping g_window_state_map[MAX_WINDOWS];
 static irq_flags_t g_text_lock = 0;
 static Window* g_vfshell_window = NULL;
+
+void VFCompositorRequestInit(const char * str) {
+    (void)str;
+#ifndef VF_CONFIG_ENABLE_VFCOMPOSITOR
+    PrintKernelError("System: VFCompositor disabled in this build\n");
+    return;
+#endif
+    Snooze();
+    static uint32_t cached_vfc_pid = 0;
+    if (cached_vfc_pid) {
+        CurrentProcessControlBlock* p = GetCurrentProcessByPID(cached_vfc_pid);
+        if (p && p->state != PROC_TERMINATED) {
+            PrintKernelWarning("System: VFCompositor already running\n");
+            return;
+        }
+        cached_vfc_pid = 0;
+    }
+    PrintKernel("System: Creating VFCompositor...\n");
+    uint32_t vfc_pid = CreateProcess("VFCompositor", VFCompositor);
+    if (!vfc_pid) {
+#ifndef VF_CONFIG_PANIC_OVERRIDE
+        PANIC("CRITICAL: Failed to create VFCompositor process");
+#else
+        PrintKernelError("CRITICAL: Failed to create VFCompositor process\n");
+#endif
+    }
+    cached_vfc_pid = vfc_pid;
+    PrintKernelSuccess("System: VFCompositor created with PID: ");
+    PrintKernelInt(vfc_pid);
+    PrintKernel("\n");
+}
+
 // Get window by title
 Window* GetWindowByTitle(const char* title) {
     if (!title) return NULL;

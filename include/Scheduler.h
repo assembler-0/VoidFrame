@@ -2,118 +2,139 @@
 ///@brief Unified wrapper for multiple scheduler implementations
 #ifndef VOIDFRAME_SCHEDULER_H
 #define VOIDFRAME_SCHEDULER_H
-#include "MLFQ.h"
-#include "EEVDF.h"
+
 #include "Shared.h"
+#if defined(VF_CONFIG_SCHED_MLFQ)
+#include "MLFQ.h"
+#elif defined(VF_CONFIG_SCHED_EEVDF)
+#include "EEVDF.h"
+#endif
+
+#if defined(VF_CONFIG_SCHED_MLFQ)
+typedef MLFQProcessControlBlock CurrentProcessControlBlock;
+#elif defined(VF_CONFIG_SCHED_EEVDF)
+typedef EEVDFProcessControlBlock CurrentProcessControlBlock;
+#elif defined(VF_CONFIG_SCHED_CFS)
+typedef void CurrentProcessControlBlock;
+#endif
 
 // Initialize the active scheduler
 static inline __attribute__((always_inline)) int SchedulerInit() {
-#ifdef VF_CONFIG_SCHED_MLFQ
+#if defined(VF_CONFIG_SCHED_MLFQ)
     return MLFQSchedInit();
-#endif
-#ifdef VF_CONFIG_SCHED_EEVDF
+#elif defined(VF_CONFIG_SCHED_EEVDF)
     return EEVDFSchedInit();
-#endif
-#ifdef VF_CONFIG_SCHED_CFS
+#elif defined(VF_CONFIG_SCHED_CFS)
     return 0; // not implemented
 #endif
-    return -1;
 }
 
 // Create a new process
 static inline __attribute__((always_inline)) uint32_t CreateProcess(const char * name, void (*entry_point)()) {
-#ifdef VF_CONFIG_SCHED_MLFQ
-    return MLFQCreateProcess(name ,entry_point);
-#endif
-#ifdef VF_CONFIG_SCHED_EEVDF
-    return EEVDFCreateProcess(name, entry_point);
-#endif
-#ifdef VF_CONFIG_SCHED_CFS
+#if defined(VF_CONFIG_SCHED_MLFQ)
+    return MLFQCreateProcess (name, entry_point);
+#elif defined(VF_CONFIG_SCHED_EEVDF)
+    return EEVDFCreateProcess (name, entry_point);
+#elif defined(VF_CONFIG_SCHED_CFS)
     return 0; // not implemented
 #endif
-    return -1;
 }
 
-static inline __attribute__((always_inline))
-#ifdef VF_CONFIG_SCHED_MLFQ
-MLFQProcessControlBlock *
-#endif
-#ifdef VF_CONFIG_SCHED_EEVDF
-EEVDFProcessControlBlock *
-#endif
-#ifdef VF_CONFIG_SCHED_CFS
-void *
-#endif
-GetCurrentProcess() {
-#ifdef VF_CONFIG_SCHED_MLFQ
+static inline __attribute__((always_inline)) CurrentProcessControlBlock* GetCurrentProcess() {
+#if defined(VF_CONFIG_SCHED_MLFQ)
     return MLFQGetCurrentProcess();
-#endif
-#ifdef VF_CONFIG_SCHED_EEVDF
+#elif defined(VF_CONFIG_SCHED_EEVDF)
     return EEVDFGetCurrentProcess();
+#elif defined(VF_CONFIG_SCHED_CFS)
+    return 0; // not implemented
 #endif
-#ifdef VF_CONFIG_SCHED_CFS
-    return NULL;
+}
+
+static inline __attribute__((always_inline)) CurrentProcessControlBlock* GetCurrentProcessByPID(uint32_t pid) {
+#if defined(VF_CONFIG_SCHED_MLFQ)
+    return MLFQGetCurrentProcessByPID(pid);
+#elif  defined(VF_CONFIG_SCHED_EEVDF)
+    return EEVDFGetCurrentProcessByPID(pid);
+#elif  defined(VF_CONFIG_SCHED_CFS)
+    return 0; // not implemented
 #endif
 }
 
 // Yield CPU
 static inline __attribute__((always_inline)) void Yield() {
-#ifdef VF_CONFIG_SCHED_MLFQ
+#if defined(VF_CONFIG_SCHED_MLFQ)
     return MLFQYield();
-#endif
-#ifdef VF_CONFIG_SCHED_EEVDF
+#elif defined(VF_CONFIG_SCHED_EEVDF)
     return EEVDFYield();
-#endif
-#ifdef VF_CONFIG_SCHED_CFS
-    return; // not implemented
+#elif defined(VF_CONFIG_SCHED_CFS)
+    return 0; // not implemented
 #endif
 }
 
 // Main scheduler function (called from interrupt handler)
 static inline __attribute__((always_inline)) void Schedule(Registers* regs) {
-#ifdef VF_CONFIG_SCHED_MLFQ
+#if defined(VF_CONFIG_SCHED_MLFQ)
     return MLFQSchedule(regs);
-#endif
-#ifdef VF_CONFIG_SCHED_EEVDF
+#elif defined(VF_CONFIG_SCHED_EEVDF)
     return EEVDFSchedule(regs);
-#endif
-#ifdef VF_CONFIG_SCHED_CFS
-    return; // not implemented
+#elif defined(VF_CONFIG_SCHED_CFS)
+    return 0; // not implemented
 #endif
 }
 
 // Kill a process
 static inline __attribute__((always_inline)) void KillProcess(uint32_t pid) {
-#ifdef VF_CONFIG_SCHED_MLFQ
+#if defined(VF_CONFIG_SCHED_MLFQ)
     return MLFQKillProcess(pid);
-#endif
-#ifdef VF_CONFIG_SCHED_EEVDF
+#elif defined(VF_CONFIG_SCHED_EEVDF)
     return EEVDFKillProcess(pid);
-#endif
-#ifdef VF_CONFIG_SCHED_CFS
-    return; // not implemented
+#elif defined(VF_CONFIG_SCHED_CFS)
+    return 0; // not implemented
 #endif
 }
 
-// Scheduler-specific PCB access (for when you need the full scheduler-specific data)
-#ifdef VF_CONFIG_SCHED_MLFQ
-typedef MLFQProcessControlBlock SchedulerSpecificPCB;
-static inline MLFQProcessControlBlock* GetMLFQCurrentProcess() {
-    return MLFQGetCurrentProcess();
-}
-static inline MLFQProcessControlBlock* GetMLFQProcessByPID(uint32_t pid) {
-    return MLFQGetCurrentProcessByPID(pid);
-}
+static inline __attribute__((always_inline)) void KillCurrentProcess(const char * reason) {
+#if defined(VF_CONFIG_SCHED_MLFQ)
+    return MLFQKillCurrentProcess(reason);
+#elif defined(VF_CONFIG_SCHED_EEVDF)
+    return EEVDFKillCurrentProcess(reason);
+#elif defined(VF_CONFIG_SCHED_CFS)
+    return 0; // not implemented
 #endif
+}
 
-#ifdef VF_CONFIG_SCHED_EEVDF
-typedef EEVDFProcessControlBlock SchedulerSpecificPCB;
-static inline EEVDFProcessControlBlock* GetEEVDFCurrentProcess() {
-    return EEVDFGetCurrentProcess();
-}
-static inline EEVDFProcessControlBlock* GetEEVDFProcessByPID(uint32_t pid) {
-    return EEVDFGetCurrentProcessByPID(pid);
-}
+// List processes
+static inline __attribute__((always_inline)) void ListProcesses() {
+#if defined(VF_CONFIG_SCHED_MLFQ)
+    return MLFQListProcesses();
+#elif defined(VF_CONFIG_SCHED_EEVDF)
+    return EEVDFListProcesses();
+#elif defined(VF_CONFIG_SCHED_CFS)
+    return 0; // not implemented
 #endif
+}
+
+// Performande stats
+static inline __attribute__((always_inline)) void DumpPerformanceStats() {
+#if defined(VF_CONFIG_SCHED_MLFQ)
+    return MLFQDumpPerformanceStats();
+#elif defined(VF_CONFIG_SCHED_EEVDF)
+    return EEVDFDumpPerformanceStats();
+#elif defined(VF_CONFIG_SCHED_CFS)
+    return 0; // not implemented
+#endif
+}
+
+// Dump scheduler state
+static inline __attribute__((always_inline)) void DumpSchedulerState() {
+#if defined(VF_CONFIG_SCHED_MLFQ)
+    return MLFQDumpSchedulerState();
+#elif defined(VF_CONFIG_SCHED_EEVDF)
+    return EEVDFDumpSchedulerState();
+#elif defined(VF_CONFIG_SCHED_CFS)
+    return 0; // not implemented
+#endif
+}
+
 
 #endif // VOIDFRAME_SCHEDULER_H

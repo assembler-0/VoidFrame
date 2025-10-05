@@ -1,14 +1,11 @@
 #include "Console.h"
-
 #include "Compositor.h"
 #include "Format.h"
 #include "Io.h"
-#include "MLFQ.h"
+#include "Scheduler.h"
 #include "Serial.h"
 #include "Spinlock.h"
-#include "StringOps.h"
 #include "VBEConsole.h"
-#include "VFS.h"
 #include "Vesa.h"
 #include "stdarg.h"
 #include "stdbool.h"
@@ -51,7 +48,7 @@ void Snooze() {
     uint64_t rflags;
     __asm__ volatile("pushfq; pop %0" : "=r"(rflags));
     if ((rflags & (1ULL << 9)) != 0) { // IF set => scheduler likely active
-        if (MLFQGetCurrentProcess()->privilege_level != PROC_PRIV_SYSTEM)
+        if (GetCurrentProcess()->privilege_level != PROC_PRIV_SYSTEM)
             return;
     }
     snooze = 1;

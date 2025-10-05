@@ -3,8 +3,7 @@
 #include "../../mm/MemOps.h"
 #include "../../mm/VMem.h"
 #include "Console.h"
-#include "Panic.h"
-#include "MLFQ.h"
+#include "Scheduler.h"
 #include "StackGuard.h"
 #include "VFS.h"
 
@@ -120,7 +119,7 @@ uint32_t CreateProcessFromElf(const char* filename, const ElfLoadOptions* option
     }
 
     // Security check: Only system processes can create system processes
-    MLFQProcessControlBlock* creator = MLFQGetCurrentProcess();
+    CurrentProcessControlBlock* creator = GetCurrentProcess();
     if (!creator) {
         PrintKernelError("ELF: No current process\n");
         return 0;
@@ -267,7 +266,7 @@ uint32_t CreateProcessFromElf(const char* filename, const ElfLoadOptions* option
     void* adjusted_entry = (uint8_t*)process_memory + (entry_point - base_vaddr);
 
     // 9. Create sched with enhanced security
-    uint32_t pid = MLFQCreateProcess(filename, (void (*)(void))adjusted_entry);
+    uint32_t pid = CreateProcess(filename, (void (*)(void))adjusted_entry);
 
     // Clean up temporary ELF data
     VMemFreeWithGuards(elf_data, file_size);

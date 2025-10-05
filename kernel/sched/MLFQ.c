@@ -26,13 +26,6 @@
 
 #define offsetof(type, member) ((uint64_t)&(((type*)0)->member))
 
-// Security flags
-#define PROC_FLAG_NONE          0U
-#define PROC_FLAG_IMMUNE        (1U << 0)
-#define PROC_FLAG_CRITICAL      (1U << 1)
-#define PROC_FLAG_SUPERVISOR    (1U << 3)
-#define PROC_FLAG_CORE          (PROC_FLAG_IMMUNE | PROC_FLAG_SUPERVISOR | PROC_FLAG_CRITICAL)
-
 // Performance optimizations
 #define LIKELY(x)               __builtin_expect(!!(x), 1)
 #define UNLIKELY(x)             __builtin_expect(!!(x), 0)
@@ -1714,6 +1707,7 @@ static void Astra(void) {
 }
 
 int MLFQSchedInit(void) {
+    PrintKernelSuccess("System: Initializing MLFQ scheduler...\n");
     FastMemset(processes, 0, sizeof(MLFQProcessControlBlock) * MAX_PROCESSES);
 
     // Initialize scheduler first to get a valid tick counter
@@ -1794,38 +1788,8 @@ int MLFQSchedInit(void) {
     CerberusInit();
 #endif
 
+    PrintKernelSuccess("System: MLFQ scheduler initialized.\n");
     return 0;
-}
-
-void VFCompositorRequestInit(const char * str) {
-    (void)str;
-#ifndef VF_CONFIG_ENABLE_VFCOMPOSITOR
-    PrintKernelError("System: VFCompositor disabled in this build\n");
-    return;
-#endif
-    Snooze();
-    static uint32_t cached_vfc_pid = 0;
-    if (cached_vfc_pid) {
-        MLFQProcessControlBlock* p = MLFQGetCurrentProcessByPID(cached_vfc_pid);
-        if (p && p->state != PROC_TERMINATED) {
-            PrintKernelWarning("System: VFCompositor already running\n");
-            return;
-        }
-        cached_vfc_pid = 0;
-    }
-    PrintKernel("System: Creating VFCompositor...\n");
-    uint32_t vfc_pid = CreateSecureProcess("VFCompositor", VFCompositor, PROC_PRIV_NORM, 0);
-    if (!vfc_pid) {
-#ifndef VF_CONFIG_PANIC_OVERRIDE
-        PANIC("CRITICAL: Failed to create VFCompositor process");
-#else
-        PrintKernelError("CRITICAL: Failed to create VFCompositor process\n");
-#endif
-    }
-    cached_vfc_pid = vfc_pid;
-    PrintKernelSuccess("System: VFCompositor created with PID: ");
-    PrintKernelInt(vfc_pid);
-    PrintKernel("\n");
 }
 
 void MLFQDumpPerformanceStats(void) {

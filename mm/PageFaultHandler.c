@@ -5,8 +5,7 @@
 
 #include "PageFaultHandler.h"
 #include "Console.h"
-#include "MLFQ.h"
-#include "Panic.h"
+#include "Scheduler.h"
 #include "PMem.h"
 #include "StackTrace.h"
 #include "VMem.h"
@@ -28,7 +27,7 @@ FaultResult HandlePageFault(Registers* regs) {
         .fault_addr = fault_addr,
         .error_code = regs->error_code,
         .rip = regs->rip,
-        .pid = (regs->error_code & PF_USER) ? MLFQGetCurrentProcess()->pid : 0,
+        .pid = (regs->error_code & PF_USER) ? GetCurrentProcess()->pid : 0,
         .reason = "Unknown"
     };
     

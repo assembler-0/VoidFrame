@@ -3,7 +3,7 @@
 #include "../../kernel/atomic/Spinlock.h"
 #include "../../kernel/etc/Console.h"
 #include "../../kernel/etc/StringOps.h"
-#include "../../kernel/sched/MLFQ.h"
+#include "Scheduler.h"
 #include "../../mm/KernelHeap.h"
 #include "../../mm/MemOps.h"
 #include "../VFS.h"
@@ -65,7 +65,7 @@ int Ext2Detect(BlockDevice* device) {
 
 
 static int Ext2WriteBlock(uint32_t block, const void* buffer) {
-    WriteLock(&volume.lock, MLFQGetCurrentProcess()->pid);
+    WriteLock(&volume.lock, GetCurrentProcess()->pid);
     if (block >= volume.superblock.s_blocks_count) {
         PrintKernelF("EXT2: Block %u out of bounds (max: %u)",
                      block, volume.superblock.s_blocks_count - 1);
@@ -83,19 +83,19 @@ static int Ext2WriteBlock(uint32_t block, const void* buffer) {
 
 // Helper to read a block from the disk
 int Ext2ReadBlock(uint32_t block, void* buffer) {
-    ReadLock(&volume.lock, MLFQGetCurrentProcess()->pid);
+    ReadLock(&volume.lock, GetCurrentProcess()->pid);
     if (block >= volume.superblock.s_blocks_count) {
         PrintKernelF("EXT2: Block %u out of bounds (max: %u)",
                      block, volume.superblock.s_blocks_count - 1);
-        ReadUnlock(&volume.lock, MLFQGetCurrentProcess()->pid);
+        ReadUnlock(&volume.lock, GetCurrentProcess()->pid);
         return -1;
     }
     uint32_t num_sectors   = volume.block_size / 512;
     if (BlockDeviceRead(volume.device->id, block * num_sectors, num_sectors, buffer) != 0) {
-        ReadUnlock(&volume.lock, MLFQGetCurrentProcess()->pid);
+        ReadUnlock(&volume.lock, GetCurrentProcess()->pid);
         return -1;
     }
-    ReadUnlock(&volume.lock, MLFQGetCurrentProcess()->pid);
+    ReadUnlock(&volume.lock, GetCurrentProcess()->pid);
     return 0;
 }
 
@@ -103,7 +103,7 @@ static FileSystemDriver ext2_driver = {"EXT2", Ext2Detect, Ext2Mount};
 
 int Ext2Mount(BlockDevice* device, const char* mount_point) {
     volume.lock = (rwlock_t){0};
-    WriteLock(&volume.lock, MLFQGetCurrentProcess()->pid);
+    WriteLock(&volume.lock, GetCurrentProcess()->pid);
 
     volume.device = device;
 
@@ -185,15 +185,15 @@ int Ext2Mount(BlockDevice* device, const char* mount_point) {
 }
 
 int Ext2ReadInode(uint32_t inode_num, Ext2Inode* inode) {
-    ReadLock(&volume.lock, MLFQGetCurrentProcess()->pid);
+    ReadLock(&volume.lock, GetCurrentProcess()->pid);
     if (inode_num == 0) {
-        ReadUnlock(&volume.lock, MLFQGetCurrentProcess()->pid);
+        ReadUnlock(&volume.lock, GetCurrentProcess()->pid);
         return -1;
     }
 
     uint32_t group = (inode_num - 1) / volume.inodes_per_group;
     if (group >= volume.num_groups) {
-        ReadUnlock(&volume.lock, MLFQGetCurrentProcess()->pid);
+        ReadUnlock(&volume.lock, GetCurrentProcess()->pid);
         return -1;
     }
 
@@ -205,25 +205,25 @@ int Ext2ReadInode(uint32_t inode_num, Ext2Inode* inode) {
 
     uint8_t* block_buffer = KernelMemoryAlloc(volume.block_size);
     if (!block_buffer) {
-        ReadUnlock(&volume.lock, MLFQGetCurrentProcess()->pid);
+        ReadUnlock(&volume.lock, GetCurrentProcess()->pid);
         return -1;
     }
 
     if (Ext2ReadBlock(inode_table_block + block_offset, block_buffer) != 0) {
         KernelFree(block_buffer);
-        ReadUnlock(&volume.lock, MLFQGetCurrentProcess()->pid);
+        ReadUnlock(&volume.lock, GetCurrentProcess()->pid);
         return -1;
     }
 
     FastMemcpy(inode, block_buffer + offset_in_block, sizeof(Ext2Inode));
 
     KernelFree(block_buffer);
-    ReadUnlock(&volume.lock, MLFQGetCurrentProcess()->pid);
+    ReadUnlock(&volume.lock, GetCurrentProcess()->pid);
     return 0;
 }
 
 static int Ext2WriteInode(uint32_t inode_num, Ext2Inode* inode) {
-    WriteLock(&volume.lock, MLFQGetCurrentProcess()->pid);
+    WriteLock(&volume.lock, GetCurrentProcess()->pid);
     if (inode_num == 0) {
         WriteUnlock(&volume.lock);
         return -1;
@@ -269,15 +269,15 @@ static int Ext2WriteInode(uint32_t inode_num, Ext2Inode* inode) {
 
 // Find a directory entry in a directory inode
 uint32_t Ext2FindInDir(Ext2Inode* dir_inode, const char* name) {
-    ReadLock(&volume.lock, MLFQGetCurrentProcess()->pid);
+    ReadLock(&volume.lock, GetCurrentProcess()->pid);
     if (!S_ISDIR(dir_inode->i_mode)) {
-        ReadUnlock(&volume.lock, MLFQGetCurrentProcess()->pid);
+        ReadUnlock(&volume.lock, GetCurrentProcess()->pid);
         return 0; // Not a directory
     }
 
     uint8_t* block_buffer = KernelMemoryAlloc(volume.block_size);
     if (!block_buffer) {
-        ReadUnlock(&volume.lock, MLFQGetCurrentProcess()->pid);
+        ReadUnlock(&volume.lock, GetCurrentProcess()->pid);
         return 0;
     }
 
@@ -295,7 +295,7 @@ uint32_t Ext2FindInDir(Ext2Inode* dir_inode, const char* name) {
                 if (FastMemcmp(entry->name, name, entry->name_len) == 0) {
                     uint32_t inode_num = entry->inode;
                     KernelFree(block_buffer);
-                    ReadUnlock(&volume.lock, MLFQGetCurrentProcess()->pid);
+                    ReadUnlock(&volume.lock, GetCurrentProcess()->pid);
                     return inode_num;
                 }
             }
@@ -305,16 +305,16 @@ uint32_t Ext2FindInDir(Ext2Inode* dir_inode, const char* name) {
     }
 
     KernelFree(block_buffer);
-    ReadUnlock(&volume.lock, MLFQGetCurrentProcess()->pid);
+    ReadUnlock(&volume.lock, GetCurrentProcess()->pid);
     return 0; // Not found
 }
 
 uint32_t Ext2PathToInode(const char* path) {
-    ReadLock(&volume.lock, MLFQGetCurrentProcess()->pid);
+    ReadLock(&volume.lock, GetCurrentProcess()->pid);
     
 
     if (path[0] == '/' && (path[1] == '\0' || path[1] == ' ')) {
-        ReadUnlock(&volume.lock, MLFQGetCurrentProcess()->pid);
+        ReadUnlock(&volume.lock, GetCurrentProcess()->pid);
         return 2; // Root directory inode
     }
 
@@ -322,7 +322,7 @@ uint32_t Ext2PathToInode(const char* path) {
     uint32_t current_inode_num = 2;
     Ext2Inode current_inode;
     if (Ext2ReadInode(current_inode_num, &current_inode) != 0) {
-        ReadUnlock(&volume.lock, MLFQGetCurrentProcess()->pid);
+        ReadUnlock(&volume.lock, GetCurrentProcess()->pid);
         return 0;
     }
 
@@ -339,45 +339,45 @@ uint32_t Ext2PathToInode(const char* path) {
         component[i] = '\0';
 
         if (!S_ISDIR(current_inode.i_mode)) {
-            ReadUnlock(&volume.lock, MLFQGetCurrentProcess()->pid);
+            ReadUnlock(&volume.lock, GetCurrentProcess()->pid);
             return 0; // Not a directory, but path continues
         }
 
         current_inode_num = Ext2FindInDir(&current_inode, component);
         if (current_inode_num == 0) {
-            ReadUnlock(&volume.lock, MLFQGetCurrentProcess()->pid);
+            ReadUnlock(&volume.lock, GetCurrentProcess()->pid);
             return 0; // Component not found
         }
 
         if (Ext2ReadInode(current_inode_num, &current_inode) != 0) {
-            ReadUnlock(&volume.lock, MLFQGetCurrentProcess()->pid);
+            ReadUnlock(&volume.lock, GetCurrentProcess()->pid);
             return 0; // Failed to read next inode
         }
 
         if (*p == '/') p++;
     }
 
-    ReadUnlock(&volume.lock, MLFQGetCurrentProcess()->pid);
+    ReadUnlock(&volume.lock, GetCurrentProcess()->pid);
     return current_inode_num;
 }
 
 int Ext2ReadFile(const char* path, void* buffer, uint32_t max_size) {
-    ReadLock(&volume.lock, MLFQGetCurrentProcess()->pid);
+    ReadLock(&volume.lock, GetCurrentProcess()->pid);
 
     uint32_t inode_num = Ext2PathToInode(path);
     if (inode_num == 0) {
-        ReadUnlock(&volume.lock, MLFQGetCurrentProcess()->pid);
+        ReadUnlock(&volume.lock, GetCurrentProcess()->pid);
         return -1; // Not found
     }
 
     Ext2Inode inode;
     if (Ext2ReadInode(inode_num, &inode) != 0) {
-        ReadUnlock(&volume.lock, MLFQGetCurrentProcess()->pid);
+        ReadUnlock(&volume.lock, GetCurrentProcess()->pid);
         return -1; // Failed to read inode
     }
 
     if (!S_ISREG(inode.i_mode)) {
-        ReadUnlock(&volume.lock, MLFQGetCurrentProcess()->pid);
+        ReadUnlock(&volume.lock, GetCurrentProcess()->pid);
         return -1; // Not a regular file
     }
 
@@ -387,7 +387,7 @@ int Ext2ReadFile(const char* path, void* buffer, uint32_t max_size) {
 
     uint8_t* block_buffer = KernelMemoryAlloc(volume.block_size);
     if (!block_buffer) {
-        ReadUnlock(&volume.lock, MLFQGetCurrentProcess()->pid);
+        ReadUnlock(&volume.lock, GetCurrentProcess()->pid);
         return -1;
     }
 
@@ -397,7 +397,7 @@ int Ext2ReadFile(const char* path, void* buffer, uint32_t max_size) {
 
         if (Ext2ReadBlock(inode.i_block[i], block_buffer) != 0) {
             KernelFree(block_buffer);
-            ReadUnlock(&volume.lock, MLFQGetCurrentProcess()->pid);
+            ReadUnlock(&volume.lock, GetCurrentProcess()->pid);
             return -1;
         }
 
@@ -410,12 +410,12 @@ int Ext2ReadFile(const char* path, void* buffer, uint32_t max_size) {
     }
 
     KernelFree(block_buffer);
-    ReadUnlock(&volume.lock, MLFQGetCurrentProcess()->pid);
+    ReadUnlock(&volume.lock, GetCurrentProcess()->pid);
     return bytes_read;
 }
 
 int Ext2WriteFile(const char* path, const void* buffer, uint32_t size) {
-    WriteLock(&volume.lock, MLFQGetCurrentProcess()->pid);
+    WriteLock(&volume.lock, GetCurrentProcess()->pid);
 
     uint32_t inode_num = Ext2PathToInode(path);
 
@@ -509,28 +509,28 @@ int Ext2WriteFile(const char* path, const void* buffer, uint32_t size) {
 
 
 int Ext2ListDir(const char* path) {
-    ReadLock(&volume.lock, MLFQGetCurrentProcess()->pid);
+    ReadLock(&volume.lock, GetCurrentProcess()->pid);
 
     uint32_t inode_num = Ext2PathToInode(path);
     if (inode_num == 0) {
-        ReadUnlock(&volume.lock, MLFQGetCurrentProcess()->pid);
+        ReadUnlock(&volume.lock, GetCurrentProcess()->pid);
         return -1;
     }
 
     Ext2Inode inode;
     if (Ext2ReadInode(inode_num, &inode) != 0) {
-        ReadUnlock(&volume.lock, MLFQGetCurrentProcess()->pid);
+        ReadUnlock(&volume.lock, GetCurrentProcess()->pid);
         return -1;
     }
 
     if (!S_ISDIR(inode.i_mode)) {
-        ReadUnlock(&volume.lock, MLFQGetCurrentProcess()->pid);
+        ReadUnlock(&volume.lock, GetCurrentProcess()->pid);
         return -1;
     }
 
     uint8_t* block_buffer = KernelMemoryAlloc(volume.block_size);
     if (!block_buffer) {
-        ReadUnlock(&volume.lock, MLFQGetCurrentProcess()->pid);
+        ReadUnlock(&volume.lock, GetCurrentProcess()->pid);
         return -1;
     }
 
@@ -557,7 +557,7 @@ int Ext2ListDir(const char* path) {
     }
 
     KernelFree(block_buffer);
-    ReadUnlock(&volume.lock, MLFQGetCurrentProcess()->pid);
+    ReadUnlock(&volume.lock, GetCurrentProcess()->pid);
     return 0;
 }
 
@@ -586,7 +586,7 @@ static void Ext2ClearBit(uint8_t* bitmap, uint32_t bit) {
 }
 
 static uint32_t Ext2AllocateInode() {
-    WriteLock(&volume.lock, MLFQGetCurrentProcess()->pid);
+    WriteLock(&volume.lock, GetCurrentProcess()->pid);
     uint8_t* bitmap_buffer = KernelMemoryAlloc(volume.block_size);
     if (!bitmap_buffer) {
         WriteUnlock(&volume.lock);
@@ -623,7 +623,7 @@ static uint32_t Ext2AllocateInode() {
 }
 
 static uint32_t Ext2AllocateBlock() {
-    WriteLock(&volume.lock, MLFQGetCurrentProcess()->pid);
+    WriteLock(&volume.lock, GetCurrentProcess()->pid);
     uint8_t* bitmap_buffer = KernelMemoryAlloc(volume.block_size);
     if (!bitmap_buffer) {
         WriteUnlock(&volume.lock);
@@ -660,7 +660,7 @@ static uint32_t Ext2AllocateBlock() {
 }
 
 static int Ext2AddDirEntry(uint32_t dir_inode_num, const char* name, uint32_t file_inode_num, uint8_t file_type) {
-    WriteLock(&volume.lock, MLFQGetCurrentProcess()->pid);
+    WriteLock(&volume.lock, GetCurrentProcess()->pid);
     Ext2Inode dir_inode;
     if (Ext2ReadInode(dir_inode_num, &dir_inode) != 0) {
         WriteUnlock(&volume.lock);
@@ -757,7 +757,7 @@ static int Ext2AddDirEntry(uint32_t dir_inode_num, const char* name, uint32_t fi
 }
 
 int Ext2CreateFile(const char* path) {
-    WriteLock(&volume.lock, MLFQGetCurrentProcess()->pid);
+    WriteLock(&volume.lock, GetCurrentProcess()->pid);
 
     // Extract directory path and filename
     char dir_path[256] = "/";
@@ -855,7 +855,7 @@ int Ext2CreateFile(const char* path) {
 
 
 int Ext2CreateDir(const char* path) {
-    WriteLock(&volume.lock, MLFQGetCurrentProcess()->pid);
+    WriteLock(&volume.lock, GetCurrentProcess()->pid);
     // Extract directory path and dirname
     char parent_path[256] = "/";
     char dirname[256];
@@ -1023,7 +1023,7 @@ static void Ext2FreeInode(uint32_t inode_num) {
 
 
 int Ext2Delete(const char* path) {
-    WriteLock(&volume.lock, MLFQGetCurrentProcess()->pid);
+    WriteLock(&volume.lock, GetCurrentProcess()->pid);
 
     uint32_t inode_num = Ext2PathToInode(path);
     if (inode_num == 0) {
@@ -1125,58 +1125,58 @@ end_delete_loop:
 
 
 int Ext2IsFile(const char* path) {
-    ReadLock(&volume.lock, MLFQGetCurrentProcess()->pid);
+    ReadLock(&volume.lock, GetCurrentProcess()->pid);
     uint32_t inode_num = Ext2PathToInode(path);
     if (inode_num == 0) {
-        ReadUnlock(&volume.lock, MLFQGetCurrentProcess()->pid);
+        ReadUnlock(&volume.lock, GetCurrentProcess()->pid);
         return 0;
     }
 
     Ext2Inode inode;
     if (Ext2ReadInode(inode_num, &inode) != 0) {
-        ReadUnlock(&volume.lock, MLFQGetCurrentProcess()->pid);
+        ReadUnlock(&volume.lock, GetCurrentProcess()->pid);
         return 0;
     }
 
     int result = S_ISREG(inode.i_mode);
-    ReadUnlock(&volume.lock, MLFQGetCurrentProcess()->pid);
+    ReadUnlock(&volume.lock, GetCurrentProcess()->pid);
     return result;
 }
 
 int Ext2IsDir(const char* path) {
-    ReadLock(&volume.lock, MLFQGetCurrentProcess()->pid);
+    ReadLock(&volume.lock, GetCurrentProcess()->pid);
     uint32_t inode_num = Ext2PathToInode(path);
     if (inode_num == 0) {
-        ReadUnlock(&volume.lock, MLFQGetCurrentProcess()->pid);
+        ReadUnlock(&volume.lock, GetCurrentProcess()->pid);
         return 0;
     }
 
     Ext2Inode inode;
     if (Ext2ReadInode(inode_num, &inode) != 0) {
-        ReadUnlock(&volume.lock, MLFQGetCurrentProcess()->pid);
+        ReadUnlock(&volume.lock, GetCurrentProcess()->pid);
         return 0;
     }
 
     int result = S_ISDIR(inode.i_mode);
-    ReadUnlock(&volume.lock, MLFQGetCurrentProcess()->pid);
+    ReadUnlock(&volume.lock, GetCurrentProcess()->pid);
     return result;
 }
 
 uint64_t Ext2GetFileSize(const char* path) {
-    ReadLock(&volume.lock, MLFQGetCurrentProcess()->pid);
+    ReadLock(&volume.lock, GetCurrentProcess()->pid);
     uint32_t inode_num = Ext2PathToInode(path);
     if (inode_num == 0) {
-        ReadUnlock(&volume.lock, MLFQGetCurrentProcess()->pid);
+        ReadUnlock(&volume.lock, GetCurrentProcess()->pid);
         return 0;
     }
 
     Ext2Inode inode;
     if (Ext2ReadInode(inode_num, &inode) != 0) {
-        ReadUnlock(&volume.lock, MLFQGetCurrentProcess()->pid);
+        ReadUnlock(&volume.lock, GetCurrentProcess()->pid);
         return 0;
     }
 
     uint64_t size = inode.i_size;
-    ReadUnlock(&volume.lock, MLFQGetCurrentProcess()->pid);
+    ReadUnlock(&volume.lock, GetCurrentProcess()->pid);
     return size;
 }

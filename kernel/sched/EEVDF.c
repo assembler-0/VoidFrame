@@ -1,10 +1,5 @@
 #include "EEVDF.h"
-
-#include "APIC.h"
 #include "Atomics.h"
-#include "Cerberus.h"
-#include "Compositor.h"
-#include "KernelHeap.h"
 #ifdef VF_CONFIG_USE_CERBERUS
 #include "Cerberus.h"
 #endif
@@ -14,6 +9,7 @@
 #include "Ipc.h"
 #include "MemOps.h"
 #include "Panic.h"
+#include "Shell.h"
 #include "Spinlock.h"
 #include "VFS.h"
 #include "VMem.h"
@@ -93,6 +89,10 @@ static uint64_t scheduler_calls = 0;
 extern volatile uint32_t APIC_HZ;
 extern volatile uint32_t APICticks;
 
+// Foward declaration
+static void EEVDFASTerminate(uint32_t pid, const char* reason);
+static void EEVDFCleanupTerminatedProcessInternal(void);
+static void EEVDFTerminateProcess(uint32_t pid, TerminationReason reason, uint32_t exit_code);
 // =============================================================================
 // Utility Functions
 // =============================================================================
@@ -323,6 +323,11 @@ static void EEVDFRBInsertFixup(EEVDFRunqueue* rq, EEVDFRBNode* z) {
 
 // Insert into red-black tree ordered by vruntime
 static void EEVDFRBInsert(EEVDFRunqueue* rq, EEVDFProcessControlBlock* p) {
+    // Check if process is already in tree
+    if (p->rb_node) {
+        PANIC("EEVDFRBInsert: Process already in tree");
+    }
+    
     EEVDFRBNode* node = EEVDFAllocRBNode(p - processes);
     if (!node) return;
     
@@ -439,7 +444,14 @@ static void EEVDFRBDelete(EEVDFRunqueue* rq, EEVDFProcessControlBlock* p) {
         if (node->right) {
             rq->rb_leftmost = EEVDFRBFirst(node->right);
         } else {
-            rq->rb_leftmost = node->parent;
+            // Find the next leftmost node by walking up and finding next in-order
+            const EEVDFRBNode * current = node;
+            EEVDFRBNode* parent = current->parent;
+            while (parent && current == parent->right) {
+                current = parent;
+                parent = parent->parent;
+            }
+            rq->rb_leftmost = parent;
         }
     }
     
@@ -641,12 +653,19 @@ static uint32_t RemoveFromTerminationQueueAtomic(void) {
 void ProcessExitStubEEVDF() {
     EEVDFProcessControlBlock* current = EEVDFGetCurrentProcess();
     
+    if (UNLIKELY(!current)) {
+        PrintKernelError("EEVDF: ProcessExitStub called with null current process\n");
+        while (1) {
+            __asm__ __volatile__("hlt");
+        }
+    }
+    
     PrintKernel("\nEEVDF: Process PID ");
     PrintKernelInt(current->pid);
     PrintKernel(" exited normally\n");
     
-    // Terminate process
-    EEVDFKillCurrentProcess("Normal exit");
+    // Use direct termination to avoid potential recursion issues
+    EEVDFTerminateProcess(current->pid, TERM_NORMAL, 0);
     
     while (1) {
         __asm__ __volatile__("hlt");
@@ -665,7 +684,7 @@ void EEVDFUpdateClock(EEVDFRunqueue* rq) {
 
 void EEVDFSchedule(Registers* regs) {
     irq_flags_t flags = SpinLockIrqSave(&scheduler_lock);
-    
+
     AtomicInc(&scheduler_calls);
     AtomicInc(&eevdf_scheduler.tick_counter);
     
@@ -675,7 +694,7 @@ void EEVDFSchedule(Registers* regs) {
     
     // Update clock
     EEVDFUpdateClock(rq);
-    
+
     // Handle current task
     if (LIKELY(old_slot != 0 && old_slot < EEVDF_MAX_PROCESSES)) {
         prev = &processes[old_slot];
@@ -689,37 +708,22 @@ void EEVDFSchedule(Registers* regs) {
         
         // Update runtime statistics
         EEVDFUpdateCurr(rq, prev);
-        
+
         // Check if task should continue running
         if (LIKELY(prev->state == PROC_RUNNING)) {
             prev->state = PROC_READY;
             ready_process_bitmap |= (1ULL << old_slot);
             
-            // Re-enqueue if it still has time left and is still the best choice
-            uint64_t slice_ns = EEVDFCalcSlice(rq, prev);
-            uint64_t runtime = GetNS() - prev->exec_start;
-            
-            if (runtime < slice_ns) {
-                // Task still has time, but check if there's a better choice
-                EEVDFProcessControlBlock* next_best = EEVDFPickNext(rq);
-                if (next_best && next_best != prev) {
-                    // There's a better task to run
-                    EEVDFEnqueueTask(rq, prev);
-                } else {
-                    // Continue running current task
-                    prev->state = PROC_RUNNING;
-                    ready_process_bitmap &= ~(1ULL << old_slot);
-                    SpinUnlockIrqRestore(&scheduler_lock, flags);
-                    return;
-                }
-            } else {
-                // Time slice expired, re-enqueue
-                EEVDFEnqueueTask(rq, prev);
-            }
+            // Re-enqueue the task (it was dequeued when it started running)
+            EEVDFEnqueueTask(rq, prev);
         }
     }
     
 pick_next:;
+    // Safety counter to prevent infinite loops when cleaning invalid processes
+    int retry_count = 0;
+    
+pick_retry:;
     EEVDFProcessControlBlock* next = EEVDFPickNext(rq);
     uint32_t next_slot;
     
@@ -729,19 +733,36 @@ pick_next:;
         next_slot = next - processes;
         
         if (UNLIKELY(next_slot >= EEVDF_MAX_PROCESSES || next->state != PROC_READY)) {
-            goto pick_next;
+            // Remove invalid process from tree to prevent infinite loop
+            EEVDFDequeueTask(rq, next);
+            
+            retry_count++;
+            if (retry_count > 10) {
+                PrintKernelWarning("EEVDF: Too many invalid processes detected, falling back to idle\n");
+                next_slot = 0;
+            } else {
+                goto pick_retry;
+            }
+        } else {
+            // Dequeue the selected task
+            EEVDFDequeueTask(rq, next);
         }
-        
-        // Dequeue the selected task
-        EEVDFDequeueTask(rq, next);
     }
-    
+
     // Context switch
     rq->current_slot = next_slot;
     current_process = next_slot;
     
     if (LIKELY(next_slot != 0)) {
         EEVDFProcessControlBlock* new_proc = &processes[next_slot];
+        
+        // Validate process before switching
+        if (UNLIKELY(!new_proc->stack || new_proc->context.rip == 0)) {
+            // Invalid process, fall back to idle
+            next_slot = 0;
+            goto switch_to_idle;
+        }
+        
         new_proc->state = PROC_RUNNING;
         ready_process_bitmap &= ~(1ULL << next_slot);
         
@@ -749,14 +770,23 @@ pick_next:;
         new_proc->slice_ns = EEVDFCalcSlice(rq, new_proc);
         
         FastMemcpy(regs, &new_proc->context, sizeof(Registers));
+
         AtomicInc(&context_switches);
         eevdf_scheduler.switch_count++;
     }
+
+switch_to_idle:
     
+    // Periodic cleanup of terminated processes (every 100 schedule calls)
+    if (UNLIKELY((scheduler_calls % 100) == 0)) {
+        EEVDFCleanupTerminatedProcessInternal();
+    }
+
     SpinUnlockIrqRestore(&scheduler_lock, flags);
 }
 
 int EEVDFSchedInit(void) {
+    PrintKernel("System: Initializing EEVDF scheduler...\n");
     // Initialize process array
     FastMemset(processes, 0, sizeof(EEVDFProcessControlBlock) * EEVDF_MAX_PROCESSES);
     
@@ -805,7 +835,24 @@ int EEVDFSchedInit(void) {
     
     process_count = 1;
     active_process_bitmap |= 1ULL;
-    
+
+#ifdef VF_CONFIG_USE_VFSHELL
+    // Create shell process
+    PrintKernel("System: Creating shell process...\n");
+    const uint32_t shell_pid = EEVDFCreateProcess("VFShell", ShellProcess);
+    if (!shell_pid) {
+#ifndef VF_CONFIG_PANIC_OVERRIDE
+        PANIC("CRITICAL: Failed to create shell process");
+#else
+        PrintKernelError("CRITICAL: Failed to create shell process\n");
+#endif
+    }
+    PrintKernelSuccess("System: Shell created with PID: ");
+    PrintKernelInt(shell_pid);
+    PrintKernel("\n");
+#endif
+
+    PrintKernelSuccess("System: EEVDF scheduler initialized\n");
     return 0;
 }
 
@@ -820,14 +867,13 @@ uint32_t EEVDFCreateProcess(const char* name, void (*entry_point)(void)) {
         SpinUnlockIrqRestore(&scheduler_lock, flags);
         PANIC("EEVDFCreateProcess: Too many processes");
     }
-    
+
     // Find free slot
     int slot = FindFreeSlotFast();
     if (UNLIKELY(slot == -1)) {
         SpinUnlockIrqRestore(&scheduler_lock, flags);
         PANIC("EEVDFCreateProcess: No free process slots");
     }
-    
     // Allocate PID
     uint32_t new_pid = 0;
     SpinLock(&pid_lock);
@@ -841,7 +887,7 @@ uint32_t EEVDFCreateProcess(const char* name, void (*entry_point)(void)) {
         }
     }
     SpinUnlock(&pid_lock);
-    
+
     if (new_pid == 0) {
         FreeSlotFast(slot);
         SpinUnlockIrqRestore(&scheduler_lock, flags);
@@ -850,7 +896,7 @@ uint32_t EEVDFCreateProcess(const char* name, void (*entry_point)(void)) {
     
     // Clear process structure
     FastMemset(&processes[slot], 0, sizeof(EEVDFProcessControlBlock));
-    
+
     // Allocate stack
     void* stack = VMemAllocStack(EEVDF_STACK_SIZE);
     if (UNLIKELY(!stack)) {
@@ -858,7 +904,9 @@ uint32_t EEVDFCreateProcess(const char* name, void (*entry_point)(void)) {
         SpinUnlockIrqRestore(&scheduler_lock, flags);
         PANIC("EEVDFCreateProcess: Failed to allocate stack");
     }
-    
+
+    EEVDFProcessControlBlock* creator = EEVDFGetCurrentProcess();
+
     // Initialize process
     EEVDFProcessControlBlock* proc = &processes[slot];
     FormatA(proc->name, sizeof(proc->name), "%s", name ? name : FormatS("proc%d", slot));
@@ -868,28 +916,28 @@ uint32_t EEVDFCreateProcess(const char* name, void (*entry_point)(void)) {
     proc->privilege_level = EEVDF_PROC_PRIV_NORM;
     proc->creation_time = EEVDFGetSystemTicks();
     EEVDFSetTaskNice(proc, EEVDF_DEFAULT_NICE);
-    
+
     // Set virtual time to current minimum to ensure fairness
     proc->vruntime = eevdf_scheduler.rq.min_vruntime;
     proc->exec_start = GetNS();
-    
+
     // Initialize security token
     EEVDFSecurityToken* token = &proc->token;
     token->magic = EEVDF_SECURITY_MAGIC;
-    token->creator_pid = 0; // TODO: get current process PID
+    token->creator_pid = creator->pid;
     token->privilege = EEVDF_PROC_PRIV_NORM;
     token->flags = EEVDF_PROC_FLAG_NONE;
     token->creation_tick = proc->creation_time;
     token->checksum = EEVDFCalculateSecureChecksum(token, new_pid);
-    
+
     // Set up context
-    uint64_t rsp = (uint64_t)stack + EEVDF_STACK_SIZE;
+    uint64_t rsp = (uint64_t)stack;
     rsp &= ~0xF; // 16-byte alignment
-    
+
     // Push exit stub as return address
     rsp -= 8;
     *(uint64_t*)rsp = (uint64_t)ProcessExitStubEEVDF;
-    
+
     proc->context.rsp = rsp;
     proc->context.rip = (uint64_t)entry_point;
     proc->context.rflags = 0x202;
@@ -900,18 +948,19 @@ uint32_t EEVDFCreateProcess(const char* name, void (*entry_point)(void)) {
     proc->ipc_queue.head = 0;
     proc->ipc_queue.tail = 0;
     proc->ipc_queue.count = 0;
-    
+
     FormatA(proc->ProcessRuntimePath, sizeof(proc->ProcessRuntimePath), "%s/%d", RuntimeProcesses, new_pid);
     
     // Update counters
     __sync_fetch_and_add(&process_count, 1);
     ready_process_bitmap |= (1ULL << slot);
     eevdf_scheduler.total_processes++;
-    
+
     // Add to scheduler
     EEVDFEnqueueTask(&eevdf_scheduler.rq, proc);
-    
+
     SpinUnlockIrqRestore(&scheduler_lock, flags);
+
     return new_pid;
 }
 
@@ -942,16 +991,231 @@ void EEVDFYield(void) {
     while (delay-- > 0) __asm__ __volatile__("pause");
 }
 
+// =============================================================================
+// Security and Validation Functions
+// =============================================================================
+
+static int EEVDFValidateToken(const EEVDFSecurityToken* token, uint32_t pid) {
+    if (UNLIKELY(!token)) return 0;
+    if (UNLIKELY(token->magic != EEVDF_SECURITY_MAGIC)) return 0;
+    
+    uint64_t expected_checksum = EEVDFCalculateSecureChecksum(token, pid);
+    return token->checksum == expected_checksum;
+}
+
+// =============================================================================
+// Process Termination Functions
+// =============================================================================
+
+static void EEVDFTerminateProcess(uint32_t pid, TerminationReason reason, uint32_t exit_code) {
+    irq_flags_t flags = SpinLockIrqSave(&scheduler_lock);
+    EEVDFProcessControlBlock* proc = EEVDFGetCurrentProcessByPID(pid);
+    if (UNLIKELY(!proc || proc->state == PROC_DYING ||
+                 proc->state == PROC_ZOMBIE || proc->state == PROC_TERMINATED)) {
+        SpinUnlockIrqRestore(&scheduler_lock, flags);
+        return;
+    }
+
+    EEVDFProcessControlBlock* caller = EEVDFGetCurrentProcess();
+    uint32_t slot = proc - processes;
+
+    if (slot >= EEVDF_MAX_PROCESSES) {
+        SpinUnlockIrqRestore(&scheduler_lock, flags);
+        return;
+    }
+
+    // Enhanced security checks
+    if (reason != TERM_SECURITY) {
+        // Cross-process termination security
+        if (caller->pid != proc->pid) {
+            // Only system processes can terminate other processes
+            // Check privilege levels - can only kill equal or lower privilege
+            if (proc->privilege_level == EEVDF_PROC_PRIV_SYSTEM) {
+                // Only system processes can kill system processes
+                if (caller->privilege_level != EEVDF_PROC_PRIV_SYSTEM) {
+                    SpinUnlockIrqRestore(&scheduler_lock, flags);
+                    PrintKernelError("[EEVDF-SECURITY] Process ");
+                    PrintKernelInt(caller->pid);
+                    PrintKernel(" tried to kill system process ");
+                    PrintKernelInt(proc->pid);
+                    PrintKernel("\n");
+                    // Use ASTerminate to avoid recursive deadlock
+                    EEVDFASTerminate(caller->pid, "Unauthorized system process termination");
+                    return;
+                }
+            }
+
+            // Cannot terminate immune processes
+            if (UNLIKELY(proc->token.flags & EEVDF_PROC_FLAG_IMMUNE)) {
+                SpinUnlockIrqRestore(&scheduler_lock, flags);
+                EEVDFASTerminate(caller->pid, "Attempted termination of immune process");
+                return;
+            }
+
+            // Cannot terminate critical system processes
+            if (UNLIKELY(proc->token.flags & EEVDF_PROC_FLAG_CRITICAL)) {
+                SpinUnlockIrqRestore(&scheduler_lock, flags);
+                EEVDFASTerminate(caller->pid, "Attempted termination of critical process");
+                return;
+            }
+        }
+
+        // Validate caller's token before allowing termination
+        if (UNLIKELY(!EEVDFValidateToken(&caller->token, caller->pid))) {
+            SpinUnlockIrqRestore(&scheduler_lock, flags);
+            EEVDFASTerminate(caller->pid, "Token validation failed");
+            return;
+        }
+    }
+
+    // Atomic state transition
+    ProcessState old_state = proc->state;
+    if (UNLIKELY(AtomicCmpxchg((volatile uint32_t*)&proc->state, old_state, PROC_DYING) != old_state)) {
+        SpinUnlockIrqRestore(&scheduler_lock, flags);
+        return; // Race condition, another thread is handling termination
+    }
+
+    PrintKernel("EEVDF: Terminating PID ");
+    PrintKernelInt(pid);
+    PrintKernel(" Reason: ");
+    PrintKernelInt(reason);
+    PrintKernel("\n");
+
+    proc->term_reason = reason;
+    proc->exit_code = exit_code;
+    proc->termination_time = EEVDFGetSystemTicks();
+
+    // Remove from EEVDF scheduler
+    EEVDFDequeueTask(&eevdf_scheduler.rq, proc);
+
+    // Clear from ready bitmap
+    ready_process_bitmap &= ~(1ULL << slot);
+
+    // Request immediate reschedule if current process
+    if (UNLIKELY(slot == eevdf_scheduler.rq.current_slot)) {
+        need_schedule = 1;
+    }
+
+    proc->state = PROC_ZOMBIE;           // Set state FIRST
+    __atomic_thread_fence(__ATOMIC_SEQ_CST);
+    AddToTerminationQueueAtomic(slot);   // Then add to queue
+    
+    // Free PID
+    SpinLock(&pid_lock);
+    int idx = proc->pid / 64;
+    int bit = proc->pid % 64;
+    pid_bitmap[idx] &= ~(1ULL << bit);
+    SpinUnlock(&pid_lock);
+    
+    // Update scheduler statistics
+    if (eevdf_scheduler.total_processes > 0) {
+        eevdf_scheduler.total_processes--;
+    }
+
+    SpinUnlockIrqRestore(&scheduler_lock, flags);
+
+#ifdef VF_CONFIG_USE_CERBERUS
+    CerberusUnregisterProcess(proc->pid);
+#endif
+
+#ifdef VF_CONFIG_PROCINFO_AUTO_CLEANUP
+    char cleanup_path[256];
+    FormatA(cleanup_path, sizeof(cleanup_path), "%s/%d", RuntimeProcesses, proc->pid);
+
+    PrintKernel("EEVDF: Attempting cleanup of ");
+    PrintKernel(cleanup_path);
+    PrintKernel(" for PID ");
+    PrintKernelInt(proc->pid);
+    PrintKernel("\n");
+    int cleanup_result = VfsDelete(cleanup_path, true);
+    if (cleanup_result != 0) {
+        PrintKernelError("EEVDF: Cleanup failed with code ");
+        PrintKernelInt(cleanup_result);
+        PrintKernel("\n");
+    } else {
+        PrintKernel("EEVDF: Cleanup successful\n");
+    }
+#endif
+}
+
+// EEVDF's deadly termination function - bypasses all protections
+static void EEVDFASTerminate(uint32_t pid, const char* reason) {
+    irq_flags_t flags = SpinLockIrqSave(&scheduler_lock);
+    EEVDFProcessControlBlock* proc = EEVDFGetCurrentProcessByPID(pid);
+
+    if (!proc || proc->state == PROC_TERMINATED) {
+        SpinUnlockIrqRestore(&scheduler_lock, flags);
+        return;
+    }
+
+    // AS overrides ALL protections - even immune and critical
+    uint32_t slot = proc - processes;
+    proc->state = PROC_DYING;
+    proc->term_reason = TERM_SECURITY;
+    proc->exit_code = 666; // AS signature
+    proc->termination_time = EEVDFGetSystemTicks();
+
+    EEVDFDequeueTask(&eevdf_scheduler.rq, proc);
+    ready_process_bitmap &= ~(1ULL << slot);
+
+    if (slot == eevdf_scheduler.rq.current_slot) {
+        need_schedule = 1;
+    }
+
+    AddToTerminationQueueAtomic(slot);
+    proc->state = PROC_ZOMBIE;
+
+    if (eevdf_scheduler.total_processes > 0) {
+        eevdf_scheduler.total_processes--;
+    }
+
+    SpinUnlockIrqRestore(&scheduler_lock, flags);
+    
+#ifdef VF_CONFIG_PROCINFO_AUTO_CLEANUP
+    char cleanup_path[256];
+    FormatA(cleanup_path, sizeof(cleanup_path), "%s/%d", RuntimeProcesses, proc->pid);
+
+    PrintKernel("EEVDF-AS: Attempting forced cleanup of ");
+    PrintKernel(cleanup_path);
+    PrintKernel(" for PID ");
+    PrintKernelInt(proc->pid);
+    PrintKernel(" (Reason: ");
+    PrintKernel(reason);
+    PrintKernel(")\n");
+    
+    int cleanup_result = VfsDelete(cleanup_path, true);
+    if (cleanup_result != 0) {
+        PrintKernelError("EEVDF-AS: Forced cleanup failed with code ");
+        PrintKernelInt(cleanup_result);
+        PrintKernel("\n");
+    } else {
+        PrintKernel("EEVDF-AS: Forced cleanup successful\n");
+    }
+#endif
+}
+
+static void EEVDFSecurityViolationHandler(uint32_t violator_pid, const char* reason) {
+    PrintKernelError("[EEVDF-SECURITY] Security violation by PID ");
+    PrintKernelInt(violator_pid);
+    PrintKernelError(": ");
+    PrintKernelError(reason);
+    PrintKernelError("\n");
+
+    security_violation_count++;
+    if (security_violation_count >= EEVDF_MAX_SECURITY_VIOLATIONS) {
+        PANIC("EEVDF: Maximum security violations exceeded");
+    }
+
+    EEVDFASTerminate(violator_pid, reason);
+}
+
 void EEVDFKillProcess(uint32_t pid) {
-    // TODO: Implement process termination (similar to MLFQ)
-    PrintKernel("EEVDF: Kill process not fully implemented yet\n");
+    EEVDFTerminateProcess(pid, TERM_KILLED, 1);
 }
 
 void EEVDFKillCurrentProcess(const char* reason) {
-    // TODO: Implement current process termination
-    PrintKernel("EEVDF: Kill current process not fully implemented yet: ");
-    PrintKernel(reason);
-    PrintKernel("\n");
+    EEVDFProcessControlBlock* current = EEVDFGetCurrentProcess();
+    if (current) EEVDFASTerminate(current->pid, reason);
 }
 
 void EEVDFProcessBlocked(uint32_t slot) {
@@ -975,8 +1239,61 @@ void EEVDFWakeupTask(EEVDFProcessControlBlock* p) {
     EEVDFEnqueueTask(&eevdf_scheduler.rq, p);
 }
 
+// Internal cleanup function that assumes scheduler_lock is already held
+static void EEVDFCleanupTerminatedProcessInternal(void) {
+    // Process a limited number per call to avoid long interrupt delays
+    int cleanup_count = 0;
+    const int MAX_CLEANUP_PER_CALL = EEVDF_CLEANUP_MAX_PER_CALL;
+
+    while (AtomicRead(&term_queue_count) > 0 && cleanup_count < MAX_CLEANUP_PER_CALL) {
+        uint32_t slot = RemoveFromTerminationQueueAtomic();
+        if (slot >= EEVDF_MAX_PROCESSES) break;
+
+        EEVDFProcessControlBlock* proc = &processes[slot];
+        // Double-check state
+        if (proc->state != PROC_ZOMBIE) {
+            PrintKernelWarning("EEVDF: Cleanup found non-zombie process (PID: ");
+            PrintKernelInt(proc->pid);
+            PrintKernelWarning(", State: ");
+            PrintKernelInt(proc->state);
+            PrintKernelWarning(") in termination queue. Skipping.\n");
+            continue;
+        }
+
+        PrintKernel("EEVDF: Cleaning up process PID: ");
+        PrintKernelInt(proc->pid);
+        PrintKernel("\n");
+
+        // Cleanup resources
+        if (proc->stack) {
+            VMemFreeStack(proc->stack, EEVDF_STACK_SIZE);
+            proc->stack = NULL;
+        }
+
+        // Clear IPC queue
+        proc->ipc_queue.head = 0;
+        proc->ipc_queue.tail = 0;
+        proc->ipc_queue.count = 0;
+
+        // Clear process structure - this will set state to PROC_TERMINATED (0)
+        uint32_t pid_backup = proc->pid; // Keep for logging
+        FastMemset(proc, 0, sizeof(EEVDFProcessControlBlock));
+
+        // Free the slot
+        FreeSlotFast(slot);
+        process_count--;
+        cleanup_count++;
+
+        PrintKernel("EEVDF: Process PID ");
+        PrintKernelInt(pid_backup);
+        PrintKernel(" cleaned up successfully (state now PROC_TERMINATED=0)\n");
+    }
+}
+
 void EEVDFCleanupTerminatedProcess(void) {
-    // TODO: Implement cleanup (similar to MLFQ)
+    irq_flags_t flags = SpinLockIrqSave(&scheduler_lock);
+    EEVDFCleanupTerminatedProcessInternal();
+    SpinUnlockIrqRestore(&scheduler_lock, flags);
 }
 
 // =============================================================================

@@ -59,9 +59,12 @@ git clone https://github.com/assembler-0/VoidFrame.git
 cd VoidFrame
 mkdir build
 cd build
-cmake .. -DCMAKE_BUILD_TYPE=Release -DCMAKE_TOOLCHAIN_FILE=../cmake/toolchain/<linux/windows/macos>-x64.cmake -G Ninja
-ninja -j$(nproc)
-ninja run
+cmake .. -DCMAKE_BUILD_TYPE=Release \
+    -DCMAKE_TOOLCHAIN_FILE=../cmake/toolchain/<linux/windows/macos>-x64.cmake \
+    -G Ninja \
+    -DVF_SCHEDULER=<MLFQ/EEVDF> # Optional, MLFQ is default
+ccmake . # Optinal, tune as needed
+cmake --build .
 ```
 ```bash
 # XMake
@@ -90,7 +93,10 @@ xmake run
 - [x] Vesa (VBE)
 - [x] Multiboot2 Info parsing
 ### Core
-- [x] Multi-tasking (MLFQ)
+- [x] MLFQ
+- [x] EEVDF
+- [ ] SMP
+- [ ] Threads
 - [x] Per-process authentication check (Astra)
 - [x] Dynamic ML-inspired PIT frequency scaling (DynamoX)
 - [x] Virtual Memory (canonical)

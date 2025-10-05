@@ -86,10 +86,6 @@
 #define FAIRNESS_BOOST_ACTUAL_INTERVAL (FAIRNESS_BOOST_INTERVAL * FAIRNESS_BOOST_MULTIPLIER)
 #define LOAD_BALANCE_ACTUAL_THRESHOLD (LOAD_BALANCE_THRESHOLD * LOAD_BALANCE_MULTIPLIER)
 
-#define PROC_PRIV_SYSTEM     0  // Highest privilege (kernel services)
-#define PROC_PRIV_NORM       1  // Normal processes
-#define PROC_PRIV_RESTRICTED 2  // Restricted processes
-
 // =============================================================================
 // DynamoX Parameters (v0.2)
 // =============================================================================
@@ -214,7 +210,6 @@ MLFQProcessControlBlock* MLFQGetCurrentProcess(void);
 MLFQProcessControlBlock* MLFQGetCurrentProcessByPID(uint32_t pid);
 void MLFQCleanupTerminatedProcess(void);
 void MLFQYield(void);
-void VFCompositorRequestInit(const char * str);
 void MLFQKillCurrentProcess(const char * reason);
 void MLFQSchedule(Registers* regs);
 void MLFQDumpSchedulerState(void);
@@ -227,4 +222,5 @@ void MLFQKillProcess(uint32_t pid);
 
 // DEBUG
 void MLFQDumpPerformanceStats(void);
+
 #endif
