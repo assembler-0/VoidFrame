@@ -444,9 +444,10 @@ static void EEVDFRBDelete(EEVDFRunqueue* rq, EEVDFProcessControlBlock* p) {
             rq->rb_leftmost = EEVDFRBFirst(node->right);
         } else {
             // Find the next leftmost node by walking up and finding next in-order
-            EEVDFRBNode* parent = node->parent;
-            while (parent && node == parent->left) {
-                node = parent;
+            const EEVDFRBNode * current = node;
+            EEVDFRBNode* parent = current->parent;
+            while (parent && current == parent->right) {
+                current = parent;
                 parent = parent->parent;
             }
             rq->rb_leftmost = parent;
@@ -826,7 +827,7 @@ uint32_t EEVDFCreateProcess(const char* name, void (*entry_point)(void)) {
         SpinUnlockIrqRestore(&scheduler_lock, flags);
         PANIC("EEVDFCreateProcess: Too many processes");
     }
-    
+
     // Find free slot
     int slot = FindFreeSlotFast();
     if (UNLIKELY(slot == -1)) {
@@ -864,6 +865,8 @@ uint32_t EEVDFCreateProcess(const char* name, void (*entry_point)(void)) {
         PANIC("EEVDFCreateProcess: Failed to allocate stack");
     }
 
+    EEVDFProcessControlBlock* creator = EEVDFGetCurrentProcess();
+
     // Initialize process
     EEVDFProcessControlBlock* proc = &processes[slot];
     FormatA(proc->name, sizeof(proc->name), "%s", name ? name : FormatS("proc%d", slot));
@@ -881,14 +884,13 @@ uint32_t EEVDFCreateProcess(const char* name, void (*entry_point)(void)) {
     // Initialize security token
     EEVDFSecurityToken* token = &proc->token;
     token->magic = EEVDF_SECURITY_MAGIC;
-    token->creator_pid = 0; // TODO: get current process PID
+    token->creator_pid = creator->pid;
     token->privilege = EEVDF_PROC_PRIV_NORM;
     token->flags = EEVDF_PROC_FLAG_NONE;
     token->creation_tick = proc->creation_time;
     token->checksum = EEVDFCalculateSecureChecksum(token, new_pid);
 
     // Set up context
-    // VMemAllocStack already returns the stack top, so we can use it directly
     uint64_t rsp = (uint64_t)stack;
     rsp &= ~0xF; // 16-byte alignment
 
