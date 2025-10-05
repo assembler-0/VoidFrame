@@ -29,8 +29,8 @@ jobs:
             mtools \
             lld \
             llvm \
-            cmake \
-            ninja-build \
+            cmake ninja-build \
+          curl --proto '=https' --tlsv1.3 https://sh.rustup.rs -sSf | sh
 
       - name: Compile & Link (CMake)
         run: |

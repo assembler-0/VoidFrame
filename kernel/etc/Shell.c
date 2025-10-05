@@ -371,13 +371,13 @@ static void AllocHandler(const char * args) {
 static void RsAllocHandler(const char * args) {
     char* size_str = GetArg(args, 1);
     if (!size_str) {
-        PrintKernel("Usage: alloc <size>\n");
+        PrintKernel("Usage: rsalloc <size>\n");
         KernelFree(size_str);
         return;
     }
     int size = atoi(size_str);
     if (size <= 0) {
-        PrintKernel("Usage: alloc <size>\n");
+        PrintKernel("Usage: rsalloc <size>\n");
         KernelFree(size_str);
         return;
     }
@@ -1200,7 +1200,7 @@ static const ShellCommand commands[] = {\
     {"mkdir", MkdirHandler},
     {"touch", TouchHandler},
     {"alloc", AllocHandler},
-    {"rs-alloc", RsAllocHandler},
+    {"rsalloc", RsAllocHandler},
     {"panic", PanicHandler},
     {"kill", KillHandler},
     {"rm", RmHandler},

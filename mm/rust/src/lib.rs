@@ -18,11 +18,11 @@ pub use heap::{
 
 #[panic_handler]
 fn panic(_info: &core::panic::PanicInfo) -> ! {
-    // Call kernel panic - this should be provided by the kernel
+    // Call existing kernel panic function
     extern "C" {
-        fn kernel_panic(msg: *const u8) -> !;
+        fn Panic(msg: *const u8) -> !;
     }
     unsafe {
-        kernel_panic(b"Rust heap panic\0".as_ptr());
+        Panic(b"Rust heap panic\0".as_ptr());
     }
 }

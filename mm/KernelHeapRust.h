@@ -8,17 +8,26 @@
 extern "C" {
 #endif
 
-// Rust heap functions with C-compatible API
+// Core allocation functions
 void* rust_kmalloc(size_t size);
 void rust_kfree(void* ptr);
 void* rust_krealloc(void* ptr, size_t new_size);
 void* rust_kcalloc(size_t count, size_t size);
 
-// Compatibility macros to replace existing heap functions
-#define kmalloc(size) rust_kmalloc(size)
-#define kfree(ptr) rust_kfree(ptr)
-#define krealloc(ptr, size) rust_krealloc(ptr, size)
-#define kcalloc(count, size) rust_kcalloc(count, size)
+// Statistics and monitoring
+typedef struct {
+    size_t total_allocated;
+    size_t peak_allocated;
+    uint64_t alloc_count;
+    uint64_t free_count;
+    uint64_t cache_hits;
+    uint64_t cache_misses;
+    uint64_t coalesce_count;
+    uint64_t corruption_count;
+} HeapStats;
+
+void rust_heap_get_stats(HeapStats* stats);
+int rust_heap_validate(void);
 
 #ifdef __cplusplus
 }
