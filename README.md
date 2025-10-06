@@ -62,6 +62,7 @@ cmake .. -DCMAKE_BUILD_TYPE=Release \
     -DCMAKE_TOOLCHAIN_FILE=../cmake/toolchain/<linux/windows/macos>-x64.cmake \
     -G Ninja \
     -DVF_SCHEDULER=<MLFQ/EEVDF> \ # Optional, default: EEVDF
+    -DVF_CONFIG_HEAP_LANG=<C/RUST> \ # Optional, default: RUST
 ccmake . # Optinal, tune as needed
 ninja -j$(nproc)
 ninja run
@@ -99,7 +100,7 @@ ninja run
 - [x] Per-process memory checks (Cerberus)
 - [x] Stack guard
 - [x] Stack trace
-- [x] Heap (Class-based)
+- [x] Heap (C & Rust modules)
 - [x] Paging
 - [x] Interrupts
 - [x] Process Management
