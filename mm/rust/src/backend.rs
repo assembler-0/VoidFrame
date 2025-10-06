@@ -490,11 +490,13 @@ pub unsafe fn rust_krealloc_backend(ptr: *mut u8, new_size: usize) -> *mut u8 {
 }
 
 pub unsafe fn rust_kcalloc_backend(count: usize, size: usize) -> *mut u8 {
-    let total_size = count.saturating_mul(size);
-    if total_size / count != size { // Overflow check
+    if count == 0 || size == 0 {
         return ptr::null_mut();
     }
-    
+    let total_size = match count.checked_mul(size) {
+        Some(v) => v,
+        None => return ptr::null_mut(),
+    };
     let ptr = rust_kmalloc_backend(total_size);
     if !ptr.is_null() {
         core::ptr::write_bytes(ptr, 0, total_size);

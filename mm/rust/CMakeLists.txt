@@ -1,5 +1,3 @@
-cmake_minimum_required(VERSION 3.20)
-
 # Find Rust and Cargo
 find_program(CARGO_EXECUTABLE cargo REQUIRED)
 find_program(RUSTC_EXECUTABLE rustc REQUIRED)
