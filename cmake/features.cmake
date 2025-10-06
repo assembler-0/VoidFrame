@@ -49,3 +49,7 @@ elseif(VF_SCHEDULER STREQUAL "EEVDF")
 else()
     message(FATAL_ERROR "Invalid scheduler: ${VF_SCHEDULER}. Have you pass: -DVF_SCHEDULER=<MLFQ/EEVDF>?.")
 endif()
+
+if(VF_CONFIG_HEAP_RUST)
+    add_compile_definitions(VF_CONFIG_HEAP_RUST)
+endif()

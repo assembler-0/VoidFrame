@@ -28,4 +28,8 @@ void ApicTimerInstall(uint32_t frequency_hz);
 void ApicTimerSetFrequency(uint32_t frequency_hz);
 
 void PICMaskAll();
+
+// Get the current CPU's LAPIC ID
+uint8_t lapic_get_id();
+
 #endif // APIC_H

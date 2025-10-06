@@ -7,8 +7,6 @@ find_program(RUSTC_EXECUTABLE rustc REQUIRED)
 # Set target triple based on architecture
 if(CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64")
     set(RUST_TARGET "x86_64-unknown-none")
-elseif(CMAKE_SYSTEM_PROCESSOR MATCHES "aarch64|arm64")
-    set(RUST_TARGET "aarch64-unknown-none")
 else()
     message(FATAL_ERROR "Unsupported architecture: ${CMAKE_SYSTEM_PROCESSOR}")
 endif()
@@ -24,8 +22,9 @@ add_custom_command(
     WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
     DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/Cargo.toml
             ${CMAKE_CURRENT_SOURCE_DIR}/src/lib.rs
-            ${CMAKE_CURRENT_SOURCE_DIR}/src/heap.rs
-            ${CMAKE_CURRENT_SOURCE_DIR}/src/vmem_ffi.rs
+            ${CMAKE_CURRENT_SOURCE_DIR}/src/backend.rs
+            ${CMAKE_CURRENT_SOURCE_DIR}/src/rust_heap.rs
+            ${CMAKE_CURRENT_SOURCE_DIR}/src/ffi.rs
     COMMENT "Building Rust heap library"
 )
 

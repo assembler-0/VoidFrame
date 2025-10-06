@@ -49,6 +49,7 @@ message(STATUS "CMake Current Binary Directory: ${CMAKE_CURRENT_BINARY_DIR}")
 message(STATUS "CMake Host System Name: ${CMAKE_HOST_SYSTEM_NAME}")
 message(STATUS "CMake Host System Processor: ${CMAKE_HOST_SYSTEM_PROCESSOR}")
 message(STATUS "VoidFrame Scheduler: ${VF_SCHEDULER}")
+message(STATUS "VoidFrame Rust Heap Management: ${VF_CONFIG_HEAP_RUST}")
 
 # ============================================================================
 # Standard Configuration
