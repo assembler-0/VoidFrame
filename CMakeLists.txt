@@ -1,7 +1,7 @@
 # ============================================================================
 # VoidFrame CMake Build Script - v0.0.2-development3
 # ============================================================================
-cmake_minimum_required(VERSION 3.20)
+cmake_minimum_required(VERSION 3.30)
 project(VoidFrame VERSION 0.0.2 LANGUAGES C CXX ASM_NASM)
 enable_language(ASM_NASM)
 
@@ -41,6 +41,12 @@ else()
     message(WARNING "CMake: Non-Ninja generator detected: ${CMAKE_GENERATOR}. Ninja is recommended.")
 endif()
 
+if(CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64")
+    message(STATUS "CMake: Target Architecture: ${CMAKE_SYSTEM_PROCESSOR}")
+else()
+    message(FATAL_ERROR "Unsupported target architecture: ${CMAKE_SYSTEM_PROCESSOR}")
+endif()
+
 message(STATUS "CMake Build Type: ${CMAKE_BUILD_TYPE}")
 message(STATUS "CMake Source Directory: ${CMAKE_SOURCE_DIR}")
 message(STATUS "CMake Binary Directory: ${CMAKE_BINARY_DIR}")
@@ -49,6 +55,7 @@ message(STATUS "CMake Current Binary Directory: ${CMAKE_CURRENT_BINARY_DIR}")
 message(STATUS "CMake Host System Name: ${CMAKE_HOST_SYSTEM_NAME}")
 message(STATUS "CMake Host System Processor: ${CMAKE_HOST_SYSTEM_PROCESSOR}")
 message(STATUS "VoidFrame Scheduler: ${VF_SCHEDULER}")
+message(STATUS "VoidFrame Rust Heap Management: ${VF_CONFIG_HEAP_RUST}")
 
 # ============================================================================
 # Standard Configuration

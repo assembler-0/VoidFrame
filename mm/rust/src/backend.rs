@@ -20,9 +20,9 @@ static SIZE_CLASSES: [usize; NUM_SIZE_CLASSES] = [
 ];
 
 #[repr(C)]
-struct HeapBlock {
+pub struct HeapBlock {
     magic: u32,
-    size: usize,
+    pub size: usize,
     is_free: u8,
     in_cache: u8,
     next: *mut HeapBlock,
@@ -146,7 +146,7 @@ impl HeapBlock {
         (self as *const HeapBlock as *mut u8).add(core::mem::size_of::<HeapBlock>())
     }
 
-    unsafe fn from_user_ptr(ptr: *mut u8) -> *mut HeapBlock {
+    pub unsafe fn from_user_ptr(ptr: *mut u8) -> *mut HeapBlock {
         ptr.sub(core::mem::size_of::<HeapBlock>()) as *mut HeapBlock
     }
     
@@ -207,14 +207,17 @@ fn get_size_class(size: usize) -> Option<usize> {
 }
 
 unsafe fn create_new_block(size: usize) -> *mut HeapBlock {
-    // Smart chunk sizing
-    let chunk_size = if size <= 4096 {
-        // For small allocations, allocate larger chunks
-        let multiplier = if size <= 256 { 16 } else if size <= 1024 { 8 } else { 4 };
-        ((size * multiplier) + 4095) & !4095
-    } else {
-        // For large allocations, round up to page boundary
+    // Optimized chunk sizing for better memory utilization
+    let chunk_size = if size <= 1024 {
+        // Small allocations: allocate in 4KB chunks
+        let chunks_needed = (size + 4095) / 4096;
+        chunks_needed * 4096
+    } else if size <= 65536 {
+        // Medium allocations: round to next 4KB boundary
         (size + 4095) & !4095
+    } else {
+        // Large allocations: round to 64KB boundary for better alignment
+        (size + 65535) & !65535
     };
 
     let total_size = core::mem::size_of::<HeapBlock>() + chunk_size;
@@ -226,7 +229,7 @@ unsafe fn create_new_block(size: usize) -> *mut HeapBlock {
     let block = mem as *mut HeapBlock;
     (*block).init(chunk_size, false);
 
-    // Link to head with proper linking
+    // Link to head
     let mut heap = HEAP.lock();
     (*block).next = heap.head;
     (*block).prev = ptr::null_mut();
@@ -234,9 +237,10 @@ unsafe fn create_new_block(size: usize) -> *mut HeapBlock {
         (*heap.head).prev = block;
     }
     heap.head = block;
+    drop(heap); // Release lock early
 
-    // Split if chunk is much larger than needed
-    if chunk_size > size * 2 && chunk_size - size >= MIN_BLOCK_SIZE + core::mem::size_of::<HeapBlock>() {
+    // Split if significantly larger than needed
+    if chunk_size > size * 3 && chunk_size - size >= MIN_BLOCK_SIZE + core::mem::size_of::<HeapBlock>() {
         split_block(block, size);
     }
 
@@ -271,31 +275,28 @@ unsafe fn split_block(block: *mut HeapBlock, needed_size: usize) {
 
 unsafe fn find_free_block(size: usize) -> *mut HeapBlock {
     let heap = HEAP.lock();
-    let mut best: *mut HeapBlock = ptr::null_mut();
-    let mut best_size = MAX_ALLOC_SIZE;
-    let mut scanned = 0;
-
     let mut current = heap.head;
-    while !current.is_null() && scanned < 64 { // Limit search
+    let mut scanned = 0;
+    const MAX_SCAN: usize = 32; // Reduced for better performance
+
+    // First-fit with early termination for good matches
+    while !current.is_null() && scanned < MAX_SCAN {
         let block = &*current;
         if block.is_free != 0 && block.in_cache == 0 && block.size >= size {
-            if block.size < best_size {
-                best = current;
-                best_size = block.size;
-                if block.size <= size * 2 { // Good enough fit
-                    break;
-                }
+            // Accept if size is reasonable (within 4x)
+            if block.size <= size * 4 {
+                return current;
             }
         }
         current = block.next;
         scanned += 1;
     }
 
-    best
+    ptr::null_mut()
 }
 
 unsafe fn coalesce_free_blocks() {
-    let mut heap = HEAP.lock();
+    let heap = HEAP.lock();
     let mut current = heap.head;
     let mut coalesced = 0;
     
@@ -311,124 +312,127 @@ unsafe fn coalesce_free_blocks() {
     }
 }
 
-#[no_mangle]
-pub unsafe extern "C" fn rust_kmalloc(size: usize) -> *mut u8 {
+pub unsafe fn rust_kmalloc_backend(size: usize) -> *mut u8 {
     if size == 0 || size > MAX_ALLOC_SIZE {
         return ptr::null_mut();
     }
 
-    let aligned_size = align_size(size.max(16)); // Minimum 16 bytes
+    let aligned_size = align_size(size.max(16));
+    ALLOC_COUNTER.fetch_add(1, Ordering::Relaxed);
 
-    // Fast cache path
+    // Fast cache path - optimized for common case
     if let Some(size_class) = get_size_class(aligned_size) {
         let mut heap = HEAP.lock();
         let cache = &mut heap.fast_caches[size_class];
         if !cache.free_list.is_null() {
             let block = cache.free_list;
-            if !(*block).validate() {
-                PrintKernelError(b"[HEAP] Corrupted block in cache\0".as_ptr());
-                return ptr::null_mut();
-            }
-            
             cache.free_list = (*block).cache_next;
             cache.count -= 1;
             cache.hits += 1;
+            drop(heap); // Release lock early
 
+            // Validate after lock release for better concurrency
+            if !(*block).validate() {
+                CORRUPTION_COUNTER.fetch_add(1, Ordering::Relaxed);
+                return ptr::null_mut();
+            }
+            
             (*block).cache_next = ptr::null_mut();
             (*block).in_cache = 0;
             (*block).is_free = 0;
             (*block).magic = HEAP_MAGIC_ALLOC;
             (*block).checksum = (*block).compute_checksum();
 
-            // Update counters
-            let new_total = TOTAL_ALLOCATED.fetch_add((*block).size, Ordering::Relaxed);
+            let new_total = TOTAL_ALLOCATED.fetch_add((*block).size, Ordering::Relaxed) + (*block).size;
             update_peak(new_total);
-            ALLOC_COUNTER.fetch_add(1, Ordering::Relaxed);
 
             return (*block).to_user_ptr();
         }
         cache.misses += 1;
     }
 
-    // Slow path
+    // Slow path - find existing or create new
     let block = find_free_block(aligned_size);
-    let block = if block.is_null() {
-        create_new_block(aligned_size)
-    } else {
+    let block = if !block.is_null() {
         if !(*block).validate() {
-            PrintKernelError(b"[HEAP] Corrupted free block\0".as_ptr());
+            CORRUPTION_COUNTER.fetch_add(1, Ordering::Relaxed);
             return ptr::null_mut();
         }
         (*block).is_free = 0;
         (*block).magic = HEAP_MAGIC_ALLOC;
         (*block).checksum = (*block).compute_checksum();
         
-        // Split if too large
         if (*block).size > aligned_size * 2 {
             split_block(block, aligned_size);
         }
-        
         block
+    } else {
+        create_new_block(aligned_size)
     };
 
     if block.is_null() {
         return ptr::null_mut();
     }
 
-    let new_total = TOTAL_ALLOCATED.fetch_add((*block).size, Ordering::Relaxed);
+    let new_total = TOTAL_ALLOCATED.fetch_add((*block).size, Ordering::Relaxed) + (*block).size;
     update_peak(new_total);
-    ALLOC_COUNTER.fetch_add(1, Ordering::Relaxed);
-
     (*block).to_user_ptr()
 }
 
 #[inline]
 fn update_peak(new_total: usize) {
     let mut peak = PEAK_ALLOCATED.load(Ordering::Relaxed);
-    while new_total > peak {
-        match PEAK_ALLOCATED.compare_exchange_weak(peak, new_total, Ordering::Relaxed, Ordering::Relaxed) {
-            Ok(_) => break,
-            Err(x) => peak = x,
+    if new_total > peak {
+        // Only attempt CAS if we might actually update
+        loop {
+            match PEAK_ALLOCATED.compare_exchange_weak(
+                peak, new_total, Ordering::Relaxed, Ordering::Relaxed
+            ) {
+                Ok(_) => break,
+                Err(current) => {
+                    peak = current;
+                    if new_total <= peak {
+                        break; // Someone else updated to higher value
+                    }
+                }
+            }
         }
     }
 }
 
-#[no_mangle]
-pub unsafe extern "C" fn rust_kfree(ptr: *mut u8) {
+pub unsafe fn rust_kfree_backend(ptr: *mut u8) {
     if ptr.is_null() {
         return;
     }
 
     let block = HeapBlock::from_user_ptr(ptr);
-    if !(*block).validate() {
-        PrintKernelError(b"[HEAP] Invalid block in kfree\0".as_ptr());
+    
+    // Fast validation path
+    if (*block).magic != HEAP_MAGIC_ALLOC || !(*block).validate() {
+        CORRUPTION_COUNTER.fetch_add(1, Ordering::Relaxed);
         return;
     }
-    
-    if (*block).magic != HEAP_MAGIC_ALLOC {
-        PrintKernelError(b"[HEAP] Double free detected\0".as_ptr());
-        return;
-    }
-    
+
     if !(*block).validate_canary() {
-        PrintKernelError(b"[HEAP] Buffer overflow detected\0".as_ptr());
+        CORRUPTION_COUNTER.fetch_add(1, Ordering::Relaxed);
         return;
     }
+
+    let block_size = (*block).size;
     
-    // Poison memory
-    core::ptr::write_bytes(ptr, POISON_VALUE, (*block).size.saturating_sub(8));
+    // Poison memory (skip canary area)
+    ptr::write_bytes(ptr, POISON_VALUE, block_size.saturating_sub(8));
 
     (*block).is_free = 1;
     (*block).magic = HEAP_MAGIC_FREE;
     (*block).checksum = (*block).compute_checksum();
 
-    TOTAL_ALLOCATED.fetch_sub((*block).size, Ordering::Relaxed);
+    TOTAL_ALLOCATED.fetch_sub(block_size, Ordering::Relaxed);
     FREE_COUNTER.fetch_add(1, Ordering::Relaxed);
     
-    let mut heap = HEAP.lock();
-
     // Try fast cache first
-    if let Some(size_class) = get_size_class((*block).size) {
+    if let Some(size_class) = get_size_class(block_size) {
+        let mut heap = HEAP.lock();
         let cache = &mut heap.fast_caches[size_class];
         if cache.count < FAST_CACHE_SIZE as i32 {
             (*block).cache_next = cache.free_list;
@@ -437,25 +441,28 @@ pub unsafe extern "C" fn rust_kfree(ptr: *mut u8) {
             (*block).in_cache = 1;
             return;
         }
-    }
-
-    // Periodic coalescing
-    heap.free_counter += 1;
-    if heap.free_counter >= COALESCE_THRESHOLD {
-        heap.free_counter = 0;
-        drop(heap); // Release lock before coalescing
-        coalesce_free_blocks();
+        
+        // Check for periodic coalescing
+        heap.free_counter += 1;
+        let should_coalesce = heap.free_counter >= COALESCE_THRESHOLD;
+        if should_coalesce {
+            heap.free_counter = 0;
+        }
+        drop(heap);
+        
+        if should_coalesce {
+            coalesce_free_blocks();
+        }
     }
 }
 
-#[no_mangle]
-pub unsafe extern "C" fn rust_krealloc(ptr: *mut u8, new_size: usize) -> *mut u8 {
+pub unsafe fn rust_krealloc_backend(ptr: *mut u8, new_size: usize) -> *mut u8 {
     if ptr.is_null() {
-        return rust_kmalloc(new_size);
+        return rust_kmalloc_backend(new_size);
     }
 
     if new_size == 0 {
-        rust_kfree(ptr);
+        rust_kfree_backend(ptr);
         return ptr::null_mut();
     }
 
@@ -472,24 +479,25 @@ pub unsafe extern "C" fn rust_krealloc(ptr: *mut u8, new_size: usize) -> *mut u8
         return ptr;
     }
 
-    let new_ptr = rust_kmalloc(new_size);
+    let new_ptr = rust_kmalloc_backend(new_size);
     if !new_ptr.is_null() {
         let copy_size = old_size.min(new_size).saturating_sub(8); // Account for canary
         core::ptr::copy_nonoverlapping(ptr, new_ptr, copy_size);
-        rust_kfree(ptr);
+        rust_kfree_backend(ptr);
     }
 
     new_ptr
 }
 
-#[no_mangle]
-pub unsafe extern "C" fn rust_kcalloc(count: usize, size: usize) -> *mut u8 {
-    let total_size = count.saturating_mul(size);
-    if total_size / count != size { // Overflow check
+pub unsafe fn rust_kcalloc_backend(count: usize, size: usize) -> *mut u8 {
+    if count == 0 || size == 0 {
         return ptr::null_mut();
     }
-    
-    let ptr = rust_kmalloc(total_size);
+    let total_size = match count.checked_mul(size) {
+        Some(v) => v,
+        None => return ptr::null_mut(),
+    };
+    let ptr = rust_kmalloc_backend(total_size);
     if !ptr.is_null() {
         core::ptr::write_bytes(ptr, 0, total_size);
     }

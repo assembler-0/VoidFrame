@@ -1,19 +1,29 @@
 #![no_std]
 #![no_main]
 
+mod backend;
+mod ffi;
+mod rust_heap;
 
+// Export heap types and stats
+pub use backend::{HeapStats, HeapBlock};
 
-mod heap;
-mod vmem_ffi;
+// Export main API with per-CPU optimization
+pub use rust_heap::{
+    rust_kmalloc,
+    rust_kfree,
+    rust_krealloc,
+    rust_kcalloc,
+    rust_heap_enable_percpu,
+    rust_heap_disable_percpu,
+    rust_heap_flush_cpu,
+    rust_heap_get_percpu_stats,
+};
 
-pub use heap::*;
-
-// Re-export C API functions
-pub use heap::{
-    rust_kmalloc as kmalloc,
-    rust_kfree as kfree,
-    rust_krealloc as krealloc,
-    rust_kcalloc as kcalloc,
+// Export heap management functions
+pub use backend::{
+    rust_heap_get_stats,
+    rust_heap_validate,
 };
 
 #[panic_handler]

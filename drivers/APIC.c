@@ -51,7 +51,6 @@ static bool s_calibrated = false; // Calibration flag
 // --- Forward Declarations ---
 static void lapic_write(uint32_t reg, uint32_t value);
 static uint32_t lapic_read(uint32_t reg);
-static uint8_t lapic_get_id();
 static void ioapic_write(uint8_t reg, uint32_t value);
 static uint32_t ioapic_read(uint8_t reg);
 static void ioapic_set_entry(uint8_t index, uint64_t data);
@@ -87,7 +86,7 @@ static uint32_t lapic_read(uint32_t reg) {
     return s_lapic_base[reg / 4];
 }
 
-static uint8_t lapic_get_id() {
+uint8_t lapic_get_id() {
     // LAPIC_ID register: bits 24..31 hold the APIC ID in xAPIC mode
     return (uint8_t)(lapic_read(LAPIC_ID) >> 24);
 }
