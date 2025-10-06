@@ -29,14 +29,20 @@ jobs:
             mtools \
             lld \
             llvm \
-            cmake ninja-build \
-          curl --proto '=https' --tlsv1.3 https://sh.rustup.rs -sSf | sh
+            cmake ninja-build
+          curl --proto '=https' --tlsv1.3 https://sh.rustup.rs -sSf | sh -s -- -y
+          source ~/.cargo/env
+          rustup target add x86_64-unknown-none
 
       - name: Compile & Link (CMake)
         run: |
+            source ~/.cargo/env
             mkdir cmake-build
             cd cmake-build
-            ASM_NASM=$(which nasm) cmake .. -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_TOOLCHAIN_FILE=../cmake/toolchain/linux-x64.cmake
+            cmake .. -G Ninja \
+              -DCMAKE_BUILD_TYPE=Release \
+              -DCMAKE_TOOLCHAIN_FILE=../cmake/toolchain/linux-x64.cmake \
+              -DCMAKE_ASM_NASM_COMPILER=$(which nasm)
             cd ..
             ninja -C cmake-build -j$(nproc) iso
 
