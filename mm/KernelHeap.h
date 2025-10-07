@@ -1,12 +1,14 @@
 #ifndef KHEAP_H
 #define KHEAP_H
 
-#include "stdint.h"
-#include "stddef.h"
-
 #define KHEAP_VALIDATION_NONE 0
 #define KHEAP_VALIDATION_BASIC 1
 #define KHEAP_VALIDATION_FULL 2
+
+#if defined(VF_CONFIG_HEAP_C)
+
+#include "stdint.h"
+#include "stddef.h"
 
 void KernelHeapInit();
 void* KernelMemoryAlloc(size_t size);
@@ -19,5 +21,22 @@ void KernelHeapFlushCaches(void);
 
 // Runtime tuning knobs (safe to call at early boot or quiescent points)
 void KernelHeapTune(size_t small_alloc_threshold, int fast_cache_capacity);
+
+#elif defined(VF_CONFIG_HEAP_RUST)
+
+#include "KernelHeapRust.h"
+#include "APIC.h"
+
+#define KernelHeapInit() rust_heap_enable_percpu()
+#define KernelMemoryAlloc(size) rust_kmalloc(size)
+#define KernelAllocate(num, size) rust_kcalloc(num, size)
+#define KernelReallocate(ptr, size) rust_krealloc(ptr, size)
+#define KernelFree(ptr) rust_kfree(ptr)
+#define PrintHeapStats() 
+#define KernelHeapSetValidationLevel(level) 
+#define KernelHeapFlushCaches() rust_heap_flush_cpu(lapic_get_id())
+#define KernelHeapTune(small_alloc_threshold, fast_cache_capacity)
+
+#endif
 
 #endif // KHEAP_H

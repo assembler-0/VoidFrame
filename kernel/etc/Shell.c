@@ -368,23 +368,6 @@ static void AllocHandler(const char * args) {
     KernelFree(size_str);
 }
 
-static void RsAllocHandler(const char * args) {
-    char* size_str = GetArg(args, 1);
-    if (!size_str) {
-        PrintKernel("Usage: rsalloc <size>\n");
-        KernelFree(size_str);
-        return;
-    }
-    int size = atoi(size_str);
-    if (size <= 0) {
-        PrintKernel("Usage: rsalloc <size>\n");
-        KernelFree(size_str);
-        return;
-    }
-    if (!rust_kmalloc((uint32_t)size)) PrintKernelErrorF("Allocation for %d bytes failed\n", size);
-    KernelFree(size_str);
-}
-
 static void PanicHandler(const char * args) {
     char* str = GetArg(args, 1);
     Registers * regs = {0};
@@ -1200,7 +1183,6 @@ static const ShellCommand commands[] = {\
     {"mkdir", MkdirHandler},
     {"touch", TouchHandler},
     {"alloc", AllocHandler},
-    {"rsalloc", RsAllocHandler},
     {"panic", PanicHandler},
     {"kill", KillHandler},
     {"rm", RmHandler},

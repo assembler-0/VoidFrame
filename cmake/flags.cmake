@@ -1,7 +1,7 @@
 # ============================================================================
 # Compiler Flags
 # ============================================================================
-set(C_FLAGS " -m64 -O2 -fno-omit-frame-pointer -finline-functions -foptimize-sibling-calls -nostdinc -nostdlib -fno-builtin -ffreestanding -mno-red-zone -mserialize -fPIE -fPIC -mcmodel=kernel -fcf-protection=full -fvisibility=hidden")
+set(C_FLAGS " -m64 -target x86_64-unknown-none-elf -O2 -fno-omit-frame-pointer -finline-functions -foptimize-sibling-calls -nostdinc -nostdlib -fno-builtin -ffreestanding -mno-red-zone -mserialize -fPIE -fPIC -mcmodel=kernel -fcf-protection=full -fvisibility=hidden")
 
 if(SILENT_BUILD)
     string(APPEND C_FLAGS " -w")
