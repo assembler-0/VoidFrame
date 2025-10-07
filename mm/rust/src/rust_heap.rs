@@ -1,28 +1,82 @@
 use core::ptr;
 use core::sync::atomic::{AtomicPtr, AtomicU64, AtomicUsize, Ordering};
-use spin::Mutex;
 
-const PERCPU_CACHE_SIZE: usize = 32;
 const MAX_CPUS: usize = 64;
 const PERCPU_SIZE_CLASSES: usize = 8;
 
-// Per-CPU cache for hot allocation paths
+// Node for the lock-free stack
 #[repr(C)]
-struct PercpuCache {
-    objects: [AtomicPtr<u8>; PERCPU_CACHE_SIZE],
-    count: AtomicUsize,
+struct Node {
+    ptr: *mut u8,
+    next: *mut Node,
+}
+
+// A simple lock-free stack (Treiber stack)
+#[repr(C)]
+struct LockFreeStack {
+    head: AtomicPtr<Node>,
     hits: AtomicU64,
     misses: AtomicU64,
 }
 
-static PERCPU_CACHES: [Mutex<[PercpuCache; PERCPU_SIZE_CLASSES]>; MAX_CPUS] = {
-    const INIT_CACHE: PercpuCache = PercpuCache {
-        objects: [const { AtomicPtr::new(ptr::null_mut()) }; PERCPU_CACHE_SIZE],
-        count: AtomicUsize::new(0),
-        hits: AtomicU64::new(0),
-        misses: AtomicU64::new(0),
-    };
-    const INIT_CPU: Mutex<[PercpuCache; PERCPU_SIZE_CLASSES]> = Mutex::new([INIT_CACHE; PERCPU_SIZE_CLASSES]);
+impl LockFreeStack {
+    const fn new() -> Self {
+        Self {
+            head: AtomicPtr::new(ptr::null_mut()),
+            hits: AtomicU64::new(0),
+            misses: AtomicU64::new(0),
+        }
+    }
+
+    fn push(&self, ptr: *mut u8) {
+         unsafe {
+             let node_mem = backend_kmalloc(core::mem::size_of::<Node>());
+             if node_mem.is_null() {
+                 unsafe {
+                     backend_kfree(ptr);
+                 }
+                 return;
+             }
+             let new_node = unsafe { &mut *(node_mem as *mut Node) };
+             new_node.ptr = ptr;
+             let mut head = self.head.load(Ordering::Relaxed);
+             loop {
+                 new_node.next = head;
+                 match self.head.compare_exchange_weak(head, new_node, Ordering::Release, Ordering::Relaxed) {
+                     Ok(_) => break,
+                     Err(h) => head = h,
+                 }
+             }
+         }
+    }
+
+    fn pop(&self) -> Option<*mut u8> {
+        loop {
+            let head = self.head.load(Ordering::Acquire);
+            if head.is_null() {
+                self.misses.fetch_add(1, Ordering::Relaxed);
+                return None;
+            }
+            
+            let next = unsafe { (*head).next };
+            match self.head.compare_exchange_weak(head, next, Ordering::Release, Ordering::Relaxed) {
+                Ok(_) => {
+                    self.hits.fetch_add(1, Ordering::Relaxed);
+                    let ptr = unsafe { (*head).ptr };
+                    unsafe {
+                        backend_kfree(head as *mut u8);
+                    }
+                    return Some(ptr);
+                }
+                Err(_) => continue,
+            }
+        }
+    }
+}
+
+static PERCPU_CACHES: [[LockFreeStack; PERCPU_SIZE_CLASSES]; MAX_CPUS] = {
+    const INIT_STACK: LockFreeStack = LockFreeStack::new();
+    const INIT_CPU: [LockFreeStack; PERCPU_SIZE_CLASSES] = [INIT_STACK; PERCPU_SIZE_CLASSES];
     [INIT_CPU; MAX_CPUS]
 };
 
@@ -33,7 +87,13 @@ extern "C" {
 }
 
 // Import backend allocator functions
-use crate::backend::{rust_kmalloc_backend as backend_kmalloc, rust_kfree_backend as backend_kfree, rust_krealloc_backend as backend_krealloc, rust_kcalloc_backend as backend_kcalloc, HeapBlock};
+use crate::backend::{
+    rust_kmalloc_backend as backend_kmalloc,
+    rust_kfree_backend as backend_kfree,
+    rust_krealloc_backend as backend_krealloc,
+    rust_kcalloc_backend as backend_kcalloc,
+    HeapBlock
+};
 
 #[inline]
 fn get_percpu_size_class(size: usize) -> Option<usize> {
@@ -59,21 +119,11 @@ pub unsafe extern "C" fn rust_kmalloc(size: usize) -> *mut u8 {
 
     if let Some(class) = get_percpu_size_class(size) {
         let cpu = lapic_get_id() % MAX_CPUS;
-        let caches = PERCPU_CACHES[cpu].lock();
-        let cache = &caches[class];
+        let cache = &PERCPU_CACHES[cpu][class];
         
-        let count = cache.count.load(Ordering::Relaxed);
-        if count > 0 {
-            let new_count = count - 1;
-            if cache.count.compare_exchange(count, new_count, Ordering::Relaxed, Ordering::Relaxed).is_ok() {
-                let ptr = cache.objects[new_count].load(Ordering::Relaxed);
-                if !ptr.is_null() {
-                    cache.hits.fetch_add(1, Ordering::Relaxed);
-                    return ptr;
-                }
-            }
+        if let Some(ptr) = cache.pop() {
+            return ptr;
         }
-        cache.misses.fetch_add(1, Ordering::Relaxed);
     }
     
     backend_kmalloc(size)
@@ -96,16 +146,9 @@ pub unsafe extern "C" fn rust_kfree(ptr: *mut u8) {
     
     if let Some(class) = get_percpu_size_class(size) {
         let cpu = lapic_get_id() % MAX_CPUS;
-        let caches = PERCPU_CACHES[cpu].lock();
-        let cache = &caches[class];
-        
-        let count = cache.count.load(Ordering::Relaxed);
-        if count < PERCPU_CACHE_SIZE {
-            if cache.count.compare_exchange(count, count + 1, Ordering::Relaxed, Ordering::Relaxed).is_ok() {
-                cache.objects[count].store(ptr, Ordering::Relaxed);
-                return;
-            }
-        }
+        let cache = &PERCPU_CACHES[cpu][class];
+        cache.push(ptr);
+        return;
     }
     
     backend_kfree(ptr);
@@ -139,15 +182,10 @@ pub extern "C" fn rust_heap_flush_cpu(cpu: usize) {
     }
     
     unsafe {
-        let caches = PERCPU_CACHES[cpu].lock();
         for class in 0..PERCPU_SIZE_CLASSES {
-            let cache = &caches[class];
-            let count = cache.count.swap(0, Ordering::Relaxed);
-            for i in 0..count {
-                let ptr = cache.objects[i].swap(ptr::null_mut(), Ordering::Relaxed);
-                if !ptr.is_null() {
-                    backend_kfree(ptr);
-                }
+            let cache = &PERCPU_CACHES[cpu][class];
+            while let Some(ptr) = cache.pop() {
+                backend_kfree(ptr);
             }
         }
     }
@@ -163,9 +201,8 @@ pub extern "C" fn rust_heap_get_percpu_stats(cpu: usize, hits: *mut u64, misses:
         let mut total_hits = 0;
         let mut total_misses = 0;
         
-        let caches = PERCPU_CACHES[cpu].lock();
         for class in 0..PERCPU_SIZE_CLASSES {
-            let cache = &caches[class];
+            let cache = &PERCPU_CACHES[cpu][class];
             total_hits += cache.hits.load(Ordering::Relaxed);
             total_misses += cache.misses.load(Ordering::Relaxed);
         }
