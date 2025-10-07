@@ -62,8 +62,8 @@ cd build
 cmake .. -DCMAKE_BUILD_TYPE=Release \
     -DCMAKE_TOOLCHAIN_FILE=../cmake/toolchain/<linux/windows/macos>-x64.cmake \
     -G Ninja \
-    -DVF_SCHEDULER=<MLFQ/EEVDF> \ # Optional, default: EEVDF
-    -DVF_CONFIG_HEAP_LANG=<C/RUST> \ # Optional, default: RUST
+    -DVF_SCHEDULER=<MLFQ/EEVDF> \
+    -DVF_CONFIG_HEAP_LANG=<C/RUST>
 ccmake . # Optinal, tune as needed
 ninja -j$(nproc)
 ninja run
