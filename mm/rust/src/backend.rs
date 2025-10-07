@@ -3,17 +3,23 @@ use core::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use spin::Mutex;
 
 // Security-hardened constants
-const HEAP_MAGIC_ALLOC: u32 = 0xA110CA7E;
-const HEAP_MAGIC_FREE: u32 = 0xF4EE1157;
+pub(crate) const HEAP_MAGIC_ALLOC: u32 = 0xA110CA7E;
+pub(crate) const HEAP_MAGIC_FREE: u32 = 0xF4EE1157;
 const MIN_BLOCK_SIZE: usize = 32;
 const HEAP_ALIGN: usize = 32; // AVX2 alignment
 const MAX_ALLOC_SIZE: usize = 1 << 28; // Reduced for safety
 const NUM_SIZE_CLASSES: usize = 16;
 const FAST_CACHE_SIZE: usize = 32; // Reduced for better cache locality
-const CANARY_VALUE: u64 = 0x5AFE6AAD5AFE6AAD;
-const POISON_VALUE: u8 = 0xCC; // INT3 instruction
+pub(crate) const POISON_VALUE: u8 = 0xCC; // INT3 instruction
 const LARGE_ALLOC_THRESHOLD: usize = 4096;
 const COALESCE_THRESHOLD: usize = 128; // More frequent coalescing
+
+// Compute a unique canary for a given block address
+#[inline(always)]
+fn compute_canary(addr: usize) -> u64 {
+    // A simple but effective mix of the address with a secret constant
+    (addr as u64).wrapping_mul(0x5AFE6AAD5AFE6AAD) ^ 0xDEADBEEFDEADBEEF
+}
 
 // Optimized size classes with better coverage
 static SIZE_CLASSES: [usize; NUM_SIZE_CLASSES] = [
@@ -22,7 +28,7 @@ static SIZE_CLASSES: [usize; NUM_SIZE_CLASSES] = [
 
 #[repr(C, align(32))]
 pub struct HeapBlock {
-    magic: u32,
+    pub(crate) magic: u32,
     checksum: u32,
     pub size: usize,
     flags: u8, // Combined is_free and in_cache
@@ -34,18 +40,18 @@ pub struct HeapBlock {
 
 impl HeapBlock {
     #[inline(always)]
-    fn is_free(&self) -> bool { self.flags & 1 != 0 }
+    pub(crate) fn is_free(&self) -> bool { self.flags & 1 != 0 }
     
     #[inline(always)]
-    fn set_free(&mut self, free: bool) {
+    pub(crate) fn set_free(&mut self, free: bool) {
         if free { self.flags |= 1; } else { self.flags &= !1; }
     }
     
     #[inline(always)]
-    fn in_cache(&self) -> bool { self.flags & 2 != 0 }
+    pub(crate) fn in_cache(&self) -> bool { self.flags & 2 != 0 }
     
     #[inline(always)]
-    fn set_in_cache(&mut self, cached: bool) {
+    pub(crate) fn set_in_cache(&mut self, cached: bool) {
         if cached { self.flags |= 2; } else { self.flags &= !2; }
     }
 }
@@ -106,16 +112,25 @@ extern "C" {
     fn PrintKernelWarning(msg: *const u8);
 }
 
+const FNV_PRIME: u32 = 16777619;
+const FNV_OFFSET_BASIS: u32 = 2166136261;
+
 impl HeapBlock {
+    // Unsafe: This function operates on raw pointers and assumes the block is valid.
     unsafe fn compute_checksum(&self) -> u32 {
+        let mut hash = FNV_OFFSET_BASIS;
         let addr = self as *const _ as usize;
-        let hash = addr.wrapping_mul(0x9E3779B9)
-            ^ self.magic as usize
-            ^ self.size.wrapping_mul(0x85EBCA6B)
-            ^ self.flags as usize;
-        (hash ^ (hash >> 16)) as u32
+        
+        // Hash address and core metadata
+        hash = (hash ^ (addr as u32)).wrapping_mul(FNV_PRIME);
+        hash = (hash ^ self.magic).wrapping_mul(FNV_PRIME);
+        hash = (hash ^ (self.size as u32)).wrapping_mul(FNV_PRIME);
+        hash = (hash ^ (self.flags as u32)).wrapping_mul(FNV_PRIME);
+
+        hash
     }
 
+    // Unsafe: This function operates on raw pointers and assumes the block is valid.
     unsafe fn validate(&self) -> bool {
         // Fast null check
         let ptr = self as *const HeapBlock;
@@ -137,6 +152,7 @@ impl HeapBlock {
         is_valid
     }
 
+    // Unsafe: This function operates on raw pointers and assumes the block is valid.
     unsafe fn init(&mut self, size: usize, is_free: bool) {
         self.magic = if is_free { HEAP_MAGIC_FREE } else { HEAP_MAGIC_ALLOC };
         self.size = size;
@@ -147,23 +163,28 @@ impl HeapBlock {
         // Add canary for allocated blocks
         if !is_free && size >= 16 {
             let canary_ptr = self.to_user_ptr().add(size - 8) as *mut u64;
-            *canary_ptr = CANARY_VALUE;
+            // Unsafe: Writing to a raw pointer.
+            *canary_ptr = compute_canary(self as *const _ as usize);
         }
         
         // Poison free blocks with secure pattern
         if is_free {
             let poison_size = size.min(512); // Increased poison size
+            // Unsafe: Writing to a raw pointer.
             ptr::write_bytes(self.to_user_ptr(), POISON_VALUE, poison_size);
         }
         
         self.checksum = self.compute_checksum();
     }
 
+    // Unsafe: This function operates on raw pointers and assumes the block is valid.
     unsafe fn validate_canary(&self) -> bool {
         if self.is_free() || self.size < 16 { return true; }
         
         let canary_ptr = self.to_user_ptr().add(self.size - 8) as *const u64;
-        let valid = *canary_ptr == CANARY_VALUE;
+        let expected_canary = compute_canary(self as *const _ as usize);
+        // Unsafe: Reading from a raw pointer.
+        let valid = *canary_ptr == expected_canary;
         
         if !valid {
             CORRUPTION_COUNTER.fetch_add(1, Ordering::Relaxed);
@@ -172,14 +193,17 @@ impl HeapBlock {
         valid
     }
 
-    unsafe fn to_user_ptr(&self) -> *mut u8 {
+    // Unsafe: This function performs pointer arithmetic.
+    pub(crate) unsafe fn to_user_ptr(&self) -> *mut u8 {
         (self as *const HeapBlock as *mut u8).add(core::mem::size_of::<HeapBlock>())
     }
 
+    // Unsafe: This function performs pointer arithmetic.
     pub unsafe fn from_user_ptr(ptr: *mut u8) -> *mut HeapBlock {
         ptr.sub(core::mem::size_of::<HeapBlock>()) as *mut HeapBlock
     }
 
+    // Unsafe: This function performs pointer arithmetic.
     unsafe fn are_adjacent(&self, other: *const HeapBlock) -> bool {
         let self_end = (self as *const HeapBlock as *const u8)
             .add(core::mem::size_of::<HeapBlock>())
@@ -187,6 +211,7 @@ impl HeapBlock {
         self_end == other as *const u8
     }
 
+    // Unsafe: This function operates on raw pointers and assumes the block is valid.
     unsafe fn coalesce_with_next(&mut self) -> bool {
         if self.next.is_null() || !(*self.next).is_free() || (*self.next).in_cache() {
             return false;
@@ -218,37 +243,30 @@ fn align_size(size: usize) -> usize {
 
 #[inline(always)]
 fn get_size_class(size: usize) -> Option<usize> {
-    // Fast path for common sizes
+    if size > 4096 {
+        return None;
+    }
+    
+    // Fast path for small sizes using a lookup table approach
     if size <= 64 {
-        return match size {
-            1..=16 => Some(0),
-            17..=32 => Some(1),
-            33..=48 => Some(2),
-            49..=64 => Some(3),
-            _ => unreachable!(),
-        };
+        return Some((size.saturating_sub(1)) / 16);
     }
-
-    // Binary search for larger sizes
-    let mut left = 4; // Start after fast path
-    let mut right = SIZE_CLASSES.len();
-
-    while left < right {
-        let mid = (left + right) / 2;
-        if SIZE_CLASSES[mid] >= size {
-            right = mid;
-        } else {
-            left = mid + 1;
-        }
-    }
-
-    if left < SIZE_CLASSES.len() {
-        Some(left)
-    } else {
-        None
+    
+    // For larger sizes, use leading zero count for a fast log2 approximation
+    let log2_size = (core::mem::size_of::<usize>() * 8) as u32 - size.leading_zeros() - 1;
+    
+    match log2_size {
+        6 => Some(4),  // 65-128
+        7 => Some(5),  // 129-256
+        8 => Some(6),  // 257-512
+        9 => Some(7),  // 513-1024
+        10 => Some(8), // 1025-2048
+        11 => Some(9), // 2049-4096
+        _ => None
     }
 }
 
+// Unsafe: This function calls VMemAlloc and operates on raw pointers.
 unsafe fn create_new_block(size: usize) -> *mut HeapBlock {
     // Optimized chunk sizing for better memory utilization
     let chunk_size = if size <= 1024 {
@@ -264,10 +282,15 @@ unsafe fn create_new_block(size: usize) -> *mut HeapBlock {
     };
 
     let total_size = core::mem::size_of::<HeapBlock>() + chunk_size;
+    // Unsafe: VMemAlloc is an external C function.
     let mem = VMemAlloc(total_size as u64);
     if mem.is_null() {
         return ptr::null_mut();
     }
+
+    // Zero the memory to prevent info leaks
+    // Unsafe: Writing to a raw pointer.
+    ptr::write_bytes(mem, 0, total_size);
 
     let block = mem as *mut HeapBlock;
     (*block).init(chunk_size, false);
@@ -290,6 +313,7 @@ unsafe fn create_new_block(size: usize) -> *mut HeapBlock {
     block
 }
 
+// Unsafe: This function operates on raw pointers.
 unsafe fn split_block(block: *mut HeapBlock, needed_size: usize) {
     let remaining = (*block).size - needed_size;
     if remaining < MIN_BLOCK_SIZE + core::mem::size_of::<HeapBlock>() {
@@ -316,6 +340,7 @@ unsafe fn split_block(block: *mut HeapBlock, needed_size: usize) {
     (*block).checksum = (*block).compute_checksum();
 }
 
+// Unsafe: This function operates on raw pointers.
 unsafe fn find_free_block(size: usize) -> *mut HeapBlock {
     let heap = HEAP.lock();
     let mut current = heap.head;
@@ -343,6 +368,7 @@ unsafe fn find_free_block(size: usize) -> *mut HeapBlock {
     best_fit
 }
 
+// Unsafe: This function operates on raw pointers.
 unsafe fn coalesce_free_blocks() {
     let heap = HEAP.lock();
     let mut current = heap.head;
@@ -360,6 +386,7 @@ unsafe fn coalesce_free_blocks() {
     }
 }
 
+// Unsafe: This function calls other unsafe functions.
 pub unsafe fn rust_kmalloc_backend(size: usize) -> *mut u8 {
     if size == 0 || size > MAX_ALLOC_SIZE {
         return ptr::null_mut();
@@ -444,6 +471,7 @@ fn update_peak(new_total: usize) {
     }
 }
 
+// Unsafe: This function calls other unsafe functions.
 pub unsafe fn rust_kfree_backend(ptr: *mut u8) {
     if ptr.is_null() {
         return;
@@ -494,6 +522,7 @@ pub unsafe fn rust_kfree_backend(ptr: *mut u8) {
     }
 }
 
+// Unsafe: This function calls other unsafe functions.
 pub unsafe fn rust_krealloc_backend(ptr: *mut u8, new_size: usize) -> *mut u8 {
     if ptr.is_null() {
         return rust_kmalloc_backend(new_size);
@@ -527,6 +556,7 @@ pub unsafe fn rust_krealloc_backend(ptr: *mut u8, new_size: usize) -> *mut u8 {
     new_ptr
 }
 
+// Unsafe: This function calls other unsafe functions.
 pub unsafe fn rust_kcalloc_backend(count: usize, size: usize) -> *mut u8 {
     if count == 0 || size == 0 {
         return ptr::null_mut();
@@ -548,6 +578,7 @@ pub extern "C" fn rust_heap_get_stats(stats: *mut HeapStats) {
         return;
     }
 
+    // Unsafe: This block dereferences a raw pointer `stats`.
     unsafe {
         let heap = HEAP.lock();
         let mut total_hits = 0;
@@ -573,6 +604,7 @@ pub extern "C" fn rust_heap_get_stats(stats: *mut HeapStats) {
 
 #[no_mangle]
 pub extern "C" fn rust_heap_validate() -> i32 {
+    // Unsafe: This block dereferences raw pointers while traversing the heap.
     unsafe {
         let heap = HEAP.lock();
         let mut current = heap.head;
