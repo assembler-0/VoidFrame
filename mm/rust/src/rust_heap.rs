@@ -1,6 +1,5 @@
 use core::ptr;
 use core::sync::atomic::{AtomicPtr, AtomicU64, AtomicUsize, Ordering};
-use spin::Mutex;
 
 const MAX_CPUS: usize = 64;
 const PERCPU_SIZE_CLASSES: usize = 8;
@@ -30,17 +29,25 @@ impl LockFreeStack {
     }
 
     fn push(&self, ptr: *mut u8) {
-        let new_node = unsafe { &mut *(backend_kmalloc(core::mem::size_of::<Node>()) as *mut Node) };
-        new_node.ptr = ptr;
-        
-        let mut head = self.head.load(Ordering::Relaxed);
-        loop {
-            new_node.next = head;
-            match self.head.compare_exchange_weak(head, new_node, Ordering::Release, Ordering::Relaxed) {
-                Ok(_) => break,
-                Err(h) => head = h,
-            }
-        }
+         unsafe {
+             let node_mem = backend_kmalloc(core::mem::size_of::<Node>());
+             if node_mem.is_null() {
+                 unsafe {
+                     backend_kfree(ptr);
+                 }
+                 return;
+             }
+             let new_node = unsafe { &mut *(node_mem as *mut Node) };
+             new_node.ptr = ptr;
+             let mut head = self.head.load(Ordering::Relaxed);
+             loop {
+                 new_node.next = head;
+                 match self.head.compare_exchange_weak(head, new_node, Ordering::Release, Ordering::Relaxed) {
+                     Ok(_) => break,
+                     Err(h) => head = h,
+                 }
+             }
+         }
     }
 
     fn pop(&self) -> Option<*mut u8> {
@@ -80,7 +87,13 @@ extern "C" {
 }
 
 // Import backend allocator functions
-use crate::backend::{rust_kmalloc_backend as backend_kmalloc, rust_kfree_backend as backend_kfree, rust_krealloc_backend as backend_krealloc, rust_kcalloc_backend as backend_kcalloc, HeapBlock};
+use crate::backend::{
+    rust_kmalloc_backend as backend_kmalloc,
+    rust_kfree_backend as backend_kfree,
+    rust_krealloc_backend as backend_krealloc,
+    rust_kcalloc_backend as backend_kcalloc,
+    HeapBlock
+};
 
 #[inline]
 fn get_percpu_size_class(size: usize) -> Option<usize> {

@@ -11,7 +11,7 @@ const MAX_ALLOC_SIZE: usize = 1 << 28; // Reduced for safety
 const NUM_SIZE_CLASSES: usize = 16;
 const FAST_CACHE_SIZE: usize = 32; // Reduced for better cache locality
 pub(crate) const POISON_VALUE: u8 = 0xCC; // INT3 instruction
-const LARGE_ALLOC_THRESHOLD: usize = 4096;
+// const LARGE_ALLOC_THRESHOLD: usize = 4096;
 const COALESCE_THRESHOLD: usize = 128; // More frequent coalescing
 
 // Compute a unique canary for a given block address
@@ -22,9 +22,9 @@ fn compute_canary(addr: usize) -> u64 {
 }
 
 // Optimized size classes with better coverage
-static SIZE_CLASSES: [usize; NUM_SIZE_CLASSES] = [
-    16, 32, 48, 64, 96, 128, 192, 256, 384, 512, 768, 1024, 1536, 2048, 3072, 4096
-];
+// static SIZE_CLASSES: [usize; NUM_SIZE_CLASSES] = [
+//     16, 32, 48, 64, 96, 128, 192, 256, 384, 512, 768, 1024, 1536, 2048, 3072, 4096
+// ];
 
 #[repr(C, align(32))]
 pub struct HeapBlock {
@@ -107,9 +107,9 @@ static HEAP: Mutex<HeapState> = Mutex::new(HeapState {
 
 extern "C" {
     fn VMemAlloc(size: u64) -> *mut u8;
-    fn VMemFree(ptr: *mut u8, size: u64);
-    fn PrintKernelError(msg: *const u8);
-    fn PrintKernelWarning(msg: *const u8);
+    // fn VMemFree(ptr: *mut u8, size: u64);
+    // fn PrintKernelError(msg: *const u8);
+    // fn PrintKernelWarning(msg: *const u8);
 }
 
 const FNV_PRIME: u32 = 16777619;
@@ -195,18 +195,18 @@ impl HeapBlock {
 
     // Unsafe: This function performs pointer arithmetic.
     pub(crate) unsafe fn to_user_ptr(&self) -> *mut u8 {
-        (self as *const HeapBlock as *mut u8).add(core::mem::size_of::<HeapBlock>())
+        (self as *const HeapBlock as *mut u8).add(size_of::<HeapBlock>())
     }
 
     // Unsafe: This function performs pointer arithmetic.
     pub unsafe fn from_user_ptr(ptr: *mut u8) -> *mut HeapBlock {
-        ptr.sub(core::mem::size_of::<HeapBlock>()) as *mut HeapBlock
+        ptr.sub(size_of::<HeapBlock>()) as *mut HeapBlock
     }
 
     // Unsafe: This function performs pointer arithmetic.
     unsafe fn are_adjacent(&self, other: *const HeapBlock) -> bool {
         let self_end = (self as *const HeapBlock as *const u8)
-            .add(core::mem::size_of::<HeapBlock>())
+            .add(size_of::<HeapBlock>())
             .add(self.size);
         self_end == other as *const u8
     }
@@ -220,7 +220,7 @@ impl HeapBlock {
         if !self.are_adjacent(self.next) { return false; }
         
         let next_block = self.next;
-        self.size += core::mem::size_of::<HeapBlock>() + (*next_block).size;
+        self.size += size_of::<HeapBlock>() + (*next_block).size;
         self.next = (*next_block).next;
         
         if !self.next.is_null() {
@@ -253,7 +253,7 @@ fn get_size_class(size: usize) -> Option<usize> {
     }
     
     // For larger sizes, use leading zero count for a fast log2 approximation
-    let log2_size = (core::mem::size_of::<usize>() * 8) as u32 - size.leading_zeros() - 1;
+    let log2_size = (size_of::<usize>() * 8) as u32 - size.leading_zeros() - 1;
     
     match log2_size {
         6 => Some(4),  // 65-128
@@ -281,7 +281,7 @@ unsafe fn create_new_block(size: usize) -> *mut HeapBlock {
         (size + 65535) & !65535
     };
 
-    let total_size = core::mem::size_of::<HeapBlock>() + chunk_size;
+    let total_size = size_of::<HeapBlock>() + chunk_size;
     // Unsafe: VMemAlloc is an external C function.
     let mem = VMemAlloc(total_size as u64);
     if mem.is_null() {
@@ -306,7 +306,7 @@ unsafe fn create_new_block(size: usize) -> *mut HeapBlock {
     drop(heap); // Release lock early
 
     // Split if significantly larger than needed
-    if chunk_size > size * 3 && chunk_size - size >= MIN_BLOCK_SIZE + core::mem::size_of::<HeapBlock>() {
+    if chunk_size > size * 3 && chunk_size - size >= MIN_BLOCK_SIZE + size_of::<HeapBlock>() {
         split_block(block, size);
     }
 
@@ -316,16 +316,16 @@ unsafe fn create_new_block(size: usize) -> *mut HeapBlock {
 // Unsafe: This function operates on raw pointers.
 unsafe fn split_block(block: *mut HeapBlock, needed_size: usize) {
     let remaining = (*block).size - needed_size;
-    if remaining < MIN_BLOCK_SIZE + core::mem::size_of::<HeapBlock>() {
+    if remaining < MIN_BLOCK_SIZE + size_of::<HeapBlock>() {
         return;
     }
 
     let new_block_ptr = (block as *mut u8)
-        .add(core::mem::size_of::<HeapBlock>())
+        .add(size_of::<HeapBlock>())
         .add(needed_size) as *mut HeapBlock;
 
     let new_block = &mut *new_block_ptr;
-    new_block.init(remaining - core::mem::size_of::<HeapBlock>(), true);
+    new_block.init(remaining - size_of::<HeapBlock>(), true);
 
     // Link new block
     new_block.next = (*block).next;
@@ -549,7 +549,7 @@ pub unsafe fn rust_krealloc_backend(ptr: *mut u8, new_size: usize) -> *mut u8 {
     let new_ptr = rust_kmalloc_backend(new_size);
     if !new_ptr.is_null() {
         let copy_size = old_size.min(new_size).saturating_sub(8); // Account for canary
-        core::ptr::copy_nonoverlapping(ptr, new_ptr, copy_size);
+        ptr::copy_nonoverlapping(ptr, new_ptr, copy_size);
         rust_kfree_backend(ptr);
     }
 
@@ -567,7 +567,7 @@ pub unsafe fn rust_kcalloc_backend(count: usize, size: usize) -> *mut u8 {
     };
     let ptr = rust_kmalloc_backend(total_size);
     if !ptr.is_null() {
-        core::ptr::write_bytes(ptr, 0, total_size);
+        ptr::write_bytes(ptr, 0, total_size);
     }
     ptr
 }
@@ -589,7 +589,7 @@ pub extern "C" fn rust_heap_get_stats(stats: *mut HeapStats) {
             total_misses += cache.misses;
         }
 
-        (*stats) = HeapStats {
+        *stats = HeapStats {
             total_allocated: TOTAL_ALLOCATED.load(Ordering::Relaxed),
             peak_allocated: PEAK_ALLOCATED.load(Ordering::Relaxed),
             alloc_count: ALLOC_COUNTER.load(Ordering::Relaxed),
