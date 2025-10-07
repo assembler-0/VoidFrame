@@ -34,7 +34,7 @@ void KernelHeapTune(size_t small_alloc_threshold, int fast_cache_capacity);
 #define KernelFree(ptr) rust_kfree(ptr)
 #define PrintHeapStats() 
 #define KernelHeapSetValidationLevel(level) 
-#define KernelHeapFlushCaches() rust_heap_flush_cpu(lapic_get_id());
+#define KernelHeapFlushCaches() rust_heap_flush_cpu(lapic_get_id())
 #define KernelHeapTune(small_alloc_threshold, fast_cache_capacity)
 
 #endif

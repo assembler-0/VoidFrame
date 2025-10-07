@@ -32,6 +32,7 @@ It would be amazing if you could contribute to this project!
 - meson >= 1.4 (used: meson 1.9.1)
 - ninja >= 1.11 (used: ninja 1.21.1)
 - clang/++ >= 18.0.0 (used: 20.1.8)
+- rustup (nightly, bare metal toolchain) >= 1.89.0 (used: 1.92.0-nightly)
 - nasm >= 2.16 (used: 2.16.03)
 - qemu >= 7.0.0 (used: 10.1.0)
 - mkfs.fat
