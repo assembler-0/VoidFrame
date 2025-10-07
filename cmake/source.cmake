@@ -109,19 +109,6 @@ set(CPP_SOURCES
         ports/6502/6502.cpp
 )
 
-set(C_SOURCES
-        ${KERNEL_CORE_SOURCES}
-        ${SCHED_SOURCES}
-        ${KERNEL_ETC_SOURCES}
-        ${ATOMIC_IPC_SOURCES}
-        ${EXECF_SOURCES}
-        ${MM_SOURCES}
-        ${FS_SOURCES}
-        ${DRIVER_SOURCES}
-        ${ARCH_SOURCES}
-        ${INCLUDE_SOURCES}
-)
-
 set(OBJ_SOURCES)
 
 # ============================================================================
@@ -139,3 +126,19 @@ if(NOT EXCLUDE_EXTRA_OBJECTS)
             kernel/etc/objects/panic.o
     )
 endif()
+
+# ============================================================================
+# Final Source List
+# ============================================================================
+set(C_SOURCES
+        ${KERNEL_CORE_SOURCES}
+        ${SCHED_SOURCES}
+        ${KERNEL_ETC_SOURCES}
+        ${ATOMIC_IPC_SOURCES}
+        ${EXECF_SOURCES}
+        ${MM_SOURCES}
+        ${FS_SOURCES}
+        ${DRIVER_SOURCES}
+        ${ARCH_SOURCES}
+        ${INCLUDE_SOURCES}
+)

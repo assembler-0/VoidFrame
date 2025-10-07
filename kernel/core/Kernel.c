@@ -12,7 +12,6 @@
 #include "InitRD.h"
 #include "Io.h"
 #include "KernelHeap.h"
-#include "KernelHeapRust.h"
 #include "LPT/LPT.h"
 #include "MemOps.h"
 #include "MemPool.h"
@@ -545,12 +544,6 @@ static InitResultT PXS2(void) {
     PrintKernel("Info: Initializing memory pools...\n");
     InitDefaultPools();
     PrintKernelSuccess("System: Memory pools initialized\n");
-
-#ifdef VF_CONFIG_HEAP_RUST
-    PrintKernel("Info: Initializing Rust per-CPU heap caching system...\n");
-    rust_heap_enable_percpu();
-    PrintKernelSuccess("System: Rust per-CPU heap caching system initialized\n");
-#endif
 
     // NEW: Display detailed memory statistics
     PrintKernel("Info: Initial memory statistics:\n");
