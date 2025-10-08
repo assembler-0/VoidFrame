@@ -4,7 +4,7 @@
 #include "Io.h"
 #include "Scheduler.h"
 #include "Serial.h"
-#include "Spinlock.h"
+#include "SpinlockRust.h"
 #include "VBEConsole.h"
 #include "Vesa.h"
 #include "stdarg.h"
@@ -32,8 +32,6 @@ ConsoleT console = {
     .buffer = NULL,  // Initialize as NULL, set based on mode
     .color = VGA_COLOR_DEFAULT
 };
-
-static volatile int lock = 0;
 
 static void PrintToVFShell(const char* message) {
     Window* vfshell = GetVFShellWindow();
@@ -82,7 +80,12 @@ static void ConsolePutcharAt(char c, uint32_t x, uint32_t y, uint8_t color) {
 }
 
 void ClearScreen(void) {
-    SpinLock(&lock);
+    RustSpinLock* lock = rust_spinlock_new();
+    if (!lock) {
+        PrintKernel("Console: Failed to allocate spinlock\n");
+        return;
+    }
+    rust_spinlock_lock(lock);
     if (use_vbe) {
         VBEConsoleClear();
     } else {
@@ -102,7 +105,8 @@ void ClearScreen(void) {
         UpdateCursor();
     }
 
-    SpinUnlock(&lock);
+    rust_spinlock_unlock(lock);
+    rust_spinlock_free(lock);
 }
 
 static void ConsoleScroll(void) {
@@ -174,7 +178,12 @@ void PrintKernel(const char* str) {
         SerialWrite(str);
         return;
     }
-    SpinLock(&lock);
+    RustSpinLock* lock = rust_spinlock_new();
+    if (!lock) {
+        PrintKernel("Console: Failed to allocate spinlock\n");
+        return;
+    }
+    rust_spinlock_lock(lock);
     if (use_vbe) {
         VBEConsolePrint(str);
     } else {
@@ -184,7 +193,8 @@ void PrintKernel(const char* str) {
         }
         console.color = original_color;
     }
-    SpinUnlock(&lock);
+    rust_spinlock_unlock(lock);
+    rust_spinlock_free(lock);
     SerialWrite(str);
 }
 

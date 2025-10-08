@@ -1,9 +1,9 @@
 #include "PMem.h"
-#include "VMem.h"
 #include "Console.h"
 #include "MemOps.h"
 #include "Multiboot2.h"
-#include "Spinlock.h"
+#include "SpinlockRust.h"
+#include "VMem.h"
 
 // Support up to 128GB memory with dynamic bitmap allocation
 #define MAX_PAGE_BUFFER_OVERHEAD (1024 * 1024) // 1MB
@@ -25,11 +25,9 @@ static uint64_t* page_bitmap = NULL;
 static uint64_t bitmap_words = 0;
 uint64_t total_pages = 0;
 static uint64_t used_pages = 0;
-static volatile int memory_lock = 0;
 static uint64_t next_free_hint = 0x100000 / PAGE_SIZE;
 static uint64_t low_memory_watermark = 0;
 static uint64_t allocation_failures = 0;
-volatile mcs_node_t* memory_mcs_lock = NULL;
 
 // Fast bitmap operations using 64-bit words
 static inline void MarkPageUsed(uint64_t page_idx) {
@@ -237,14 +235,18 @@ int MemoryInit(uint32_t multiboot_info_addr) {
 
 void* AllocPage(void) {
     if (!page_bitmap) return NULL; // Safety check
-    
-    irq_flags_t flags = SpinLockIrqSave(&memory_lock);
 
+    RustSpinLock* lock = rust_spinlock_new();
+    if (!lock) {
+        PrintKernelError("System: Failed to allocate memory lock\n");
+        return NULL;
+    }
+    uint64_t flags = rust_spinlock_lock_irqsave(lock);
     // Check low memory condition
     if (used_pages > (total_pages * 9) / 10) { // 90% used
         if (low_memory_watermark == 0) {
             low_memory_watermark = used_pages;
-            PrintKernelWarning("[MEMORY] Low memory warning: ");
+            PrintKernelWarning("System: Low memory warning: ");
             PrintKernelInt((total_pages - used_pages) * PAGE_SIZE / (1024 * 1024));
             PrintKernel("MB remaining\n");
         }
@@ -265,7 +267,8 @@ void* AllocPage(void) {
                 MarkPageUsed(page_idx);
                 next_free_hint = page_idx + 1;
                 void* page = (void*)(page_idx * PAGE_SIZE);
-                SpinUnlockIrqRestore(&memory_lock, flags);
+                rust_spinlock_unlock_irqrestore(lock, flags);
+                rust_spinlock_free(lock);
                 return page;
             }
         }
@@ -283,19 +286,26 @@ void* AllocPage(void) {
                 MarkPageUsed(page_idx);
                 next_free_hint = page_idx + 1;
                 void* page = (void*)(page_idx * PAGE_SIZE);
-                SpinUnlockIrqRestore(&memory_lock, flags);
+                rust_spinlock_unlock_irqrestore(lock, flags);
+                rust_spinlock_free(lock);
                 return page;
             }
         }
     }
 
     allocation_failures++;
-    SpinUnlockIrqRestore(&memory_lock, flags);
+    rust_spinlock_unlock_irqrestore(lock, flags);
+    rust_spinlock_free(lock);
     return NULL; // Out of memory
 }
 
 void* AllocHugePages(uint64_t num_pages) {
-    irq_flags_t flags = SpinLockIrqSave(&memory_lock);
+    RustSpinLock* lock = rust_spinlock_new();
+    if (!lock) {
+        PrintKernelError("System: Failed to allocate memory lock\n");
+        return NULL;
+    }
+    uint64_t flags = rust_spinlock_lock_irqsave(lock);
 
     // Find contiguous 2MB-aligned region (512 pages)
     uint64_t pages_per_huge = HUGE_PAGE_SIZE / PAGE_SIZE;  // 512
@@ -322,13 +332,15 @@ void* AllocHugePages(uint64_t num_pages) {
             }
 
             void* huge_page = (void*)(start * PAGE_SIZE);
-            SpinUnlockIrqRestore(&memory_lock, flags);
+            rust_spinlock_unlock_irqrestore(lock, flags);
+            rust_spinlock_free(lock);
             ++huge_pages_allocated;
             return huge_page;
         }
     }
 
-    SpinUnlockIrqRestore(&memory_lock, flags);
+    rust_spinlock_unlock_irqrestore(lock, flags);
+    rust_spinlock_free(lock);
     ++allocation_failures;
     return NULL;  // No contiguous region found
 }
@@ -336,30 +348,36 @@ void* AllocHugePages(uint64_t num_pages) {
 
 void FreePage(void* page) {
     if (!page) {
-        PrintKernelError("[MEMORY] FreePage: NULL pointer\n");
+        PrintKernelError("System: FreePage: NULL pointer\n");
         return;
     }
 
     uint64_t addr = (uint64_t)page;
     if (addr % PAGE_SIZE != 0) {
-        PrintKernelError("[MEMORY] FreePage: Unaligned address ");
+        PrintKernelError("System: FreePage: Unaligned address ");
         PrintKernelHex(addr); PrintKernel("\n");
         return;
     }
 
     uint64_t page_idx = addr / PAGE_SIZE;
     if (page_idx >= total_pages) {
-        PrintKernelError("[MEMORY] FreePage: Page index out of bounds: ");
+        PrintKernelError("System: FreePage: Page index out of bounds: ");
         PrintKernelInt(page_idx); PrintKernel("\n");
         return;
     }
 
-    irq_flags_t flags = SpinLockIrqSave(&memory_lock);
+    RustSpinLock* lock = rust_spinlock_new();
+    if (!lock) {
+        PrintKernelError("System: Failed to allocate memory lock\n");
+        return;
+    }
+    uint64_t flags = rust_spinlock_lock_irqsave(lock);
 
     // Check for double free
     if (IsPageFree(page_idx)) {
-        SpinUnlockIrqRestore(&memory_lock, flags);
-        PrintKernelError("[MEMORY] Double free of page ");
+        rust_spinlock_unlock_irqrestore(lock, flags);
+        rust_spinlock_free(lock);
+        PrintKernelError("System: Double free of page ");
         PrintKernelHex(addr); PrintKernel("\n");
         return;
     }
@@ -371,7 +389,8 @@ void FreePage(void* page) {
         next_free_hint = page_idx;
     }
 
-    SpinUnlockIrqRestore(&memory_lock, flags);
+    rust_spinlock_unlock_irqrestore(lock, flags);
+    rust_spinlock_free(lock);
 }
 
 uint64_t GetFreeMemory(void) {
@@ -379,7 +398,13 @@ uint64_t GetFreeMemory(void) {
 }
 
 void GetDetailedMemoryStats(MemoryStats* stats) {
-    irq_flags_t flags = SpinLockIrqSave(&memory_lock);
+    if (!stats) return;
+    RustSpinLock* lock = rust_spinlock_new();
+    if (!lock) {
+        PrintKernelError("System: Failed to allocate memory lock\n");
+        return;
+    }
+    uint64_t flags = rust_spinlock_lock_irqsave(lock);
 
     stats->total_physical_bytes = total_pages * PAGE_SIZE;
     stats->used_physical_bytes = used_pages * PAGE_SIZE;
@@ -427,6 +452,7 @@ void GetDetailedMemoryStats(MemoryStats* stats) {
         stats->fragmentation_score = 0;
     }
 
-    SpinUnlockIrqRestore(&memory_lock, flags);
+    rust_spinlock_unlock_irqrestore(lock, flags);
+    rust_spinlock_free(lock);
 }
 

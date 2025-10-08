@@ -1,6 +1,5 @@
 #include "Ipc.h"
 #include "../../mm/MemOps.h"
-#include "Panic.h"
 #include "MLFQ.h"
 #include "Spinlock.h"
 

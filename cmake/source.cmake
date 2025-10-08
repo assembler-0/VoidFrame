@@ -103,6 +103,7 @@ set(ARCH_SOURCES
 set(INCLUDE_SOURCES
         include/ctype.c
         include/Font.c
+        include/Io.c
 )
 
 set(CPP_SOURCES

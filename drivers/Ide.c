@@ -7,8 +7,7 @@
 #include "Io.h"
 #include "MemOps.h"
 static IdeChannel channels[2];
-static volatile int ide_lock = 0;
-
+\
 // Wait for drive to be ready (not busy)
 static int IdeWaitReady(uint16_t base_port) {
     uint32_t timeout = 500000;  // Increased timeout for QEMU
