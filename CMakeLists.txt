@@ -71,6 +71,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 # Rust Memory Management
 # ============================================================================ 
 add_subdirectory(mm/rust)
+add_subdirectory(kernel/atomic/rust)
 
 # ============================================================================ 
 # Build Include Directories
@@ -129,8 +130,9 @@ if(NOT EXCLUDE_EXTRA_OBJECTS)
     target_sources(voidframe.krnl PRIVATE ${OBJ_SOURCES})
 endif()
 
-# Link Rust heap library
+# Rust libraries
 target_link_libraries(voidframe.krnl PRIVATE rust_heap)
+target_link_libraries(voidframe.krnl PRIVATE rust_spinlock)
 
 # Configure the linker to use ld.lld with proper arguments
 set_target_properties(voidframe.krnl PROPERTIES

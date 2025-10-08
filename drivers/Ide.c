@@ -1,13 +1,11 @@
 #include "Ide.h"
 #include "BlockDevice.h"
 #include "Format.h"
-
+#include "SpinlockRust.h"
 #include "APIC.h"
 #include "Console.h"
 #include "Io.h"
 #include "MemOps.h"
-#include "Spinlock.h"
-
 static IdeChannel channels[2];
 static volatile int ide_lock = 0;
 
@@ -211,7 +209,7 @@ int IdeInit(void) {
     return IDE_OK;
 }
 
-int IdeReadBlocks(struct BlockDevice* device, uint64_t start_lba, uint32_t count, void* buffer) {
+int IdeReadBlocks(BlockDevice* device, uint64_t start_lba, uint32_t count, void* buffer) {
     if (!device || !device->driver_data) {
         PrintKernel("IDE: Invalid device or driver_data\n");
         return -1;
@@ -227,8 +225,13 @@ int IdeReadBlocks(struct BlockDevice* device, uint64_t start_lba, uint32_t count
         return IDE_ERROR_NO_DRIVE;
     }
 
-    SpinLock(&ide_lock);
-    uint16_t base_port = channels[channel].base_port;
+    RustSpinLock* lock = rust_spinlock_new();
+    if (!lock) {
+        PrintKernel("IDE: Failed to allocate spinlock\n");
+        return -1;
+    }
+    rust_spinlock_lock(lock);
+    const uint16_t base_port = channels[channel].base_port;
 
     for (uint32_t i = 0; i < count; i++) {
         uint64_t lba = start_lba + i;
@@ -236,7 +239,8 @@ int IdeReadBlocks(struct BlockDevice* device, uint64_t start_lba, uint32_t count
 
         int result = IdeSelectDrive(base_port, drive_num, lba);
         if (result != IDE_OK) {
-            SpinUnlock(&ide_lock);
+            rust_spinlock_unlock(lock);
+            rust_spinlock_free(lock);
             return result;
         }
 
@@ -251,7 +255,8 @@ int IdeReadBlocks(struct BlockDevice* device, uint64_t start_lba, uint32_t count
             PrintKernel("IDE: Wait for data failed with error ");
             PrintKernelInt(result);
             PrintKernel("\n");
-            SpinUnlock(&ide_lock);
+            rust_spinlock_unlock(lock);
+            rust_spinlock_free(lock);
             return result;
         }
 
@@ -261,7 +266,8 @@ int IdeReadBlocks(struct BlockDevice* device, uint64_t start_lba, uint32_t count
         }
     }
 
-    SpinUnlock(&ide_lock);
+    rust_spinlock_unlock(lock);
+    rust_spinlock_free(lock);
     return 0;
 }
 
@@ -276,7 +282,12 @@ int IdeWriteBlocks(struct BlockDevice* device, uint64_t start_lba, uint32_t coun
         return IDE_ERROR_NO_DRIVE;
     }
 
-    SpinLock(&ide_lock);
+    RustSpinLock* lock = rust_spinlock_new();
+    if (!lock) {
+        PrintKernel("IDE: Failed to allocate spinlock\n");
+        return -1;
+    }
+    rust_spinlock_lock(lock);
     uint16_t base_port = channels[channel].base_port;
 
     for (uint32_t i = 0; i < count; i++) {
@@ -285,7 +296,8 @@ int IdeWriteBlocks(struct BlockDevice* device, uint64_t start_lba, uint32_t coun
 
         int result = IdeSelectDrive(base_port, drive_num, lba);
         if (result != IDE_OK) {
-            SpinUnlock(&ide_lock);
+            rust_spinlock_unlock(lock);
+            rust_spinlock_free(lock);
             return result;
         }
 
@@ -297,7 +309,8 @@ int IdeWriteBlocks(struct BlockDevice* device, uint64_t start_lba, uint32_t coun
 
         result = IdeWaitData(base_port);
         if (result != IDE_OK) {
-            SpinUnlock(&ide_lock);
+            rust_spinlock_unlock(lock);
+            rust_spinlock_free(lock);
             return result;
         }
 
@@ -308,12 +321,14 @@ int IdeWriteBlocks(struct BlockDevice* device, uint64_t start_lba, uint32_t coun
 
         result = IdeWaitReady(base_port);
         if (result != IDE_OK) {
-            SpinUnlock(&ide_lock);
+            rust_spinlock_unlock(lock);
+            rust_spinlock_free(lock);
             return result;
         }
     }
 
-    SpinUnlock(&ide_lock);
+    rust_spinlock_unlock(lock);
+    rust_spinlock_free(lock);
     return 0;
 }
 
@@ -357,9 +372,15 @@ int IdeReadLBA2048(uint8_t drive, uint32_t lba, void* buffer) {
         return IDE_ERROR_NO_DRIVE;
     }
 
-    SpinLock(&ide_lock);
+    RustSpinLock* lock = rust_spinlock_new();
+    if (!lock) {
+        PrintKernel("IDE: Failed to allocate spinlock\n");
+        return -1;
+    }
+    rust_spinlock_lock(lock);
     uint16_t base_port = channels[channel].base_port;
-    SpinUnlock(&ide_lock);
+    rust_spinlock_unlock(lock);
+    rust_spinlock_free(lock);
     int result;
 
     result = IdeSelectDrive(base_port, drive_num, 0); // LBA is in the packet

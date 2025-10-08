@@ -4,11 +4,12 @@
 #include "KernelHeap.h"
 #include "MLFQ.h"
 #include "MemOps.h"
+#include "Pallete.h"
+#include "Panic.h"
+#include "Scheduler.h"
+#include "Spinlock.h"
 #include "StringOps.h"
 #include "Vesa.h"
-#include "Pallete.h"
-#include "Spinlock.h"
-#include "Scheduler.h"
 // --- Globals ---
 #define MAX_WINDOWS 16
 static Window* g_window_list_head = NULL;
