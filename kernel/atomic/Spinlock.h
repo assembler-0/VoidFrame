@@ -3,42 +3,35 @@
 
 #include "Io.h"
 #include "stdint.h"
-#include "Panic.h"
+#include "x64.h"
 
 #define DEADLOCK_TIMEOUT_CYCLES 100000000ULL
 #define MAX_BACKOFF_CYCLES 1024
 
-// Get CPU timestamp counter
-static inline uint64_t get_cycles(void) {
-    uint32_t low, high;
-    __asm__ volatile("rdtsc" : "=a"(low), "=d"(high));
-    return ((uint64_t)high << 32) | low;
-}
-
 // Exponential backoff delay
 static inline void backoff_delay(uint64_t cycles) {
-    uint64_t start = get_cycles();
-    while (get_cycles() - start < cycles) {
+    uint64_t start = rdtsc();
+    while (rdtsc() - start < cycles) {
         __builtin_ia32_pause();
     }
 }
 
 // Advanced spinlock with multiple anti-race mechanisms
 static inline void SpinLock(volatile int* lock) {
-    uint64_t start = get_cycles();
+    uint64_t start = rdtsc();
     uint64_t backoff = 1;
     uint32_t attempts = 0;
 
     while (1) {
         // Try to acquire without contention first
-        if (!*lock && !__sync_lock_test_and_set(lock, 1)) {
+        if (!*lock && !__atomic_test_and_set(lock, __ATOMIC_ACQUIRE)) {
             return;
         }
 
         // Deadlock detection
-        if (get_cycles() - start > DEADLOCK_TIMEOUT_CYCLES) {
+        if (rdtsc() - start > DEADLOCK_TIMEOUT_CYCLES) {
             backoff_delay(MAX_BACKOFF_CYCLES);
-            start = get_cycles();
+            start = rdtsc();
             attempts = 0;
             continue;
         }
@@ -159,7 +152,7 @@ static inline irq_flags_t SpinLockIrqSave(volatile int* lock) {
 }
 
 static inline void SpinUnlockIrqRestore(volatile int* lock, irq_flags_t flags) {
-    __sync_lock_release(lock);
+    __atomic_clear(lock, __ATOMIC_RELEASE);
     restore_irq_flags(flags);
 }
 

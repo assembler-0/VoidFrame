@@ -1,6 +1,7 @@
 #ifndef IPC_H
 #define IPC_H
 
+#include "SpinlockRust.h"
 #include "StringOps.h"
 #include "stdbool.h"
 #include "stdint.h"
@@ -56,7 +57,7 @@ typedef struct {
     uint32_t head;
     uint32_t tail;
     uint32_t count;
-    volatile int lock;         // Spinlock for thread safety
+    RustSpinLock* lock;         // Spinlock for thread safety
     uint32_t dropped_count;    // Track dropped messages
     uint32_t priority_bitmap;  // Track priority levels present
 } MessageQueue;

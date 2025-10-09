@@ -3,19 +3,19 @@
 #include "Console.h"
 #include "Format.h"
 #include "Ipc.h"
-#include "Spinlock.h"
+#include "SpinlockRust.h"
 #include "StackGuard.h"
 #include "StringOps.h"
 #include "VFS.h"
 #include "VMem.h"
 static CerberusState g_cerberus_state = {0};
-static volatile int cerberus_lock = 0;
+static RustSpinLock* cerberus_lock = NULL;
 static uint64_t system_ticks = 0;
 
 void CerberusLogViolation(CerberusViolationReport* report) {
     if (!g_cerberus_state.is_initialized || !report) return;
 
-    SpinLock(&cerberus_lock);
+    rust_spinlock_lock(cerberus_lock);
 
     // Update statistics
     g_cerberus_state.total_violations++;
@@ -24,7 +24,7 @@ void CerberusLogViolation(CerberusViolationReport* report) {
     proc_info->violation_count++;
     proc_info->last_violation = system_ticks;
 
-    SpinUnlock(&cerberus_lock);
+    rust_spinlock_unlock(cerberus_lock);
 
     // Console logging
     PrintKernelErrorF("[Cerberus] VIOLATION PID=%d: %s\n",
@@ -43,6 +43,11 @@ void CerberusLogViolation(CerberusViolationReport* report) {
 }
 
 void CerberusInit(void) {
+    cerberus_lock = rust_spinlock_new();
+    if (!cerberus_lock) {
+        PrintKernelError("Cerberus: Failed to create lock\n");
+        return;
+    }
     PrintKernel("Cerberus initializing...\n");
 
     // Initialize all structures
@@ -74,11 +79,11 @@ int CerberusRegisterProcess(uint32_t pid, uint64_t stack_base, uint64_t stack_si
         return -1;
     }
 
-    SpinLock(&cerberus_lock);
+    rust_spinlock_lock(cerberus_lock);
 
     CerberusProcessInfo* proc_info = &g_cerberus_state.process_info[pid];
     if (proc_info->is_monitored) {
-        SpinUnlock(&cerberus_lock);
+        rust_spinlock_unlock(cerberus_lock);
         return 0; // Already registered
     }
 
@@ -96,7 +101,7 @@ int CerberusRegisterProcess(uint32_t pid, uint64_t stack_base, uint64_t stack_si
     }
 #endif
     g_cerberus_state.monitored_processes++;
-    SpinUnlock(&cerberus_lock);
+    rust_spinlock_unlock(cerberus_lock);
 
     PrintKernelF("[Cerberus] Process %d registered\n", pid);
     return 0;
@@ -107,7 +112,7 @@ void CerberusUnregisterProcess(uint32_t pid) {
         return;
     }
 
-    SpinLock(&cerberus_lock);
+    rust_spinlock_lock(cerberus_lock);
 
     CerberusProcessInfo* proc_info = &g_cerberus_state.process_info[pid];
     if (proc_info->is_monitored) {
@@ -124,7 +129,7 @@ void CerberusUnregisterProcess(uint32_t pid) {
         }
     }
 
-    SpinUnlock(&cerberus_lock);
+    rust_spinlock_unlock(cerberus_lock);
     PrintKernelF("[Cerberus] Process %d unregistered\n", pid);
 }
 
@@ -326,7 +331,7 @@ void CerberusReportThreat(uint32_t pid, MemorySecurityViolation violation) {
 int CerberusTrackAlloc(uint64_t addr, uint64_t size, uint32_t pid) {
     if (!g_cerberus_state.is_initialized) return -1;
 
-    SpinLock(&cerberus_lock);
+    rust_spinlock_lock(cerberus_lock);
 
     // Find empty watch region slot
     for (int i = 0; i < CERBERUS_MAX_WATCH_REGIONS; i++) {
@@ -340,19 +345,19 @@ int CerberusTrackAlloc(uint64_t addr, uint64_t size, uint32_t pid) {
             region->is_stack_region = false;
 
             g_cerberus_state.active_regions++;
-            SpinUnlock(&cerberus_lock);
+            rust_spinlock_unlock(cerberus_lock);
             return 0;
         }
     }
 
-    SpinUnlock(&cerberus_lock);
+    rust_spinlock_unlock(cerberus_lock);
     return -1; // No space
 }
 
 int CerberusTrackFree(uint64_t addr, uint32_t pid) {
     if (!g_cerberus_state.is_initialized) return -1;
 
-    SpinLock(&cerberus_lock);
+    rust_spinlock_lock(cerberus_lock);
 
     // Find and remove watch region
     for (int i = 0; i < CERBERUS_MAX_WATCH_REGIONS; i++) {
@@ -360,12 +365,12 @@ int CerberusTrackFree(uint64_t addr, uint32_t pid) {
         if (region->is_active && region->base_addr == addr && region->process_id == pid) {
             region->is_active = false;
             g_cerberus_state.active_regions--;
-            SpinUnlock(&cerberus_lock);
+            rust_spinlock_unlock(cerberus_lock);
             return 0;
         }
     }
 
-    SpinUnlock(&cerberus_lock);
+    rust_spinlock_unlock(cerberus_lock);
 
     // Potential double-free
     CerberusViolationReport violation = {

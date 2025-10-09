@@ -11,6 +11,7 @@
 #include "Panic.h"
 #include "Shell.h"
 #include "Spinlock.h"
+#include "SpinlockRust.h"
 #include "VFS.h"
 #include "VMem.h"
 #include "x64.h"
@@ -55,11 +56,12 @@ const uint32_t eevdf_nice_to_wmult[40] = {
 static EEVDFProcessControlBlock processes[EEVDF_MAX_PROCESSES] ALIGNED_CACHE;
 static volatile uint32_t next_pid = 1;
 static uint64_t pid_bitmap[EEVDF_MAX_PROCESSES / 64 + 1] = {0};
-static volatile irq_flags_t pid_lock = 0;
 static volatile uint32_t current_process = 0;
 static volatile uint32_t process_count = 0;
 static volatile int need_schedule = 0;
-static volatile int scheduler_lock = 0;
+static RustSpinLock* pid_lock = NULL;
+static RustSpinLock* eevdf_lock = NULL;
+
 rwlock_t process_table_rwlock_eevdf = {0};
 
 // Security subsystem
@@ -683,7 +685,7 @@ void EEVDFUpdateClock(EEVDFRunqueue* rq) {
 }
 
 void EEVDFSchedule(Registers* regs) {
-    irq_flags_t flags = SpinLockIrqSave(&scheduler_lock);
+    uint64_t flags = rust_spinlock_lock_irqsave(eevdf_lock);
 
     AtomicInc(&scheduler_calls);
     AtomicInc(&eevdf_scheduler.tick_counter);
@@ -782,10 +784,15 @@ switch_to_idle:
         EEVDFCleanupTerminatedProcessInternal();
     }
 
-    SpinUnlockIrqRestore(&scheduler_lock, flags);
+    rust_spinlock_unlock_irqrestore(eevdf_lock, flags);
 }
 
 int EEVDFSchedInit(void) {
+    if (!eevdf_lock && !pid_lock) {
+        eevdf_lock = rust_spinlock_new();
+        pid_lock = rust_spinlock_new();
+        if (!eevdf_lock || !pid_lock) PANIC("EEVDFSchedInit: Failed to allocate locks");
+    }
     PrintKernel("System: Initializing EEVDF scheduler...\n");
     // Initialize process array
     FastMemset(processes, 0, sizeof(EEVDFProcessControlBlock) * EEVDF_MAX_PROCESSES);
@@ -861,22 +868,22 @@ uint32_t EEVDFCreateProcess(const char* name, void (*entry_point)(void)) {
         PANIC("EEVDFCreateProcess: NULL entry point");
     }
     
-    irq_flags_t flags = SpinLockIrqSave(&scheduler_lock);
+    uint64_t flags = rust_spinlock_lock_irqsave(eevdf_lock);
     
     if (UNLIKELY(process_count >= EEVDF_MAX_PROCESSES)) {
-        SpinUnlockIrqRestore(&scheduler_lock, flags);
+        rust_spinlock_unlock_irqrestore(eevdf_lock, flags);
         PANIC("EEVDFCreateProcess: Too many processes");
     }
 
     // Find free slot
     int slot = FindFreeSlotFast();
     if (UNLIKELY(slot == -1)) {
-        SpinUnlockIrqRestore(&scheduler_lock, flags);
+        rust_spinlock_unlock_irqrestore(eevdf_lock, flags);
         PANIC("EEVDFCreateProcess: No free process slots");
     }
     // Allocate PID
     uint32_t new_pid = 0;
-    SpinLock(&pid_lock);
+    rust_spinlock_lock(pid_lock);
     for (int i = 1; i < EEVDF_MAX_PROCESSES; i++) {
         int idx = i / 64;
         int bit = i % 64;
@@ -886,11 +893,11 @@ uint32_t EEVDFCreateProcess(const char* name, void (*entry_point)(void)) {
             break;
         }
     }
-    SpinUnlock(&pid_lock);
+    rust_spinlock_unlock(pid_lock);
 
     if (new_pid == 0) {
         FreeSlotFast(slot);
-        SpinUnlockIrqRestore(&scheduler_lock, flags);
+        rust_spinlock_unlock_irqrestore(eevdf_lock, flags);
         PANIC("EEVDFCreateProcess: PID exhaustion");
     }
     
@@ -901,7 +908,7 @@ uint32_t EEVDFCreateProcess(const char* name, void (*entry_point)(void)) {
     void* stack = VMemAllocStack(EEVDF_STACK_SIZE);
     if (UNLIKELY(!stack)) {
         FreeSlotFast(slot);
-        SpinUnlockIrqRestore(&scheduler_lock, flags);
+        rust_spinlock_unlock_irqrestore(eevdf_lock, flags);
         PANIC("EEVDFCreateProcess: Failed to allocate stack");
     }
 
@@ -959,7 +966,7 @@ uint32_t EEVDFCreateProcess(const char* name, void (*entry_point)(void)) {
     // Add to scheduler
     EEVDFEnqueueTask(&eevdf_scheduler.rq, proc);
 
-    SpinUnlockIrqRestore(&scheduler_lock, flags);
+    rust_spinlock_unlock_irqrestore(eevdf_lock, flags);
 
     return new_pid;
 }
@@ -1008,11 +1015,11 @@ static int EEVDFValidateToken(const EEVDFSecurityToken* token, uint32_t pid) {
 // =============================================================================
 
 static void EEVDFTerminateProcess(uint32_t pid, TerminationReason reason, uint32_t exit_code) {
-    irq_flags_t flags = SpinLockIrqSave(&scheduler_lock);
+    uint64_t flags = rust_spinlock_lock_irqsave(eevdf_lock);
     EEVDFProcessControlBlock* proc = EEVDFGetCurrentProcessByPID(pid);
     if (UNLIKELY(!proc || proc->state == PROC_DYING ||
                  proc->state == PROC_ZOMBIE || proc->state == PROC_TERMINATED)) {
-        SpinUnlockIrqRestore(&scheduler_lock, flags);
+        rust_spinlock_unlock_irqrestore(eevdf_lock, flags);
         return;
     }
 
@@ -1020,7 +1027,7 @@ static void EEVDFTerminateProcess(uint32_t pid, TerminationReason reason, uint32
     uint32_t slot = proc - processes;
 
     if (slot >= EEVDF_MAX_PROCESSES) {
-        SpinUnlockIrqRestore(&scheduler_lock, flags);
+        rust_spinlock_unlock_irqrestore(eevdf_lock, flags);
         return;
     }
 
@@ -1033,7 +1040,7 @@ static void EEVDFTerminateProcess(uint32_t pid, TerminationReason reason, uint32
             if (proc->privilege_level == EEVDF_PROC_PRIV_SYSTEM) {
                 // Only system processes can kill system processes
                 if (caller->privilege_level != EEVDF_PROC_PRIV_SYSTEM) {
-                    SpinUnlockIrqRestore(&scheduler_lock, flags);
+                    rust_spinlock_unlock_irqrestore(eevdf_lock, flags);
                     PrintKernelError("[EEVDF-SECURITY] Process ");
                     PrintKernelInt(caller->pid);
                     PrintKernel(" tried to kill system process ");
@@ -1047,14 +1054,14 @@ static void EEVDFTerminateProcess(uint32_t pid, TerminationReason reason, uint32
 
             // Cannot terminate immune processes
             if (UNLIKELY(proc->token.flags & EEVDF_PROC_FLAG_IMMUNE)) {
-                SpinUnlockIrqRestore(&scheduler_lock, flags);
+                rust_spinlock_unlock_irqrestore(eevdf_lock, flags);
                 EEVDFASTerminate(caller->pid, "Attempted termination of immune process");
                 return;
             }
 
             // Cannot terminate critical system processes
             if (UNLIKELY(proc->token.flags & EEVDF_PROC_FLAG_CRITICAL)) {
-                SpinUnlockIrqRestore(&scheduler_lock, flags);
+                rust_spinlock_unlock_irqrestore(eevdf_lock, flags);
                 EEVDFASTerminate(caller->pid, "Attempted termination of critical process");
                 return;
             }
@@ -1062,7 +1069,7 @@ static void EEVDFTerminateProcess(uint32_t pid, TerminationReason reason, uint32
 
         // Validate caller's token before allowing termination
         if (UNLIKELY(!EEVDFValidateToken(&caller->token, caller->pid))) {
-            SpinUnlockIrqRestore(&scheduler_lock, flags);
+            rust_spinlock_unlock_irqrestore(eevdf_lock, flags);
             EEVDFASTerminate(caller->pid, "Token validation failed");
             return;
         }
@@ -1071,7 +1078,7 @@ static void EEVDFTerminateProcess(uint32_t pid, TerminationReason reason, uint32
     // Atomic state transition
     ProcessState old_state = proc->state;
     if (UNLIKELY(AtomicCmpxchg((volatile uint32_t*)&proc->state, old_state, PROC_DYING) != old_state)) {
-        SpinUnlockIrqRestore(&scheduler_lock, flags);
+        rust_spinlock_unlock_irqrestore(eevdf_lock, flags);
         return; // Race condition, another thread is handling termination
     }
 
@@ -1101,18 +1108,18 @@ static void EEVDFTerminateProcess(uint32_t pid, TerminationReason reason, uint32
     AddToTerminationQueueAtomic(slot);   // Then add to queue
     
     // Free PID
-    SpinLock(&pid_lock);
+    rust_spinlock_lock(pid_lock);
     int idx = proc->pid / 64;
     int bit = proc->pid % 64;
     pid_bitmap[idx] &= ~(1ULL << bit);
-    SpinUnlock(&pid_lock);
+    rust_spinlock_unlock(pid_lock);
     
     // Update scheduler statistics
     if (eevdf_scheduler.total_processes > 0) {
         eevdf_scheduler.total_processes--;
     }
 
-    SpinUnlockIrqRestore(&scheduler_lock, flags);
+    rust_spinlock_unlock_irqrestore(eevdf_lock, flags);
 
 #ifdef VF_CONFIG_USE_CERBERUS
     CerberusUnregisterProcess(proc->pid);
@@ -1140,11 +1147,11 @@ static void EEVDFTerminateProcess(uint32_t pid, TerminationReason reason, uint32
 
 // EEVDF's deadly termination function - bypasses all protections
 static void EEVDFASTerminate(uint32_t pid, const char* reason) {
-    irq_flags_t flags = SpinLockIrqSave(&scheduler_lock);
+    uint64_t flags = rust_spinlock_lock_irqsave(eevdf_lock);
     EEVDFProcessControlBlock* proc = EEVDFGetCurrentProcessByPID(pid);
 
     if (!proc || proc->state == PROC_TERMINATED) {
-        SpinUnlockIrqRestore(&scheduler_lock, flags);
+        rust_spinlock_unlock_irqrestore(eevdf_lock, flags);
         return;
     }
 
@@ -1169,7 +1176,7 @@ static void EEVDFASTerminate(uint32_t pid, const char* reason) {
         eevdf_scheduler.total_processes--;
     }
 
-    SpinUnlockIrqRestore(&scheduler_lock, flags);
+    rust_spinlock_unlock_irqrestore(eevdf_lock, flags);
     
 #ifdef VF_CONFIG_PROCINFO_AUTO_CLEANUP
     char cleanup_path[256];
@@ -1291,9 +1298,9 @@ static void EEVDFCleanupTerminatedProcessInternal(void) {
 }
 
 void EEVDFCleanupTerminatedProcess(void) {
-    irq_flags_t flags = SpinLockIrqSave(&scheduler_lock);
+    uint64_t flags = rust_spinlock_lock_irqsave(eevdf_lock);
     EEVDFCleanupTerminatedProcessInternal();
-    SpinUnlockIrqRestore(&scheduler_lock, flags);
+    rust_spinlock_unlock_irqrestore(eevdf_lock, flags);
 }
 
 // =============================================================================
