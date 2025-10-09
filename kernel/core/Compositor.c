@@ -7,7 +7,7 @@
 #include "Pallete.h"
 #include "Panic.h"
 #include "Scheduler.h"
-#include "Spinlock.h"
+#include "SpinlockRust.h"
 #include "StringOps.h"
 #include "Vesa.h"
 // --- Globals ---
@@ -27,7 +27,7 @@ typedef struct {
 } WindowStateMapping;
 
 static WindowStateMapping g_window_state_map[MAX_WINDOWS];
-static irq_flags_t g_text_lock = 0;
+static RustSpinLock* g_text_lock = NULL;
 static Window* g_vfshell_window = NULL;
 
 void VFCompositorRequestInit(const char * str) {
@@ -65,18 +65,18 @@ void VFCompositorRequestInit(const char * str) {
 Window* GetWindowByTitle(const char* title) {
     if (!title) return NULL;
 
-    irq_flags_t flags = SpinLockIrqSave(&g_text_lock);
+    uint64_t flags = rust_spinlock_lock_irqsave(g_text_lock);
 
     Window* current = g_window_list_head;
     while (current) {
         if (current->title && FastStrCmp(current->title, title) == 0) {
-            SpinUnlockIrqRestore(&g_text_lock, flags);
+            rust_spinlock_unlock_irqrestore(g_text_lock, flags);
             return current;
         }
         current = current->next;
     }
 
-    SpinUnlockIrqRestore(&g_text_lock, flags);
+    rust_spinlock_unlock_irqrestore(g_text_lock, flags);
     return NULL;
 }
 
@@ -147,11 +147,11 @@ void WindowScrollUp(Window* window) {
 void WindowPrintChar(Window* window, char c) {
     if (!window) return;
 
-    irq_flags_t flags = SpinLockIrqSave(&g_text_lock);
+    uint64_t flags = rust_spinlock_lock_irqsave(g_text_lock);
 
     WindowTextState* state = GetWindowTextState(window);
     if (!state) {
-        SpinUnlockIrqRestore(&g_text_lock, flags);
+        rust_spinlock_unlock_irqrestore(g_text_lock, flags);
         return;
     }
 
@@ -204,7 +204,7 @@ void WindowPrintChar(Window* window, char c) {
     state->needs_refresh = true;
     window->needs_redraw = true;
 
-    SpinUnlockIrqRestore(&g_text_lock, flags);
+    rust_spinlock_unlock_irqrestore(g_text_lock, flags);
 }
 
 // Print string to window
@@ -222,7 +222,7 @@ void WindowClearText(Window* window) {
     WindowTextState* state = GetWindowTextState(window);
     if (!state) return;
 
-    irq_flags_t flags = SpinLockIrqSave(&g_text_lock);
+    uint64_t flags = rust_spinlock_lock_irqsave(g_text_lock);
 
     FastMemset(state->buffer, 0, sizeof(state->buffer));
     state->cursor_row = 0;
@@ -230,11 +230,16 @@ void WindowClearText(Window* window) {
     state->needs_refresh = true;
     window->needs_redraw = true;
 
-    SpinUnlockIrqRestore(&g_text_lock, flags);
+    rust_spinlock_unlock_irqrestore(g_text_lock, flags);
 }
 
 // Update VFCompositor to cache VFShell window reference
 void VFCompositor(void) {
+    g_text_lock = rust_spinlock_new();
+    if (!g_text_lock) {
+        PrintKernelError("VFCompositor: Failed to initialize text lock\n");
+        return;
+    }
     Snooze();
 
     if (!VBEIsInitialized()) {
@@ -276,9 +281,8 @@ void VFCompositor(void) {
             }
 
             WindowManagerRun();
-            // MLFQYield();
         } else {
-            MLFQYield();
+            Yield();
         }
     }
 

@@ -1,5 +1,5 @@
 use crate::{SpinLock, McsLock, McsNode, RwLock};
-use core::panic::PanicInfo;
+use core::panic::{PanicInfo, PanicMessage};
 
 // External C functions from Io.h
 extern "C" {
@@ -10,7 +10,12 @@ extern "C" {
 
 #[panic_handler]
 fn panic(_info: &PanicInfo) -> ! {
-    loop {}
+    extern "C" {
+        fn Panic(msg: *const u8) -> !;
+    }
+    unsafe {
+        Panic("=>$s\0".as_ptr() as *const u8);
+    }
 }
 
 // Static storage for locks (kernel will manage allocation)
@@ -224,4 +229,3 @@ pub extern "C" fn rust_spinlock_unlock_irqrestore(lock: *mut SpinLock, flags: u6
         }
     }
 }
-

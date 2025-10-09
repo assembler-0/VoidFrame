@@ -3,7 +3,6 @@
 #ifndef VOIDFRAME_SCHEDULER_H
 #define VOIDFRAME_SCHEDULER_H
 
-#include "Shared.h"
 #if defined(VF_CONFIG_SCHED_MLFQ)
 #include "MLFQ.h"
 #elif defined(VF_CONFIG_SCHED_EEVDF)
@@ -131,6 +130,16 @@ static inline __attribute__((always_inline)) void DumpSchedulerState() {
     return MLFQDumpSchedulerState();
 #elif defined(VF_CONFIG_SCHED_EEVDF)
     return EEVDFDumpSchedulerState();
+#elif defined(VF_CONFIG_SCHED_CFS)
+    return 0; // not implemented
+#endif
+}
+
+static inline __attribute__((always_inline)) uint64_t GetSystemTicks() {
+#if defined(VF_CONFIG_SCHED_MLFQ)
+    return MLFQGetSystemTicks();
+#elif defined(VF_CONFIG_SCHED_EEVDF)
+    return EEVDFGetSystemTicks();
 #elif defined(VF_CONFIG_SCHED_CFS)
     return 0; // not implemented
 #endif

@@ -1,13 +1,14 @@
 #include "VirtioBlk.h"
-#include "Spinlock.h"
 #include "Atomics.h"
 #include "Console.h"
 #include "PCI/PCI.h"
+#include "Spinlock.h"
+#include "SpinlockRust.h"
 #include "VMem.h"
-#include "stdbool.h"
 #include "Virtio.h"
+#include "stdbool.h"
 // Globals to hold the capability structures we find
-static volatile int* virtio_lock;
+static RustSpinLock* virtio_lock = NULL;
 static struct VirtioPciCap cap_common_cfg;
 static struct VirtioPciCap cap_notify_cfg;
 static struct VirtioPciCap cap_isr_cfg;
@@ -49,6 +50,11 @@ void ReadVirtioCapability(PciDevice device, uint8_t cap_offset, struct VirtioPci
 // Implementation for the VirtIO Block device driver.
 
 void InitializeVirtioBlk(PciDevice device) {
+    virtio_lock = rust_spinlock_new();
+    if (!virtio_lock) {
+        PrintKernelError("VirtIO-Blk: - Failed to initialize spinlock.\n");
+        return;
+    }
     PrintKernel("VirtIO-Blk: Initializing device at B/D/F ");
     PrintKernelHex(device.bus); PrintKernel("/"); PrintKernelHex(device.device); PrintKernel("/"); PrintKernelHex(device.function);
     PrintKernel("\n");
@@ -210,11 +216,11 @@ void InitializeVirtioBlk(PciDevice device) {
 }
 
 int VirtioBlkRead(uint64_t sector, void* buffer) {
-    SpinLock(&virtio_lock);
+    rust_spinlock_lock(virtio_lock);
 
     if ((vq_next_desc_idx + 3) > vq_size) {
         PrintKernel("VirtIO-Blk: Error - Not enough descriptors available\n");
-        SpinUnlock(&virtio_lock);
+        rust_spinlock_unlock(virtio_lock);
         return -1;
     }
 
@@ -224,7 +230,7 @@ int VirtioBlkRead(uint64_t sector, void* buffer) {
         PrintKernel("VirtIO-Blk: Failed to allocate request header/status\n");
         if (req_hdr) VMemFree(req_hdr, sizeof(struct VirtioBlkReq));
         if (status)  VMemFree(status,  sizeof(uint8_t));
-        SpinUnlock(&virtio_lock);
+        rust_spinlock_unlock(virtio_lock);
         return -1;
     }
 
@@ -273,16 +279,16 @@ int VirtioBlkRead(uint64_t sector, void* buffer) {
         last_used_idx++;
     }
 
-    SpinUnlock(&virtio_lock);
+    rust_spinlock_unlock(virtio_lock);
     return 0; 
 }
 
 int VirtioBlkWrite(uint64_t sector, void* buffer) {
-    SpinLock(&virtio_lock);
+    rust_spinlock_lock(virtio_lock);
 
     if ((vq_next_desc_idx + 3) > vq_size) {
         PrintKernel("VirtIO-Blk: Error - Not enough descriptors available\n");
-        SpinUnlock(&virtio_lock);
+        rust_spinlock_unlock(virtio_lock);
         return -1;
     }
 
@@ -292,7 +298,7 @@ int VirtioBlkWrite(uint64_t sector, void* buffer) {
         PrintKernel("VirtIO-Blk: Failed to allocate request header/status\n");
         if (req_hdr) VMemFree(req_hdr, sizeof(struct VirtioBlkReq));
         if (status)  VMemFree(status,  sizeof(uint8_t));
-        SpinUnlock(&virtio_lock);
+        rust_spinlock_unlock(virtio_lock);
         return -1;
     }
 
@@ -341,6 +347,6 @@ int VirtioBlkWrite(uint64_t sector, void* buffer) {
         last_used_idx++;
     }
 
-    SpinUnlock(&virtio_lock);
+    rust_spinlock_unlock(virtio_lock);
     return 0;
 }

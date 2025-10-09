@@ -1,7 +1,6 @@
 #include "Ipc.h"
 #include "../../mm/MemOps.h"
-#include "MLFQ.h"
-#include "Spinlock.h"
+#include "Scheduler.h"
 
 static uint32_t next_sequence_id = 1;
 
@@ -40,10 +39,11 @@ static uint32_t find_priority_message(MessageQueue* queue, IpcPriority min_prior
 
 IpcResult IpcSendMessage(uint32_t target_pid, const IpcMessage* msg) {
     if (!msg) return IPC_ERROR_INVALID_MSG;
-    MLFQProcessControlBlock* target = MLFQGetCurrentProcessByPID(target_pid);
+    CurrentProcessControlBlock* target = GetCurrentProcessByPID(target_pid);
     if (!target) return IPC_ERROR_NO_PROCESS;
     MessageQueue* queue = &target->ipc_queue;
-    SpinLock(&queue->lock);
+    if (!queue->lock) queue->lock = rust_spinlock_new();
+    rust_spinlock_lock(queue->lock);
     IpcMessage* dest = NULL;
     if (queue->count >= MAX_MESSAGES) {
         // Try to drop lowest priority message if this is higher priority
@@ -62,11 +62,11 @@ IpcResult IpcSendMessage(uint32_t target_pid, const IpcMessage* msg) {
                 dest = &queue->messages[drop_idx];
                 queue->dropped_count++;
             } else {
-                SpinUnlock(&queue->lock);
+                rust_spinlock_unlock(queue->lock);
                 return IPC_ERROR_QUEUE_FULL;
             }
         } else {
-            SpinUnlock(&queue->lock);
+            rust_spinlock_unlock(queue->lock);
             return IPC_ERROR_QUEUE_FULL;
         }
     } else {
@@ -76,7 +76,7 @@ IpcResult IpcSendMessage(uint32_t target_pid, const IpcMessage* msg) {
         queue->count++;
     }
     FastMemcpy(dest, msg, sizeof(IpcMessage));
-    dest->timestamp   = MLFQGetSystemTicks();
+    dest->timestamp   = GetSystemTicks();
     dest->sequence_id = get_next_sequence_id();
     // Recompute the priority bitmap so it's accurate after any replacement
     queue->priority_bitmap = 0;
@@ -88,16 +88,17 @@ IpcResult IpcSendMessage(uint32_t target_pid, const IpcMessage* msg) {
     if (target->state == PROC_BLOCKED) {
         target->state = PROC_READY;
     }
-    SpinUnlock(&queue->lock);
+    rust_spinlock_unlock(queue->lock);
     return IPC_SUCCESS;
 }
 
 IpcResult IpcReceiveMessage(IpcMessage* msg_buffer) {
     if (!msg_buffer) return IPC_ERROR_INVALID_MSG;
-    MLFQProcessControlBlock* current = MLFQGetCurrentProcess();
+    CurrentProcessControlBlock* current = GetCurrentProcess();
     MessageQueue* queue = &current->ipc_queue;
     while (true) {
-        SpinLock(&queue->lock);
+        if (!queue->lock) queue->lock = rust_spinlock_new();
+        rust_spinlock_lock(queue->lock);
 
         if (queue->count > 0) {
             uint32_t msg_idx = find_priority_message(queue, IPC_PRIORITY_LOW);
@@ -126,22 +127,22 @@ IpcResult IpcReceiveMessage(IpcMessage* msg_buffer) {
                 }
             }
 
-            SpinUnlock(&queue->lock);
+            rust_spinlock_unlock(queue->lock);
             return IPC_SUCCESS;
         }
 
         current->state = PROC_BLOCKED;
-        SpinUnlock(&queue->lock);
-        MLFQYield();
+        rust_spinlock_unlock(queue->lock);
+        Yield();
     }
 }
 
 IpcResult IpcReceiveMessageType(IpcMessage* msg_buffer, IpcMessageType type) {
     if (!msg_buffer) return IPC_ERROR_INVALID_MSG;
-    MLFQProcessControlBlock* current = MLFQGetCurrentProcess();
+    CurrentProcessControlBlock* current = GetCurrentProcess();
     MessageQueue* queue = &current->ipc_queue;
     while (true) {
-        SpinLock(&queue->lock);
+        rust_spinlock_lock(queue->lock);
 
         // Look for message of specific type
         for (uint32_t i = 0; i < queue->count; i++) {
@@ -165,15 +166,15 @@ IpcResult IpcReceiveMessageType(IpcMessage* msg_buffer, IpcMessageType type) {
                     uint32_t idx2 = (queue->head + k) % MAX_MESSAGES;
                     update_priority_bitmap(queue, queue->messages[idx2].priority);
                 }
-                SpinUnlock(&queue->lock);
+                rust_spinlock_unlock(queue->lock);
                 return IPC_SUCCESS;
             }
         }
 
         // Mark blocked while still holding the lock to avoid a wakeup‐before‐block race
         current->state = PROC_BLOCKED;
-        SpinUnlock(&queue->lock);
-        MLFQYield();
+        rust_spinlock_unlock(queue->lock);
+        Yield();
     }
 }
 
@@ -183,7 +184,7 @@ IpcResult IpcSendRequest(uint32_t target_pid, const void* request_data, uint64_t
     }
     
     IpcMessage msg = {
-        .sender_pid = MLFQGetCurrentProcess()->pid,
+        .sender_pid = GetCurrentProcess()->pid,
         .type = IPC_TYPE_REQUEST,
         .priority = IPC_PRIORITY_NORMAL,
         .size = size + 8
@@ -201,7 +202,7 @@ IpcResult IpcSendResponse(uint32_t target_pid, uint32_t request_id, const void* 
     if (size > (IPC_MAX_PAYLOAD - 8)) return IPC_ERROR_INVALID_MSG;
     
     IpcMessage msg = {
-        .sender_pid = MLFQGetCurrentProcess()->pid,
+        .sender_pid = GetCurrentProcess()->pid,
         .type = IPC_TYPE_RESPONSE,
         .priority = IPC_PRIORITY_HIGH,
         .size = size + 8
@@ -217,7 +218,7 @@ IpcResult IpcSendResponse(uint32_t target_pid, uint32_t request_id, const void* 
 }
 
 uint32_t IpcGetQueueCount(void) {
-    MLFQProcessControlBlock* current = MLFQGetCurrentProcess();
+    CurrentProcessControlBlock* current = GetCurrentProcess();
     return current->ipc_queue.count;
 }
 
@@ -226,27 +227,27 @@ bool IpcHasMessages(void) {
 }
 
 bool IpcHasMessageType(IpcMessageType type) {
-    MLFQProcessControlBlock* current = MLFQGetCurrentProcess();
+    CurrentProcessControlBlock* current = GetCurrentProcess();
     MessageQueue* queue = &current->ipc_queue;
     
-    SpinLock(&queue->lock);
+    rust_spinlock_lock(queue->lock);
     for (uint32_t i = 0; i < queue->count; i++) {
         uint32_t idx = (queue->head + i) % MAX_MESSAGES;
         if (queue->messages[idx].type == type) {
-            SpinUnlock(&queue->lock);
+            rust_spinlock_unlock(queue->lock);
             return true;
         }
     }
-    SpinUnlock(&queue->lock);
+    rust_spinlock_unlock(queue->lock);
     return false;
 }
 
 void IpcFlushQueue(void) {
-    MLFQProcessControlBlock* current = MLFQGetCurrentProcess();
+    CurrentProcessControlBlock* current = GetCurrentProcess();
     MessageQueue* queue = &current->ipc_queue;
     
-    SpinLock(&queue->lock);
+    rust_spinlock_lock(queue->lock);
     queue->head = queue->tail = queue->count = 0;
     queue->priority_bitmap = 0;
-    SpinUnlock(&queue->lock);
+    rust_spinlock_unlock(queue->lock);
 }
