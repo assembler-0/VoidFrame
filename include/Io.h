@@ -23,16 +23,6 @@ static inline uint16_t inw(uint16_t port) {
     return ret;
 }
 
-static inline void outd(uint16_t port, uint32_t val) {
-    __asm__ volatile ("outl %0, %1" : : "a"(val), "Nd"(port));
-}
-
-static inline uint32_t ind(uint16_t port) {
-    uint32_t ret;
-    __asm__ volatile ("inl %1, %0" : "=a"(ret) : "Nd"(port));
-    return ret;
-}
-
 static inline void outl(uint16_t port, uint32_t val) {
     __asm__ volatile ("outl %0, %1" : : "a"(val), "Nd"(port));
 }
@@ -43,30 +33,12 @@ static inline uint32_t inl(uint16_t port) {
     return ret;
 }
 
-static inline void outq(uint16_t port, uint64_t val) {
-    __asm__ volatile ("outq %0, %1" : : "a"(val), "Nd"(port));
-}
-
-static inline uint64_t inq(uint16_t port) {
-    uint64_t ret;
-    __asm__ volatile ("inq %1, %0" : "=a"(ret) : "Nd"(port));
-    return ret;
-}
-
 static inline void outsb(uint16_t port, void* buf, size_t len) {
     __asm__ volatile ("cld; rep outsb" : "+D"(buf), "+c"(len) : "d"(port));
 }
 
 static inline void insb(uint16_t port, void* buf, size_t len) {
     __asm__ volatile ("cld; rep insb" : "+D"(buf), "+c"(len) : "d"(port));
-}
-
-static inline void outsd(uint16_t port, void* buf, size_t len) {
-    __asm__ volatile ("cld; rep outsd" : "+D"(buf), "+c"(len) : "d"(port));
-}
-
-static inline void insd(uint16_t port, void* buf, size_t len) {
-    __asm__ volatile ("cld; rep insd" : "+D"(buf), "+c"(len) : "d"(port));
 }
 
 static inline void outsl(uint16_t port, void* buf, size_t len) {

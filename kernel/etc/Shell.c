@@ -596,7 +596,6 @@ static void CatHandler(const char * args) {
         if (bytes > 0) {
             PrintKernel((char*)file_buffer);
         }
-        PrintKernel("\n");
     } else {
         PrintKernel("cat: file not found or read error\n");
     }
