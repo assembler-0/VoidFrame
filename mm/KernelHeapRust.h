@@ -35,6 +35,7 @@ void rust_heap_get_percpu_stats(size_t cpu, uint64_t* hits, uint64_t* misses);
 // Heap management
 void rust_heap_get_stats(HeapStats* stats);
 int rust_heap_validate(void);
+void rust_heap_set_performance_mode(uint64_t mode);
 
 #ifdef __cplusplus
 }

@@ -29,25 +29,19 @@ impl LockFreeStack {
     }
 
     fn push(&self, ptr: *mut u8) {
-         unsafe {
-             let node_mem = backend_kmalloc(core::mem::size_of::<Node>());
-             if node_mem.is_null() {
-                 unsafe {
-                     backend_kfree(ptr);
-                 }
-                 return;
-             }
-             let new_node = unsafe { &mut *(node_mem as *mut Node) };
-             new_node.ptr = ptr;
-             let mut head = self.head.load(Ordering::Relaxed);
-             loop {
-                 new_node.next = head;
-                 match self.head.compare_exchange_weak(head, new_node, Ordering::Release, Ordering::Relaxed) {
-                     Ok(_) => break,
-                     Err(h) => head = h,
-                 }
-             }
-         }
+        unsafe {
+            // Use the freed block itself as the node to avoid allocation
+            let new_node = ptr as *mut Node;
+            (*new_node).ptr = ptr;
+            let mut head = self.head.load(Ordering::Relaxed);
+            loop {
+                (*new_node).next = head;
+                match self.head.compare_exchange_weak(head, new_node, Ordering::Release, Ordering::Relaxed) {
+                    Ok(_) => break,
+                    Err(h) => head = h,
+                }
+            }
+        }
     }
 
     fn pop(&self) -> Option<*mut u8> {
@@ -63,9 +57,6 @@ impl LockFreeStack {
                 Ok(_) => {
                     self.hits.fetch_add(1, Ordering::Relaxed);
                     let ptr = unsafe { (*head).ptr };
-                    unsafe {
-                        backend_kfree(head as *mut u8);
-                    }
                     return Some(ptr);
                 }
                 Err(_) => continue,
@@ -92,28 +83,26 @@ use crate::backend::{
     rust_kfree_backend as backend_kfree,
     rust_krealloc_backend as backend_krealloc,
     rust_kcalloc_backend as backend_kcalloc,
-    HeapBlock
+    HeapBlock,
+    SIZE_CLASSES
 };
 
+// Match backend size classes for consistency
 #[inline]
 fn get_percpu_size_class(size: usize) -> Option<usize> {
-    match size {
-        1..=32 => Some(0),
-        33..=64 => Some(1), 
-        65..=128 => Some(2),
-        129..=256 => Some(3),
-        257..=512 => Some(4),
-        513..=1024 => Some(5),
-        1025..=2048 => Some(6),
-        2049..=4096 => Some(7),
-        _ => None,
+    for i in 0..PERCPU_SIZE_CLASSES {
+        if size <= SIZE_CLASSES[i] {
+            return Some(i);
+        }
     }
+    None
 }
 
-// Main allocation function with per-CPU fast path
+// Optimized allocation with reduced overhead
 #[no_mangle]
 pub unsafe extern "C" fn rust_kmalloc(size: usize) -> *mut u8 {
-    if PERCPU_ENABLED.load(Ordering::Relaxed) == 0 {
+    // Skip per-CPU for very small or very large allocations
+    if size < 32 || size > 1536 || PERCPU_ENABLED.load(Ordering::Relaxed) == 0 {
         return backend_kmalloc(size);
     }
 
@@ -144,11 +133,14 @@ pub unsafe extern "C" fn rust_kfree(ptr: *mut u8) {
     let block = HeapBlock::from_user_ptr(ptr);
     let size = (*block).size;
     
+    // Only cache if it matches a size class exactly
     if let Some(class) = get_percpu_size_class(size) {
-        let cpu = lapic_get_id() % MAX_CPUS;
-        let cache = &PERCPU_CACHES[cpu][class];
-        cache.push(ptr);
-        return;
+        if size == SIZE_CLASSES[class] && size >= 32 && size <= 1536 {
+            let cpu = lapic_get_id() % MAX_CPUS;
+            let cache = &PERCPU_CACHES[cpu][class];
+            cache.push(ptr);
+            return;
+        }
     }
     
     backend_kfree(ptr);

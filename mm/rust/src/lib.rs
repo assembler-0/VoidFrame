@@ -2,6 +2,7 @@
 #![no_main]
 
 mod backend;
+mod config;
 mod ffi;
 mod rust_heap;
 
@@ -24,6 +25,15 @@ pub use rust_heap::{
 pub use backend::{
     rust_heap_get_stats,
     rust_heap_validate,
+};
+
+// Export performance tuning functions
+pub use config::{
+    rust_heap_set_performance_mode,
+    rust_heap_tune_parameters,
+    PERF_MODE_FAST,
+    PERF_MODE_BALANCED,
+    PERF_MODE_SECURE,
 };
 
 #[panic_handler]

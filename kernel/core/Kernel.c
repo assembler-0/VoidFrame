@@ -40,6 +40,9 @@
 
 void KernelMainHigherHalf(void);
 #define KERNEL_STACK_SIZE (16 * 1024) // 16KB stack
+#ifndef VF_CONFIG_INIT_HEAP_RUST_PERF_LVL
+#define VF_CONFIG_INIT_HEAP_RUST_PERF_LVL 0
+#endif
 static uint8_t kernel_stack[KERNEL_STACK_SIZE]; // Statically allocate for simplicity
 extern uint8_t _kernel_phys_start[];
 extern uint8_t _kernel_phys_end[];
@@ -770,6 +773,10 @@ void KernelMainHigherHalf(void) {
 
 #ifdef VF_CONFIG_AUTOMATIC_POST
     ExecuteCommand("post");
+#endif
+
+#ifdef VF_CONFIG_HEAP_RUST
+    rust_heap_set_performance_mode(VF_CONFIG_INIT_HEAP_RUST_PERF_LVL);
 #endif
 
     PrintKernelSuccess("System: Kernel initialization complete\n");

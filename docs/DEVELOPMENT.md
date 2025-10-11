@@ -9,8 +9,8 @@ This document provides instructions for setting up a development environment for
 To build and run VoidFrame, you will need a specific set of tools. The primary development environment is a POSIX-compliant OS (like Linux or macOS) with an x86_64 CPU.
 
 ### Required Tools:
-- **Build Systems:** At least one of `cmake`, `meson`.
-- **Compiler Toolchain:** `clang` (C/C++ compiler) and `nasm` (assembler).
+- **Build Systems:** `cmake`.
+- **Compiler Toolchain:** `clang` (C/C++ compiler), `nasm` (assembler), `cargo` (Rust compiler).
 - **Build Executor:** `ninja`.
 - **Emulator:** `qemu`.
 - **Filesystem Tools:** `mkfs.fat`, `mkfs.ext2`.
@@ -29,7 +29,7 @@ Here are the commands to install the required dependencies on various platforms.
 
 ```bash
 # Update package list and install dependencies
-sudo pacman -Syu cmake meson ninja clang nasm qemu-full dosfstools e2fsprogs grub xorriso mtools
+sudo pacman -Syu cmake ninja clang nasm qemu-full dosfstools e2fsprogs grub xorriso mtools
 ```
 
 </details>
@@ -40,7 +40,7 @@ sudo pacman -Syu cmake meson ninja clang nasm qemu-full dosfstools e2fsprogs gru
 ```bash
 # Update package list and install dependencies
 sudo apt update
-sudo apt install -y cmake meson ninja-build clang nasm qemu-system-x86 dosfstools e2fsprogs grub-pc-bin xorriso mtools
+sudo apt install -y cmake ninja-build clang nasm qemu-system-x86 dosfstools e2fsprogs grub-pc-bin xorriso mtools
 ```
 
 </details>
@@ -50,7 +50,7 @@ sudo apt install -y cmake meson ninja-build clang nasm qemu-system-x86 dosfstool
 
 ```bash
 # Install dependencies
-sudo dnf install -y cmake meson ninja-build clang nasm qemu-system-x86 dosfstools e2fsprogs grub2-tools-extra xorriso mtools
+sudo dnf install -y cmake ninja-build clang nasm qemu-system-x86 dosfstools e2fsprogs grub2-tools-extra xorriso mtools
 ```
 
 </details>
@@ -64,7 +64,7 @@ It is recommended to use [Homebrew](https://brew.sh/) to install packages on mac
 
 ```bash
 # Install dependencies via Homebrew
-brew install cmake meson ninja llvm nasm qemu e2fsprogs dosfstools grub
+brew install cmake ninja llvm nasm qemu e2fsprogs dosfstools grub
 
 # Add LLVM to your PATH so the build system can find clang
 echo 'export PATH="/usr/local/opt/llvm/bin:$PATH"' >> ~/.zshrc
@@ -102,22 +102,6 @@ mkdir -p build && cd build
 
 # 2. Configure the project (example for Linux)
 cmake .. -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_TOOLCHAIN_FILE=../cmake/toolchain/linux-x64.cmake
-
-# 3. Build the kernel
-ninja
-
-# 4. Run the kernel in QEMU
-ninja run
-```
-
-### Using Meson (maintained)
-
-```bash
-# 1. Set up the build directory
-meson setup build
-
-# 2. Navigate to the build directory
-cd build
 
 # 3. Build the kernel
 ninja

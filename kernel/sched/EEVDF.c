@@ -977,15 +977,15 @@ EEVDFProcessControlBlock* EEVDFGetCurrentProcess(void) {
 }
 
 EEVDFProcessControlBlock* EEVDFGetCurrentProcessByPID(uint32_t pid) {
-    rust_rwlock_read_lock(&process_table_rwlock_eevdf, pid);
+    rust_rwlock_read_lock(process_table_rwlock_eevdf, pid);
     for (int i = 0; i < EEVDF_MAX_PROCESSES; i++) {
         if (processes[i].pid == pid && processes[i].state != PROC_TERMINATED) {
             EEVDFProcessControlBlock* found = &processes[i];
-            rust_rwlock_read_unlock(&process_table_rwlock_eevdf, pid);
+            rust_rwlock_read_unlock(process_table_rwlock_eevdf, pid);
             return found;
         }
     }
-    rust_rwlock_read_unlock(&process_table_rwlock_eevdf, pid);
+    rust_rwlock_read_unlock(process_table_rwlock_eevdf, pid);
     return NULL;
 }
 

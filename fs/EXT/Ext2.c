@@ -101,7 +101,7 @@ int Ext2ReadBlock(uint32_t block, void* buffer) {
 static FileSystemDriver ext2_driver = {"EXT2", Ext2Detect, Ext2Mount};
 
 int Ext2Mount(BlockDevice* device, const char* mount_point) {
-    volume.lock = rust_rwlock_new();
+    if (!volume.lock) volume.lock = rust_rwlock_new();
     if (!volume.lock) {
         PrintKernelF("EXT2: Failed to allocate lock.\n");
         return -1;
