@@ -89,6 +89,7 @@ IpcResult IpcSendMessage(uint32_t target_pid, const IpcMessage* msg) {
         target->state = PROC_READY;
     }
     rust_spinlock_unlock(queue->lock);
+    rust_spinlock_free(queue->lock);
     return IPC_SUCCESS;
 }
 
@@ -128,11 +129,13 @@ IpcResult IpcReceiveMessage(IpcMessage* msg_buffer) {
             }
 
             rust_spinlock_unlock(queue->lock);
+            rust_spinlock_free(queue->lock);
             return IPC_SUCCESS;
         }
 
         current->state = PROC_BLOCKED;
         rust_spinlock_unlock(queue->lock);
+        rust_spinlock_free(queue->lock);
         Yield();
     }
 }

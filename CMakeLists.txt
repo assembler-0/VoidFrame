@@ -2,7 +2,12 @@
 # VoidFrame CMake Build Script - v0.0.2-development3
 # ============================================================================
 cmake_minimum_required(VERSION 3.30)
-project(VoidFrame VERSION 0.0.2 LANGUAGES C CXX ASM_NASM)
+project(VoidFrame
+        VERSION 0.0.2
+        LANGUAGES C CXX ASM_NASM
+        HOMEPAGE_URL "https://github.com/assembler-0/VoidFrame"
+        DESCRIPTION "A hobbyist operating system kernel written in C and Rust"
+)
 enable_language(ASM_NASM)
 
 # ============================================================================
@@ -16,6 +21,7 @@ include(dependencies)
 include(flags)
 include(configuration)
 include(source)
+include(rust_utils)
 
 # ============================================================================
 # Platform Checks
@@ -44,6 +50,7 @@ endif()
 
 if(CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64")
     message(STATUS "CMake: Target Architecture: ${CMAKE_SYSTEM_PROCESSOR}")
+    set(Rust_CARGO_TARGET "x86_64-unknown-none")
 else()
     message(FATAL_ERROR "Unsupported target architecture: ${CMAKE_SYSTEM_PROCESSOR}")
 endif()
@@ -67,15 +74,28 @@ set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_C_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-# ============================================================================ 
-# Rust Memory Management
-# ============================================================================ 
-add_subdirectory(mm/rust)
-add_subdirectory(kernel/atomic/rust)
+# ============================================================================
+# Manifest paths for Rust components (corrosion with CMake)
+# ============================================================================
+set(RUST_HEAP_MANIFEST_PATH "${CMAKE_SOURCE_DIR}/mm/rust/Cargo.toml")
+set(RUST_ATOMIC_MANIFEST_PATH "${CMAKE_SOURCE_DIR}/kernel/atomic/rust/Cargo.toml")
 
-# ============================================================================ 
+# ============================================================================
+# Corrosion
+# ============================================================================
+add_subdirectory(corrosion)
+corrosion_import_crate(
+        MANIFEST_PATH ${RUST_HEAP_MANIFEST_PATH}
+        NO_STD
+)
+corrosion_import_crate(
+        MANIFEST_PATH ${RUST_ATOMIC_MANIFEST_PATH}
+        NO_STD
+)
+
+# ============================================================================
 # Build Include Directories
-# ============================================================================ 
+# ============================================================================
 include_directories(
     .
     include
@@ -116,9 +136,9 @@ include_directories(
     arch/x86_64/syscall
 )
 
-# ============================================================================ 
+# ============================================================================
 # Kernel Linking
-# ============================================================================ 
+# ============================================================================
 add_executable(voidframe.krnl
     ${C_SOURCES}
     ${CPP_SOURCES}
@@ -131,8 +151,8 @@ if(NOT EXCLUDE_EXTRA_OBJECTS)
 endif()
 
 # Rust libraries
-target_link_libraries(voidframe.krnl PRIVATE rust_heap)
-target_link_libraries(voidframe.krnl PRIVATE rust_spinlock)
+link_rust_library(voidframe.krnl voidframe-spinlock)
+link_rust_library(voidframe.krnl voidframe-mm)
 
 # Configure the linker to use ld.lld with proper arguments
 set_target_properties(voidframe.krnl PROPERTIES
@@ -140,7 +160,7 @@ set_target_properties(voidframe.krnl PROPERTIES
 )
 
 # Set linker flags for this specific target
-target_link_options(voidframe.krnl PRIVATE 
+target_link_options(voidframe.krnl PRIVATE
     -fuse-ld=lld
     -T ${CMAKE_CURRENT_SOURCE_DIR}/voidframe.ld
     -nostdlib
@@ -148,9 +168,9 @@ target_link_options(voidframe.krnl PRIVATE
     -Wl,-melf_x86_64
 )
 
-# ============================================================================ 
+# ============================================================================
 # ISO Creation
-# ============================================================================ 
+# ============================================================================
 add_custom_command(
     OUTPUT VoidFrame.iso
     COMMAND ${CMAKE_COMMAND} -E make_directory ${CMAKE_CURRENT_BINARY_DIR}/isodir/boot/grub
