@@ -1,6 +1,4 @@
 #include "Ext2.h"
-
-#include "../../kernel/atomic/Spinlock.h"
 #include "../../kernel/etc/Console.h"
 #include "../../kernel/etc/StringOps.h"
 #include "Scheduler.h"
@@ -9,6 +7,7 @@
 #include "../VFS.h"
 #include "FileSystem.h"
 #include "Rtc.h"
+#include "SpinlockRust.h"
 
 #define EXT2_SUPERBLOCK_OFFSET 1024
 #define EXT2_MAGIC 0xEF53
@@ -22,7 +21,7 @@ typedef struct {
     uint32_t num_groups;
     Ext2Superblock superblock;
     Ext2GroupDesc* group_descs;
-    rwlock_t lock;
+    RustRwLock* lock;
 } Ext2Volume;
 
 static Ext2Volume volume;
@@ -65,52 +64,55 @@ int Ext2Detect(BlockDevice* device) {
 
 
 static int Ext2WriteBlock(uint32_t block, const void* buffer) {
-    WriteLock(&volume.lock, GetCurrentProcess()->pid);
+    rust_rwlock_write_lock(volume.lock, GetCurrentProcess()->pid);
     if (block >= volume.superblock.s_blocks_count) {
         PrintKernelF("EXT2: Block %u out of bounds (max: %u)",
                      block, volume.superblock.s_blocks_count - 1);
-        WriteUnlock(&volume.lock);
+        rust_rwlock_write_unlock(volume.lock);
         return -1;
     }
     uint32_t num_sectors   = volume.block_size / 512;
     if (BlockDeviceWrite(volume.device->id, block * num_sectors, num_sectors, buffer) != 0) {
-        WriteUnlock(&volume.lock);
+        rust_rwlock_write_unlock(volume.lock);
         return -1;
     }
-    WriteUnlock(&volume.lock);
+    rust_rwlock_write_unlock(volume.lock);
     return 0;
 }
 
 // Helper to read a block from the disk
 int Ext2ReadBlock(uint32_t block, void* buffer) {
-    ReadLock(&volume.lock, GetCurrentProcess()->pid);
+    rust_rwlock_read_lock(volume.lock, GetCurrentProcess()->pid);
     if (block >= volume.superblock.s_blocks_count) {
         PrintKernelF("EXT2: Block %u out of bounds (max: %u)",
                      block, volume.superblock.s_blocks_count - 1);
-        ReadUnlock(&volume.lock, GetCurrentProcess()->pid);
+        rust_rwlock_read_unlock(volume.lock, GetCurrentProcess()->pid);
         return -1;
     }
     uint32_t num_sectors   = volume.block_size / 512;
     if (BlockDeviceRead(volume.device->id, block * num_sectors, num_sectors, buffer) != 0) {
-        ReadUnlock(&volume.lock, GetCurrentProcess()->pid);
+        rust_rwlock_read_unlock(volume.lock, GetCurrentProcess()->pid);
         return -1;
     }
-    ReadUnlock(&volume.lock, GetCurrentProcess()->pid);
+    rust_rwlock_read_unlock(volume.lock, GetCurrentProcess()->pid);
     return 0;
 }
 
 static FileSystemDriver ext2_driver = {"EXT2", Ext2Detect, Ext2Mount};
 
 int Ext2Mount(BlockDevice* device, const char* mount_point) {
-    volume.lock = (rwlock_t){0};
-    WriteLock(&volume.lock, GetCurrentProcess()->pid);
-
+    if (!volume.lock) volume.lock = rust_rwlock_new();
+    if (!volume.lock) {
+        PrintKernelF("EXT2: Failed to allocate lock.\n");
+        return -1;
+    }
+    rust_rwlock_write_lock(volume.lock, GetCurrentProcess()->pid);
     volume.device = device;
 
     uint8_t sb_buffer[1024];
     if (BlockDeviceRead(device->id, 2, 2, sb_buffer) != 0) {
         PrintKernelF("EXT2: Failed to read superblock.\n");
-        WriteUnlock(&volume.lock);
+        rust_rwlock_write_unlock(volume.lock);
         return -1;
     }
 
@@ -118,14 +120,14 @@ int Ext2Mount(BlockDevice* device, const char* mount_point) {
 
     if (volume.superblock.s_magic != EXT2_MAGIC) {
         PrintKernelF("EXT2: Invalid magic number. Not an EXT2 filesystem.\n");
-        WriteUnlock(&volume.lock);
+        rust_rwlock_write_unlock(volume.lock);
         return -1;
     }
 
     if (volume.superblock.s_log_block_size > 10) {
         PrintKernelF("EXT2: Invalid block size shift: %u\n",
                      volume.superblock.s_log_block_size);
-        WriteUnlock(&volume.lock);
+        rust_rwlock_write_unlock(volume.lock);
         return -1;
     }
     volume.block_size = 1024 << volume.superblock.s_log_block_size;
@@ -134,7 +136,7 @@ int Ext2Mount(BlockDevice* device, const char* mount_point) {
     volume.inodes_per_group = volume.superblock.s_inodes_per_group;
     if (volume.blocks_per_group == 0) {
         PrintKernelF("EXT2: Invalid blocks_per_group: 0\n");
-        WriteUnlock(&volume.lock);
+        rust_rwlock_write_unlock(volume.lock);
         return -1;
     }
     volume.num_groups = (volume.superblock.s_blocks_count + volume.blocks_per_group - 1) / volume.blocks_per_group;
@@ -151,7 +153,7 @@ int Ext2Mount(BlockDevice* device, const char* mount_point) {
     uint8_t* bgdt_buffer = KernelMemoryAlloc(bgdt_alloc_size);
     if (!bgdt_buffer) {
         PrintKernelF("EXT2: Failed to allocate memory for BGD table.\n");
-        WriteUnlock(&volume.lock);
+        rust_rwlock_write_unlock(volume.lock);
         return -1;
     }
     // Read each BGDT block into buffer
@@ -160,7 +162,7 @@ int Ext2Mount(BlockDevice* device, const char* mount_point) {
         if (Ext2ReadBlock(bgdt_block + i, bgdt_buffer + i * volume.block_size) != 0) {
             PrintKernelF("EXT2: Failed to read BGD table.\n");
             KernelFree(bgdt_buffer);
-            WriteUnlock(&volume.lock);
+            rust_rwlock_write_unlock(volume.lock);
             return -1;
         }
     }
@@ -174,26 +176,26 @@ int Ext2Mount(BlockDevice* device, const char* mount_point) {
         KernelFree(volume.group_descs);
         volume.group_descs = NULL;
         volume.device = NULL;
-        WriteUnlock(&volume.lock);
+        rust_rwlock_write_unlock(volume.lock);
         return -1;
     }
     PrintKernelF("EXT2: Mounted filesystem\n");
 
     PrintKernelSuccess("EXT2: Filesystem initialized successfully.\n");
-    WriteUnlock(&volume.lock);
+    rust_rwlock_write_unlock(volume.lock);
     return 0;
 }
 
 int Ext2ReadInode(uint32_t inode_num, Ext2Inode* inode) {
-    ReadLock(&volume.lock, GetCurrentProcess()->pid);
+    rust_rwlock_read_lock(volume.lock, GetCurrentProcess()->pid);
     if (inode_num == 0) {
-        ReadUnlock(&volume.lock, GetCurrentProcess()->pid);
+        rust_rwlock_read_unlock(volume.lock, GetCurrentProcess()->pid);
         return -1;
     }
 
     uint32_t group = (inode_num - 1) / volume.inodes_per_group;
     if (group >= volume.num_groups) {
-        ReadUnlock(&volume.lock, GetCurrentProcess()->pid);
+        rust_rwlock_read_unlock(volume.lock, GetCurrentProcess()->pid);
         return -1;
     }
 
@@ -205,33 +207,33 @@ int Ext2ReadInode(uint32_t inode_num, Ext2Inode* inode) {
 
     uint8_t* block_buffer = KernelMemoryAlloc(volume.block_size);
     if (!block_buffer) {
-        ReadUnlock(&volume.lock, GetCurrentProcess()->pid);
+        rust_rwlock_read_unlock(volume.lock, GetCurrentProcess()->pid);
         return -1;
     }
 
     if (Ext2ReadBlock(inode_table_block + block_offset, block_buffer) != 0) {
         KernelFree(block_buffer);
-        ReadUnlock(&volume.lock, GetCurrentProcess()->pid);
+        rust_rwlock_read_unlock(volume.lock, GetCurrentProcess()->pid);
         return -1;
     }
 
     FastMemcpy(inode, block_buffer + offset_in_block, sizeof(Ext2Inode));
 
     KernelFree(block_buffer);
-    ReadUnlock(&volume.lock, GetCurrentProcess()->pid);
+    rust_rwlock_read_unlock(volume.lock, GetCurrentProcess()->pid);
     return 0;
 }
 
 static int Ext2WriteInode(uint32_t inode_num, Ext2Inode* inode) {
-    WriteLock(&volume.lock, GetCurrentProcess()->pid);
+    rust_rwlock_write_lock(volume.lock, GetCurrentProcess()->pid);
     if (inode_num == 0) {
-        WriteUnlock(&volume.lock);
+        rust_rwlock_write_unlock(volume.lock);
         return -1;
     }
 
     uint32_t group = (inode_num - 1) / volume.inodes_per_group;
     if (group >= volume.num_groups) {
-        WriteUnlock(&volume.lock);
+        rust_rwlock_write_unlock(volume.lock);
         return -1;
     }
 
@@ -243,14 +245,14 @@ static int Ext2WriteInode(uint32_t inode_num, Ext2Inode* inode) {
 
     uint8_t* block_buffer = KernelMemoryAlloc(volume.block_size);
     if (!block_buffer) {
-        WriteUnlock(&volume.lock);
+        rust_rwlock_write_unlock(volume.lock);
         return -1;
     }
 
     // Read-modify-write the block containing the inode
     if (Ext2ReadBlock(inode_table_block + block_offset, block_buffer) != 0) {
         KernelFree(block_buffer);
-        WriteUnlock(&volume.lock);
+        rust_rwlock_write_unlock(volume.lock);
         return -1;
     }
 
@@ -258,26 +260,26 @@ static int Ext2WriteInode(uint32_t inode_num, Ext2Inode* inode) {
 
     if (Ext2WriteBlock(inode_table_block + block_offset, block_buffer) != 0) {
         KernelFree(block_buffer);
-        WriteUnlock(&volume.lock);
+        rust_rwlock_write_unlock(volume.lock);
         return -1;
     }
 
     KernelFree(block_buffer);
-    WriteUnlock(&volume.lock);
+    rust_rwlock_write_unlock(volume.lock);
     return 0;
 }
 
 // Find a directory entry in a directory inode
 uint32_t Ext2FindInDir(Ext2Inode* dir_inode, const char* name) {
-    ReadLock(&volume.lock, GetCurrentProcess()->pid);
+    rust_rwlock_read_lock(volume.lock, GetCurrentProcess()->pid);
     if (!S_ISDIR(dir_inode->i_mode)) {
-        ReadUnlock(&volume.lock, GetCurrentProcess()->pid);
+        rust_rwlock_read_unlock(volume.lock, GetCurrentProcess()->pid);
         return 0; // Not a directory
     }
 
     uint8_t* block_buffer = KernelMemoryAlloc(volume.block_size);
     if (!block_buffer) {
-        ReadUnlock(&volume.lock, GetCurrentProcess()->pid);
+        rust_rwlock_read_unlock(volume.lock, GetCurrentProcess()->pid);
         return 0;
     }
 
@@ -295,7 +297,7 @@ uint32_t Ext2FindInDir(Ext2Inode* dir_inode, const char* name) {
                 if (FastMemcmp(entry->name, name, entry->name_len) == 0) {
                     uint32_t inode_num = entry->inode;
                     KernelFree(block_buffer);
-                    ReadUnlock(&volume.lock, GetCurrentProcess()->pid);
+                    rust_rwlock_read_unlock(volume.lock, GetCurrentProcess()->pid);
                     return inode_num;
                 }
             }
@@ -305,16 +307,16 @@ uint32_t Ext2FindInDir(Ext2Inode* dir_inode, const char* name) {
     }
 
     KernelFree(block_buffer);
-    ReadUnlock(&volume.lock, GetCurrentProcess()->pid);
+    rust_rwlock_read_unlock(volume.lock, GetCurrentProcess()->pid);
     return 0; // Not found
 }
 
 uint32_t Ext2PathToInode(const char* path) {
-    ReadLock(&volume.lock, GetCurrentProcess()->pid);
+    rust_rwlock_read_lock(volume.lock, GetCurrentProcess()->pid);
     
 
     if (path[0] == '/' && (path[1] == '\0' || path[1] == ' ')) {
-        ReadUnlock(&volume.lock, GetCurrentProcess()->pid);
+        rust_rwlock_read_unlock(volume.lock, GetCurrentProcess()->pid);
         return 2; // Root directory inode
     }
 
@@ -322,7 +324,7 @@ uint32_t Ext2PathToInode(const char* path) {
     uint32_t current_inode_num = 2;
     Ext2Inode current_inode;
     if (Ext2ReadInode(current_inode_num, &current_inode) != 0) {
-        ReadUnlock(&volume.lock, GetCurrentProcess()->pid);
+        rust_rwlock_read_unlock(volume.lock, GetCurrentProcess()->pid);
         return 0;
     }
 
@@ -339,45 +341,45 @@ uint32_t Ext2PathToInode(const char* path) {
         component[i] = '\0';
 
         if (!S_ISDIR(current_inode.i_mode)) {
-            ReadUnlock(&volume.lock, GetCurrentProcess()->pid);
+            rust_rwlock_read_unlock(volume.lock, GetCurrentProcess()->pid);
             return 0; // Not a directory, but path continues
         }
 
         current_inode_num = Ext2FindInDir(&current_inode, component);
         if (current_inode_num == 0) {
-            ReadUnlock(&volume.lock, GetCurrentProcess()->pid);
+            rust_rwlock_read_unlock(volume.lock, GetCurrentProcess()->pid);
             return 0; // Component not found
         }
 
         if (Ext2ReadInode(current_inode_num, &current_inode) != 0) {
-            ReadUnlock(&volume.lock, GetCurrentProcess()->pid);
+            rust_rwlock_read_unlock(volume.lock, GetCurrentProcess()->pid);
             return 0; // Failed to read next inode
         }
 
         if (*p == '/') p++;
     }
 
-    ReadUnlock(&volume.lock, GetCurrentProcess()->pid);
+    rust_rwlock_read_unlock(volume.lock, GetCurrentProcess()->pid);
     return current_inode_num;
 }
 
 int Ext2ReadFile(const char* path, void* buffer, uint32_t max_size) {
-    ReadLock(&volume.lock, GetCurrentProcess()->pid);
+    rust_rwlock_read_lock(volume.lock, GetCurrentProcess()->pid);
 
     uint32_t inode_num = Ext2PathToInode(path);
     if (inode_num == 0) {
-        ReadUnlock(&volume.lock, GetCurrentProcess()->pid);
+        rust_rwlock_read_unlock(volume.lock, GetCurrentProcess()->pid);
         return -1; // Not found
     }
 
     Ext2Inode inode;
     if (Ext2ReadInode(inode_num, &inode) != 0) {
-        ReadUnlock(&volume.lock, GetCurrentProcess()->pid);
+        rust_rwlock_read_unlock(volume.lock, GetCurrentProcess()->pid);
         return -1; // Failed to read inode
     }
 
     if (!S_ISREG(inode.i_mode)) {
-        ReadUnlock(&volume.lock, GetCurrentProcess()->pid);
+        rust_rwlock_read_unlock(volume.lock, GetCurrentProcess()->pid);
         return -1; // Not a regular file
     }
 
@@ -387,7 +389,7 @@ int Ext2ReadFile(const char* path, void* buffer, uint32_t max_size) {
 
     uint8_t* block_buffer = KernelMemoryAlloc(volume.block_size);
     if (!block_buffer) {
-        ReadUnlock(&volume.lock, GetCurrentProcess()->pid);
+        rust_rwlock_read_unlock(volume.lock, GetCurrentProcess()->pid);
         return -1;
     }
 
@@ -397,7 +399,7 @@ int Ext2ReadFile(const char* path, void* buffer, uint32_t max_size) {
 
         if (Ext2ReadBlock(inode.i_block[i], block_buffer) != 0) {
             KernelFree(block_buffer);
-            ReadUnlock(&volume.lock, GetCurrentProcess()->pid);
+            rust_rwlock_read_unlock(volume.lock, GetCurrentProcess()->pid);
             return -1;
         }
 
@@ -410,12 +412,12 @@ int Ext2ReadFile(const char* path, void* buffer, uint32_t max_size) {
     }
 
     KernelFree(block_buffer);
-    ReadUnlock(&volume.lock, GetCurrentProcess()->pid);
+    rust_rwlock_read_unlock(volume.lock, GetCurrentProcess()->pid);
     return bytes_read;
 }
 
 int Ext2WriteFile(const char* path, const void* buffer, uint32_t size) {
-    WriteLock(&volume.lock, GetCurrentProcess()->pid);
+    rust_rwlock_write_lock(volume.lock, GetCurrentProcess()->pid);
 
     uint32_t inode_num = Ext2PathToInode(path);
 
@@ -423,25 +425,25 @@ int Ext2WriteFile(const char* path, const void* buffer, uint32_t size) {
     if (inode_num == 0) {
         if (Ext2CreateFile(path) != 0) {
             PrintKernelF("EXT2: WriteFile: Failed to create file: %s\n", path);
-            WriteUnlock(&volume.lock);
+            rust_rwlock_write_unlock(volume.lock);
             return -1;
         }
         inode_num = Ext2PathToInode(path);
         if (inode_num == 0) {
             PrintKernelF("EXT2: WriteFile: Failed to find created file: %s\n", path);
-            WriteUnlock(&volume.lock);
+            rust_rwlock_write_unlock(volume.lock);
             return -1;
         }
     }
 
     Ext2Inode inode;
     if (Ext2ReadInode(inode_num, &inode) != 0) {
-        WriteUnlock(&volume.lock);
+        rust_rwlock_write_unlock(volume.lock);
         return -1;
     }
 
     if (!S_ISREG(inode.i_mode)) {
-        WriteUnlock(&volume.lock);
+        rust_rwlock_write_unlock(volume.lock);
         return -1;
     }
 
@@ -450,7 +452,7 @@ int Ext2WriteFile(const char* path, const void* buffer, uint32_t size) {
 
     uint8_t* block_buffer = KernelMemoryAlloc(volume.block_size);
     if (!block_buffer) {
-        WriteUnlock(&volume.lock);
+        rust_rwlock_write_unlock(volume.lock);
         return -1;
     }
 
@@ -492,45 +494,45 @@ int Ext2WriteFile(const char* path, const void* buffer, uint32_t size) {
         if ((uint32_t)bytes_written != inode.i_size) {
             inode.i_size = bytes_written;
             if (Ext2WriteInode(inode_num, &inode) != 0) {
-                WriteUnlock(&volume.lock);
+                rust_rwlock_write_unlock(volume.lock);
                 return -1;
             }
         }
     }
 
     if (bytes_written <= 0 && size > 0) {
-        WriteUnlock(&volume.lock);
+        rust_rwlock_write_unlock(volume.lock);
         return -1;
     }
 
-    WriteUnlock(&volume.lock);
+    rust_rwlock_write_unlock(volume.lock);
     return bytes_written;
 }
 
 
 int Ext2ListDir(const char* path) {
-    ReadLock(&volume.lock, GetCurrentProcess()->pid);
+    rust_rwlock_read_lock(volume.lock, GetCurrentProcess()->pid);
 
     uint32_t inode_num = Ext2PathToInode(path);
     if (inode_num == 0) {
-        ReadUnlock(&volume.lock, GetCurrentProcess()->pid);
+        rust_rwlock_read_unlock(volume.lock, GetCurrentProcess()->pid);
         return -1;
     }
 
     Ext2Inode inode;
     if (Ext2ReadInode(inode_num, &inode) != 0) {
-        ReadUnlock(&volume.lock, GetCurrentProcess()->pid);
+        rust_rwlock_read_unlock(volume.lock, GetCurrentProcess()->pid);
         return -1;
     }
 
     if (!S_ISDIR(inode.i_mode)) {
-        ReadUnlock(&volume.lock, GetCurrentProcess()->pid);
+        rust_rwlock_read_unlock(volume.lock, GetCurrentProcess()->pid);
         return -1;
     }
 
     uint8_t* block_buffer = KernelMemoryAlloc(volume.block_size);
     if (!block_buffer) {
-        ReadUnlock(&volume.lock, GetCurrentProcess()->pid);
+        rust_rwlock_read_unlock(volume.lock, GetCurrentProcess()->pid);
         return -1;
     }
 
@@ -557,7 +559,7 @@ int Ext2ListDir(const char* path) {
     }
 
     KernelFree(block_buffer);
-    ReadUnlock(&volume.lock, GetCurrentProcess()->pid);
+    rust_rwlock_read_unlock(volume.lock, GetCurrentProcess()->pid);
     return 0;
 }
 
@@ -586,10 +588,10 @@ static void Ext2ClearBit(uint8_t* bitmap, uint32_t bit) {
 }
 
 static uint32_t Ext2AllocateInode() {
-    WriteLock(&volume.lock, GetCurrentProcess()->pid);
+    rust_rwlock_write_lock(volume.lock, GetCurrentProcess()->pid);
     uint8_t* bitmap_buffer = KernelMemoryAlloc(volume.block_size);
     if (!bitmap_buffer) {
-        WriteUnlock(&volume.lock);
+        rust_rwlock_write_unlock(volume.lock);
         return 0;
     }
 
@@ -611,22 +613,22 @@ static uint32_t Ext2AllocateInode() {
                 volume.superblock.s_free_inodes_count--;
 
                 KernelFree(bitmap_buffer);
-                WriteUnlock(&volume.lock);
+                rust_rwlock_write_unlock(volume.lock);
                 return group * volume.inodes_per_group + free_bit + 1;
             }
         }
     }
 
     KernelFree(bitmap_buffer);
-    WriteUnlock(&volume.lock);
+    rust_rwlock_write_unlock(volume.lock);
     return 0;
 }
 
 static uint32_t Ext2AllocateBlock() {
-    WriteLock(&volume.lock, GetCurrentProcess()->pid);
+    rust_rwlock_write_lock(volume.lock, GetCurrentProcess()->pid);
     uint8_t* bitmap_buffer = KernelMemoryAlloc(volume.block_size);
     if (!bitmap_buffer) {
-        WriteUnlock(&volume.lock);
+        rust_rwlock_write_unlock(volume.lock);
         return 0;
     }
 
@@ -648,33 +650,33 @@ static uint32_t Ext2AllocateBlock() {
                 volume.superblock.s_free_blocks_count--;
 
                 KernelFree(bitmap_buffer);
-                WriteUnlock(&volume.lock);
+                rust_rwlock_write_unlock(volume.lock);
                 return group * volume.blocks_per_group + free_bit + volume.superblock.s_first_data_block;
             }
         }
     }
 
     KernelFree(bitmap_buffer);
-    WriteUnlock(&volume.lock);
+    rust_rwlock_write_unlock(volume.lock);
     return 0;
 }
 
 static int Ext2AddDirEntry(uint32_t dir_inode_num, const char* name, uint32_t file_inode_num, uint8_t file_type) {
-    WriteLock(&volume.lock, GetCurrentProcess()->pid);
+    rust_rwlock_write_lock(volume.lock, GetCurrentProcess()->pid);
     Ext2Inode dir_inode;
     if (Ext2ReadInode(dir_inode_num, &dir_inode) != 0) {
-        WriteUnlock(&volume.lock);
+        rust_rwlock_write_unlock(volume.lock);
         return -1;
     }
 
     if (!S_ISDIR(dir_inode.i_mode)) {
-        WriteUnlock(&volume.lock);
+        rust_rwlock_write_unlock(volume.lock);
         return -1;
     }
 
     uint8_t* block_buffer = KernelMemoryAlloc(volume.block_size);
     if (!block_buffer) {
-        WriteUnlock(&volume.lock);
+        rust_rwlock_write_unlock(volume.lock);
         return -1;
     }
 
@@ -717,7 +719,7 @@ static int Ext2AddDirEntry(uint32_t dir_inode_num, const char* name, uint32_t fi
 
                 if (Ext2WriteBlock(dir_inode.i_block[i], block_buffer) == 0) {
                     KernelFree(block_buffer);
-                    WriteUnlock(&volume.lock);
+                    rust_rwlock_write_unlock(volume.lock);
                     return 0;
                 }
             }
@@ -744,7 +746,7 @@ static int Ext2AddDirEntry(uint32_t dir_inode_num, const char* name, uint32_t fi
             if (Ext2WriteBlock(new_block, block_buffer) == 0 &&
                 Ext2WriteInode(dir_inode_num, &dir_inode) == 0) {
                 KernelFree(block_buffer);
-                WriteUnlock(&volume.lock);
+                rust_rwlock_write_unlock(volume.lock);
                 return 0;
             }
             break;
@@ -752,12 +754,12 @@ static int Ext2AddDirEntry(uint32_t dir_inode_num, const char* name, uint32_t fi
     }
 
     KernelFree(block_buffer);
-    WriteUnlock(&volume.lock);
+    rust_rwlock_write_unlock(volume.lock);
     return -1;
 }
 
 int Ext2CreateFile(const char* path) {
-    WriteLock(&volume.lock, GetCurrentProcess()->pid);
+    rust_rwlock_write_lock(volume.lock, GetCurrentProcess()->pid);
 
     // Extract directory path and filename
     char dir_path[256] = "/";
@@ -771,7 +773,7 @@ int Ext2CreateFile(const char* path) {
     if (last_slash && last_slash != path) {
         int dir_len = last_slash - path;
         if (dir_len >= 255) {
-            WriteUnlock(&volume.lock);
+            rust_rwlock_write_unlock(volume.lock);
             return -1;
         }
         FastMemcpy(dir_path, path, dir_len);
@@ -783,7 +785,7 @@ int Ext2CreateFile(const char* path) {
 
     // Check if file already exists
     if (Ext2PathToInode(path) != 0) {
-        WriteUnlock(&volume.lock);
+        rust_rwlock_write_unlock(volume.lock);
         return 0; // Success - file exists
     }
 
@@ -791,7 +793,7 @@ int Ext2CreateFile(const char* path) {
     uint32_t parent_inode_num = Ext2PathToInode(dir_path);
     if (parent_inode_num == 0) {
         PrintKernelF("EXT2: CreateFile: Parent directory not found: %s\n", dir_path);
-        WriteUnlock(&volume.lock);
+        rust_rwlock_write_unlock(volume.lock);
         return -1;
     }
 
@@ -799,7 +801,7 @@ int Ext2CreateFile(const char* path) {
     uint32_t new_inode_num = Ext2AllocateInode();
     if (new_inode_num == 0) {
         PrintKernelF("EXT2: CreateFile: Failed to allocate inode\n");
-        WriteUnlock(&volume.lock);
+        rust_rwlock_write_unlock(volume.lock);
         return -1;
     }
 
@@ -807,7 +809,7 @@ int Ext2CreateFile(const char* path) {
     uint32_t first_block = Ext2AllocateBlock();
     if (first_block == 0) {
         PrintKernelF("EXT2: CreateFile: Failed to allocate data block\n");
-        WriteUnlock(&volume.lock);
+        rust_rwlock_write_unlock(volume.lock);
         return -1;
     }
 
@@ -828,14 +830,14 @@ int Ext2CreateFile(const char* path) {
     // Write inode
     if (Ext2WriteInode(new_inode_num, &new_inode) != 0) {
         PrintKernelF("EXT2: CreateFile: Failed to write inode\n");
-        WriteUnlock(&volume.lock);
+        rust_rwlock_write_unlock(volume.lock);
         return -1;
     }
 
     // Add directory entry
     if (Ext2AddDirEntry(parent_inode_num, filename, new_inode_num, 1) != 0) { // 1 = regular file
         PrintKernelF("EXT2: CreateFile: Failed to add directory entry\n");
-        WriteUnlock(&volume.lock);
+        rust_rwlock_write_unlock(volume.lock);
         return -1;
     }
 
@@ -848,14 +850,14 @@ int Ext2CreateFile(const char* path) {
     }
 
     PrintKernelSuccessF("EXT2: Created file: %s (inode %u)\n", path, new_inode_num);
-    WriteUnlock(&volume.lock);
+    rust_rwlock_write_unlock(volume.lock);
     return 0;
 }
 
 
 
 int Ext2CreateDir(const char* path) {
-    WriteLock(&volume.lock, GetCurrentProcess()->pid);
+    rust_rwlock_write_lock(volume.lock, GetCurrentProcess()->pid);
     // Extract directory path and dirname
     char parent_path[256] = "/";
     char dirname[256];
@@ -868,7 +870,7 @@ int Ext2CreateDir(const char* path) {
     if (last_slash && last_slash != path) {
         int parent_len = last_slash - path;
         if (parent_len >= 255) {
-            WriteUnlock(&volume.lock);
+            rust_rwlock_write_unlock(volume.lock);
             return -1;
         }
         FastMemcpy(parent_path, path, parent_len);
@@ -880,7 +882,7 @@ int Ext2CreateDir(const char* path) {
 
     // Check if directory already exists
     if (Ext2PathToInode(path) != 0) {
-        WriteUnlock(&volume.lock);
+        rust_rwlock_write_unlock(volume.lock);
         return 0;
     }
 
@@ -888,7 +890,7 @@ int Ext2CreateDir(const char* path) {
     uint32_t parent_inode_num = Ext2PathToInode(parent_path);
     if (parent_inode_num == 0) {
         PrintKernelF("EXT2: CreateDir: Parent directory not found: %s\n", parent_path);
-        WriteUnlock(&volume.lock);
+        rust_rwlock_write_unlock(volume.lock);
         return -1;
     }
 
@@ -896,7 +898,7 @@ int Ext2CreateDir(const char* path) {
     uint32_t new_inode_num = Ext2AllocateInode();
     if (new_inode_num == 0) {
         PrintKernelF("EXT2: CreateDir: Failed to allocate inode\n");
-        WriteUnlock(&volume.lock);
+        rust_rwlock_write_unlock(volume.lock);
         return -1;
     }
 
@@ -904,7 +906,7 @@ int Ext2CreateDir(const char* path) {
     uint32_t dir_block = Ext2AllocateBlock();
     if (dir_block == 0) {
         PrintKernelF("EXT2: CreateDir: Failed to allocate data block\n");
-        WriteUnlock(&volume.lock);
+        rust_rwlock_write_unlock(volume.lock);
         return -1;
     }
 
@@ -925,7 +927,7 @@ int Ext2CreateDir(const char* path) {
     // Create directory entries (. and ..)
     uint8_t* dir_buffer = KernelMemoryAlloc(volume.block_size);
     if (!dir_buffer) {
-        WriteUnlock(&volume.lock);
+        rust_rwlock_write_unlock(volume.lock);
         return -1;
     }
 
@@ -953,7 +955,7 @@ int Ext2CreateDir(const char* path) {
         Ext2WriteInode(new_inode_num, &new_inode) != 0) {
         KernelFree(dir_buffer);
         PrintKernelF("EXT2: CreateDir: Failed to write directory data\n");
-        WriteUnlock(&volume.lock);
+        rust_rwlock_write_unlock(volume.lock);
         return -1;
     }
 
@@ -962,7 +964,7 @@ int Ext2CreateDir(const char* path) {
     // Add directory entry to parent
     if (Ext2AddDirEntry(parent_inode_num, dirname, new_inode_num, 2) != 0) { // 2 = directory
         PrintKernelF("EXT2: CreateDir: Failed to add directory entry\n");
-        WriteUnlock(&volume.lock);
+        rust_rwlock_write_unlock(volume.lock);
         return -1;
     }
 
@@ -974,7 +976,7 @@ int Ext2CreateDir(const char* path) {
     }
 
     PrintKernelSuccessF("EXT2: Created directory: %s (inode %u)\n", path, new_inode_num);
-    WriteUnlock(&volume.lock);
+    rust_rwlock_write_unlock(volume.lock);
     return 0;
 }
 
@@ -1023,18 +1025,18 @@ static void Ext2FreeInode(uint32_t inode_num) {
 
 
 int Ext2Delete(const char* path) {
-    WriteLock(&volume.lock, GetCurrentProcess()->pid);
+    rust_rwlock_write_lock(volume.lock, GetCurrentProcess()->pid);
 
     uint32_t inode_num = Ext2PathToInode(path);
     if (inode_num == 0) {
         PrintKernelF("EXT2: Delete: File not found: %s\n", path);
-        WriteUnlock(&volume.lock);
+        rust_rwlock_write_unlock(volume.lock);
         return -1; // Not found
     }
 
     Ext2Inode inode;
     if (Ext2ReadInode(inode_num, &inode) != 0) {
-        WriteUnlock(&volume.lock);
+        rust_rwlock_write_unlock(volume.lock);
         return -1;
     }
 
@@ -1051,7 +1053,7 @@ int Ext2Delete(const char* path) {
     inode.i_dtime = RtcGetUnixTime();
     inode.i_links_count = 0;
     if (Ext2WriteInode(inode_num, &inode) != 0) {
-        WriteUnlock(&volume.lock);
+        rust_rwlock_write_unlock(volume.lock);
         return -1;
     }
 
@@ -1074,19 +1076,19 @@ int Ext2Delete(const char* path) {
 
     uint32_t parent_inode_num = Ext2PathToInode(dir_path);
     if (parent_inode_num == 0) {
-        WriteUnlock(&volume.lock);
+        rust_rwlock_write_unlock(volume.lock);
         return -1; // Should not happen
     }
 
     Ext2Inode parent_inode;
     if (Ext2ReadInode(parent_inode_num, &parent_inode) != 0) {
-        WriteUnlock(&volume.lock);
+        rust_rwlock_write_unlock(volume.lock);
         return -1;
     }
 
     uint8_t* block_buffer = KernelMemoryAlloc(volume.block_size);
     if (!block_buffer) {
-        WriteUnlock(&volume.lock);
+        rust_rwlock_write_unlock(volume.lock);
         return -1;
     }
 
@@ -1119,64 +1121,64 @@ int Ext2Delete(const char* path) {
 
 end_delete_loop:
     KernelFree(block_buffer);
-    WriteUnlock(&volume.lock);
+    rust_rwlock_write_unlock(volume.lock);
     return res;
 }
 
 
 int Ext2IsFile(const char* path) {
-    ReadLock(&volume.lock, GetCurrentProcess()->pid);
+    rust_rwlock_read_lock(volume.lock, GetCurrentProcess()->pid);
     uint32_t inode_num = Ext2PathToInode(path);
     if (inode_num == 0) {
-        ReadUnlock(&volume.lock, GetCurrentProcess()->pid);
+        rust_rwlock_read_unlock(volume.lock, GetCurrentProcess()->pid);
         return 0;
     }
 
     Ext2Inode inode;
     if (Ext2ReadInode(inode_num, &inode) != 0) {
-        ReadUnlock(&volume.lock, GetCurrentProcess()->pid);
+        rust_rwlock_read_unlock(volume.lock, GetCurrentProcess()->pid);
         return 0;
     }
 
     int result = S_ISREG(inode.i_mode);
-    ReadUnlock(&volume.lock, GetCurrentProcess()->pid);
+    rust_rwlock_read_unlock(volume.lock, GetCurrentProcess()->pid);
     return result;
 }
 
 int Ext2IsDir(const char* path) {
-    ReadLock(&volume.lock, GetCurrentProcess()->pid);
+    rust_rwlock_read_lock(volume.lock, GetCurrentProcess()->pid);
     uint32_t inode_num = Ext2PathToInode(path);
     if (inode_num == 0) {
-        ReadUnlock(&volume.lock, GetCurrentProcess()->pid);
+        rust_rwlock_read_unlock(volume.lock, GetCurrentProcess()->pid);
         return 0;
     }
 
     Ext2Inode inode;
     if (Ext2ReadInode(inode_num, &inode) != 0) {
-        ReadUnlock(&volume.lock, GetCurrentProcess()->pid);
+        rust_rwlock_read_unlock(volume.lock, GetCurrentProcess()->pid);
         return 0;
     }
 
     int result = S_ISDIR(inode.i_mode);
-    ReadUnlock(&volume.lock, GetCurrentProcess()->pid);
+    rust_rwlock_read_unlock(volume.lock, GetCurrentProcess()->pid);
     return result;
 }
 
 uint64_t Ext2GetFileSize(const char* path) {
-    ReadLock(&volume.lock, GetCurrentProcess()->pid);
+    rust_rwlock_read_lock(volume.lock, GetCurrentProcess()->pid);
     uint32_t inode_num = Ext2PathToInode(path);
     if (inode_num == 0) {
-        ReadUnlock(&volume.lock, GetCurrentProcess()->pid);
+        rust_rwlock_read_unlock(volume.lock, GetCurrentProcess()->pid);
         return 0;
     }
 
     Ext2Inode inode;
     if (Ext2ReadInode(inode_num, &inode) != 0) {
-        ReadUnlock(&volume.lock, GetCurrentProcess()->pid);
+        rust_rwlock_read_unlock(volume.lock, GetCurrentProcess()->pid);
         return 0;
     }
 
     uint64_t size = inode.i_size;
-    ReadUnlock(&volume.lock, GetCurrentProcess()->pid);
+    rust_rwlock_read_unlock(volume.lock, GetCurrentProcess()->pid);
     return size;
 }

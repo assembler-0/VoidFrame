@@ -35,7 +35,7 @@
 #include "stdlib.h"
 #include "xHCI/xHCI.h"
 #include "KernelHeapRust.h"
-
+#include <arch/x86_64/features/x64.h>
 #define DATE __DATE__
 #define TIME __TIME__
 
@@ -220,7 +220,8 @@ static const HelpEntry dev_cmds[] = {
     {"alloc <size>", "Allocate memory"},
     {"panic <msg>", "Trigger panic"},
     {"vmemfreelist", "Show VMem free list"},
-    {"heapvallvl <0/1/2>", "Set heap validation level"},
+    {"heapvallvl <0/1/2>", "Set heap validation level (C)"},
+    {"heapperf <0/1/2>", "Set heap performance level (Rust)"},
     {"regdump", "Dump CPU registers"},
     {"fstest", "Run filesystem tests"},
     {"arptest", "Perform ARP test"},
@@ -364,7 +365,9 @@ static void AllocHandler(const char * args) {
         KernelFree(size_str);
         return;
     }
+    uint64_t start = rdtsc();
     if (!KernelMemoryAlloc((uint32_t)size)) PrintKernelErrorF("Allocation for %d bytes failed\n", size);
+    PrintKernelF("Allocation took: %d cycles\n", rdtsc() - start);
     KernelFree(size_str);
 }
 
@@ -1154,6 +1157,23 @@ static void ACPIHandler(const char* args) {
     KernelFree(status);
 }
 
+static void HeapPerfHandler(const char * args) {
+    char* mode = GetArg(args, 1);
+    if (!mode) {
+        PrintKernel("Usage: heapperf <0/1/2>\n");
+        return;
+    }
+    int imode = atoi(mode);
+    if (imode <= 2 && imode >= 0) {
+        KernelHeapPerfMode(imode);
+    } else {
+        PrintKernel("Usage: heapperf <0/1/2>\n");
+        KernelFree(mode);
+        return;
+    }
+    KernelFree(mode);
+}
+
 static const ShellCommand commands[] = {\
     {"help", HelpHandler},
     {"ps", PSHandler},
@@ -1206,6 +1226,7 @@ static const ShellCommand commands[] = {\
     {"snooze", SnoozeHandler},
     {"acpi", ACPIHandler},
     {"lsblk", BlockDevicePrint},
+    {"heapperf", HeapPerfHandler},
 };
 
 void ExecuteCommand(const char* cmd) {

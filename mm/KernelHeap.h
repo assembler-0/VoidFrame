@@ -21,7 +21,7 @@ void KernelHeapFlushCaches(void);
 
 // Runtime tuning knobs (safe to call at early boot or quiescent points)
 void KernelHeapTune(size_t small_alloc_threshold, int fast_cache_capacity);
-
+#define KernelHeapPerfMode(mode)
 #elif defined(VF_CONFIG_HEAP_RUST)
 
 #include "KernelHeapRust.h"
@@ -36,7 +36,7 @@ void KernelHeapTune(size_t small_alloc_threshold, int fast_cache_capacity);
 #define KernelHeapSetValidationLevel(level) 
 #define KernelHeapFlushCaches() rust_heap_flush_cpu(lapic_get_id())
 #define KernelHeapTune(small_alloc_threshold, fast_cache_capacity)
-
+#define KernelHeapPerfMode(mode) rust_heap_set_performance_mode(mode)
 #endif
 
 #endif // KHEAP_H

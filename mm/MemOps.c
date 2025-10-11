@@ -8,15 +8,15 @@
 // Non-temporal store threshold (use NT stores for large copies to avoid cache pollution)
 #define NT_STORE_THRESHOLD (4 * 1024 * 1024)  // 4MB - safer for kernel operations
 
-void* memset(void* restrict dest, int value, unsigned long size) {
+void* memset(void* restrict dest, const int value, const unsigned long size) {
     return FastMemset(dest, value, size);
 }
 
-void* memcpy(void* restrict dest, const void* restrict src, unsigned long size) {
+void* memcpy(void* restrict dest, const void* restrict src, const unsigned long size) {
     return FastMemcpy(dest, src, size);
 }
 
-int memcmp(const void* restrict s1, const void* restrict s2, unsigned long size) {
+int memcmp(const void* restrict s1, const void* restrict s2, const unsigned long size) {
     return FastMemcmp(s1, s2, size);
 }
 
@@ -26,7 +26,7 @@ void* FastMemset(void* restrict dest, int value, uint64_t size) {
     if (size == 0) return dest;
 
     CpuFeatures* features = GetCpuFeatures();
-    uint8_t* d = (uint8_t*)dest;
+    uint8_t* d = dest;
     uint8_t val = (uint8_t)value;
 
     // Handle small sizes with optimized path
@@ -214,11 +214,11 @@ void* FastMemcpy(void* restrict dest, const void* restrict src, uint64_t size) {
 
     if (size == 0) return dest;
 
-    uint8_t* d = (uint8_t*)dest;
-    const uint8_t* s = (const uint8_t*)src;
+    uint8_t* d = dest;
+    const uint8_t* s = src;
 
     // Handle overlap cases
-    if (d == s) return dest;
+    if (d == s || !d || !s) return dest;
 
     // If regions overlap and destination starts within source, perform backward copy to avoid corruption
     if (d > s && d < s + size) {
@@ -253,13 +253,13 @@ void* FastMemcpy(void* restrict dest, const void* restrict src, uint64_t size) {
             return dest;
         }
 
-        if (size >= 8 && d && s) {
+        if (size >= 8) {
             *(uint64_t*)d = *(uint64_t*)s;
             *(uint64_t*)(d + size - 8) = *(uint64_t*)(s + size - 8);
             return dest;
         }
 
-        if (size >= 4 && d && s) {
+        if (size >= 4) {
             *(uint32_t*)d = *(uint32_t*)s;
             *(uint32_t*)(d + size - 4) = *(uint32_t*)(s + size - 4);
             return dest;
@@ -457,7 +457,7 @@ void FastZeroPage(void* restrict page) {
 
         __asm__ volatile("vpxorq %%zmm0, %%zmm0, %%zmm0" ::: "zmm0");
 
-        uint8_t* p = (uint8_t*)page;
+        uint8_t* p = page;
         // Unroll 4x for better throughput
         for (int i = 0; i < 4096; i += 256) {
             __asm__ volatile(
@@ -482,7 +482,7 @@ void FastZeroPage(void* restrict page) {
 
         __asm__ volatile("vpxor %%ymm0, %%ymm0, %%ymm0" ::: "ymm0");
 
-        uint8_t* p = (uint8_t*)page;
+        uint8_t* p = page;
         // Unroll 8x for maximum throughput
         for (int i = 0; i < 4096; i += 256) {
             __asm__ volatile(
@@ -510,7 +510,7 @@ void FastZeroPage(void* restrict page) {
 
         __asm__ volatile("pxor %%xmm0, %%xmm0" ::: "xmm0");
 
-        uint8_t* p = (uint8_t*)page;
+        uint8_t* p = page;
         // Unroll 8x
         for (int i = 0; i < 4096; i += 128) {
             __asm__ volatile(
@@ -537,8 +537,8 @@ void FastZeroPage(void* restrict page) {
 }
 
 int FastMemcmp(const void* restrict ptr1, const void* restrict ptr2, uint64_t size) {
-    const uint8_t* p1 = (const uint8_t*)ptr1;
-    const uint8_t* p2 = (const uint8_t*)ptr2;
+    const uint8_t* p1 = ptr1;
+    const uint8_t* p2 = ptr2;
     CpuFeatures* features = GetCpuFeatures();
 
     // AVX-512 comparison for large blocks
@@ -558,7 +558,7 @@ int FastMemcmp(const void* restrict ptr1, const void* restrict ptr2, uint64_t si
             if (mask != 0) {
                 // Find first differing byte
                 int idx = __builtin_ctzll(mask);
-                return (p1[idx] < p2[idx]) ? -1 : 1;
+                return p1[idx] < p2[idx] ? -1 : 1;
             }
 
             p1 += 64;
@@ -584,7 +584,7 @@ int FastMemcmp(const void* restrict ptr1, const void* restrict ptr2, uint64_t si
             if (result != -1) {
                 // Find first differing byte
                 int idx = __builtin_ctz(~result);
-                return (p1[idx] < p2[idx]) ? -1 : 1;
+                return p1[idx] < p2[idx] ? -1 : 1;
             }
 
             p1 += 32;
@@ -610,7 +610,7 @@ int FastMemcmp(const void* restrict ptr1, const void* restrict ptr2, uint64_t si
             if (result != 0xFFFF) {
                 // Find first differing byte
                 int idx = __builtin_ctz(~result);
-                return (p1[idx] < p2[idx]) ? -1 : 1;
+                return p1[idx] < p2[idx] ? -1 : 1;
             }
 
             p1 += 16;
@@ -632,7 +632,7 @@ int FastMemcmp(const void* restrict ptr1, const void* restrict ptr2, uint64_t si
                 // Use bswap to compare in big-endian order (byte-by-byte)
                 v1 = __builtin_bswap64(v1);
                 v2 = __builtin_bswap64(v2);
-                return (v1 < v2) ? -1 : 1;
+                return v1 < v2 ? -1 : 1;
             }
 
             q1++;
@@ -647,7 +647,7 @@ int FastMemcmp(const void* restrict ptr1, const void* restrict ptr2, uint64_t si
     // Final byte-by-byte comparison
     while (size > 0) {
         if (*p1 != *p2) {
-            return (*p1 < *p2) ? -1 : 1;
+            return *p1 < *p2 ? -1 : 1;
         }
         p1++;
         p2++;
@@ -655,4 +655,5 @@ int FastMemcmp(const void* restrict ptr1, const void* restrict ptr2, uint64_t si
     }
 
     return 0;
+
 }

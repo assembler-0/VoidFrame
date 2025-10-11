@@ -2,8 +2,8 @@
 #include "Console.h"
 #include "MemOps.h"
 #include "Panic.h"
-#include "Spinlock.h"
 #include "VMem.h"
+#include "SpinlockRust.h"
 
 typedef struct HeapBlock {
     uint32_t magic;           // Magic number for corruption detection
@@ -43,7 +43,7 @@ typedef struct {
 
 // Global state
 static HeapBlock* heap_head = NULL;
-static volatile int kheap_lock = 0;
+static RustSpinLock* kheap_lock = 0;
 static size_t total_allocated = 0;
 static size_t peak_allocated = 0;
 static FastCache fast_caches[NUM_SIZE_CLASSES];
@@ -339,6 +339,11 @@ static void FlushCacheAndCoalesce(void) {
 
 
 void KernelHeapInit() {
+    kheap_lock = rust_spinlock_new();
+    if (!kheap_lock) {
+        PrintKernelError("Heap: Failed to allocate lock\n");
+        return;
+    }
     heap_head = NULL;
     total_allocated = 0;
     peak_allocated = 0;
@@ -364,9 +369,9 @@ void* KernelMemoryAlloc(size_t size) {
     
     // Periodic coalescing every 1000 allocations
     if ((++alloc_counter % 1000) == 0) {
-        irq_flags_t flush_flags = SpinLockIrqSave(&kheap_lock);
+        uint64_t flush_flags = rust_spinlock_lock_irqsave(kheap_lock);
         FlushCacheAndCoalesce();
-        SpinUnlockIrqRestore(&kheap_lock, flush_flags);
+        rust_spinlock_unlock_irqrestore(kheap_lock, flush_flags);
     }
 
     // Fast path for small allocations
@@ -374,7 +379,7 @@ void* KernelMemoryAlloc(size_t size) {
     if (size_class >= 0) {
         size_t actual_size = size_classes[size_class];
 
-        irq_flags_t flags = SpinLockIrqSave(&kheap_lock);
+        uint64_t flags = rust_spinlock_lock_irqsave(kheap_lock);
 
         // Try fast cache first
         HeapBlock* block = FastCachePop(size_class);
@@ -388,22 +393,22 @@ void* KernelMemoryAlloc(size_t size) {
             if (total_allocated > peak_allocated) {
                 peak_allocated = total_allocated;
             }
-            SpinUnlockIrqRestore(&kheap_lock, flags);
+            rust_spinlock_unlock_irqrestore(kheap_lock, flags);
             return BlockToUser(block);
         }
         fast_caches[size_class].misses++;
 
-        SpinUnlockIrqRestore(&kheap_lock, flags);
+        rust_spinlock_unlock_irqrestore(kheap_lock, flags);
         size = actual_size; // Use size class size
     }
 
     // Standard allocation path
-    irq_flags_t flags = SpinLockIrqSave(&kheap_lock);
+    uint64_t flags = rust_spinlock_lock_irqsave(kheap_lock);
 
     HeapBlock* block = FindFreeBlock(size);
     if (block) {
         if (!ValidateBlock(block, "alloc_reuse")) {
-            SpinUnlockIrqRestore(&kheap_lock, flags);
+            rust_spinlock_unlock_irqrestore(kheap_lock, flags);
             return NULL;
         }
 
@@ -415,7 +420,7 @@ void* KernelMemoryAlloc(size_t size) {
     } else {
         block = CreateNewBlock(size);
         if (!block) {
-            SpinUnlockIrqRestore(&kheap_lock, flags);
+            rust_spinlock_unlock_irqrestore(kheap_lock, flags);
             return NULL;
         }
         if (validation_level > 1) {
@@ -428,7 +433,7 @@ void* KernelMemoryAlloc(size_t size) {
         peak_allocated = total_allocated;
     }
 
-    SpinUnlockIrqRestore(&kheap_lock, flags);
+    rust_spinlock_unlock_irqrestore(kheap_lock, flags);
     return BlockToUser(block);
 }
 
@@ -498,7 +503,7 @@ void KernelFree(void* ptr) {
         // Security: zero user data
         FastMemset(ptr, 0, size);
 
-        irq_flags_t flags = SpinLockIrqSave(&kheap_lock);
+        uint64_t flags = rust_spinlock_lock_irqsave(kheap_lock);
 
         InitBlock(block, size, 1);
         total_allocated -= size;
@@ -506,12 +511,12 @@ void KernelFree(void* ptr) {
         // Try to cache the block
         FastCachePush(block, size_class);
 
-        SpinUnlockIrqRestore(&kheap_lock, flags);
+        rust_spinlock_unlock_irqrestore(kheap_lock, flags);
         return;
     }
 
     // Standard free path
-    irq_flags_t flags = SpinLockIrqSave(&kheap_lock);
+    uint64_t flags = rust_spinlock_lock_irqsave(kheap_lock);
 
     // Security: zero user data
     FastMemset(ptr, 0, size);
@@ -521,11 +526,11 @@ void KernelFree(void* ptr) {
 
     CoalesceBlock(block);
 
-    SpinUnlockIrqRestore(&kheap_lock, flags);
+    rust_spinlock_unlock_irqrestore(kheap_lock, flags);
 }
 
 void PrintHeapStats(void) {
-    const irq_flags_t flags = SpinLockIrqSave(&kheap_lock);
+    const uint64_t flags = rust_spinlock_lock_irqsave(kheap_lock);
 
     size_t free_blocks = 0, used_blocks = 0;
     size_t free_bytes = 0, used_bytes = 0;
@@ -550,7 +555,7 @@ void PrintHeapStats(void) {
         cached_blocks += fast_caches[i].count;
     }
 
-    SpinUnlockIrqRestore(&kheap_lock, flags);
+    rust_spinlock_unlock_irqrestore(kheap_lock, flags);
 
     PrintKernel("[HEAP] Blocks: "); PrintKernelInt(used_blocks);
     PrintKernel(", "); PrintKernelInt(free_blocks); PrintKernel(" free, ");
@@ -582,7 +587,7 @@ void KernelHeapSetValidationLevel(int level) {
 
 // Flush fast caches (useful for debugging or low-memory situations)
 void KernelHeapFlushCaches(void) {
-    irq_flags_t flags = SpinLockIrqSave(&kheap_lock);
+    uint64_t flags = rust_spinlock_lock_irqsave(kheap_lock);
 
     for (int i = 0; i < NUM_SIZE_CLASSES; i++) {
         while (fast_caches[i].free_list) {
@@ -593,12 +598,12 @@ void KernelHeapFlushCaches(void) {
         }
     }
 
-    SpinUnlockIrqRestore(&kheap_lock, flags);
+    rust_spinlock_unlock_irqrestore(kheap_lock, flags);
 }
 
 
 void KernelHeapTune(size_t small_alloc_threshold, int fast_cache_capacity) {
-    irq_flags_t flags = SpinLockIrqSave(&kheap_lock);
+    uint64_t flags = rust_spinlock_lock_irqsave(kheap_lock);
 
     // Clamp to sane bounds
     if (small_alloc_threshold < MIN_BLOCK_SIZE) small_alloc_threshold = MIN_BLOCK_SIZE;
@@ -621,5 +626,5 @@ void KernelHeapTune(size_t small_alloc_threshold, int fast_cache_capacity) {
         }
     }
 
-    SpinUnlockIrqRestore(&kheap_lock, flags);
+    rust_spinlock_unlock_irqrestore(kheap_lock, flags);
 }
