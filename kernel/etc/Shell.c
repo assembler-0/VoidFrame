@@ -501,7 +501,6 @@ static void CdHandler(const char * args) {
     char* dir = GetArg(args, 1);
     if (!dir) {
         FastMemcpy(current_dir, "/", 2);
-        PrintKernel("[VFRFS] DIRECTORY SWITCHED TO /\n");
     } else {
         char new_path[256];
         ResolvePath(dir, new_path, 256);

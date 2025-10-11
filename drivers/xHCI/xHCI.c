@@ -104,7 +104,7 @@ static int xHCIInitCommandRing(XhciController* controller) {
     
     // Set up the link TRB at the end to make it circular
     XhciTRB* link_trb = &controller->command_ring[COMMAND_RING_SIZE - 1];
-    uint64_t ring_phys = VIRT_TO_PHYS((uint64_t)controller->command_ring);
+    uint64_t ring_phys = VMemGetPhysAddr((uint64_t)controller->command_ring);
     link_trb->parameter_lo = (uint32_t)(ring_phys & 0xFFFFFFFF);
     link_trb->parameter_hi = (uint32_t)(ring_phys >> 32);
     link_trb->control = (TRB_TYPE_LINK << 10) | TRB_CYCLE_BIT;
@@ -147,7 +147,7 @@ static int xHCIInitEventRing(XhciController* controller) {
     }
     
     // Set up ERST entry
-    uint64_t event_ring_phys = VIRT_TO_PHYS((uint64_t)controller->event_ring);
+    uint64_t event_ring_phys = VMemGetPhysAddr((uint64_t)controller->event_ring);
     controller->erst->address = event_ring_phys;
     controller->erst->size = EVENT_RING_SIZE;
     controller->erst->reserved = 0;
@@ -161,7 +161,7 @@ static int xHCIInitEventRing(XhciController* controller) {
     xHCIWriteRegister(&interrupter[1], 1);   // ERST size = 1
     
     // Set ERST base address
-    uint64_t erst_phys = VIRT_TO_PHYS((uint64_t)controller->erst);
+    uint64_t erst_phys = VMemGetPhysAddr((uint64_t)controller->erst);
     xHCIWriteRegister64((volatile uint64_t*)&interrupter[2], erst_phys);
     
     // Set event ring dequeue pointer
@@ -188,7 +188,7 @@ static int xHCIInitDeviceContextBaseArray(XhciController* controller) {
     }
     
     // Set the DCBAAP register
-    uint64_t dcbaa_phys = VIRT_TO_PHYS((uint64_t)controller->dcbaa);
+    uint64_t dcbaa_phys = VMemGetPhysAddr((uint64_t)controller->dcbaa);
     xHCIWriteRegister64((volatile uint64_t*)&controller->operational_regs[XHCI_OP_DCBAAP / 4], dcbaa_phys);
     
     PrintKernel("xHCI: DCBAA initialized at physical address 0x");
@@ -594,7 +594,7 @@ static void xHCIProcessEvents(XhciController* controller) {
         
         // Update event ring dequeue pointer in hardware
         volatile uint32_t* interrupter = &controller->runtime_regs[XHCI_RT_IR0 / 4];
-        uint64_t erdp = VIRT_TO_PHYS((uint64_t)&controller->event_ring[controller->event_ring_dequeue]);
+        uint64_t erdp = VMemGetPhysAddr((uint64_t)&controller->event_ring[controller->event_ring_dequeue]);
         xHCIWriteRegister64((volatile uint64_t*)&interrupter[4], erdp | (1 << 3)); // Set EHB bit
     }
 }
@@ -644,7 +644,7 @@ int xHCIAddressDevice(XhciController* controller, uint8_t slot_id) {
     dev_ctx->endpoints[0].tr_dequeue_pointer = 0; // Will be set when transfer ring is created
     
     // Store device context in DCBAA
-    uint64_t dev_ctx_phys = VIRT_TO_PHYS((uint64_t)dev_ctx);
+    uint64_t dev_ctx_phys = VMemGetPhysAddr((uint64_t)dev_ctx);
     controller->dcbaa[slot_id] = dev_ctx_phys;
     
     XhciTRB address_dev_trb = {0};
@@ -684,7 +684,7 @@ int xHCIControlTransfer(XhciController* controller, uint8_t slot_id,
     
     // Set up link TRB at end
     XhciTRB* link_trb = &transfer_ring[TRANSFER_RING_SIZE - 1];
-    uint64_t ring_phys = VIRT_TO_PHYS((uint64_t)transfer_ring);
+    uint64_t ring_phys = VMemGetPhysAddr((uint64_t)transfer_ring);
     link_trb->parameter_lo = (uint32_t)(ring_phys & 0xFFFFFFFF);
     link_trb->parameter_hi = (uint32_t)(ring_phys >> 32);
     link_trb->control = (TRB_TYPE_LINK << 10) | TRB_CYCLE_BIT;
@@ -701,7 +701,7 @@ int xHCIControlTransfer(XhciController* controller, uint8_t slot_id,
     // Data stage TRB (if data present)
     if (data && length > 0) {
         XhciTRB* data_trb = &transfer_ring[trb_index++];
-        uint64_t data_phys = VIRT_TO_PHYS((uint64_t)data);
+        uint64_t data_phys = VMemGetPhysAddr((uint64_t)data);
         data_trb->parameter_lo = (uint32_t)(data_phys & 0xFFFFFFFF);
         data_trb->parameter_hi = (uint32_t)(data_phys >> 32);
         data_trb->status = length;

@@ -1,6 +1,8 @@
 #include "VirtioBlk.h"
 #include "Atomics.h"
+#include "BlockDevice.h"
 #include "Console.h"
+#include "Format.h"
 #include "PCI/PCI.h"
 #include "Spinlock.h"
 #include "SpinlockRust.h"
@@ -199,9 +201,9 @@ void InitializeVirtioBlk(PciDevice device) {
     }
 
     // Tell the device the physical addresses of our structures
-    common_cfg_ptr->queue_desc = VIRT_TO_PHYS((uint64_t)vq_desc_table);
-    common_cfg_ptr->queue_driver = VIRT_TO_PHYS((uint64_t)vq_avail_ring);
-    common_cfg_ptr->queue_device = VIRT_TO_PHYS((uint64_t)vq_used_ring);
+    common_cfg_ptr->queue_desc = VMemGetPhysAddr((uint64_t)vq_desc_table);
+    common_cfg_ptr->queue_driver = VMemGetPhysAddr((uint64_t)vq_avail_ring);
+    common_cfg_ptr->queue_device = VMemGetPhysAddr((uint64_t)vq_used_ring);
 
     // Enable the queue
     common_cfg_ptr->queue_enable = 1;
@@ -239,17 +241,17 @@ int VirtioBlkRead(uint64_t sector, void* buffer) {
     req_hdr->sector   = sector;
 
     uint16_t head_idx = vq_next_desc_idx;
-    vq_desc_table[head_idx].addr  = VIRT_TO_PHYS((uint64_t)req_hdr);
+    vq_desc_table[head_idx].addr  = VMemGetPhysAddr((uint64_t)req_hdr);
     vq_desc_table[head_idx].len   = sizeof(struct VirtioBlkReq);
     vq_desc_table[head_idx].flags = VIRTQ_DESC_F_NEXT;
     vq_desc_table[head_idx].next  = head_idx + 1;
 
-    vq_desc_table[head_idx + 1].addr  = VIRT_TO_PHYS((uint64_t)buffer);
+    vq_desc_table[head_idx + 1].addr  = VMemGetPhysAddr((uint64_t)buffer);
     vq_desc_table[head_idx + 1].len   = 512;
     vq_desc_table[head_idx + 1].flags = VIRTQ_DESC_F_WRITE | VIRTQ_DESC_F_NEXT;
     vq_desc_table[head_idx + 1].next  = head_idx + 2;
 
-    vq_desc_table[head_idx + 2].addr  = VIRT_TO_PHYS((uint64_t)status);
+    vq_desc_table[head_idx + 2].addr  = VMemGetPhysAddr((uint64_t)status);
     vq_desc_table[head_idx + 2].len   = sizeof(uint8_t);
     vq_desc_table[head_idx + 2].flags = VIRTQ_DESC_F_WRITE;
     vq_desc_table[head_idx + 2].next  = 0;
@@ -307,17 +309,17 @@ int VirtioBlkWrite(uint64_t sector, void* buffer) {
     req_hdr->sector   = sector;
 
     uint16_t head_idx = vq_next_desc_idx;
-    vq_desc_table[head_idx].addr  = VIRT_TO_PHYS((uint64_t)req_hdr);
+    vq_desc_table[head_idx].addr  = VMemGetPhysAddr((uint64_t)req_hdr);
     vq_desc_table[head_idx].len   = sizeof(struct VirtioBlkReq);
     vq_desc_table[head_idx].flags = VIRTQ_DESC_F_NEXT;
     vq_desc_table[head_idx].next  = head_idx + 1;
 
-    vq_desc_table[head_idx + 1].addr  = VIRT_TO_PHYS((uint64_t)buffer);
+    vq_desc_table[head_idx + 1].addr  = VMemGetPhysAddr((uint64_t)buffer);
     vq_desc_table[head_idx + 1].len   = 512;
     vq_desc_table[head_idx + 1].flags = VIRTQ_DESC_F_NEXT;
     vq_desc_table[head_idx + 1].next  = head_idx + 2;
 
-    vq_desc_table[head_idx + 2].addr  = VIRT_TO_PHYS((uint64_t)status);
+    vq_desc_table[head_idx + 2].addr  = VMemGetPhysAddr((uint64_t)status);
     vq_desc_table[head_idx + 2].len   = sizeof(uint8_t);
     vq_desc_table[head_idx + 2].flags = VIRTQ_DESC_F_WRITE;
     vq_desc_table[head_idx + 2].next  = 0;
