@@ -364,7 +364,9 @@ static void AllocHandler(const char * args) {
         KernelFree(size_str);
         return;
     }
+    uint64_t start = rdtsc();
     if (!KernelMemoryAlloc((uint32_t)size)) PrintKernelErrorF("Allocation for %d bytes failed\n", size);
+    PrintKernelF("Allocation took: %d cycles\n", rdtsc() - start);
     KernelFree(size_str);
 }
 

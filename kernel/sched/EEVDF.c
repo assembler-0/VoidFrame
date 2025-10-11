@@ -5,12 +5,10 @@
 #endif
 #include "Console.h"
 #include "Format.h"
-#include "Io.h"
 #include "Ipc.h"
 #include "MemOps.h"
 #include "Panic.h"
 #include "Shell.h"
-#include "Spinlock.h"
 #include "SpinlockRust.h"
 #include "VFS.h"
 #include "VMem.h"
@@ -61,8 +59,7 @@ static volatile uint32_t process_count = 0;
 static volatile int need_schedule = 0;
 static RustSpinLock* pid_lock = NULL;
 static RustSpinLock* eevdf_lock = NULL;
-
-rwlock_t process_table_rwlock_eevdf = {0};
+static RustRwLock* process_table_rwlock_eevdf = NULL;
 
 // Security subsystem
 uint32_t eevdf_security_manager_pid = 0;
@@ -788,10 +785,11 @@ switch_to_idle:
 }
 
 int EEVDFSchedInit(void) {
-    if (!eevdf_lock && !pid_lock) {
+    if (!eevdf_lock && !pid_lock && !process_table_rwlock_eevdf) { // All initialized as NULL so redundant check actually
         eevdf_lock = rust_spinlock_new();
         pid_lock = rust_spinlock_new();
-        if (!eevdf_lock || !pid_lock) PANIC("EEVDFSchedInit: Failed to allocate locks");
+        process_table_rwlock_eevdf = rust_rwlock_new();
+        if (!eevdf_lock || !pid_lock || !process_table_rwlock_eevdf) PANIC("EEVDFSchedInit: Failed to allocate locks");
     }
     PrintKernel("System: Initializing EEVDF scheduler...\n");
     // Initialize process array
@@ -979,15 +977,15 @@ EEVDFProcessControlBlock* EEVDFGetCurrentProcess(void) {
 }
 
 EEVDFProcessControlBlock* EEVDFGetCurrentProcessByPID(uint32_t pid) {
-    ReadLock(&process_table_rwlock_eevdf, pid);
+    rust_rwlock_read_lock(&process_table_rwlock_eevdf, pid);
     for (int i = 0; i < EEVDF_MAX_PROCESSES; i++) {
         if (processes[i].pid == pid && processes[i].state != PROC_TERMINATED) {
             EEVDFProcessControlBlock* found = &processes[i];
-            ReadUnlock(&process_table_rwlock_eevdf, pid);
+            rust_rwlock_read_unlock(&process_table_rwlock_eevdf, pid);
             return found;
         }
     }
-    ReadUnlock(&process_table_rwlock_eevdf, pid);
+    rust_rwlock_read_unlock(&process_table_rwlock_eevdf, pid);
     return NULL;
 }
 
@@ -995,7 +993,7 @@ void EEVDFYield(void) {
     // Simple yield - just request a schedule
     need_schedule = 1;
     volatile int delay = eevdf_scheduler.total_processes * 100;
-    while (delay-- > 0) __asm__ __volatile__("pause");
+    while (delay-- > 0) __builtin_ia32_pause();
 }
 
 // =============================================================================
@@ -1360,20 +1358,20 @@ void EEVDFListProcesses(void) {
 }
 
 void EEVDFGetProcessStats(uint32_t pid, uint32_t* cpu_time, uint32_t* wait_time, uint32_t* preemptions) {
-    ReadLock(&process_table_rwlock_eevdf, pid);
+    rust_rwlock_read_lock(process_table_rwlock_eevdf, pid);
     EEVDFProcessControlBlock* proc = EEVDFGetCurrentProcessByPID(pid);
     if (!proc) {
         if (cpu_time) *cpu_time = 0;
         if (wait_time) *wait_time = 0;
         if (preemptions) *preemptions = 0;
-        ReadUnlock(&process_table_rwlock_eevdf, pid);
+        rust_rwlock_read_unlock(process_table_rwlock_eevdf, pid);
         return;
     }
     
     if (cpu_time) *cpu_time = (uint32_t)proc->cpu_time_accumulated;
     if (wait_time) *wait_time = (uint32_t)proc->wait_sum;
     if (preemptions) *preemptions = proc->preemption_count;
-    ReadUnlock(&process_table_rwlock_eevdf, pid);
+    rust_rwlock_read_unlock(process_table_rwlock_eevdf, pid);
 }
 
 void EEVDFDumpPerformanceStats(void) {

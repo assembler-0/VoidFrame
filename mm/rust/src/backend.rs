@@ -7,7 +7,7 @@ pub(crate) const HEAP_MAGIC_ALLOC: u32 = 0xA110CA7E;
 pub(crate) const HEAP_MAGIC_FREE: u32 = 0xF4EE1157;
 const MIN_BLOCK_SIZE: usize = 32;
 const HEAP_ALIGN: usize = 32; // AVX2 alignment
-const MAX_ALLOC_SIZE: usize = 1 << 28; // Reduced for safety
+const MAX_ALLOC_SIZE: usize = 1 << 30; // 1GB to match C heap
 const NUM_SIZE_CLASSES: usize = 16;
 const FAST_CACHE_SIZE: usize = 32; // Reduced for better cache locality
 pub(crate) const POISON_VALUE: u8 = 0xCC; // INT3 instruction
@@ -276,9 +276,12 @@ unsafe fn create_new_block(size: usize) -> *mut HeapBlock {
     } else if size <= 65536 {
         // Medium allocations: round to next 4KB boundary
         (size + 4095) & !4095
-    } else {
+    } else if size <= 16 * 1024 * 1024 {
         // Large allocations: round to 64KB boundary for better alignment
         (size + 65535) & !65535
+    } else {
+        // Very large allocations: minimal overhead, just align to page boundary
+        (size + 4095) & !4095
     };
 
     let total_size = size_of::<HeapBlock>() + chunk_size;
