@@ -73,7 +73,7 @@ void Rtl8139_Init() {
 
     // --- Part 4: Tell the card where the receive buffer is ---
     // The hardware needs the PHYSICAL address of the buffer.
-    uint32_t rx_phys_addr = VIRT_TO_PHYS(rtl_device.rx_buffer); // Assuming identity mapping for now
+    uint32_t rx_phys_addr = VMemGetPhysAddr((uint64_t)rtl_device.rx_buffer);
     outl(rtl_device.io_base + REG_RX_BUFFER_START, rx_phys_addr);
     PrintKernel("Receive buffer configured.\n");
 

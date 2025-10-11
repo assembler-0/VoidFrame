@@ -124,9 +124,9 @@ static int AHCI_InitPort(int port) {
     FastMemset(ahci_port->cmd_table, 0, 256);
     
     // Get physical addresses
-    ahci_port->cmd_list_phys = VIRT_TO_PHYS((uint64_t)ahci_port->cmd_list);
-    ahci_port->fis_base_phys = VIRT_TO_PHYS((uint64_t)ahci_port->fis_base);
-    ahci_port->cmd_table_phys = VIRT_TO_PHYS((uint64_t)ahci_port->cmd_table);
+    ahci_port->cmd_list_phys = VMemGetPhysAddr((uint64_t)ahci_port->cmd_list);
+    ahci_port->fis_base_phys = VMemGetPhysAddr((uint64_t)ahci_port->fis_base);
+    ahci_port->cmd_table_phys = VMemGetPhysAddr((uint64_t)ahci_port->cmd_table);
     
     // Set up command list base address
     AHCI_WritePortReg(port, AHCI_PORT_CLB, ahci_port->cmd_list_phys & 0xFFFFFFFF);
@@ -187,7 +187,7 @@ static int AHCI_SendCommand(int port, uint8_t command, uint64_t lba, uint16_t co
     
     // Set up PRD
     AHCIPrd* prd = &ahci_port->cmd_table->prdt[0];
-    prd->dba = VIRT_TO_PHYS((uint64_t)buffer);
+    prd->dba = VMemGetPhysAddr((uint64_t)buffer);
     prd->dbc = (count * 512) - 1;
     prd->i = 1; // Interrupt on completion
     
@@ -451,14 +451,6 @@ static int AHCI_ReadBlocksWrapper(struct BlockDevice* device, uint64_t start_lba
         return -1;
     }
     int port = (uintptr_t)device->driver_data - 1;
-    
-    PrintKernel("AHCI: Reading from port ");
-    PrintKernelInt(port);
-    PrintKernel(", LBA ");
-    PrintKernelInt(start_lba);
-    PrintKernel(", count ");
-    PrintKernelInt(count);
-    PrintKernel("\n");
     
     int result = AHCI_ReadSectors(port, start_lba, count, buffer);
     if (result != 0) {
