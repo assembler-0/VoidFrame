@@ -7,7 +7,7 @@ edition = "2021"
 crate-type = ["staticlib"]
 
 [dependencies]
-spin = { version = "0.9", default-features = false, features = ["mutex", "spin_mutex"] }
+spin = { version = "0.10.0", default-features = false, features = ["mutex", "spin_mutex"] }
 
 [profile.release]
 panic = "abort"

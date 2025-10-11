@@ -14,13 +14,13 @@ static uint8_t* sector_buffer = NULL;
 int Fat1xDetect(BlockDevice* device) {
     uint8_t boot_sector[512];
     if (BlockDeviceRead(device->id, 0, 1, boot_sector) != 0) {
-        PrintKernelError("Failed to read boot sector\n");
+        PrintKernel("Failed to read boot sector\n");
         return 0;
     }
 
     Fat1xBootSector* bs = (Fat1xBootSector*)boot_sector;
     if (bs->jump[0] != 0xEB && bs->jump[0] != 0xE9) {
-        PrintKernelError("Invalid jump instruction\n");
+        PrintKernel("Invalid jump instruction\n");
         return 0;
     }
 
