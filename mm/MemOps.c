@@ -310,7 +310,11 @@ void* FastMemcpy(void* restrict dest, const void* restrict src, uint64_t size) {
                 s += 256;
                 size -= 256;
             }
+#ifdef VF_CONFIG_INTEL
+            _full_mem_prot_end_intel();
+#else
             _full_mem_prot_end();
+#endif
         } else {
             // Regular copy with 4x unrolling
             while (size >= 256 && d && s) {
@@ -537,12 +541,16 @@ void FastZeroPage(void* restrict page) {
 }
 
 int FastMemcmp(const void* restrict ptr1, const void* restrict ptr2, uint64_t size) {
+    ASSERT(ptr1 != NULL && ptr2 != NULL);
+    
+    if (size == 0) return 0;
+    
     const uint8_t* p1 = ptr1;
     const uint8_t* p2 = ptr2;
     CpuFeatures* features = GetCpuFeatures();
 
     // AVX-512 comparison for large blocks
-    if (features->avx512f && size >= 64) {
+    if (features->avx512f && size >= 64 && p1) {
         while (size >= 64) {
             uint64_t mask;
             __asm__ volatile(
@@ -558,7 +566,9 @@ int FastMemcmp(const void* restrict ptr1, const void* restrict ptr2, uint64_t si
             if (mask != 0) {
                 // Find first differing byte
                 int idx = __builtin_ctzll(mask);
-                return p1[idx] < p2[idx] ? -1 : 1;
+                if (idx < 64) {
+                    return p1[idx] < p2[idx] ? -1 : 1;
+                }
             }
 
             p1 += 64;
@@ -568,7 +578,7 @@ int FastMemcmp(const void* restrict ptr1, const void* restrict ptr2, uint64_t si
         __asm__ volatile("vzeroupper" ::: "memory");
     }
     // AVX2 comparison
-    else if (features->avx2 && size >= 32) {
+    else if (features->avx2 && size >= 32 && p1 && p2) {
         while (size >= 32) {
             int result;
             __asm__ volatile(
@@ -584,7 +594,9 @@ int FastMemcmp(const void* restrict ptr1, const void* restrict ptr2, uint64_t si
             if (result != -1) {
                 // Find first differing byte
                 int idx = __builtin_ctz(~result);
-                return p1[idx] < p2[idx] ? -1 : 1;
+                if (idx < 32) {
+                    return p1[idx] < p2[idx] ? -1 : 1;
+                }
             }
 
             p1 += 32;
@@ -594,7 +606,7 @@ int FastMemcmp(const void* restrict ptr1, const void* restrict ptr2, uint64_t si
         __asm__ volatile("vzeroupper" ::: "memory");
     }
     // SSE2 comparison
-    else if (features->sse2 && size >= 16) {
+    else if (features->sse2 && size >= 16 && p1 && p2) {
         while (size >= 16) {
             int result;
             __asm__ volatile(
@@ -610,7 +622,9 @@ int FastMemcmp(const void* restrict ptr1, const void* restrict ptr2, uint64_t si
             if (result != 0xFFFF) {
                 // Find first differing byte
                 int idx = __builtin_ctz(~result);
-                return p1[idx] < p2[idx] ? -1 : 1;
+                if (idx < 16) {
+                    return p1[idx] < p2[idx] ? -1 : 1;
+                }
             }
 
             p1 += 16;
@@ -624,7 +638,7 @@ int FastMemcmp(const void* restrict ptr1, const void* restrict ptr2, uint64_t si
         const uint64_t* q1 = (const uint64_t*)p1;
         const uint64_t* q2 = (const uint64_t*)p2;
 
-        while (size >= 8) {
+        while (size >= 8 && q1 && q2) {
             uint64_t v1 = *q1;
             uint64_t v2 = *q2;
 
@@ -645,7 +659,7 @@ int FastMemcmp(const void* restrict ptr1, const void* restrict ptr2, uint64_t si
     }
 
     // Final byte-by-byte comparison
-    while (size > 0) {
+    while (size > 0 && p1 && p2) {
         if (*p1 != *p2) {
             return *p1 < *p2 ? -1 : 1;
         }
