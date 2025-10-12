@@ -2,6 +2,7 @@
 #include "Compositor.h"
 #include "Format.h"
 #include "Io.h"
+#include "Pallete.h"
 #include "Scheduler.h"
 #include "Serial.h"
 #include "SpinlockRust.h"
@@ -35,11 +36,10 @@ ConsoleT console = {
 };
 
 static void PrintToVFShell(const char* message) {
+    if (!message) return;
     Window* vfshell = GetVFShellWindow();
     if (vfshell) {
         WindowPrintString(vfshell, message);
-    } else {
-        SerialWrite(message);
     }
 }
 
@@ -169,6 +169,7 @@ void ConsoleSetColor(uint8_t color) {
 void PrintKernel(const char* str) {
     if (!str) return;
     if (snooze) {
+        PrintToVFShell(str);
         SerialWrite(str);
         return;
     }

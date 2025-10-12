@@ -321,45 +321,45 @@ void VFCompositor(void) {
             MLFQYield();
         }
     }
-
     WindowManagerInit();
 
     // Create VFShell window and cache reference
     g_vfshell_window = CreateWindow(50, 50, 640, 480, "VFShell");
     if (g_vfshell_window) {
         WindowInitTextMode(g_vfshell_window);
-        WindowPrintString(g_vfshell_window, "VFShell - Kernel Log\n");
-        WindowPrintString(g_vfshell_window, "===================\n\n");
+        g_focused_window = g_vfshell_window;
     }
 
     while (1) {
         if (VBEIsInitialized()) {
-            // Refresh text content if needed
-            if (g_vfshell_window) {
-                WindowTextState* state = GetWindowTextState(g_vfshell_window);
+            // Render text content for all windows that need it
+            Window* current = g_window_list_head;
+            while (current) {
+                WindowTextState* state = GetWindowTextState(current);
                 if (state && state->needs_refresh) {
                     // Clear window and redraw title bar
-                    WindowFill(g_vfshell_window, WINDOW_BG);
-                    WindowDrawRect(g_vfshell_window, 0, 0, g_vfshell_window->rect.width, 20, TITLE_BAR);
-                    if (g_vfshell_window->title) {
-                        WindowDrawString(g_vfshell_window, 5, 2, g_vfshell_window->title, TERMINAL_TEXT);
+                    WindowFill(current, WINDOW_BG);
+                    WindowDrawRect(current, 0, 0, current->rect.width, 20, TITLE_BAR);
+                    if (current->title) {
+                        WindowDrawString(current, 5, 2, current->title, TERMINAL_TEXT);
                     }
                     
                     // Redraw text content
                     int text_y = 25; // Start below title bar
-                    for (int row = 0; row < WINDOW_TEXT_ROWS && text_y < g_vfshell_window->rect.height - FONT_HEIGHT; row++) {
+                    for (int row = 0; row < WINDOW_TEXT_ROWS && text_y < current->rect.height - FONT_HEIGHT; row++) {
                         int text_x = 5;
                         for (int col = 0; col < WINDOW_TEXT_COLS && state->buffer[row][col] != 0; col++) {
                             char single_char[2] = {state->buffer[row][col], 0};
-                            WindowDrawString(g_vfshell_window, text_x, text_y, single_char, TERMINAL_TEXT);
+                            WindowDrawString(current, text_x, text_y, single_char, TERMINAL_TEXT);
                             text_x += FONT_WIDTH;
                         }
                         text_y += FONT_HEIGHT;
                     }
                     state->needs_refresh = false;
                 }
+                current = current->next;
             }
-
+            
             CompositeAndDraw();
         } else {
             Yield();
