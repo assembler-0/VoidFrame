@@ -1,15 +1,16 @@
 #include "VFS.h"
 #include "../mm/MemOps.h"
+#include "BlockDevice.h"
 #include "Console.h"
-#include "FAT/FAT1x.h"
 #include "EXT/Ext2.h"
+#include "FAT/FAT1x.h"
+#include "FileSystem.h"
 #include "KernelHeap.h"
+#include "NTFS.h"
 #include "Serial.h"
 #include "StringOps.h"
 #include "VFRFS.h"
 #include "stdbool.h"
-#include "BlockDevice.h"
-#include "FileSystem.h"
 
 #define VFS_MAX_PATH_LEN 256
 
@@ -42,13 +43,15 @@ int VfsInit(void) {
     PrintKernel( "VFS: Mount table cleared\n");
 
     // Register filesystems
+    static FileSystemDriver ntfs_driver = {"NTFS", NtfsDetect, NtfsMount};
+    FileSystemRegister(&ntfs_driver);
+    PrintKernel("VFS: NTFS driver registered\n");
     static FileSystemDriver fat_driver = {"FAT1x", Fat1xDetect, Fat1xMount};
     FileSystemRegister(&fat_driver);
     PrintKernel("VFS: FAT1x driver registered\n");
     static FileSystemDriver ext2_driver = {"EXT2", Ext2Detect, Ext2Mount};
     FileSystemRegister(&ext2_driver);
     PrintKernel("VFS: EXT2 driver registered\n");
-
 
     int result = VfsMount("/", NULL, NULL); // RamFS doesn't need a device or driver
     if (result != 0) {
