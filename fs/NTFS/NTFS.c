@@ -220,16 +220,37 @@ static int NtfsUtf16EqualsAscii(const uint16_t* u16, uint8_t len16, const char* 
     return 1;
 }
 
-uint64_t NtfsPathToMftRecord(const char* path) {
-    if (!path || path[0] != '/') return 0;
-    if (path[1] == '\0') return 5; // Root directory is MFT record 5
-
-    // Only support single-level under root for now
-    const char* name = NtfsBaseName(path);
-    if (!name) return 0;
-    for (const char* p = path + 1; *p; ++p) {
-        if (*p == '/') return 0; // unsupported nested path
+// Helper: find child record by scanning MFT for a FILE_NAME with given parent and name (ASCII)
+static uint64_t NtfsFindChild(uint64_t parent_mft, const char* name, uint32_t mft_record_size, NtfsMftRecord* rec_buf) {
+    const uint32_t max_scan = 4096;
+    for (uint32_t i = 0; i < max_scan; i++) {
+        if (NtfsReadMftRecord(i, rec_buf) != 0) continue;
+        if (rec_buf->flags == 0) continue;
+        uint8_t* attr_ptr = (uint8_t*)rec_buf + rec_buf->attrs_offset;
+        uint8_t* rec_end = (uint8_t*)rec_buf + mft_record_size;
+        while (attr_ptr + sizeof(NtfsAttrHeader) <= rec_end &&
+               attr_ptr < (uint8_t*)rec_buf + rec_buf->bytes_in_use) {
+            NtfsAttrHeader* attr = (NtfsAttrHeader*)attr_ptr;
+            if (attr->length == 0 || attr->length < sizeof(NtfsAttrHeader)) break;
+            if (attr_ptr + attr->length > rec_end) break;
+            if (attr->type == NTFS_ATTR_FILENAME && !attr->non_resident) {
+                NtfsFilename* fn = (NtfsFilename*)(attr_ptr + attr->resident.value_offset);
+                if ((uint64_t)fn->parent_directory == parent_mft && fn->filename_length > 0) {
+                    if (NtfsUtf16EqualsAscii(fn->filename, fn->filename_length, name)) {
+                        return i;
+                    }
+                }
+                break; // assume single FILE_NAME
+            }
+            attr_ptr += attr->length;
+        }
     }
+    return 0;
+}
+
+// Resolve parent directory record and extract basename into provided buffer.
+static int NtfsResolveParentAndName(const char* path, uint64_t* out_parent, char* name_buf, size_t name_buf_len) {
+    if (!path || path[0] != '/' || !out_parent || !name_buf || name_buf_len == 0) return -1;
 
     // Determine MFT record size
     uint32_t mft_record_size;
@@ -239,37 +260,88 @@ uint64_t NtfsPathToMftRecord(const char* path) {
         mft_record_size = 1u << (-(int8_t)volume.boot_sector.clusters_per_file_record);
     }
 
-    // Scan a reasonable number of MFT records (e.g., first 4096)
-    const uint32_t max_scan = 4096;
     NtfsMftRecord* rec = KernelMemoryAlloc(mft_record_size);
-    if (!rec) return 0;
-    for (uint32_t i = 0; i < max_scan; i++) {
-        if (NtfsReadMftRecord(i, rec) != 0) continue;
-        // Check in-use
-        if (rec->flags == 0) continue;
-        // Iterate attributes to find FILE_NAME
-        uint8_t* attr_ptr = (uint8_t*)rec + rec->attrs_offset;
-        uint8_t* rec_end = (uint8_t*)rec + mft_record_size;
-        while (attr_ptr + sizeof(NtfsAttrHeader) <= rec_end &&
-               attr_ptr < (uint8_t*)rec + rec->bytes_in_use) {
-            NtfsAttrHeader* attr = (NtfsAttrHeader*)attr_ptr;
-            if (attr->length == 0 || attr->length < sizeof(NtfsAttrHeader)) break;
-            if (attr_ptr + attr->length > rec_end) break;
-            if (attr->type == NTFS_ATTR_FILENAME && !attr->non_resident) {
-                NtfsFilename* fn = (NtfsFilename*)(attr_ptr + attr->resident.value_offset);
-                if ((uint32_t)fn->parent_directory == 5) {
-                    if (NtfsUtf16EqualsAscii(fn->filename, fn->filename_length, name)) {
-                        KernelFree(rec);
-                        return i;
-                    }
-                }
-                break; // assume single FILE_NAME
-            }
-            attr_ptr += attr->length;
+    if (!rec) return -1;
+
+    uint64_t current = 5; // start at root
+    const char* p = path + 1;
+    const char* last_name_start = NULL;
+
+    while (*p) {
+        while (*p == '/') p++;
+        if (*p == '\0') break;
+        const char* comp_start = p;
+        while (*p && *p != '/') p++;
+        size_t comp_len = (size_t)(p - comp_start);
+        if (comp_len == 0) break;
+        // Check if there are more components after this one
+        const char* q = p;
+        while (*q == '/') q++;
+        int has_more = (*q != '\0');
+        if (has_more) {
+            // Resolve this component as existing directory/file
+            char temp[256];
+            if (comp_len >= sizeof(temp)) { KernelFree(rec); return -1; }
+            for (size_t i = 0; i < comp_len; i++) temp[i] = comp_start[i];
+            temp[comp_len] = '\0';
+            uint64_t child = NtfsFindChild(current, temp, mft_record_size, rec);
+            if (child == 0) { KernelFree(rec); return -1; }
+            current = child;
+        } else {
+            // This is the final component: basename for creation
+            if (comp_len >= name_buf_len) { KernelFree(rec); return -1; }
+            for (size_t i = 0; i < comp_len; i++) name_buf[i] = comp_start[i];
+            name_buf[comp_len] = '\0';
+            last_name_start = comp_start;
+            break;
         }
     }
+
     KernelFree(rec);
+    if (!last_name_start) return -1;
+    *out_parent = current;
     return 0;
+}
+
+uint64_t NtfsPathToMftRecord(const char* path) {
+    if (!path || path[0] != '/') return 0;
+    if (path[1] == '\0') return 5; // Root directory is MFT record 5
+
+    // Determine MFT record size
+    uint32_t mft_record_size;
+    if (volume.boot_sector.clusters_per_file_record > 0) {
+        mft_record_size = volume.boot_sector.clusters_per_file_record * volume.bytes_per_cluster;
+    } else {
+        mft_record_size = 1u << (-(int8_t)volume.boot_sector.clusters_per_file_record);
+    }
+
+    NtfsMftRecord* rec = KernelMemoryAlloc(mft_record_size);
+    if (!rec) return 0;
+
+    uint64_t current = 5; // start at root
+    const char* p = path + 1; // skip leading '/'
+    while (*p) {
+        // Skip consecutive slashes
+        while (*p == '/') p++;
+        if (*p == '\0') break;
+        // Find end of this component
+        const char* comp_start = p;
+        while (*p && *p != '/') p++;
+        size_t comp_len = (size_t)(p - comp_start);
+        if (comp_len == 0) break;
+        // Copy component to temporary stack buffer (limit reasonable length)
+        char name[256];
+        if (comp_len >= sizeof(name)) { KernelFree(rec); return 0; }
+        for (size_t i = 0; i < comp_len; i++) name[i] = comp_start[i];
+        name[comp_len] = '\0';
+        // Look up this child under current
+        uint64_t child = NtfsFindChild(current, name, mft_record_size, rec);
+        if (child == 0) { KernelFree(rec); return 0; }
+        current = child;
+    }
+
+    KernelFree(rec);
+    return current;
 }
 
 int NtfsReadFile(const char* path, void* buffer, uint32_t max_size) {
@@ -347,10 +419,7 @@ int NtfsReadFile(const char* path, void* buffer, uint32_t max_size) {
 }
 
 int NtfsListDir(const char* path) {
-    // Only support root directory listing via MFT scan for now
-    if (!path || !(path[0] == '/' && path[1] == '\0')) {
-        // Fallback to previous behavior for non-root if ever reached
-    }
+    if (!path || path[0] != '/') return -1;
 
     // Determine MFT record size
     uint32_t mft_record_size;
@@ -360,9 +429,21 @@ int NtfsListDir(const char* path) {
         mft_record_size = 1u << (-(int8_t)volume.boot_sector.clusters_per_file_record);
     }
 
-    const uint32_t max_scan = 4096;
+    uint64_t dir_mft = (path[0] == '/' && path[1] == '\0') ? 5 : NtfsPathToMftRecord(path);
+    if (dir_mft == 0) return -1;
+
     NtfsMftRecord* rec = KernelMemoryAlloc(mft_record_size);
     if (!rec) return -1;
+
+    // Optionally verify that target is a directory
+    if (NtfsReadMftRecord(dir_mft, rec) == 0) {
+        if ((rec->flags & 0x2) == 0) {
+            KernelFree(rec);
+            return -1; // not a directory
+        }
+    }
+
+    const uint32_t max_scan = 4096;
     for (uint32_t i = 0; i < max_scan; i++) {
         if (NtfsReadMftRecord(i, rec) != 0) continue;
         if (rec->flags == 0) continue;
@@ -375,9 +456,12 @@ int NtfsListDir(const char* path) {
             if (attr_ptr + attr->length > rec_end) break;
             if (attr->type == NTFS_ATTR_FILENAME && !attr->non_resident) {
                 NtfsFilename* fn = (NtfsFilename*)(attr_ptr + attr->resident.value_offset);
-                if ((uint32_t)fn->parent_directory == 5 && fn->filename_length > 0) {
+                if ((uint64_t)fn->parent_directory == dir_mft && fn->filename_length > 0) {
+                    // Print ASCII subset of UTF-16
                     for (uint8_t k = 0; k < fn->filename_length; k++) {
-                        PrintKernelChar((char)(uint8_t)fn->filename[k]);
+                        char ch = (char)(uint8_t)fn->filename[k];
+                        if (ch == '\0') break;
+                        PrintKernelChar(ch);
                     }
                     PrintKernel("\n");
                 }
@@ -691,9 +775,9 @@ static uint64_t NtfsAllocateMftRecord() {
 int NtfsCreateFile(const char* path) {
     if (!path || !volume.lock) return -1;
 
-    // For simplicity, create in root directory and use basename as filename.
-    const char* name = NtfsBaseName(path);
-    if (!name) return -1;
+    uint64_t parent_mft = 5;
+    char name[256];
+    if (NtfsResolveParentAndName(path, &parent_mft, name, sizeof(name)) != 0) return -1;
 
     rust_rwlock_write_lock(volume.lock, GetCurrentProcess()->pid);
 
@@ -752,7 +836,7 @@ int NtfsCreateFile(const char* path) {
     file_name_attr->resident.value_length = sizeof(NtfsFilename) + name_len * 2;
 
     NtfsFilename* file_name = (NtfsFilename*)((uint8_t*)file_name_attr + file_name_attr->resident.value_offset);
-    file_name->parent_directory = 5; // Root directory
+    file_name->parent_directory = parent_mft;
     file_name->filename_length = (uint8_t)name_len;
     file_name->filename_namespace = 2; // DOS
 
@@ -785,8 +869,9 @@ int NtfsCreateFile(const char* path) {
 int NtfsCreateDir(const char* path) {
     if (!path || !volume.lock) return -1;
 
-    const char* name = NtfsBaseName(path);
-    if (!name) return -1;
+    uint64_t parent_mft = 5;
+    char name[256];
+    if (NtfsResolveParentAndName(path, &parent_mft, name, sizeof(name)) != 0) return -1;
 
     rust_rwlock_write_lock(volume.lock, GetCurrentProcess()->pid);
 
@@ -842,7 +927,7 @@ int NtfsCreateDir(const char* path) {
     file_name_attr->resident.value_length = sizeof(NtfsFilename) + name_len * 2;
 
     NtfsFilename* file_name = (NtfsFilename*)((uint8_t*)file_name_attr + file_name_attr->resident.value_offset);
-    file_name->parent_directory = 5; // Root directory
+    file_name->parent_directory = parent_mft;
     file_name->filename_length = (uint8_t)name_len;
     file_name->filename_namespace = 2; // DOS
     for (size_t i = 0; i < name_len; i++) {
