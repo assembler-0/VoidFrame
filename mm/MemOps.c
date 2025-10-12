@@ -541,10 +541,9 @@ void FastZeroPage(void* restrict page) {
 }
 
 int FastMemcmp(const void* restrict ptr1, const void* restrict ptr2, uint64_t size) {
-    ASSERT(ptr1 != NULL && ptr2 != NULL);
-    
     if (size == 0) return 0;
-    
+    ASSERT(ptr1 != NULL && ptr2 != NULL);
+
     const uint8_t* p1 = ptr1;
     const uint8_t* p2 = ptr2;
     CpuFeatures* features = GetCpuFeatures();

@@ -50,7 +50,16 @@ int NtfsMount(struct BlockDevice* device, const char* mount_point) {
         rust_rwlock_write_unlock(volume.lock);
         return -1;
     }
-    
+
+    if (volume.boot_sector.bytes_per_sector == 0 || volume.boot_sector.bytes_per_sector > 4096) {
+        PrintKernel("NTFS: Invalid bytes_per_sector\n");
+        return -1;
+    }
+    if (volume.boot_sector.sectors_per_cluster == 0) {
+        PrintKernel("NTFS: Invalid sectors_per_cluster\n");
+        return -1;
+    }
+
     volume.device = device;
     volume.bytes_per_sector = volume.boot_sector.bytes_per_sector;
     volume.sectors_per_cluster = volume.boot_sector.sectors_per_cluster;
@@ -76,10 +85,10 @@ int NtfsMount(struct BlockDevice* device, const char* mount_point) {
 
 int NtfsReadMftRecord(uint64_t record_num, NtfsMftRecord* record) {
     if (!volume.device || !record) return -1;
-    
+
     uint64_t mft_offset = volume.mft_cluster * volume.sectors_per_cluster;
     uint64_t record_offset = mft_offset + (record_num * 1024 / volume.bytes_per_sector);
-    
+
     return volume.device->read_blocks(volume.device, record_offset, 2, record);
 }
 
@@ -93,52 +102,60 @@ uint64_t NtfsPathToMftRecord(const char* path) {
 }
 
 int NtfsReadFile(const char* path, void* buffer, uint32_t max_size) {
-    if (!path || !buffer || !volume.device) return -1;
-    
-    rust_rwlock_read_lock(volume.lock, GetCurrentProcess()->pid);
-    
+    if (!path || !buffer) return -1;
+
     uint64_t mft_record_num = NtfsPathToMftRecord(path);
-    if (mft_record_num == 0) {
-        rust_rwlock_read_unlock(volume.lock, GetCurrentProcess()->pid);
-        return -1;
-    }
-    
+    if (mft_record_num == 0) return -1;
+
     NtfsMftRecord* record = KernelMemoryAlloc(1024);
-    if (!record) {
-        rust_rwlock_read_unlock(volume.lock, GetCurrentProcess()->pid);
-        return -1;
-    }
-    
+    if (!record) return -1;
+
     if (NtfsReadMftRecord(mft_record_num, record) != 0) {
         KernelFree(record);
-        rust_rwlock_read_unlock(volume.lock, GetCurrentProcess()->pid);
         return -1;
     }
-    
+
     // Find DATA attribute
-    uint8_t* attr_ptr = (uint8_t*)record + record->attrs_offset;
-    while (attr_ptr < (uint8_t*)record + record->bytes_in_use) {
-        NtfsAttrHeader* attr = (NtfsAttrHeader*)attr_ptr;
-        
-        if (attr->type == NTFS_ATTR_DATA) {
-            if (!attr->non_resident) {
-                // Resident data
-                uint32_t data_size = attr->resident.value_length;
-                if (data_size > max_size) data_size = max_size;
-                
-                memcpy(buffer, attr_ptr + attr->resident.value_offset, data_size);
-                KernelFree(record);
-                rust_rwlock_read_unlock(volume.lock, GetCurrentProcess()->pid);
-                return data_size;
-            }
-            // TODO: Handle non-resident data
-        }
-        
-        attr_ptr += attr->length;
+    uint8_t* attr_ptr   = (uint8_t*)record + record->attrs_offset;
+    uint8_t* record_end = (uint8_t*)record + 1024;  // allocated size
+
+    // Validate bytes_in_use before parsing
+    if (record->bytes_in_use > 1024) {
+        KernelFree(record);
+        return -1;
     }
-    
+
+    while (attr_ptr + sizeof(NtfsAttrHeader) <= record_end &&
+           attr_ptr < (uint8_t*)record + record->bytes_in_use) {
+        NtfsAttrHeader* attr = (NtfsAttrHeader*)attr_ptr;
+
+        // Ensure length is sane
+        if (attr->length == 0 || attr->length < sizeof(NtfsAttrHeader))
+            break;
+        if (attr_ptr + attr->length > record_end)
+            break;
+
+        if (attr->type == NTFS_ATTR_DATA && !attr->non_resident) {
+            // Resident data
+            uint32_t data_size = attr->resident.value_length;
+            if (data_size > max_size) data_size = max_size;
+
+            // Validate value offset and total size
+            uint8_t* data_ptr = attr_ptr + attr->resident.value_offset;
+            if (data_ptr + data_size > record_end) {
+                KernelFree(record);
+                return -1;
+            }
+
+            memcpy(buffer, data_ptr, data_size);
+            KernelFree(record);
+            return data_size;
+        }
+
+        attr_ptr += attr->length;
+           }
+
     KernelFree(record);
-    rust_rwlock_read_unlock(volume.lock, GetCurrentProcess()->pid);
     return -1;
 }
 

@@ -44,10 +44,10 @@ static void PrintToVFShell(const char* message) {
 }
 
 void Snooze() {
-    snooze = 1;
+    __atomic_store_n(&snooze, 1, __ATOMIC_RELEASE);
 }
 void Unsnooze() {
-    snooze = 0;
+    __atomic_store_n(&snooze, 0, __ATOMIC_RELEASE);
 }
 
 // Initialize console - auto-detect VBE or VGA
