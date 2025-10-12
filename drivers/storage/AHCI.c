@@ -46,7 +46,7 @@ static int AHCI_StopPort(int port) {
     AHCI_WritePortReg(port, AHCI_PORT_CMD, cmd);
     
     // Wait for CR to clear
-    int timeout = 500;
+    int timeout = 5000;
     while (timeout-- > 0) {
         cmd = AHCI_ReadPortReg(port, AHCI_PORT_CMD);
         if (!(cmd & AHCI_PORT_CMD_CR)) break;
@@ -59,7 +59,7 @@ static int AHCI_StopPort(int port) {
     AHCI_WritePortReg(port, AHCI_PORT_CMD, cmd);
     
     // Wait for FR to clear
-    timeout = 500;
+    timeout = 5000;
     while (timeout-- > 0) {
         cmd = AHCI_ReadPortReg(port, AHCI_PORT_CMD);
         if (!(cmd & AHCI_PORT_CMD_FR)) break;
@@ -158,7 +158,7 @@ static int AHCI_SendCommand(int port, uint8_t command, uint64_t lba, uint16_t co
     if (!ahci_port->active) return -1;
     
     // Wait for port to be ready
-    int timeout = 1000;
+    int timeout = 2000;
     while (timeout-- > 0) {
         uint32_t tfd = AHCI_ReadPortReg(port, AHCI_PORT_TFD);
         if (!(tfd & 0x88)) break; // BSY and DRQ clear
@@ -199,7 +199,7 @@ static int AHCI_SendCommand(int port, uint8_t command, uint64_t lba, uint16_t co
     AHCI_WritePortReg(port, AHCI_PORT_CI, 1);
     
     // Wait for completion
-    timeout = 500;
+    timeout = 5000;
     while (timeout-- > 0) {
         uint32_t ci = AHCI_ReadPortReg(port, AHCI_PORT_CI);
         if (!(ci & 1)) break;

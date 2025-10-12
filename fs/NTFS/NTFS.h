@@ -1,6 +1,7 @@
 #pragma once
 #include "BlockDevice.h"
 #include "stdint.h"
+#include "KernelHeap.h"
 
 // NTFS Boot Sector
 typedef struct {
@@ -84,6 +85,34 @@ typedef struct {
 #define NTFS_ATTR_DATA              0x80
 #define NTFS_ATTR_INDEX_ROOT        0x90
 #define NTFS_ATTR_INDEX_ALLOCATION  0xA0
+#define NTFS_ATTR_BITMAP            0xB0
+
+typedef struct {
+    uint64_t creation_time;
+    uint64_t last_modification_time;
+    uint64_t last_change_time;
+    uint64_t last_access_time;
+    uint32_t file_attributes;
+    uint32_t reserved;
+} __attribute__((packed)) NtfsStandardInformation;
+
+// Index Root Attribute
+typedef struct {
+    uint32_t type;
+    uint32_t collation_rule;
+    uint32_t bytes_per_index_record;
+    uint8_t clusters_per_index_record;
+    uint8_t reserved[3];
+} __attribute__((packed)) NtfsIndexRoot;
+
+// Index Entry
+typedef struct {
+    uint64_t mft_record_number;
+    uint16_t length;
+    uint16_t file_name_length;
+    uint32_t flags;
+    uint16_t file_name[1];
+} __attribute__((packed)) NtfsIndexEntry;
 
 // File Name Attribute
 typedef struct {
@@ -105,10 +134,14 @@ typedef struct {
 int NtfsDetect(struct BlockDevice* device);
 int NtfsMount(struct BlockDevice* device, const char* mount_point);
 int NtfsReadFile(const char* path, void* buffer, uint32_t max_size);
+int NtfsWriteFile(const char* path, const void* buffer, uint32_t size);
 int NtfsListDir(const char* path);
 int NtfsIsFile(const char* path);
 int NtfsIsDir(const char* path);
 uint64_t NtfsGetFileSize(const char* path);
+int NtfsCreateFile(const char* path);
+int NtfsCreateDir(const char* path);
+int NtfsDelete(const char* path);
 
 // Internal Functions
 int NtfsReadMftRecord(uint64_t record_num, NtfsMftRecord* record);
