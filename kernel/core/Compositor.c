@@ -579,12 +579,6 @@ void WindowDrawString(Window* window, int x, int y, const char* str, uint32_t fg
 }
 // --- Input Event Handlers ---
 
-void OnKeyPress(char c) {
-    if (g_focused_window) {
-        WindowPrintChar(g_focused_window, c);
-    }
-}
-
 void OnMouseMove(int x, int y, int dx, int dy) {
     if (!g_vbe_info) return;
     g_mouse_x = x;

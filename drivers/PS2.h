@@ -5,7 +5,6 @@
 
 // --- Event Handler Function Pointers ---
 // These are weak symbols that can be overridden by the window manager.
-void __attribute__((weak)) OnKeyPress(char c);
 void __attribute__((weak)) OnMouseMove(int x, int y, int dx, int dy);
 void __attribute__((weak)) OnMouseButtonDown(int x, int y, uint8_t button);
 void __attribute__((weak)) OnMouseButtonUp(int x, int y, uint8_t button);

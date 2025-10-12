@@ -168,9 +168,9 @@ void ConsoleSetColor(uint8_t color) {
 
 void PrintKernel(const char* str) {
     if (!str) return;
+    SerialWrite(str);
     if (snooze) {
         PrintToVFShell(str);
-        SerialWrite(str);
         return;
     }
 
@@ -185,7 +185,6 @@ void PrintKernel(const char* str) {
         console.color = original_color;
     }
     rust_spinlock_unlock(console_lock);
-    SerialWrite(str);
 }
 
 void PrintKernelChar(const char c) {
