@@ -206,6 +206,7 @@ static const HelpEntry hw_cmds[] = {
     {"lsisa", "List ISA devices"},
     {"lsusb", "List USB devices"},
     {"lsblk", "List Block devices"},
+    {"lsmnt", "List Mountpoints"},
     {"beep <x>", "Send beep x times"},
     {"pcbeep <x>", "PC speaker beep  for <x> seconds (200hz)"},
     {"irqmask <irq>", "Mask IRQ"},
@@ -1173,6 +1174,11 @@ static void HeapPerfHandler(const char * args) {
     KernelFree(mode);
 }
 
+static void LsMntHandler(const char* args) {
+    (void)args;
+    VfsListMount();
+}
+
 static const ShellCommand commands[] = {\
     {"help", HelpHandler},
     {"ps", PSHandler},
@@ -1226,6 +1232,7 @@ static const ShellCommand commands[] = {\
     {"acpi", ACPIHandler},
     {"lsblk", BlockDevicePrint},
     {"heapperf", HeapPerfHandler},
+    {"lsmnt", LsMntHandler},
 };
 
 void ExecuteCommand(const char* cmd) {

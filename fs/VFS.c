@@ -16,6 +16,28 @@
 
 static VfsMountStruct mounts[VFS_MAX_MOUNTS];
 
+void VfsListMount() {
+    for (int i = 0; i < VFS_MAX_MOUNTS; i++) {
+        if (mounts[i].active) {
+            PrintKernel("Mount Point: ");
+            PrintKernel(mounts[i].mount_point);
+            PrintKernel(" | Device: ");
+            if (mounts[i].device) {
+                PrintKernel(mounts[i].device->name);
+            } else {
+                PrintKernel("None");
+            }
+            PrintKernel(" | FS Driver: ");
+            if (mounts[i].fs_driver) {
+                PrintKernel(mounts[i].fs_driver->name);
+            } else {
+                PrintKernel("VFRFS");
+            }
+            PrintKernel("\n");
+        }
+    }
+}
+
 int VfsMount(const char* path, BlockDevice* device, FileSystemDriver* fs_driver) {
     for (int i = 0; i < VFS_MAX_MOUNTS; i++) {
         if (!mounts[i].active) {

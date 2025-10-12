@@ -2,18 +2,23 @@
 #include "BlockDevice.h"
 #include "Console.h"
 #include "FileSystem.h"
-#include "Io.h"
 #include "KernelHeap.h"
 #include "MemOps.h"
-#include "Panic.h"
 #include "VFS.h"
+#include "SpinlockRust.h"
+#include "Scheduler.h"
 
-static struct BlockDevice* ntfs_device = NULL;
-static NtfsBootSector boot_sector;
-static uint32_t bytes_per_sector;
-static uint32_t sectors_per_cluster;
-static uint32_t bytes_per_cluster;
-static uint64_t mft_cluster;
+typedef struct {
+    struct BlockDevice* device;
+    NtfsBootSector boot_sector;
+    uint32_t bytes_per_sector;
+    uint32_t sectors_per_cluster;
+    uint32_t bytes_per_cluster;
+    uint64_t mft_cluster;
+    RustRwLock* lock;
+} NtfsVolume;
+
+static NtfsVolume volume;
 
 int NtfsDetect(struct BlockDevice* device) {
     if (!device || !device->read_blocks) return 0;
@@ -33,34 +38,49 @@ static FileSystemDriver ntfs_driver = {"NTFS", NtfsDetect, NtfsMount};
 int NtfsMount(struct BlockDevice* device, const char* mount_point) {
     if (!device || !device->read_blocks) return -1;
     
-    if (device->read_blocks(device, 0, 1, &boot_sector) != 0) return -1;
+    if (!volume.lock) volume.lock = rust_rwlock_new();
+    if (!volume.lock) {
+        PrintKernel("NTFS: Failed to allocate lock\n");
+        return -1;
+    }
     
-    ntfs_device = device;
-    bytes_per_sector = boot_sector.bytes_per_sector;
-    sectors_per_cluster = boot_sector.sectors_per_cluster;
-    bytes_per_cluster = bytes_per_sector * sectors_per_cluster;
-    mft_cluster = boot_sector.mft_cluster;
+    rust_rwlock_write_lock(volume.lock, GetCurrentProcess()->pid);
+    
+    if (device->read_blocks(device, 0, 1, &volume.boot_sector) != 0) {
+        rust_rwlock_write_unlock(volume.lock);
+        return -1;
+    }
+    
+    volume.device = device;
+    volume.bytes_per_sector = volume.boot_sector.bytes_per_sector;
+    volume.sectors_per_cluster = volume.boot_sector.sectors_per_cluster;
+    volume.bytes_per_cluster = volume.bytes_per_sector * volume.sectors_per_cluster;
+    volume.mft_cluster = volume.boot_sector.mft_cluster;
 
     VfsCreateDir(mount_point);
     if (VfsMount(mount_point, device, &ntfs_driver) != 0) {
-        PrintKernelF("NTFS: Failed to register mount point %s\n", mount_point);
+        PrintKernel("NTFS: Failed to register mount point ");
+        PrintKernel(mount_point);
+        PrintKernel("\n");
+        rust_rwlock_write_unlock(volume.lock);
         return -1;
     }
 
     PrintKernel("NTFS: Mounted at ");
     PrintKernel(mount_point);
     PrintKernel("\n");
-
+    
+    rust_rwlock_write_unlock(volume.lock);
     return 0;
 }
 
 int NtfsReadMftRecord(uint64_t record_num, NtfsMftRecord* record) {
-    if (!ntfs_device || !record) return -1;
+    if (!volume.device || !record) return -1;
     
-    uint64_t mft_offset = mft_cluster * sectors_per_cluster;
-    uint64_t record_offset = mft_offset + (record_num * 1024 / bytes_per_sector);
+    uint64_t mft_offset = volume.mft_cluster * volume.sectors_per_cluster;
+    uint64_t record_offset = mft_offset + (record_num * 1024 / volume.bytes_per_sector);
     
-    return ntfs_device->read_blocks(ntfs_device, record_offset, 2, record);
+    return volume.device->read_blocks(volume.device, record_offset, 2, record);
 }
 
 uint64_t NtfsPathToMftRecord(const char* path) {
@@ -73,16 +93,25 @@ uint64_t NtfsPathToMftRecord(const char* path) {
 }
 
 int NtfsReadFile(const char* path, void* buffer, uint32_t max_size) {
-    if (!path || !buffer || !ntfs_device) return -1;
+    if (!path || !buffer || !volume.device) return -1;
+    
+    rust_rwlock_read_lock(volume.lock, GetCurrentProcess()->pid);
     
     uint64_t mft_record_num = NtfsPathToMftRecord(path);
-    if (mft_record_num == 0) return -1;
+    if (mft_record_num == 0) {
+        rust_rwlock_read_unlock(volume.lock, GetCurrentProcess()->pid);
+        return -1;
+    }
     
     NtfsMftRecord* record = KernelMemoryAlloc(1024);
-    if (!record) return -1;
+    if (!record) {
+        rust_rwlock_read_unlock(volume.lock, GetCurrentProcess()->pid);
+        return -1;
+    }
     
     if (NtfsReadMftRecord(mft_record_num, record) != 0) {
         KernelFree(record);
+        rust_rwlock_read_unlock(volume.lock, GetCurrentProcess()->pid);
         return -1;
     }
     
@@ -99,6 +128,7 @@ int NtfsReadFile(const char* path, void* buffer, uint32_t max_size) {
                 
                 memcpy(buffer, attr_ptr + attr->resident.value_offset, data_size);
                 KernelFree(record);
+                rust_rwlock_read_unlock(volume.lock, GetCurrentProcess()->pid);
                 return data_size;
             }
             // TODO: Handle non-resident data
@@ -108,6 +138,7 @@ int NtfsReadFile(const char* path, void* buffer, uint32_t max_size) {
     }
     
     KernelFree(record);
+    rust_rwlock_read_unlock(volume.lock, GetCurrentProcess()->pid);
     return -1;
 }
 
@@ -128,4 +159,27 @@ int NtfsIsDir(const char* path) {
 
 uint64_t NtfsGetFileSize(const char* path) {
     return 0; // TODO: Implement
+}
+int NtfsWriteFile(const char* path, const void* buffer, uint32_t size) {
+    PrintKernel("NTFS: Write operations not supported (read-only filesystem)\n");
+    return -1;
+}
+
+int NtfsCreateFile(const char* path) {
+    PrintKernel("NTFS: File creation not supported (read-only filesystem)\n");
+    return -1;
+}
+
+int NtfsCreateDir(const char* path) {
+    PrintKernel("NTFS: Directory creation not supported (read-only filesystem)\n");
+    return -1;
+}
+
+int NtfsDelete(const char* path) {
+    PrintKernel("NTFS: Delete operations not supported (read-only filesystem)\n");
+    return -1;
+}
+
+void NtfsInit(void) {
+    FileSystemRegister(&ntfs_driver);
 }

@@ -4,7 +4,6 @@
 #include "stdbool.h"
 #include "stdint.h"
 struct BlockDevice;
-struct BlockDevice;
 struct FileSystemDriver;
 
 // VFS Mount Points
@@ -69,4 +68,5 @@ int VfsCopyFile(const char* src_path, const char* dest_path);
 int VfsMoveFile(const char* src_path, const char* dest_path);
 // Internal
 VfsMountStruct* VfsFindMount(const char* path);
+void VfsListMount(void);
 const char* VfsStripMount(const char* path, VfsMountStruct* mount);
