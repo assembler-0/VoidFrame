@@ -53,17 +53,31 @@ int NtfsMount(struct BlockDevice* device, const char* mount_point) {
 
     if (volume.boot_sector.bytes_per_sector == 0 || volume.boot_sector.bytes_per_sector > 4096) {
         PrintKernel("NTFS: Invalid bytes_per_sector\n");
+        rust_rwlock_write_unlock(volume.lock);
         return -1;
     }
     if (volume.boot_sector.sectors_per_cluster == 0) {
         PrintKernel("NTFS: Invalid sectors_per_cluster\n");
+        rust_rwlock_write_unlock(volume.lock);
         return -1;
     }
 
     volume.device = device;
     volume.bytes_per_sector = volume.boot_sector.bytes_per_sector;
     volume.sectors_per_cluster = volume.boot_sector.sectors_per_cluster;
+    // Check for overflow in bytes_per_cluster calculation
+    if (volume.bytes_per_sector > UINT32_MAX / volume.sectors_per_cluster) {
+        PrintKernel("NTFS: bytes_per_cluster overflow\n");
+        rust_rwlock_write_unlock(volume.lock);
+        return -1;
+    }
     volume.bytes_per_cluster = volume.bytes_per_sector * volume.sectors_per_cluster;
+    // Validate bytes_per_cluster is reasonable
+    if (volume.bytes_per_cluster == 0 || volume.bytes_per_cluster > 1048576) {
+        PrintKernel("NTFS: Invalid bytes_per_cluster\n");
+        rust_rwlock_write_unlock(volume.lock);
+        return -1;
+    }
     volume.mft_cluster = volume.boot_sector.mft_cluster;
 
     VfsCreateDir(mount_point);
@@ -85,10 +99,13 @@ int NtfsMount(struct BlockDevice* device, const char* mount_point) {
 
 int NtfsReadMftRecord(uint64_t record_num, NtfsMftRecord* record) {
     if (!volume.device || !record) return -1;
+    if (!volume.lock) return -1;
+    rust_rwlock_read_lock(volume.lock, GetCurrentProcess()->pid);
 
     uint64_t mft_offset = volume.mft_cluster * volume.sectors_per_cluster;
     uint64_t record_offset = mft_offset + (record_num * 1024 / volume.bytes_per_sector);
 
+    rust_rwlock_read_unlock(volume.lock, GetCurrentProcess()->pid);
     return volume.device->read_blocks(volume.device, record_offset, 2, record);
 }
 
@@ -103,6 +120,7 @@ uint64_t NtfsPathToMftRecord(const char* path) {
 
 int NtfsReadFile(const char* path, void* buffer, uint32_t max_size) {
     if (!path || !buffer) return -1;
+    if (!volume.lock) return -1;
 
     uint64_t mft_record_num = NtfsPathToMftRecord(path);
     if (mft_record_num == 0) return -1;
@@ -110,8 +128,11 @@ int NtfsReadFile(const char* path, void* buffer, uint32_t max_size) {
     NtfsMftRecord* record = KernelMemoryAlloc(1024);
     if (!record) return -1;
 
+    rust_rwlock_read_lock(volume.lock, GetCurrentProcess()->pid);
+
     if (NtfsReadMftRecord(mft_record_num, record) != 0) {
         KernelFree(record);
+        rust_rwlock_read_unlock(volume.lock, GetCurrentProcess()->pid);
         return -1;
     }
 
@@ -122,6 +143,7 @@ int NtfsReadFile(const char* path, void* buffer, uint32_t max_size) {
     // Validate bytes_in_use before parsing
     if (record->bytes_in_use > 1024) {
         KernelFree(record);
+        rust_rwlock_read_unlock(volume.lock, GetCurrentProcess()->pid);
         return -1;
     }
 
@@ -144,18 +166,21 @@ int NtfsReadFile(const char* path, void* buffer, uint32_t max_size) {
             uint8_t* data_ptr = attr_ptr + attr->resident.value_offset;
             if (data_ptr + data_size > record_end) {
                 KernelFree(record);
+            rust_rwlock_read_unlock(volume.lock, GetCurrentProcess()->pid);
                 return -1;
             }
 
             memcpy(buffer, data_ptr, data_size);
             KernelFree(record);
+            rust_rwlock_read_unlock(volume.lock, GetCurrentProcess()->pid);
             return data_size;
         }
 
         attr_ptr += attr->length;
-           }
+    }
 
     KernelFree(record);
+    rust_rwlock_read_unlock(volume.lock, GetCurrentProcess()->pid);
     return -1;
 }
 
@@ -195,8 +220,4 @@ int NtfsCreateDir(const char* path) {
 int NtfsDelete(const char* path) {
     PrintKernel("NTFS: Delete operations not supported (read-only filesystem)\n");
     return -1;
-}
-
-void NtfsInit(void) {
-    FileSystemRegister(&ntfs_driver);
 }
