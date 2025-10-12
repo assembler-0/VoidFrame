@@ -44,12 +44,6 @@ static void PrintToVFShell(const char* message) {
 }
 
 void Snooze() {
-    uint64_t rflags;
-    __asm__ volatile("pushfq; pop %0" : "=r"(rflags));
-    if ((rflags & (1ULL << 9)) != 0) { // IF set => scheduler likely active
-        if (GetCurrentProcess()->privilege_level != PROC_PRIV_SYSTEM)
-            return;
-    }
     snooze = 1;
 }
 void Unsnooze() {
