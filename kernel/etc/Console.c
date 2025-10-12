@@ -2,6 +2,7 @@
 #include "Compositor.h"
 #include "Format.h"
 #include "Io.h"
+#include "Pallete.h"
 #include "Scheduler.h"
 #include "Serial.h"
 #include "SpinlockRust.h"
@@ -35,25 +36,18 @@ ConsoleT console = {
 };
 
 static void PrintToVFShell(const char* message) {
+    if (!message) return;
     Window* vfshell = GetVFShellWindow();
     if (vfshell) {
         WindowPrintString(vfshell, message);
-    } else {
-        SerialWrite(message);
     }
 }
 
 void Snooze() {
-    uint64_t rflags;
-    __asm__ volatile("pushfq; pop %0" : "=r"(rflags));
-    if ((rflags & (1ULL << 9)) != 0) { // IF set => scheduler likely active
-        if (GetCurrentProcess()->privilege_level != PROC_PRIV_SYSTEM)
-            return;
-    }
-    snooze = 1;
+    __atomic_store_n(&snooze, 1, __ATOMIC_RELEASE);
 }
 void Unsnooze() {
-    snooze = 0;
+    __atomic_store_n(&snooze, 0, __ATOMIC_RELEASE);
 }
 
 // Initialize console - auto-detect VBE or VGA
@@ -174,8 +168,9 @@ void ConsoleSetColor(uint8_t color) {
 
 void PrintKernel(const char* str) {
     if (!str) return;
+    SerialWrite(str);
     if (snooze) {
-        SerialWrite(str);
+        PrintToVFShell(str);
         return;
     }
 
@@ -190,7 +185,6 @@ void PrintKernel(const char* str) {
         console.color = original_color;
     }
     rust_spinlock_unlock(console_lock);
-    SerialWrite(str);
 }
 
 void PrintKernelChar(const char c) {

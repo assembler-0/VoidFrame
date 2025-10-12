@@ -1,9 +1,8 @@
 #include "FileSystem.h"
-#include "VFS.h"
 #include "BlockDevice.h"
 #include "Console.h"
 #include "Format.h"
-
+#include "VFS.h"
 static FileSystemDriver* g_fs_drivers[MAX_FILESYSTEM_DRIVERS];
 static int g_num_fs_drivers = 0;
 

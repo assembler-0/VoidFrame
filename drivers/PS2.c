@@ -175,9 +175,6 @@ static void ProcessKeyboardData(uint8_t scancode) {
     }
 
     if (c) {
-        if (OnKeyPress) {
-            OnKeyPress(c);
-        }
         if (buffer_count < 255) {
             input_buffer[buffer_tail] = c;
             buffer_tail = (buffer_tail + 1) % 256;

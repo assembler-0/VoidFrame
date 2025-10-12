@@ -95,7 +95,7 @@ ninja run
 - [x] Physical Memory
 - [x] Dynamic memory mapping
 - [x] Memory Pool
-- [x] AVX2/SSE2 accelerated memory operations
+- [x] AVX/2/512 SSE/SSE2 accelerated memory operations
 - [x] Memory & user protection
 - [x] Memory canaries, guard pages
 - [x] Per-process memory checks (Cerberus)
@@ -105,7 +105,7 @@ ninja run
 - [x] Paging
 - [x] Interrupts
 - [x] Process Management
-- [x] Locks (MCS/RW/norm)
+- [x] Locks (MCS/RW/norm in C and Rust)
 - [x] Atomics
 - [x] IPC
 - [x] Compositor
@@ -127,6 +127,12 @@ ninja run
     - [x] Create
     - [x] Delete
     - [x] List
+- NTFS
+    - [x] Read
+    - [ ] Write
+    - [ ] Create
+    - [ ] Delete
+    - [ ] List
 - VFRFS (VoidFrame RAMFS)
     - [x] Read
     - [x] Write

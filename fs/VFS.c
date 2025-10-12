@@ -1,19 +1,42 @@
 #include "VFS.h"
 #include "../mm/MemOps.h"
+#include "BlockDevice.h"
 #include "Console.h"
-#include "FAT/FAT1x.h"
 #include "EXT/Ext2.h"
+#include "FAT/FAT1x.h"
+#include "FileSystem.h"
 #include "KernelHeap.h"
+#include "NTFS.h"
 #include "Serial.h"
 #include "StringOps.h"
 #include "VFRFS.h"
 #include "stdbool.h"
-#include "BlockDevice.h"
-#include "FileSystem.h"
 
 #define VFS_MAX_PATH_LEN 256
 
 static VfsMountStruct mounts[VFS_MAX_MOUNTS];
+
+void VfsListMount() {
+    for (int i = 0; i < VFS_MAX_MOUNTS; i++) {
+        if (mounts[i].active) {
+            PrintKernel("Mount Point: ");
+            PrintKernel(mounts[i].mount_point);
+            PrintKernel(" | Device: ");
+            if (mounts[i].device) {
+                PrintKernel(mounts[i].device->name);
+            } else {
+                PrintKernel("None");
+            }
+            PrintKernel(" | FS Driver: ");
+            if (mounts[i].fs_driver) {
+                PrintKernel(mounts[i].fs_driver->name);
+            } else {
+                PrintKernel("VFRFS");
+            }
+            PrintKernel("\n");
+        }
+    }
+}
 
 int VfsMount(const char* path, BlockDevice* device, FileSystemDriver* fs_driver) {
     for (int i = 0; i < VFS_MAX_MOUNTS; i++) {
@@ -42,13 +65,15 @@ int VfsInit(void) {
     PrintKernel( "VFS: Mount table cleared\n");
 
     // Register filesystems
+    static FileSystemDriver ntfs_driver = {"NTFS", NtfsDetect, NtfsMount};
+    FileSystemRegister(&ntfs_driver);
+    PrintKernel("VFS: NTFS driver registered\n");
     static FileSystemDriver fat_driver = {"FAT1x", Fat1xDetect, Fat1xMount};
     FileSystemRegister(&fat_driver);
     PrintKernel("VFS: FAT1x driver registered\n");
     static FileSystemDriver ext2_driver = {"EXT2", Ext2Detect, Ext2Mount};
     FileSystemRegister(&ext2_driver);
     PrintKernel("VFS: EXT2 driver registered\n");
-
 
     int result = VfsMount("/", NULL, NULL); // RamFS doesn't need a device or driver
     if (result != 0) {

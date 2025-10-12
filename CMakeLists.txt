@@ -124,6 +124,7 @@ include_directories(
     fs
     fs/FAT
     fs/EXT
+    fs/NTFS
     mm
     mm/trace
     mm/security
@@ -241,7 +242,7 @@ add_custom_target(extra-img
         COMMAND ${QEMU_IMG} create -f raw VirtioDisk.img 128M
         COMMAND ${MKFS_FAT} -F 16 VirtioDisk.img
         COMMAND ${QEMU_IMG} create -f raw SataDisk.img 128M
-        COMMAND ${MKFS_EXT2} SataDisk.img
+        COMMAND ${MKFS_EXT2} -F SataDisk.img
         COMMENT "Creating extra disk images"
 )
 
