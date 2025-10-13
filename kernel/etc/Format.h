@@ -2,7 +2,7 @@
 #include "stdarg.h"
 #include "stddef.h"
 
-#define FORMAT_STACK_SIZE 2048
+#define FORMAT_STACK_SIZE 1024
 
 /**
  * @brief Formats a string according to the given format string and variable argument list,
@@ -37,6 +37,7 @@
 int Format(char* buffer, size_t size, const char* format, va_list args);
 
 /**
+ * @alias vsnprintf
  * @brief Convenience wrapper for the Format (...) function using variable arguments.
  * @param buffer Buffer to the character out
  * @param size size of buffer

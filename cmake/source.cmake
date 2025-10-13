@@ -88,6 +88,7 @@ set(DRIVER_SOURCES
         drivers/sound/SB16.c
         drivers/sound/Generic.c
         drivers/storage/AHCI.c
+        drivers/storage/NVMe.c
         drivers/LPT/LPT.c
         drivers/virtio/VirtioBlk.c
         drivers/vmware/SVGAII.c

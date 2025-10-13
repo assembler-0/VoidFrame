@@ -36,6 +36,7 @@
 #include "stdbool.h"
 #include "stdint.h"
 #include "storage/AHCI.h"
+#include "storage/NVMe.h"
 #include "xHCI/xHCI.h"
 
 void KernelMainHigherHalf(void);
@@ -690,6 +691,14 @@ static InitResultT PXS2(void) {
     }
 #endif
 
+#ifdef VF_CONFIG_ENABLE_NVME
+    if (NVMe_Init() == 0) {
+        PrintKernelSuccess("System: NVMe Driver initialized\n");
+    } else {
+        PrintKernelWarning("NVMe initialization failed\n");
+    }
+#endif
+
     // Initialize RFS
     PrintKernel("Info: Initializing RFS...\n");
     FsInit();
@@ -732,7 +741,7 @@ void StackUsage(void) {
     uintptr_t current_sp;
     __asm__ __volatile__("mov %%rsp, %0" : "=r"(current_sp));
     size_t used = (uintptr_t)kernel_stack + KERNEL_STACK_SIZE - current_sp;
-    PrintKernelF("Stack used: %lu/%d bytes\n", used, KERNEL_STACK_SIZE);
+    PrintKernelF("Stack used: %llu/%d bytes\n", used, KERNEL_STACK_SIZE);
 }
 
 asmlinkage void KernelMain(const uint32_t magic, const uint32_t info) {

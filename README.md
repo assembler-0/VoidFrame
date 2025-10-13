@@ -129,10 +129,10 @@ ninja run
     - [x] List
 - NTFS
     - [x] Read
-    - [ ] Write
-    - [ ] Create
-    - [ ] Delete
-    - [ ] List
+    - [x] Write
+    - [x] Create
+    - [x] Delete
+    - [x] List
 - VFRFS (VoidFrame RAMFS)
     - [x] Read
     - [x] Write

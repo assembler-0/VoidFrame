@@ -1324,7 +1324,7 @@ void EEVDFDumpSchedulerState(void) {
 void EEVDFListProcesses(void) {
     PrintKernel("\n--- EEVDF Process List ---\n");
     PrintKernel("PID\tState     \tNice\tWeight\tVRuntime\tCPU Time\tName\n");
-    PrintKernel("---------------------------------------------------------------\n");
+    PrintKernel("-------------------------------------------------------------------------------\n");
     
     for (int i = 0; i < EEVDF_MAX_PROCESSES; i++) {
         if (i == 0 || processes[i].pid != 0) {
@@ -1354,7 +1354,7 @@ void EEVDFListProcesses(void) {
             PrintKernel("\n");
         }
     }
-    PrintKernel("---------------------------------------------------------------\n");
+    PrintKernel("-------------------------------------------------------------------------------\n");
 }
 
 void EEVDFGetProcessStats(uint32_t pid, uint32_t* cpu_time, uint32_t* wait_time, uint32_t* preemptions) {
