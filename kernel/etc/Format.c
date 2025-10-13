@@ -162,7 +162,7 @@ int vsnprintf(char *buf, size_t size, const char *fmt, va_list args)
 			if (is_longlong) snum = va_arg(args, long long);
 			else if (is_long) snum = va_arg(args, long);
 			else snum = va_arg(args, int);
-			
+
 			if (snum < 0 && pos < (int)size - 1) {
 				buf[pos++] = '-';
 				snum = -snum;

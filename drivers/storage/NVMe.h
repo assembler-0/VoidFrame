@@ -73,6 +73,9 @@ typedef struct {
     volatile uint8_t* mmio_base;
     uint64_t mmio_size;
     
+    // Doorbell parameters
+    uint8_t dstrd; // CAP.DSTRD value (stride as 2^n of 4-byte units)
+    
     // Admin queues
     NVMeSubmissionEntry* admin_sq;
     NVMeCompletionEntry* admin_cq;

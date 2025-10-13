@@ -186,3 +186,4 @@ ninja run
     - [x] PATA (IDE)
     - [x] VirtIO Block
     - [x] AHCI
+    - [x] NVMe

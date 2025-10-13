@@ -50,8 +50,10 @@ static int NVMe_SubmitAdminCommand(NVMeSubmissionEntry* cmd) {
     // Update tail pointer
     ctrl->admin_sq_tail = (ctrl->admin_sq_tail + 1) % NVME_ADMIN_QUEUE_SIZE;
     
-    // Ring doorbell
-    NVMe_WriteReg32(0x1000, ctrl->admin_sq_tail); // Admin SQ doorbell
+    // Ring doorbell for Admin SQ (QID 0)
+    uint32_t db_shift = 2 + ctrl->dstrd;
+    uint32_t asq_db_off = 0x1000 + ((0 * 2 + 0) << db_shift);
+    NVMe_WriteReg32(asq_db_off, ctrl->admin_sq_tail); // Admin SQ doorbell
     
     // Wait for completion
     int timeout = 5000;
@@ -66,8 +68,9 @@ static int NVMe_SubmitAdminCommand(NVMeSubmissionEntry* cmd) {
                 ctrl->admin_cq_phase = !ctrl->admin_cq_phase;
             }
             
-            // Ring completion doorbell
-            NVMe_WriteReg32(0x1004, ctrl->admin_cq_head); // Admin CQ doorbell
+            // Ring completion doorbell for Admin CQ (QID 0)
+            uint32_t acq_db_off = 0x1000 + ((0 * 2 + 1) << db_shift);
+            NVMe_WriteReg32(acq_db_off, ctrl->admin_cq_head); // Admin CQ doorbell
             
             return (status >> 1) & 0x7FF; // Return status code
         }
@@ -87,7 +90,9 @@ static int NVMe_SubmitIOCommand(NVMeSubmissionEntry* cmd) {
     ctrl->io_sq_tail = (ctrl->io_sq_tail + 1) % NVME_IO_QUEUE_SIZE;
     
     // Ring doorbell (I/O queue 1)
-    NVMe_WriteReg32(0x1008, ctrl->io_sq_tail); // I/O SQ doorbell
+    uint32_t db_shift = 2 + ctrl->dstrd;
+    uint32_t iosq_db_off = 0x1000 + ((1 * 2 + 0) << db_shift);
+    NVMe_WriteReg32(iosq_db_off, ctrl->io_sq_tail); // I/O SQ doorbell
     
     // Wait for completion
     int timeout = 5000;
@@ -102,8 +107,9 @@ static int NVMe_SubmitIOCommand(NVMeSubmissionEntry* cmd) {
                 ctrl->io_cq_phase = !ctrl->io_cq_phase;
             }
             
-            // Ring completion doorbell
-            NVMe_WriteReg32(0x100C, ctrl->io_cq_head); // I/O CQ doorbell
+            // Ring completion doorbell (I/O queue 1)
+            uint32_t iocq_db_off = 0x1000 + ((1 * 2 + 1) << db_shift);
+            NVMe_WriteReg32(iocq_db_off, ctrl->io_cq_head); // I/O CQ doorbell
             
             return (status >> 1) & 0x7FF; // Return status code
         }
@@ -136,7 +142,7 @@ static int NVMe_CreateIOQueues(void) {
     
     // Create I/O Completion Queue
     NVMeSubmissionEntry cmd = {0};
-    cmd.cdw0 = (++ctrl->next_cid) | (0x05 << 8); // CREATE_IO_CQ opcode
+    cmd.cdw0 = 0x05 | ((uint32_t)(++ctrl->next_cid) << 16); // CREATE_IO_CQ opcode
     cmd.prp1 = ctrl->io_cq_phys;
     cmd.cdw10 = ((NVME_IO_QUEUE_SIZE - 1) << 16) | 1; // Queue size and ID
     cmd.cdw11 = 1; // Physically contiguous
@@ -148,7 +154,7 @@ static int NVMe_CreateIOQueues(void) {
     
     // Create I/O Submission Queue
     FastMemset(&cmd, 0, sizeof(cmd));
-    cmd.cdw0 = (++ctrl->next_cid) | (0x01 << 8); // CREATE_IO_SQ opcode
+    cmd.cdw0 = 0x01 | ((uint32_t)(++ctrl->next_cid) << 16); // CREATE_IO_SQ opcode
     cmd.prp1 = ctrl->io_sq_phys;
     cmd.cdw10 = ((NVME_IO_QUEUE_SIZE - 1) << 16) | 1; // Queue size and ID
     cmd.cdw11 = (1 << 16) | 1; // CQ ID and physically contiguous
@@ -171,7 +177,7 @@ static uint64_t NVMe_GetNamespaceSize(void) {
     
     // Send IDENTIFY command for namespace 1
     NVMeSubmissionEntry cmd = {0};
-    cmd.cdw0 = (++g_nvme_controller.next_cid) | (NVME_ADMIN_IDENTIFY << 8);
+    cmd.cdw0 = NVME_ADMIN_IDENTIFY | ((uint32_t)(++g_nvme_controller.next_cid) << 16);
     cmd.nsid = 1; // Namespace 1
     cmd.prp1 = identify_phys;
     cmd.cdw10 = 0; // Identify namespace
@@ -196,7 +202,7 @@ int NVMe_ReadSectors(uint64_t lba, uint16_t count, void* buffer) {
     uint64_t buffer_phys = VMemGetPhysAddr((uint64_t)buffer);
     
     NVMeSubmissionEntry cmd = {0};
-    cmd.cdw0 = (++g_nvme_controller.next_cid) | (NVME_CMD_READ << 8);
+    cmd.cdw0 = NVME_CMD_READ | ((uint32_t)(++g_nvme_controller.next_cid) << 16);
     cmd.nsid = 1; // Namespace 1
     cmd.prp1 = buffer_phys;
     cmd.cdw10 = lba & 0xFFFFFFFF;
@@ -212,7 +218,7 @@ int NVMe_WriteSectors(uint64_t lba, uint16_t count, const void* buffer) {
     uint64_t buffer_phys = VMemGetPhysAddr((uint64_t)buffer);
     
     NVMeSubmissionEntry cmd = {0};
-    cmd.cdw0 = (++g_nvme_controller.next_cid) | (NVME_CMD_WRITE << 8);
+    cmd.cdw0 = NVME_CMD_WRITE | ((uint32_t)(++g_nvme_controller.next_cid) << 16);
     cmd.nsid = 1; // Namespace 1
     cmd.prp1 = buffer_phys;
     cmd.cdw10 = lba & 0xFFFFFFFF;
@@ -249,18 +255,29 @@ int NVMe_Init(void) {
     cmd |= PCI_CMD_MEM_SPACE_EN | PCI_CMD_BUS_MASTER_EN;
     PciWriteConfig16(pci_dev.bus, pci_dev.device, pci_dev.function, PCI_COMMAND_REG, cmd);
     
-    // Map MMIO (following AHCI pattern)
-    uint64_t mmio_phys = pci_dev.bar0 & ~0xF;
+    // Map MMIO (NVMe typically uses a 64-bit BAR at BAR0/1)
+    uint32_t bar0_val = PciConfigReadDWord(pci_dev.bus, pci_dev.device, pci_dev.function, PCI_BAR0_REG);
+    uint64_t mmio_phys = 0;
+    bool is_mem_bar = ((bar0_val & 0x1) == 0); // bit0==0 => memory BAR
+    bool is_64bit_bar = ((bar0_val & 0x06) == 0x04);
+    if (is_mem_bar) {
+        if (is_64bit_bar) {
+            uint32_t bar1_val = PciConfigReadDWord(pci_dev.bus, pci_dev.device, pci_dev.function, PCI_BAR0_REG + 4);
+            mmio_phys = ((uint64_t)bar1_val << 32) | (uint64_t)(bar0_val & ~0xFULL);
+        } else {
+            mmio_phys = (uint64_t)(bar0_val & ~0xFULL);
+        }
+    }
     if (mmio_phys == 0) {
         PrintKernel("NVMe: Invalid MMIO base address\n");
         return -1;
     }
     
     // Align physical address and size to page boundaries
-    uint64_t mmio_phys_aligned = mmio_phys & ~0xFFF;
+    uint64_t mmio_phys_aligned = mmio_phys & ~0xFFFULL;
     uint64_t mmio_offset = mmio_phys - mmio_phys_aligned;
-    g_nvme_controller.mmio_size = GetPCIMMIOSize(&pci_dev, pci_dev.bar0);
-    uint64_t mmio_size_aligned = ((g_nvme_controller.mmio_size + mmio_offset + 0xFFF) & ~0xFFF);
+    g_nvme_controller.mmio_size = GetPCIMMIOSize(&pci_dev, bar0_val);
+    uint64_t mmio_size_aligned = ((g_nvme_controller.mmio_size + mmio_offset + 0xFFFULL) & ~0xFFFULL);
     
     // Allocate virtual space
     volatile uint8_t* mmio_base_raw = (volatile uint8_t*)VMemAlloc(mmio_size_aligned);
@@ -288,6 +305,10 @@ int NVMe_Init(void) {
     g_nvme_controller.mmio_size = mmio_size_aligned;
     
     __asm__ volatile("mfence" ::: "memory");
+    
+    // Read capabilities (for doorbell stride)
+    uint64_t cap = NVMe_ReadReg64(NVME_CAP);
+    g_nvme_controller.dstrd = (uint8_t)((cap >> 32) & 0xF);
     
     // Reset controller
     NVMe_WriteReg32(NVME_CC, 0);

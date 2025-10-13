@@ -536,8 +536,6 @@ int Ext2ListDir(const char* path) {
         return -1;
     }
 
-    PrintKernelF("Listing directory: %s\n", path);
-
     // Direct blocks only
     for (int i = 0; i < 12; i++) {
         if (inode.i_block[i] == 0) continue;
