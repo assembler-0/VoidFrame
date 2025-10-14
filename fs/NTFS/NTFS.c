@@ -19,7 +19,16 @@ typedef struct {
     RustRwLock* lock;
 } NtfsVolume;
 
-static NtfsVolume volume;
+static NtfsVolume* g_ntfs_by_dev[MAX_BLOCK_DEVICES] = {0};
+static NtfsVolume* g_ntfs_active = NULL;
+#define volume (*g_ntfs_active)
+
+void NtfsSetActive(BlockDevice* device) {
+    if (!device) { g_ntfs_active = NULL; return; }
+    int id = device->id;
+    if (id < 0 || id >= MAX_BLOCK_DEVICES) { g_ntfs_active = NULL; return; }
+    g_ntfs_active = g_ntfs_by_dev[id];
+}
 
 int NtfsDetect(struct BlockDevice* device) {
     if (!device || !device->read_blocks) return 0;
@@ -38,7 +47,16 @@ static FileSystemDriver ntfs_driver = {"NTFS", NtfsDetect, NtfsMount};
 
 int NtfsMount(struct BlockDevice* device, const char* mount_point) {
     if (!device || !device->read_blocks) return -1;
-    
+    if (device->id < 0 || device->id >= MAX_BLOCK_DEVICES) return -1;
+    NtfsVolume* vol = g_ntfs_by_dev[device->id];
+    if (!vol) {
+        vol = (NtfsVolume*)KernelMemoryAlloc(sizeof(NtfsVolume));
+        if (!vol) return -1;
+        FastMemset(vol, 0, sizeof(NtfsVolume));
+        g_ntfs_by_dev[device->id] = vol;
+    }
+    g_ntfs_active = vol;
+
     if (!volume.lock) volume.lock = rust_rwlock_new();
     if (!volume.lock) {
         PrintKernel("NTFS: Failed to allocate lock\n");

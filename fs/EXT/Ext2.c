@@ -39,7 +39,11 @@ void Ext2SetActive(BlockDevice* device) {
         g_ext2_active = NULL;
         return;
     }
-    g_ext2_active = g_ext2_by_dev[id];
+    Ext2Volume* vol = g_ext2_by_dev[id];
+    if (!vol->lock) return;
+    rust_rwlock_write_lock(vol->lock, GetCurrentProcess()->pid);
+    g_ext2_active = vol;
+    rust_rwlock_write_unlock(vol->lock);
 }
 
 int Ext2Detect(BlockDevice* device) {

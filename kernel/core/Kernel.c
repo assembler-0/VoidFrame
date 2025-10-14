@@ -30,6 +30,7 @@
 #include "VFRFS.h"
 #include "VFS.h"
 #include "VMem.h"
+#include "Vector.h"
 #include "Vesa.h"
 #include "ethernet/Network.h"
 #include "sound/Generic.h"
