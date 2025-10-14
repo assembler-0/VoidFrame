@@ -1,20 +1,6 @@
 #ifndef VOIDFRAME_STDLIB_H
 #define VOIDFRAME_STDLIB_H
 
-static inline int ABSi(const int x) {
-    if (x < 0) {
-        return -x;
-    }
-    return x;
-}
-
-static inline double ABSd(const double x) {
-    if (x < 0.0) {
-        return -x;
-    }
-    return x;
-}
-
 static inline int atoi(const char* str) {
     int result = 0;
     int sign = 1;
@@ -41,14 +27,6 @@ static inline int atoi(const char* str) {
     }
 
     return result * sign;
-}
-
-static inline double pow(double base, double exp) {
-    double result = 1.0;
-    for (int i = 0; i < exp; i++) {
-        result *= base;
-    }
-    return result;
 }
 
 #endif // VOIDFRAME_STDLIB_H
