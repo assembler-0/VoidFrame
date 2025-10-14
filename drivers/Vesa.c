@@ -3,6 +3,7 @@
 #include "Font.h"
 #include "Multiboot2.h"
 #include "Serial.h"
+#include "math.h"
 #include "stdint.h"
 #include "stdlib.h"
 #include "x64.h"
@@ -182,8 +183,8 @@ void VBEDrawRect(uint32_t x, uint32_t y, uint32_t width, uint32_t height, uint32
 void VBEDrawLine(uint32_t x0, uint32_t y0, uint32_t x1, uint32_t y1, uint32_t color) {
     if (!vbe_initialized) return;
 
-    int dx = ABSi((int)x1 - (int)x0);
-    int dy = ABSi((int)y1 - (int)y0);
+    int dx = abs((int)x1 - (int)x0);
+    int dy = abs((int)y1 - (int)y0);
     int sx = (x0 < x1) ? 1 : -1;
     int sy = (y0 < y1) ? 1 : -1;
     int err = dx - dy;

@@ -8,8 +8,18 @@
 #include "StringOps.h"
 #include "VFS.h"
 
-static Fat1xVolume volume;
+// Per-device volume registry and active context
+static Fat1xVolume* g_fat1x_by_dev[MAX_BLOCK_DEVICES] = {0};
+static Fat1xVolume* g_fat1x_active = NULL;
+#define volume (*g_fat1x_active)
 static uint8_t* sector_buffer = NULL;
+
+void Fat1xSetActive(BlockDevice* device) {
+    if (!device) { g_fat1x_active = NULL; return; }
+    int id = device->id;
+    if (id < 0 || id >= MAX_BLOCK_DEVICES) { g_fat1x_active = NULL; return; }
+    g_fat1x_active = g_fat1x_by_dev[id];
+}
 
 int Fat1xDetect(BlockDevice* device) {
     uint8_t boot_sector[512];
@@ -34,6 +44,16 @@ int Fat1xDetect(BlockDevice* device) {
 static FileSystemDriver fat_driver = {"FAT1x", Fat1xDetect, Fat1xMount};
 
 int Fat1xMount(BlockDevice* device, const char* mount_point) {
+    if (!device) return -1;
+    if (device->id < 0 || device->id >= MAX_BLOCK_DEVICES) return -1;
+    Fat1xVolume* vol = g_fat1x_by_dev[device->id];
+    if (!vol) {
+        vol = (Fat1xVolume*)KernelMemoryAlloc(sizeof(Fat1xVolume));
+        if (!vol) return -1;
+        FastMemset(vol, 0, sizeof(Fat1xVolume));
+        g_fat1x_by_dev[device->id] = vol;
+    }
+    g_fat1x_active = vol;
     volume.device = device;
 
     // Read boot sector

@@ -146,10 +146,13 @@ int VfsReadFile(const char* path, void* buffer, uint32_t max_size) {
 
     if (mount->fs_driver) {
         if (FastStrCmp(mount->fs_driver->name, "FAT1x") == 0) {
+            Fat1xSetActive(mount->device);
             return Fat1xReadFile(local_path, buffer, max_size);
         } else if (FastStrCmp(mount->fs_driver->name, "EXT2") == 0) {
+            Ext2SetActive(mount->device);
             return Ext2ReadFile(local_path, buffer, max_size);
         } else if (FastStrCmp(mount->fs_driver->name, "NTFS") == 0) {
+            NtfsSetActive(mount->device);
             return NtfsReadFile(local_path, buffer, max_size);
         }
     } else {
@@ -174,10 +177,13 @@ int VfsWriteFile(const char* path, const void* buffer, uint32_t size) {
 
     if (mount->fs_driver) {
         if (FastStrCmp(mount->fs_driver->name, "FAT1x") == 0) {
+            Fat1xSetActive(mount->device);
             return Fat1xWriteFile(local_path, buffer, size);
         } else if (FastStrCmp(mount->fs_driver->name, "EXT2") == 0) {
+            Ext2SetActive(mount->device);
             return Ext2WriteFile(local_path, buffer, size);
         } else if (FastStrCmp(mount->fs_driver->name, "NTFS") == 0) {
+            NtfsSetActive(mount->device);
             return NtfsWriteFile(local_path, buffer, size);
         }
     } else {
@@ -200,10 +206,13 @@ int VfsListDir(const char* path) {
 
     if (mount->fs_driver) {
         if (FastStrCmp(mount->fs_driver->name, "FAT1x") == 0) {
+            Fat1xSetActive(mount->device);
             return Fat1xListDirectory(local_path);
         } else if (FastStrCmp(mount->fs_driver->name, "EXT2") == 0) {
+            Ext2SetActive(mount->device);
             return Ext2ListDir(local_path);
         } else if (FastStrCmp(mount->fs_driver->name, "NTFS") == 0) {
+            NtfsSetActive(mount->device);
             return NtfsListDir(local_path);
         }
     } else {
@@ -222,10 +231,13 @@ int VfsCreateFile(const char* path) {
 
     if (mount->fs_driver) {
         if (FastStrCmp(mount->fs_driver->name, "FAT1x") == 0) {
+            Fat1xSetActive(mount->device);
             return Fat1xCreateFile(local_path);
         } else if (FastStrCmp(mount->fs_driver->name, "EXT2") == 0) {
+            Ext2SetActive(mount->device);
             return Ext2CreateFile(local_path);
         } else if (FastStrCmp(mount->fs_driver->name, "NTFS") == 0) {
+            NtfsSetActive(mount->device);
             return NtfsCreateFile(local_path);
         }
     } else {
@@ -247,10 +259,13 @@ int VfsCreateDir(const char* path) {
 
     if (mount->fs_driver) {
         if (FastStrCmp(mount->fs_driver->name, "FAT1x") == 0) {
+            Fat1xSetActive(mount->device);
             return Fat1xCreateDir(local_path);
         } else if (FastStrCmp(mount->fs_driver->name, "EXT2") == 0) {
+            Ext2SetActive(mount->device);
             return Ext2CreateDir(local_path);
         } else if (FastStrCmp(mount->fs_driver->name, "NTFS") == 0) {
+            NtfsSetActive(mount->device);
             return NtfsCreateDir(local_path);
         }
     } else {
@@ -269,11 +284,14 @@ int VfsDelete(const char* path, bool Recursive) {
 
     if (mount->fs_driver) {
         if (FastStrCmp(mount->fs_driver->name, "FAT1x") == 0) {
+            Fat1xSetActive(mount->device);
             if (Recursive) return Fat1xDeleteRecursive(local_path);
             return Fat1xDeleteFile(local_path);
         } else if (FastStrCmp(mount->fs_driver->name, "EXT2") == 0) {
+            Ext2SetActive(mount->device);
             return Ext2Delete(local_path);
         } else if (FastStrCmp(mount->fs_driver->name, "NTFS") == 0) {
+            NtfsSetActive(mount->device);
             return NtfsDelete(local_path);
         }
     } else {
@@ -293,10 +311,13 @@ int VfsIsDir(const char* path) {
 
     if (mount->fs_driver) {
         if (FastStrCmp(mount->fs_driver->name, "FAT1x") == 0) {
+            Fat1xSetActive(mount->device);
             return Fat1xIsDirectory(local_path);
         } else if (FastStrCmp(mount->fs_driver->name, "EXT2") == 0) {
+            Ext2SetActive(mount->device);
             return Ext2IsDir(local_path);
         } else if (FastStrCmp(mount->fs_driver->name, "NTFS") == 0) {
+            NtfsSetActive(mount->device);
             return NtfsIsDir(local_path);
         }
     } else {
@@ -318,8 +339,10 @@ int VfsIsFile(const char* path) {
         if (FastStrCmp(mount->fs_driver->name, "FAT1x") == 0) {
             return Fat1xGetFileSize(local_path) > 0;
         } else if (FastStrCmp(mount->fs_driver->name, "EXT2") == 0) {
+            Ext2SetActive(mount->device);
             return Ext2IsFile(local_path);
         } else if (FastStrCmp(mount->fs_driver->name, "NTFS") == 0) {
+            NtfsSetActive(mount->device);
             return NtfsIsFile(local_path);
         }
     } else {
@@ -339,10 +362,13 @@ uint64_t VfsGetFileSize(const char* path) {
 
     if (mount->fs_driver) {
         if (FastStrCmp(mount->fs_driver->name, "FAT1x") == 0) {
+            Fat1xSetActive(mount->device);
             return Fat1xGetFileSize(local_path);
         } else if (FastStrCmp(mount->fs_driver->name, "EXT2") == 0) {
+            Ext2SetActive(mount->device);
             return Ext2GetFileSize(local_path);
         } else if (FastStrCmp(mount->fs_driver->name, "NTFS") == 0) {
+            NtfsSetActive(mount->device);
             return NtfsGetFileSize(local_path);
         }
     } else {

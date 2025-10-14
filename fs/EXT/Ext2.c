@@ -24,7 +24,27 @@ typedef struct {
     RustRwLock* lock;
 } Ext2Volume;
 
-static Ext2Volume volume;
+// Per-device volume registry and active context
+static Ext2Volume* g_ext2_by_dev[MAX_BLOCK_DEVICES] = {0};
+static Ext2Volume* g_ext2_active = NULL;
+#define volume (*g_ext2_active)
+
+void Ext2SetActive(BlockDevice* device) {
+    if (device == NULL) {
+        g_ext2_active = NULL;
+        return;
+    }
+    int id = device->id;
+    if (id < 0 || id >= MAX_BLOCK_DEVICES) {
+        g_ext2_active = NULL;
+        return;
+    }
+    Ext2Volume* vol = g_ext2_by_dev[id];
+    if (!vol->lock) return;
+    rust_rwlock_write_lock(vol->lock, GetCurrentProcess()->pid);
+    g_ext2_active = vol;
+    rust_rwlock_write_unlock(vol->lock);
+}
 
 int Ext2Detect(BlockDevice* device) {
     PrintKernel("EXT2: Detecting EXT2 on device ");
@@ -101,6 +121,27 @@ int Ext2ReadBlock(uint32_t block, void* buffer) {
 static FileSystemDriver ext2_driver = {"EXT2", Ext2Detect, Ext2Mount};
 
 int Ext2Mount(BlockDevice* device, const char* mount_point) {
+    // Prepare or reuse per-device volume
+    if (device == NULL) {
+        PrintKernelF("EXT2: Mount called with NULL device.\n");
+        return -1;
+    }
+    if (device->id < 0 || device->id >= MAX_BLOCK_DEVICES) {
+        PrintKernelF("EXT2: Invalid device id %d.\n", device->id);
+        return -1;
+    }
+    Ext2Volume* vol = g_ext2_by_dev[device->id];
+    if (!vol) {
+        vol = (Ext2Volume*)KernelMemoryAlloc(sizeof(Ext2Volume));
+        if (!vol) {
+            PrintKernelF("EXT2: Failed to allocate volume structure.\n");
+            return -1;
+        }
+        FastMemset(vol, 0, sizeof(Ext2Volume));
+        g_ext2_by_dev[device->id] = vol;
+    }
+    g_ext2_active = vol; // Set active for init path below via `volume` macro
+
     if (!volume.lock) volume.lock = rust_rwlock_new();
     if (!volume.lock) {
         PrintKernelF("EXT2: Failed to allocate lock.\n");
@@ -535,8 +576,6 @@ int Ext2ListDir(const char* path) {
         rust_rwlock_read_unlock(volume.lock, GetCurrentProcess()->pid);
         return -1;
     }
-
-    PrintKernelF("Listing directory: %s\n", path);
 
     // Direct blocks only
     for (int i = 0; i < 12; i++) {

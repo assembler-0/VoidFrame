@@ -20,6 +20,7 @@
 #include "StackGuard.h"
 #include "VFS.h"
 #include "VMem.h"
+#include "math.h"
 #include "stdbool.h"
 #include "stdlib.h"
 #include "x64.h"
@@ -1452,7 +1453,7 @@ static __attribute__((visibility("hidden"))) void DynamoX(void) {
             uint32_t change_threshold = (controller.stability_counter > STABILITY_REQUIREMENT) ?
                 HYSTERESIS_THRESHOLD / 2 : HYSTERESIS_THRESHOLD;
 
-            if (ABSi(new_freq - controller.current_freq) > change_threshold) {
+            if (abs(new_freq - controller.current_freq) > change_threshold) {
                 ApicTimerSetFrequency(new_freq);
                 controller.current_freq = new_freq;
                 controller.stability_counter = 0;

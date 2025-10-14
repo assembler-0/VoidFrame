@@ -142,6 +142,7 @@ uint64_t NtfsGetFileSize(const char* path);
 int NtfsCreateFile(const char* path);
 int NtfsCreateDir(const char* path);
 int NtfsDelete(const char* path);
+void NtfsSetActive(BlockDevice* device);
 
 // Internal Functions
 int NtfsReadMftRecord(uint64_t record_num, NtfsMftRecord* record);

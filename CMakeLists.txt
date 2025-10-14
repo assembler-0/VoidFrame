@@ -217,6 +217,8 @@ add_custom_target(run
         -parallel file:printer.out
         -drive file=VirtioDisk.img,format=raw,id=virtio_disk,if=none
         -device virtio-blk-pci,drive=virtio_disk,disable-legacy=on
+        -drive file=NVMeDisk.img,format=raw,id=nvme_disk,if=none
+        -device nvme,drive=nvme_disk,serial=nvme001
         DEPENDS iso img extra-img
 )
 
@@ -242,7 +244,9 @@ add_custom_target(extra-img
         COMMAND ${QEMU_IMG} create -f raw VirtioDisk.img 128M
         COMMAND ${MKFS_FAT} -F 16 VirtioDisk.img
         COMMAND ${QEMU_IMG} create -f raw SataDisk.img 128M
-        COMMAND ${MKFS_NTFS} -F SataDisk.img
+        COMMAND ${MKFS_EXT2} -F SataDisk.img
+        COMMAND ${QEMU_IMG} create -f raw NVMeDisk.img 256M
+        COMMAND ${MKFS_EXT2} -F NVMeDisk.img
         COMMENT "Creating extra disk images"
 )
 

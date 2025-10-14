@@ -63,6 +63,8 @@ typedef struct {
 // Core Functions
 int Fat1xMount(BlockDevice* device, const char* mount_point);
 int Fat1xDetect(BlockDevice* device);
+// Set the active FAT1x volume context for subsequent FAT operations
+void Fat1xSetActive(BlockDevice* device);
 int Fat1xReadFile(const char* filename, void* buffer, uint32_t max_size);
 int Fat1xWriteFile(const char* filename, const void* buffer, uint32_t size);
 int Fat1xDeleteFile(const char* filename);

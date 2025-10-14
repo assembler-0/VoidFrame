@@ -75,212 +75,165 @@ unsigned long __rem = (unsigned long)(n) % (unsigned long)(base); \
 (unsigned int)__rem; })
 #endif
 
-static char* number(char* str, long num, int base, int size, int precision, int type)
+static void number_to_str(char* buf, size_t buf_size, int* pos, unsigned long long num, int base, int flags)
 {
-	char c,sign,tmp[36];
-	const char *digits="0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ";
-	int i;
+	char tmp[24];
+	const char *digits = (flags & SMALL) ? "0123456789abcdefghijklmnopqrstuvwxyz" : "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+	int i = 0;
 
-	if (type&SMALL) digits="0123456789abcdefghijklmnopqrstuvwxyz";
-	if (type&LEFT) type &= ~ZEROPAD;
-	if (base<2 || base>36)
-		return 0;
-	c = (type & ZEROPAD) ? '0' : ' ' ;
-	if (type&SIGN && num<0) {
-		sign='-';
-		num = -num;
-	} else
-		sign=(type&PLUS) ? '+' : ((type&SPACE) ? ' ' : 0);
-	if (sign) size--;
-	if (type&SPECIAL)
-		if (base==16) size -= 2;
-		else if (base==8) size--;
-	i=0;
-	if (num==0)
-		tmp[i++]='0';
-	else while (num!=0)
-		tmp[i++]=digits[do_div(num,base)];
-	if (i>precision) precision=i;
-	size -= precision;
-	if (!(type&(ZEROPAD+LEFT)))
-		while(size-->0)
-			*str++ = ' ';
-	if (sign)
-		*str++ = sign;
-	if (type&SPECIAL)
-		if (base==8)
-			*str++ = '0';
-		else if (base==16) {
-			*str++ = '0';
-			*str++ = digits[33];
+	if (num == 0) {
+		tmp[i++] = '0';
+	} else {
+		while (num && i < 23) {
+			tmp[i++] = digits[num % base];
+			num /= base;
 		}
-	if (!(type&LEFT))
-		while(size-->0)
-			*str++ = c;
-	while(i<precision--)
-		*str++ = '0';
-	while(i-->0)
-		*str++ = tmp[i];
-	while(size-->0)
-		*str++ = ' ';
-	return str;
+	}
+
+	while (i > 0 && *pos < (int)buf_size - 1) {
+		buf[(*pos)++] = tmp[--i];
+	}
 }
 
-int vsprintf(char *buf, const char *fmt, va_list args)
+int vsnprintf(char *buf, size_t size, const char *fmt, va_list args)
 {
-	int len;
-	int i;
-	char * str;
-	char *s;
-	int *ip;
+	int pos = 0;
+	const char *s;
+	int len, i;
+	int flags;
 
-	int flags;		/* flags to number() */
+	if (!buf || size == 0) return 0;
 
-	int field_width;	/* width of output field */
-	int precision;		/* min. # of digits for integers; max
-				   number of chars for from string */
-	int qualifier;		/* 'h', 'l', or 'L' for integer fields */
-
-	for (str=buf ; *fmt ; ++fmt) {
+	for (; *fmt && pos < (int)size - 1; ++fmt) {
 		if (*fmt != '%') {
-			*str++ = *fmt;
+			buf[pos++] = *fmt;
 			continue;
 		}
 
-		/* process flags */
+		++fmt;
 		flags = 0;
-		repeat:
-			++fmt;		/* this also skips first '%' */
-			switch (*fmt) {
-				case '-': flags |= LEFT; goto repeat;
-				case '+': flags |= PLUS; goto repeat;
-				case ' ': flags |= SPACE; goto repeat;
-				case '#': flags |= SPECIAL; goto repeat;
-				case '0': flags |= ZEROPAD; goto repeat;
-				}
 
-		/* get field width */
-		field_width = -1;
-		if (is_digit(*fmt))
-			field_width = skip_atoi(&fmt);
-		else if (*fmt == '*') {
-			/* it's the next argument */
-			field_width = va_arg(args, int);
-			if (field_width < 0) {
-				field_width = -field_width;
-				flags |= LEFT;
-			}
+		/* Skip flags */
+		while (*fmt == '-' || *fmt == '+' || *fmt == ' ' || *fmt == '#' || *fmt == '0') {
+			if (*fmt == 'x') flags |= SMALL;
+			++fmt;
 		}
 
-		/* get the precision */
-		precision = -1;
+		/* Skip field width */
+		while (is_digit(*fmt)) ++fmt;
+
+		/* Skip precision */
 		if (*fmt == '.') {
 			++fmt;
-			if (is_digit(*fmt))
-				precision = skip_atoi(&fmt);
-			else if (*fmt == '*') {
-				/* it's the next argument */
-				precision = va_arg(args, int);
-			}
-			if (precision < 0)
-				precision = 0;
+			while (is_digit(*fmt)) ++fmt;
 		}
 
-		/* get the conversion qualifier */
-		qualifier = -1;
-		if (*fmt == 'h' || *fmt == 'l' || *fmt == 'L') {
-			qualifier = *fmt;
+		/* Parse length modifier */
+		int is_long = 0, is_longlong = 0;
+		if (*fmt == 'l') {
+			++fmt;
+			is_long = 1;
+			if (*fmt == 'l') {
+				++fmt;
+				is_longlong = 1;
+				is_long = 0;
+			}
+		} else if (*fmt == 'h' || *fmt == 'L') {
 			++fmt;
 		}
 
 		switch (*fmt) {
 		case 'c':
-			if (!(flags & LEFT))
-				while (--field_width > 0)
-					*str++ = ' ';
-			*str++ = (unsigned char) va_arg(args, int);
-			while (--field_width > 0)
-				*str++ = ' ';
+			if (pos < (int)size - 1) buf[pos++] = (char)va_arg(args, int);
 			break;
 
 		case 's':
 			s = va_arg(args, char *);
-			if (!s)
-				s = "<NULL>";
+			if (!s) s = "(null)";
 			len = StringLength(s);
-			if (precision < 0)
-				precision = len;
-			else if (len > precision)
-				len = precision;
-
-			if (!(flags & LEFT))
-				while (len < field_width--)
-					*str++ = ' ';
-			for (i = 0; i < len; ++i)
-				*str++ = *s++;
-			while (len < field_width--)
-				*str++ = ' ';
-			break;
-
-		case 'o':
-			str = number(str, va_arg(args, unsigned long), 8,
-				field_width, precision, flags);
-			break;
-
-		case 'p':
-			if (field_width == -1) {
-				field_width = 8;
-				flags |= ZEROPAD;
+			for (i = 0; i < len && pos < (int)size - 1; i++) {
+				buf[pos++] = s[i];
 			}
-			str = number(str,
-				(unsigned long) va_arg(args, void *), 16,
-				field_width, precision, flags);
-			break;
-
-		case 'x':
-			flags |= SMALL;
-		case 'X':
-			str = number(str, va_arg(args, unsigned long), 16,
-				field_width, precision, flags);
 			break;
 
 		case 'd':
-		case 'i':
-			flags |= SIGN;
-		case 'u':
-			str = number(str, va_arg(args, unsigned long), 10,
-				field_width, precision, flags);
+		case 'i': {
+			long long snum;
+			if (is_longlong) snum = va_arg(args, long long);
+			else if (is_long) snum = va_arg(args, long);
+			else snum = va_arg(args, int);
+
+			if (snum < 0 && pos < (int)size - 1) {
+				buf[pos++] = '-';
+				snum = -snum;
+			}
+			number_to_str(buf, size, &pos, (unsigned long long)snum, 10, 0);
+			break;
+		}
+
+		case 'u': {
+			unsigned long long unum;
+			if (is_longlong) unum = va_arg(args, unsigned long long);
+			else if (is_long) unum = va_arg(args, unsigned long);
+			else unum = va_arg(args, unsigned int);
+			number_to_str(buf, size, &pos, unum, 10, 0);
+			break;
+		}
+
+		case 'x':
+			flags |= SMALL;
+		case 'X': {
+			unsigned long long unum;
+			if (is_longlong) unum = va_arg(args, unsigned long long);
+			else if (is_long) unum = va_arg(args, unsigned long);
+			else unum = va_arg(args, unsigned int);
+			number_to_str(buf, size, &pos, unum, 16, flags);
+			break;
+		}
+
+		case 'o': {
+			unsigned long long unum;
+			if (is_longlong) unum = va_arg(args, unsigned long long);
+			else if (is_long) unum = va_arg(args, unsigned long);
+			else unum = va_arg(args, unsigned int);
+			number_to_str(buf, size, &pos, unum, 8, 0);
+			break;
+		}
+
+		case 'p':
+			if (pos < (int)size - 1) buf[pos++] = '0';
+			if (pos < (int)size - 1) buf[pos++] = 'x';
+			number_to_str(buf, size, &pos, (unsigned long long)va_arg(args, void *), 16, SMALL);
 			break;
 
-		case 'n':
-			ip = va_arg(args, int *);
-			*ip = (str - buf);
+		case '%':
+			if (pos < (int)size - 1) buf[pos++] = '%';
 			break;
 
 		default:
-			if (*fmt != '%')
-				*str++ = '%';
-			if (*fmt)
-				*str++ = *fmt;
-			else
-				--fmt;
+			if (pos < (int)size - 1) buf[pos++] = '%';
+			if (*fmt && pos < (int)size - 1) buf[pos++] = *fmt;
 			break;
 		}
 	}
-	*str = '\0';
-	return str-buf;
+
+	buf[pos] = '\0';
+	return pos;
+}
+
+int vsprintf(char *buf, const char *fmt, va_list args)
+{
+	return vsnprintf(buf, 0x7FFFFFFF, fmt, args);
 }
 
 int Format(char* buffer, size_t size, const char* format, va_list args) {
-    (void)size;
-    return vsprintf(buffer, format, args);
+    return vsnprintf(buffer, size, format, args);
 }
 
-// Convenience wrapper
 int FormatA(char* buffer, size_t size, const char* format, ...) {
     va_list args;
     va_start(args, format);
-    int result = vsprintf(buffer, format, args);
+    int result = vsnprintf(buffer, size, format, args);
     va_end(args);
     return result;
 }
@@ -289,7 +242,7 @@ char* FormatS(const char* format, ...) {
     static char stack_buffer[1024];
     va_list args;
     va_start(args, format);
-    vsprintf(stack_buffer, format, args);
+    vsnprintf(stack_buffer, sizeof(stack_buffer), format, args);
     va_end(args);
     return stack_buffer;
 }

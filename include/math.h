@@ -30,6 +30,10 @@
 #define isnormal(x)   __builtin_isnormal(x)
 #define signbit(x)    __builtin_signbit(x)
 
+static inline int abs(const int x) {
+    return x < 0 ? -x : x;
+}
+
 /* Fast absolute value using bit manipulation */
 static inline double fabs(double x) {
     union { double d; uint64_t i; } u = { x };
@@ -258,20 +262,6 @@ static inline float fast_sinf(float x) {
     return x * (1.0f - x2 * (0.16666667f - x2 * (0.00833333f - x2 * 0.0001984f)));
 }
 
-/* Inverse trig using Newton-Raphson */
-static inline double asin(double x) {
-    if (x < -1 || x > 1) return NAN;
-    if (x == 1) return M_PI_2;
-    if (x == -1) return -M_PI_2;
-
-    // Use identity: asin(x) = atan(x/sqrt(1-x^2))
-    return atan2(x, sqrt(1 - x * x));
-}
-
-static inline double acos(double x) {
-    if (x < -1 || x > 1) return NAN;
-    return M_PI_2 - asin(x);
-}
 
 static inline double atan(double x) {
     int invert = 0, complement = 0;
@@ -290,6 +280,7 @@ static inline double atan(double x) {
     return copysign(result, x);
 }
 
+
 static inline double atan2(double y, double x) {
     if (x > 0) return atan(y / x);
     if (x < 0 && y >= 0) return atan(y / x) + M_PI;
@@ -297,6 +288,21 @@ static inline double atan2(double y, double x) {
     if (x == 0 && y > 0) return M_PI_2;
     if (x == 0 && y < 0) return -M_PI_2;
     return 0; // x == 0 && y == 0
+}
+
+/* Inverse trig using Newton-Raphson */
+static inline double asin(double x) {
+    if (x < -1 || x > 1) return NAN;
+    if (x == 1) return M_PI_2;
+    if (x == -1) return -M_PI_2;
+
+    // Use identity: asin(x) = atan(x/sqrt(1-x^2))
+    return atan2(x, sqrt(1 - x * x));
+}
+
+static inline double acos(double x) {
+    if (x < -1 || x > 1) return NAN;
+    return M_PI_2 - asin(x);
 }
 
 /* Hyperbolic functions */
