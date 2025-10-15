@@ -47,6 +47,9 @@ static int NVMe_SubmitAdminCommand(NVMeSubmissionEntry* cmd) {
     // Copy command to submission queue
     FastMemcpy(&ctrl->admin_sq[ctrl->admin_sq_tail], cmd, sizeof(NVMeSubmissionEntry));
     
+    // Ensure the SQE is visible to the device before ringing the doorbell
+    __asm__ volatile("mfence" ::: "memory");
+    
     // Update tail pointer
     ctrl->admin_sq_tail = (ctrl->admin_sq_tail + 1) % NVME_ADMIN_QUEUE_SIZE;
     
@@ -85,6 +88,9 @@ static int NVMe_SubmitIOCommand(NVMeSubmissionEntry* cmd) {
     
     // Copy command to I/O submission queue
     FastMemcpy(&ctrl->io_sq[ctrl->io_sq_tail], cmd, sizeof(NVMeSubmissionEntry));
+    
+    // Ensure the SQE is visible to the device before ringing the doorbell
+    __asm__ volatile("mfence" ::: "memory");
     
     // Update tail pointer
     ctrl->io_sq_tail = (ctrl->io_sq_tail + 1) % NVME_IO_QUEUE_SIZE;
@@ -198,34 +204,86 @@ static uint64_t NVMe_GetNamespaceSize(void) {
 
 int NVMe_ReadSectors(uint64_t lba, uint16_t count, void* buffer) {
     if (!g_nvme_controller.initialized) return -1;
-    
-    uint64_t buffer_phys = VMemGetPhysAddr((uint64_t)buffer);
-    
-    NVMeSubmissionEntry cmd = {0};
-    cmd.cdw0 = NVME_CMD_READ | ((uint32_t)(++g_nvme_controller.next_cid) << 16);
+
+    // Split into page-safe chunks so PRP1 is sufficient and we never cross a 4KiB page.
+    const uint32_t sector_size = 512;
+    uint8_t* buf = (uint8_t*)buffer;
+    uint16_t remaining = count;
+
+    while (remaining > 0) {
+        uint64_t phys = VMemGetPhysAddr((uint64_t)buf);
+        uint32_t page_off = (uint32_t)(phys & 0xFFFULL);
+        uint32_t bytes_left_in_page = 4096U - page_off;
+        uint16_t max_sectors_in_page = (uint16_t)(bytes_left_in_page / sector_size);
+        if (max_sectors_in_page == 0) max_sectors_in_page = 1; // Safety: at least one sector
+
+        // NVMe without PRP2/PRP list supports only one page via PRP1 here, cap at 8 sectors (4KiB)
+        uint16_t sectors_this = remaining < max_sectors_in_page ? remaining : max_sectors_in_page;
+        if (sectors_this > 8) sectors_this = 8;
+
+        NVMeSubmissionEntry cmd = (NVMeSubmissionEntry){0};
+        cmd.cdw0 = NVME_CMD_READ | ((uint32_t)(++g_nvme_controller.next_cid) << 16);
+        cmd.nsid = 1; // Namespace 1
+        cmd.prp1 = phys;
+        cmd.cdw10 = (uint32_t)(lba & 0xFFFFFFFFULL);
+        cmd.cdw11 = (uint32_t)((lba >> 32) & 0xFFFFFFFFULL);
+        cmd.cdw12 = (uint32_t)(sectors_this - 1); // 0-based count
+
+        int st = NVMe_SubmitIOCommand(&cmd);
+        if (st != 0) return st ? st : -1;
+
+        // Advance
+        lba += sectors_this;
+        buf += (uint32_t)sectors_this * sector_size;
+        remaining -= sectors_this;
+    }
+
+    return 0;
+}
+
+static int NVMe_Flush(void) {
+    NVMeSubmissionEntry cmd = (NVMeSubmissionEntry){0};
+    cmd.cdw0 = NVME_CMD_FLUSH | ((uint32_t)(++g_nvme_controller.next_cid) << 16);
     cmd.nsid = 1; // Namespace 1
-    cmd.prp1 = buffer_phys;
-    cmd.cdw10 = lba & 0xFFFFFFFF;
-    cmd.cdw11 = (lba >> 32) & 0xFFFFFFFF;
-    cmd.cdw12 = (count - 1); // 0-based count
-    
     return NVMe_SubmitIOCommand(&cmd);
 }
 
 int NVMe_WriteSectors(uint64_t lba, uint16_t count, const void* buffer) {
     if (!g_nvme_controller.initialized) return -1;
-    
-    uint64_t buffer_phys = VMemGetPhysAddr((uint64_t)buffer);
-    
-    NVMeSubmissionEntry cmd = {0};
-    cmd.cdw0 = NVME_CMD_WRITE | ((uint32_t)(++g_nvme_controller.next_cid) << 16);
-    cmd.nsid = 1; // Namespace 1
-    cmd.prp1 = buffer_phys;
-    cmd.cdw10 = lba & 0xFFFFFFFF;
-    cmd.cdw11 = (lba >> 32) & 0xFFFFFFFF;
-    cmd.cdw12 = (count - 1); // 0-based count
-    
-    return NVMe_SubmitIOCommand(&cmd);
+
+    const uint32_t sector_size = 512;
+    const uint8_t* buf = (const uint8_t*)buffer;
+    uint16_t remaining = count;
+
+    while (remaining > 0) {
+        uint64_t phys = VMemGetPhysAddr((uint64_t)buf);
+        uint32_t page_off = (uint32_t)(phys & 0xFFFULL);
+        uint32_t bytes_left_in_page = 4096U - page_off;
+        uint16_t max_sectors_in_page = (uint16_t)(bytes_left_in_page / sector_size);
+        if (max_sectors_in_page == 0) max_sectors_in_page = 1;
+
+        uint16_t sectors_this = remaining < max_sectors_in_page ? remaining : max_sectors_in_page;
+        if (sectors_this > 8) sectors_this = 8;
+
+        NVMeSubmissionEntry cmd = (NVMeSubmissionEntry){0};
+        cmd.cdw0 = NVME_CMD_WRITE | ((uint32_t)(++g_nvme_controller.next_cid) << 16);
+        cmd.nsid = 1; // Namespace 1
+        cmd.prp1 = phys;
+        cmd.cdw10 = (uint32_t)(lba & 0xFFFFFFFFULL);
+        cmd.cdw11 = (uint32_t)((lba >> 32) & 0xFFFFFFFFULL);
+        cmd.cdw12 = (uint32_t)(sectors_this - 1); // 0-based count
+
+        int st = NVMe_SubmitIOCommand(&cmd);
+        if (st != 0) return st ? st : -1;
+
+        lba += sectors_this;
+        buf += (uint32_t)sectors_this * sector_size;
+        remaining -= sectors_this;
+    }
+
+    // Ensure the device flushes its volatile write cache so subsequent reads see consistent data
+    int flush_status = NVMe_Flush();
+    return flush_status == 0 ? 0 : flush_status;
 }
 
 static int NVMe_ReadBlocksWrapper(struct BlockDevice* device, uint64_t start_lba, uint32_t count, void* buffer) {

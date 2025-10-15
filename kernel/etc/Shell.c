@@ -36,6 +36,8 @@
 #include "xHCI/xHCI.h"
 #include "KernelHeapRust.h"
 #include <arch/x86_64/features/x64.h>
+#include <Switch/Switch.h>
+
 #define DATE __DATE__
 #define TIME __TIME__
 
@@ -367,8 +369,12 @@ static void AllocHandler(const char * args) {
         return;
     }
     uint64_t start = rdtsc();
-    if (!KernelMemoryAlloc((uint32_t)size)) PrintKernelErrorF("Allocation for %d bytes failed\n", size);
-    PrintKernelF("Allocation took: %d cycles\n", rdtsc() - start);
+    PTR_SWITCH(KernelMemoryAlloc((uint32_t)size)) {
+        PTR_NULL PrintKernelErrorF("Allocation for %d bytes failed\n", size);
+        PTR_VALID
+    }
+    END_SWITCH
+    PrintKernelF("Allocation took: %llu cycles\n", (unsigned long long)(rdtsc() - start));
     KernelFree(size_str);
 }
 

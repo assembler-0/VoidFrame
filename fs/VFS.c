@@ -487,3 +487,237 @@ int VfsMoveFile(const char* src_path, const char* dest_path) {
 
     return -1; // Failed to copy file
 }
+
+// Advanced VFS operations - no file descriptors needed!
+int VfsReadAt(const char* path, void* buffer, uint32_t offset, uint32_t count) {
+    uint64_t file_size = VfsGetFileSize(path);
+    if (offset >= file_size) return 0;
+    
+    uint32_t to_read = (offset + count > file_size) ? file_size - offset : count;
+    void* temp_buffer = KernelMemoryAlloc(file_size);
+    if (!temp_buffer) return -1;
+    
+    int bytes_read = VfsReadFile(path, temp_buffer, file_size);
+    if (bytes_read > 0 && offset < bytes_read) {
+        uint32_t copy_size = (offset + to_read > bytes_read) ? bytes_read - offset : to_read;
+        FastMemcpy(buffer, (uint8_t*)temp_buffer + offset, copy_size);
+        KernelFree(temp_buffer);
+        return copy_size;
+    }
+    KernelFree(temp_buffer);
+    return bytes_read < 0 ? -1 : 0;
+}
+
+int VfsWriteAt(const char* path, const void* buffer, uint32_t offset, uint32_t count) {
+    uint64_t file_size = VfsGetFileSize(path);
+    uint32_t new_size = (offset + count > file_size) ? offset + count : file_size;
+    
+    void* temp_buffer = KernelMemoryAlloc(new_size);
+    if (!temp_buffer) return -1;
+    
+    if (file_size > 0) {
+        int bytes_read = VfsReadFile(path, temp_buffer, file_size);
+        if (bytes_read < 0) {
+            KernelFree(temp_buffer);
+            return -1;
+        }
+    }
+    
+    FastMemcpy((uint8_t*)temp_buffer + offset, buffer, count);
+    int result = VfsWriteFile(path, temp_buffer, new_size);
+    KernelFree(temp_buffer);
+    return result >= 0 ? count : -1;
+}
+
+int VfsInsertAt(const char* path, const void* buffer, uint32_t offset, uint32_t count) {
+    uint64_t file_size = VfsGetFileSize(path);
+    uint32_t new_size = file_size + count;
+    
+    void* temp_buffer = KernelMemoryAlloc(new_size);
+    if (!temp_buffer) return -1;
+    
+    if (file_size > 0) {
+        void* old_buffer = KernelMemoryAlloc(file_size);
+        if (!old_buffer) {
+            KernelFree(temp_buffer);
+            return -1;
+        }
+        
+        uint32_t fsz32 = (file_size > (uint64_t)UINT32_MAX) ? UINT32_MAX : (uint32_t)file_size;
+        int rd = VfsReadFile(path, old_buffer, fsz32);
+        if (rd < 0) {
+            KernelFree(old_buffer);
+            KernelFree(temp_buffer);
+            return -1;
+        }
+        if (offset > (uint32_t)rd) offset = (uint32_t)rd; // clamp
+
+        FastMemcpy(temp_buffer, old_buffer, offset);
+        FastMemcpy((uint8_t*)temp_buffer + offset, buffer, count);
+        FastMemcpy((uint8_t*)temp_buffer + offset + count,
+                   (uint8_t*)old_buffer + offset,
+                   (uint32_t)rd - offset);
+
+        KernelFree(old_buffer);
+    } else {
+        FastMemcpy(temp_buffer, buffer, count);
+    }
+    
+    int result = VfsWriteFile(path, temp_buffer, new_size);
+    KernelFree(temp_buffer);
+    return result >= 0 ? count : -1;
+}
+
+int VfsDeleteAt(const char* path, uint32_t offset, uint32_t count) {
+    uint64_t file_size = VfsGetFileSize(path);
+    if (offset >= file_size) return 0;
+    
+    uint32_t actual_count = (offset + count > file_size) ? file_size - offset : count;
+    uint32_t new_size = file_size - actual_count;
+    
+    if (new_size == 0) {
+        VfsWriteFile(path, "", 0);
+        return actual_count;
+    }
+    
+    void* old_buffer = KernelMemoryAlloc(file_size);
+    void* new_buffer = KernelMemoryAlloc(new_size);
+    if (!old_buffer || !new_buffer) {
+        if (old_buffer) KernelFree(old_buffer);
+        if (new_buffer) KernelFree(new_buffer);
+        return -1;
+    }
+    
+    VfsReadFile(path, old_buffer, file_size);
+    FastMemcpy(new_buffer, old_buffer, offset);
+    FastMemcpy((uint8_t*)new_buffer + offset, (uint8_t*)old_buffer + offset + actual_count, file_size - offset - actual_count);
+    
+    int result = VfsWriteFile(path, new_buffer, new_size);
+    KernelFree(old_buffer);
+    KernelFree(new_buffer);
+    return result >= 0 ? actual_count : -1;
+}
+
+int VfsSwapRegions(const char* path, uint32_t offset1, uint32_t offset2, uint32_t count) {
+    uint64_t file_size = VfsGetFileSize(path);
+    if (offset1 + count > file_size || offset2 + count > file_size) return -1;
+    
+    void* buffer = KernelMemoryAlloc(file_size);
+    void* temp = KernelMemoryAlloc(count);
+    if (!buffer || !temp) {
+        if (buffer) KernelFree(buffer);
+        if (temp) KernelFree(temp);
+        return -1;
+    }
+    
+    VfsReadFile(path, buffer, file_size);
+    FastMemcpy(temp, (uint8_t*)buffer + offset1, count);
+    FastMemcpy((uint8_t*)buffer + offset1, (uint8_t*)buffer + offset2, count);
+    FastMemcpy((uint8_t*)buffer + offset2, temp, count);
+    
+    int result = VfsWriteFile(path, buffer, file_size);
+    KernelFree(buffer);
+    KernelFree(temp);
+    return result >= 0 ? 0 : -1;
+}
+
+int VfsFillRegion(const char* path, uint32_t offset, uint32_t count, uint8_t pattern) {
+    uint64_t file_size = VfsGetFileSize(path);
+    uint32_t new_size = (offset + count > file_size) ? offset + count : file_size;
+    
+    void* buffer = KernelMemoryAlloc(new_size);
+    if (!buffer) return -1;
+    
+    // Zero-init whole buffer first
+    FastMemset(buffer, 0, new_size);
+    if (file_size > 0) {
+        uint32_t to_read = (file_size > (uint64_t)new_size) ? new_size : (uint32_t)file_size;
+        VfsReadFile(path, buffer, to_read);
+    }
+    
+    for (uint32_t i = 0; i < count; i++) {
+        ((uint8_t*)buffer)[offset + i] = pattern;
+    }
+    
+    int result = VfsWriteFile(path, buffer, new_size);
+    KernelFree(buffer);
+    return result >= 0 ? count : -1;
+}
+
+int VfsSearchBytes(const char* path, const void* pattern, uint32_t pattern_size, uint32_t start_offset) {
+    uint64_t file_size = VfsGetFileSize(path);
+    if (start_offset >= file_size || pattern_size == 0) return -1;
+    
+    void* buffer = KernelMemoryAlloc(file_size);
+    if (!buffer) return -1;
+    
+    VfsReadFile(path, buffer, file_size);
+    
+    for (uint32_t i = start_offset; i <= file_size - pattern_size; i++) {
+        if (FastMemcmp((uint8_t*)buffer + i, pattern, pattern_size) == 0) {
+            KernelFree(buffer);
+            return i;
+        }
+    }
+    
+    KernelFree(buffer);
+    return -1;
+}
+
+int VfsReverse(const char* path, uint32_t offset, uint32_t count) {
+    uint64_t file_size = VfsGetFileSize(path);
+    if (offset + count > file_size) return -1;
+    
+    void* buffer = KernelMemoryAlloc(file_size);
+    if (!buffer) return -1;
+    
+    VfsReadFile(path, buffer, file_size);
+    
+    uint8_t* data = (uint8_t*)buffer + offset;
+    for (uint32_t i = 0; i < count / 2; i++) {
+        uint8_t temp = data[i];
+        data[i] = data[count - 1 - i];
+        data[count - 1 - i] = temp;
+    }
+    
+    int result = VfsWriteFile(path, buffer, file_size);
+    KernelFree(buffer);
+    return result >= 0 ? 0 : -1;
+}
+
+int VfsChecksum(const char* path, uint32_t offset, uint32_t count) {
+    uint64_t file_size = VfsGetFileSize(path);
+    if (offset >= file_size) return 0;
+    
+    uint32_t actual_count = (offset + count > file_size) ? file_size - offset : count;
+    void* buffer = KernelMemoryAlloc(file_size);
+    if (!buffer) return -1;
+    
+    VfsReadFile(path, buffer, file_size);
+    
+    uint32_t checksum = 0;
+    uint8_t* data = (uint8_t*)buffer + offset;
+    for (uint32_t i = 0; i < actual_count; i++) {
+        checksum += data[i];
+    }
+    
+    KernelFree(buffer);
+    return checksum;
+}
+
+int VfsTruncate(const char* path, uint32_t new_size) {
+    uint64_t file_size = VfsGetFileSize(path);
+    if (new_size >= file_size) return 0;
+    
+    if (new_size == 0) {
+        return VfsWriteFile(path, "", 0);
+    }
+    
+    void* buffer = KernelMemoryAlloc(new_size);
+    if (!buffer) return -1;
+    
+    VfsReadFile(path, buffer, new_size);
+    int result = VfsWriteFile(path, buffer, new_size);
+    KernelFree(buffer);
+    return result;
+}

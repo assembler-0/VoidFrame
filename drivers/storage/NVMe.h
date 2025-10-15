@@ -36,6 +36,7 @@
 #define NVME_ADMIN_IDENTIFY     0x06
 #define NVME_CMD_READ           0x02
 #define NVME_CMD_WRITE          0x01
+#define NVME_CMD_FLUSH          0x00
 
 // Queue sizes
 #define NVME_ADMIN_QUEUE_SIZE   64
