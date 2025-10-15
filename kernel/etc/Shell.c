@@ -374,7 +374,7 @@ static void AllocHandler(const char * args) {
         PTR_VALID
     }
     END_SWITCH
-    PrintKernelF("Allocation took: %d cycles\n", rdtsc() - start);
+    PrintKernelF("Allocation took: %llu cycles\n", (unsigned long long)(rdtsc() - start));
     KernelFree(size_str);
 }
 

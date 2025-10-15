@@ -543,10 +543,21 @@ int VfsInsertAt(const char* path, const void* buffer, uint32_t offset, uint32_t 
             return -1;
         }
         
-        VfsReadFile(path, old_buffer, file_size);
+        uint32_t fsz32 = (file_size > (uint64_t)UINT32_MAX) ? UINT32_MAX : (uint32_t)file_size;
+        int rd = VfsReadFile(path, old_buffer, fsz32);
+        if (rd < 0) {
+            KernelFree(old_buffer);
+            KernelFree(temp_buffer);
+            return -1;
+        }
+        if (offset > (uint32_t)rd) offset = (uint32_t)rd; // clamp
+
         FastMemcpy(temp_buffer, old_buffer, offset);
         FastMemcpy((uint8_t*)temp_buffer + offset, buffer, count);
-        FastMemcpy((uint8_t*)temp_buffer + offset + count, (uint8_t*)old_buffer + offset, file_size - offset);
+        FastMemcpy((uint8_t*)temp_buffer + offset + count,
+                   (uint8_t*)old_buffer + offset,
+                   (uint32_t)rd - offset);
+
         KernelFree(old_buffer);
     } else {
         FastMemcpy(temp_buffer, buffer, count);
@@ -617,8 +628,11 @@ int VfsFillRegion(const char* path, uint32_t offset, uint32_t count, uint8_t pat
     void* buffer = KernelMemoryAlloc(new_size);
     if (!buffer) return -1;
     
+    // Zero-init whole buffer first
+    FastMemset(buffer, 0, new_size);
     if (file_size > 0) {
-        VfsReadFile(path, buffer, file_size);
+        uint32_t to_read = (file_size > (uint64_t)new_size) ? new_size : (uint32_t)file_size;
+        VfsReadFile(path, buffer, to_read);
     }
     
     for (uint32_t i = 0; i < count; i++) {
