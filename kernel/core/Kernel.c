@@ -1,5 +1,6 @@
 // VoidFrame Kernel Entry File
 #include "Kernel.h"
+#include "../../include/Vector/Vector.h"
 #include "ACPI.h"
 #include "APIC.h"
 #include "Compositor.h"
@@ -30,7 +31,6 @@
 #include "VFRFS.h"
 #include "VFS.h"
 #include "VMem.h"
-#include "Vector.h"
 #include "Vesa.h"
 #include "ethernet/Network.h"
 #include "sound/Generic.h"
