@@ -3,10 +3,15 @@
 #include "Panic.h"
 #include "x64.h"
 
-#define PREFETCH_DISTANCE 256
+#define PREFETCH_DISTANCE 512
+#define PREFETCH_LINES 8
 
 // Non-temporal store threshold (use NT stores for large copies to avoid cache pollution)
-#define NT_STORE_THRESHOLD (4 * 1024 * 1024)  // 4MB - safer for kernel operations
+#ifndef NT_STORE_THRESHOLD
+#define NT_STORE_THRESHOLD (5*1024*1024)
+#endif
+#define LARGE_COPY_THRESHOLD (64*1024)     // 64KB - switch to optimized large copy
+#define ALIGNMENT_THRESHOLD 128            // Minimum size to justify alignment overhead
 
 void* memset(void* restrict dest, const int value, const unsigned long size) {
     return FastMemset(dest, value, size);
@@ -80,10 +85,25 @@ void* FastMemset(void* restrict dest, int value, uint64_t size) {
         );
 
         // Align to 64 bytes if beneficial
-        if (size >= 128) {
-            while ((uintptr_t)d & 63) {
-                *d++ = val;
-                size--;
+        if (size >= ALIGNMENT_THRESHOLD) {
+            uintptr_t misalign = (uintptr_t)d & 63;
+            if (misalign) {
+                misalign = 64 - misalign;
+                size -= misalign;
+                // Use SIMD for alignment when possible
+                if (misalign >= 16) {
+                    __asm__ volatile(
+                        "vmovq %1, %%xmm1\n"
+                        "vpbroadcastq %%xmm1, %%xmm1\n"
+                        "movdqu %%xmm1, (%0)\n"
+                        : "+r"(d)
+                        : "r"(val64)
+                        : "xmm1", "memory"
+                    );
+                    d += 16;
+                    misalign -= 16;
+                }
+                while (misalign--) *d++ = val;
             }
         }
 
@@ -95,6 +115,26 @@ void* FastMemset(void* restrict dest, int value, uint64_t size) {
             while ((uintptr_t)d & 63) {
                 *d++ = val;
                 size--;
+            }
+            
+            // 8x unroll with prefetch for maximum throughput
+            while (size >= 512) {
+                __asm__ volatile(
+                    "prefetchnta 512(%0)\n"
+                    "vmovntdq %%zmm0, (%0)\n"
+                    "vmovntdq %%zmm0, 64(%0)\n"
+                    "vmovntdq %%zmm0, 128(%0)\n"
+                    "vmovntdq %%zmm0, 192(%0)\n"
+                    "vmovntdq %%zmm0, 256(%0)\n"
+                    "vmovntdq %%zmm0, 320(%0)\n"
+                    "vmovntdq %%zmm0, 384(%0)\n"
+                    "vmovntdq %%zmm0, 448(%0)\n"
+                    :
+                    : "r"(d)
+                    : "memory"
+                );
+                d += 512;
+                size -= 512;
             }
             
             while (size >= 64) {
@@ -137,7 +177,26 @@ void* FastMemset(void* restrict dest, int value, uint64_t size) {
             }
         }
 
-        // Unroll 4x for better throughput
+        // 8x unroll for better throughput with prefetch
+        while (size >= 256) {
+            __asm__ volatile(
+                "prefetchnta 256(%0)\n"
+                "vmovdqa %%ymm0, (%0)\n"
+                "vmovdqa %%ymm0, 32(%0)\n"
+                "vmovdqa %%ymm0, 64(%0)\n"
+                "vmovdqa %%ymm0, 96(%0)\n"
+                "vmovdqa %%ymm0, 128(%0)\n"
+                "vmovdqa %%ymm0, 160(%0)\n"
+                "vmovdqa %%ymm0, 192(%0)\n"
+                "vmovdqa %%ymm0, 224(%0)\n"
+                :
+                : "r"(d)
+                : "memory"
+            );
+            d += 256;
+            size -= 256;
+        }
+        
         while (size >= 128) {
             __asm__ volatile(
                 "vmovdqa %%ymm0, (%0)\n"
@@ -272,10 +331,24 @@ void* FastMemcpy(void* restrict dest, const void* restrict src, uint64_t size) {
     // AVX-512 path
     if (features->avx512f && size >= 64) {
         // Align destination to 64 bytes if beneficial
-        if (size >= 256) {
-            while ((uintptr_t)d & 63 && d) {
-                *d++ = *s++;
-                size--;
+        if (size >= ALIGNMENT_THRESHOLD) {
+            uintptr_t misalign = (uintptr_t)d & 63;
+            if (misalign) {
+                misalign = 64 - misalign;
+                size -= misalign;
+                // Use SIMD for alignment when possible
+                while (misalign >= 16 && d && s) {
+                    __asm__ volatile(
+                        "movdqu (%1), %%xmm0\n"
+                        "movdqu %%xmm0, (%0)\n"
+                        : "+r"(d), "+r"(s)
+                        :
+                        : "xmm0", "memory"
+                    );
+                    d += 16; s += 16;
+                    misalign -= 16;
+                }
+                while (misalign-- && d && s) *d++ = *s++;
             }
         }
 
@@ -289,7 +362,38 @@ void* FastMemcpy(void* restrict dest, const void* restrict src, uint64_t size) {
                 size--;
             }
             
-            // Prefetch ahead
+            // 8x unroll with aggressive prefetching
+            while (size >= 512 && d && s) {
+                __asm__ volatile(
+                    "prefetchnta 512(%1)\n"
+                    "prefetchnta 576(%1)\n"
+                    "prefetchnta 640(%1)\n"
+                    "prefetchnta 704(%1)\n"
+                    "vmovdqu64 (%1), %%zmm0\n"
+                    "vmovdqu64 64(%1), %%zmm1\n"
+                    "vmovdqu64 128(%1), %%zmm2\n"
+                    "vmovdqu64 192(%1), %%zmm3\n"
+                    "vmovdqu64 256(%1), %%zmm4\n"
+                    "vmovdqu64 320(%1), %%zmm5\n"
+                    "vmovdqu64 384(%1), %%zmm6\n"
+                    "vmovdqu64 448(%1), %%zmm7\n"
+                    "vmovntdq %%zmm0, (%0)\n"
+                    "vmovntdq %%zmm1, 64(%0)\n"
+                    "vmovntdq %%zmm2, 128(%0)\n"
+                    "vmovntdq %%zmm3, 192(%0)\n"
+                    "vmovntdq %%zmm4, 256(%0)\n"
+                    "vmovntdq %%zmm5, 320(%0)\n"
+                    "vmovntdq %%zmm6, 384(%0)\n"
+                    "vmovntdq %%zmm7, 448(%0)\n"
+                    :
+                    : "r"(d), "r"(s)
+                    : "zmm0", "zmm1", "zmm2", "zmm3", "zmm4", "zmm5", "zmm6", "zmm7", "memory"
+                );
+                d += 512;
+                s += 512;
+                size -= 512;
+            }
+            
             while (size >= 256 && d && s) {
                 __asm__ volatile(
                     "prefetchnta 256(%1)\n"
@@ -316,7 +420,35 @@ void* FastMemcpy(void* restrict dest, const void* restrict src, uint64_t size) {
             _full_mem_prot_end();
 #endif
         } else {
-            // Regular copy with 4x unrolling
+            // Regular copy with 8x unrolling and prefetch
+            while (size >= 512 && d && s) {
+                __asm__ volatile(
+                    "prefetchnta 512(%1)\n"
+                    "vmovdqu64 (%1), %%zmm0\n"
+                    "vmovdqu64 64(%1), %%zmm1\n"
+                    "vmovdqu64 128(%1), %%zmm2\n"
+                    "vmovdqu64 192(%1), %%zmm3\n"
+                    "vmovdqu64 256(%1), %%zmm4\n"
+                    "vmovdqu64 320(%1), %%zmm5\n"
+                    "vmovdqu64 384(%1), %%zmm6\n"
+                    "vmovdqu64 448(%1), %%zmm7\n"
+                    "vmovdqu64 %%zmm0, (%0)\n"
+                    "vmovdqu64 %%zmm1, 64(%0)\n"
+                    "vmovdqu64 %%zmm2, 128(%0)\n"
+                    "vmovdqu64 %%zmm3, 192(%0)\n"
+                    "vmovdqu64 %%zmm4, 256(%0)\n"
+                    "vmovdqu64 %%zmm5, 320(%0)\n"
+                    "vmovdqu64 %%zmm6, 384(%0)\n"
+                    "vmovdqu64 %%zmm7, 448(%0)\n"
+                    :
+                    : "r"(d), "r"(s)
+                    : "zmm0", "zmm1", "zmm2", "zmm3", "zmm4", "zmm5", "zmm6", "zmm7", "memory"
+                );
+                d += 512;
+                s += 512;
+                size -= 512;
+            }
+            
             while (size >= 256 && d && s) {
                 __asm__ volatile(
                     "vmovdqu64 (%1), %%zmm0\n"
@@ -355,14 +487,56 @@ void* FastMemcpy(void* restrict dest, const void* restrict src, uint64_t size) {
     // AVX2 path with enhanced performance
     else if (features->avx2 && size >= 32) {
         // Align destination for better performance
-        if (size >= 128) {
-            while ((uintptr_t)d & 31 && d && s) {
-                *d++ = *s++;
-                size--;
+        if (size >= ALIGNMENT_THRESHOLD) {
+            uintptr_t misalign = (uintptr_t)d & 31;
+            if (misalign) {
+                misalign = 32 - misalign;
+                size -= misalign;
+                while (misalign >= 16 && d && s) {
+                    __asm__ volatile(
+                        "movdqu (%1), %%xmm0\n"
+                        "movdqu %%xmm0, (%0)\n"
+                        : "+r"(d), "+r"(s)
+                        :
+                        : "xmm0", "memory"
+                    );
+                    d += 16; s += 16;
+                    misalign -= 16;
+                }
+                while (misalign-- && d && s) *d++ = *s++;
             }
         }
 
-        // 4x unrolled loop with prefetching
+        // 8x unrolled loop with prefetching
+        while (size >= 256 && d && s) {
+            __asm__ volatile(
+                "prefetchnta 256(%1)\n"
+                "prefetchnta 320(%1)\n"
+                "vmovdqu (%1), %%ymm0\n"
+                "vmovdqu 32(%1), %%ymm1\n"
+                "vmovdqu 64(%1), %%ymm2\n"
+                "vmovdqu 96(%1), %%ymm3\n"
+                "vmovdqu 128(%1), %%ymm4\n"
+                "vmovdqu 160(%1), %%ymm5\n"
+                "vmovdqu 192(%1), %%ymm6\n"
+                "vmovdqu 224(%1), %%ymm7\n"
+                "vmovdqa %%ymm0, (%0)\n"
+                "vmovdqa %%ymm1, 32(%0)\n"
+                "vmovdqa %%ymm2, 64(%0)\n"
+                "vmovdqa %%ymm3, 96(%0)\n"
+                "vmovdqa %%ymm4, 128(%0)\n"
+                "vmovdqa %%ymm5, 160(%0)\n"
+                "vmovdqa %%ymm6, 192(%0)\n"
+                "vmovdqa %%ymm7, 224(%0)\n"
+                :
+                : "r"(d), "r"(s)
+                : "ymm0", "ymm1", "ymm2", "ymm3", "ymm4", "ymm5", "ymm6", "ymm7", "memory"
+            );
+            d += 256;
+            s += 256;
+            size -= 256;
+        }
+        
         while (size >= 128 && d && s) {
             __asm__ volatile(
                 "prefetchnta 256(%1)\n"
@@ -549,7 +723,7 @@ int FastMemcmp(const void* restrict ptr1, const void* restrict ptr2, uint64_t si
     CpuFeatures* features = GetCpuFeatures();
 
     // AVX-512 comparison for large blocks
-    if (features->avx512f && size >= 64 && p1) {
+    if (features->avx512f && size >= 64 && p1 && p2) {
         while (size >= 64) {
             uint64_t mask;
             __asm__ volatile(
