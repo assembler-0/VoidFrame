@@ -10,7 +10,7 @@
  */
 
 /**
- *@brief vsprintf and formatting wrappers implementation modified for x86_64
+ *@brief vsnprintf and formatting wrappers implementation modified for x86_64
  *@date 02/09/25 by assembler-0
  */
 

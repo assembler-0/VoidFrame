@@ -1,6 +1,5 @@
 // VoidFrame Kernel Entry File
 #include "Kernel.h"
-#include "../../include/Vector/Vector.h"
 #include "ACPI.h"
 #include "APIC.h"
 #include "Compositor.h"
@@ -95,32 +94,28 @@ void ParseMultibootInfo(uint32_t info) {
 uint64_t AllocPageTable(const char* table_name) {
     (void)table_name;
     uint64_t table_phys = 0;
-    for (int attempt = 0; attempt < 32; attempt++) {
+    for (int attempt = 0; attempt < 16; attempt++) {  // Reduce attempts for faster failure
         void* candidate = AllocPage();
         if (!candidate) {
             PANIC("Bootstrap: Out of memory allocating");
         }
-        if ((uint64_t)candidate < IDENTITY_MAP_SIZE) {
-            table_phys = (uint64_t)candidate;
-            break;
+        table_phys = (uint64_t)candidate;
+        if (table_phys < IDENTITY_MAP_SIZE && !(table_phys & 0xFFF)) {
+            FastZeroPage((void*)table_phys);
+            return table_phys;
         }
         FreePage(candidate);
     }
-    if (!table_phys) {
-        PANIC("Bootstrap: Failed to allocate in identity-mapped memory");
-    }
-    if (table_phys & 0xFFF) PANIC("Page table not aligned");
-    FastZeroPage((void*)table_phys);
-    return table_phys;
+    PANIC("Bootstrap: Failed to allocate aligned page in identity-mapped memory");
 }
 
 void BootstrapMapPage(uint64_t pml4_phys, uint64_t vaddr, uint64_t paddr, uint64_t flags) {
-    // Input validation
+    // Input validation - fail fast
     if (!pml4_phys || (pml4_phys & 0xFFF)) PANIC("Invalid PML4 address");
-    if (vaddr & 0xFFF || paddr & 0xFFF) {
-        vaddr &= ~0xFFF;  // Page-align virtual address
-        paddr &= ~0xFFF;  // Page-align physical address
-    }
+    
+    // Page-align addresses (common case optimization)
+    vaddr &= ~0xFFFULL;
+    paddr &= ~0xFFFULL;
 
     uint64_t* pml4 = (uint64_t*)pml4_phys;
 
@@ -160,8 +155,10 @@ void BootstrapMapPage(uint64_t pml4_phys, uint64_t vaddr, uint64_t paddr, uint64
     // 4. Set the final PTE with validation
     uint64_t* pt = (uint64_t*)pt_phys;
     const int pt_idx = (vaddr >> 12) & 0x1FF;
+    const uint64_t new_entry = paddr | flags | PAGE_PRESENT;
 
-    // NEW: Check for remapping
+    // Check for remapping (only in debug builds to reduce overhead)
+    #ifdef DEBUG
     if (pt[pt_idx] & PAGE_PRESENT) {
         uint64_t existing_paddr = pt[pt_idx] & PT_ADDR_MASK;
         if (existing_paddr != paddr) {
@@ -174,19 +171,20 @@ void BootstrapMapPage(uint64_t pml4_phys, uint64_t vaddr, uint64_t paddr, uint64
             PrintKernel("\n");
         }
     }
+    #endif
 
-    pt[pt_idx] = paddr | flags | PAGE_PRESENT;
+    pt[pt_idx] = new_entry;
 
+    // Optimized progress tracking (reduce modulo operations)
     static uint64_t pages_mapped = 0;
     pages_mapped++;
 
-    // Show progress every 64K pages (256MB)
-    if (pages_mapped % 65536 == 0) {
-        PrintKernelInt((pages_mapped * PAGE_SIZE) / (1024 * 1024));
+    // Use bitwise AND for power-of-2 modulo (faster than %)
+    if ((pages_mapped & 0xFFFF) == 0) {  // Every 64K pages (256MB)
+        PrintKernelInt((pages_mapped * PAGE_SIZE) >> 20);  // Bit shift instead of division
         PrintKernel("MB ");
     }
-    // Show dots every 16K pages (64MB) for finer progress
-    else if (pages_mapped % 16384 == 0) {
+    else if ((pages_mapped & 0x3FFF) == 0) {  // Every 16K pages (64MB)
         PrintKernel(".");
     }
 }
@@ -195,30 +193,31 @@ void BootstrapMapPage(uint64_t pml4_phys, uint64_t vaddr, uint64_t paddr, uint64
 static void SetupMemoryProtection(void) {
     PrintKernel("System: Setting up memory protection...\n");
 
-    // Check CPUID
+    // Get current CR4 once
+    uint64_t cr4;
+    __asm__ volatile("mov %%cr4, %0" : "=r"(cr4));
+    uint64_t new_cr4 = cr4;
+    bool protection_enabled = false;
+    
+    // Check CPUID leaf 7 features
     uint32_t eax, ebx, ecx, edx;
     __asm__ volatile("cpuid" : "=a"(eax), "=b"(ebx), "=c"(ecx), "=d"(edx) : "a"(7), "c"(0));
 
-    uint64_t cr4;
-    __asm__ volatile("mov %%cr4, %0" : "=r"(cr4));
-    bool protection_enabled = false;
-
-    // Enable SMEP if supported (bit 7 in EBX from CPUID leaf 7)
-    if (ebx & (1 << 7)) {
-        cr4 |= (1ULL << 20);  // CR4.SMEP
+    // Batch CR4 updates for efficiency
+    if (ebx & (1 << 7)) {   // SMEP
+        new_cr4 |= (1ULL << 20);
         PrintKernel("System: SMEP enabled\n");
         protection_enabled = true;
     }
-
-    if (ecx & (1 << 7)) {
-        PrintKernelSuccess("System: STAC/CLAC instructions are supported\n");
-    }
-
-    // Enable SMAP if supported (bit 20 in EBX from CPUID leaf 7)
-    if (ebx & (1 << 20)) {
-        cr4 |= (1ULL << 21);  // CR4.SMAP
+    
+    if (ebx & (1 << 20)) {  // SMAP
+        new_cr4 |= (1ULL << 21);
         PrintKernel("System: SMAP enabled\n");
         protection_enabled = true;
+    }
+    
+    if (ecx & (1 << 7)) {
+        PrintKernelSuccess("System: STAC/CLAC instructions are supported\n");
     }
 
     // enable NX
@@ -234,25 +233,33 @@ static void SetupMemoryProtection(void) {
         protection_enabled = true;
     }
 
-    // Enable PCID for faster context switches
+    // Check CPUID leaf 1 features
     __asm__ volatile("cpuid" : "=a"(eax), "=c"(ecx) : "a"(1) : "ebx", "edx");
-    if (ecx & (1 << 17)) {
-        cr4 |= (1ULL << 17);  // CR4.PCIDE
+    
+    if (ecx & (1 << 17)) {  // PCID
+        new_cr4 |= (1ULL << 17);
         PrintKernel("System: PCID enabled\n");
         protection_enabled = true;
     }
-
-    if (ecx & (1 << 2)) {
-        cr4 |= (1ULL << 11);  // CR4.UMIP
+    
+    // Re-check leaf 7 for additional features
+    __asm__ volatile("cpuid" : "=a"(eax), "=c"(ecx) : "a"(7), "c"(0) : "ebx", "edx");
+    
+    if (ecx & (1 << 2)) {   // UMIP
+        new_cr4 |= (1ULL << 11);
         PrintKernel("System: UMIP enabled (blocks privileged instructions in usermode)\n");
         protection_enabled = true;
     }
-
-    // Enable PKE (Protection Keys for Userspace) if available
-    if (ecx & (1 << 3)) {
-        cr4 |= (1ULL << 22);  // CR4.PKE
+    
+    if (ecx & (1 << 3)) {   // PKE
+        new_cr4 |= (1ULL << 22);
         PrintKernel("System: PKE enabled (memory protection keys)\n");
         protection_enabled = true;
+    }
+    
+    // Apply all CR4 changes at once
+    if (new_cr4 != cr4) {
+        __asm__ volatile("mov %0, %%cr4" :: "r"(new_cr4) : "memory");
     }
 
     // Enable CET (Control Flow Enforcement Technology) if available
