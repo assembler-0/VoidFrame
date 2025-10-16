@@ -7,8 +7,10 @@
 #define PREFETCH_LINES 8
 
 // Non-temporal store threshold (use NT stores for large copies to avoid cache pollution)
-#define NT_STORE_THRESHOLD (4*1024*1024)  // 4MB - more aggressive for better cache behavior
-#define LARGE_COPY_THRESHOLD (64*1024)    // 64KB - switch to optimized large copy
+#ifndef NT_STORE_THRESHOLD
+#define NT_STORE_THRESHOLD (5*1024*1024)
+#endif
+#define LARGE_COPY_THRESHOLD (64*1024)     // 64KB - switch to optimized large copy
 #define ALIGNMENT_THRESHOLD 128            // Minimum size to justify alignment overhead
 
 void* memset(void* restrict dest, const int value, const unsigned long size) {
