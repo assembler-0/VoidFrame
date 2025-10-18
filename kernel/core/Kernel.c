@@ -37,6 +37,8 @@
 #include "stdint.h"
 #include "storage/AHCI.h"
 #include "storage/NVMe.h"
+#include "virtio/Virtio.h"
+#include "virtio/VirtioBlk.h"
 #include "xHCI/xHCI.h"
 #include "OPIC/OPIC.h"
 
@@ -709,6 +711,20 @@ static InitResultT PXS2(void) {
         PrintKernelSuccess("System: NVMe Driver initialized\n");
     } else {
         PrintKernelWarning("NVMe initialization failed\n");
+    }
+#endif
+
+#ifdef VF_CONFIG_ENABLE_VIRTIO
+    // Initialize VirtIO block driver
+    PrintKernel("Info: Initializing VirtIO block driver...\n");
+    PciDevice virtio_dev;
+    // VirtIO block device has device ID 0x1001 (legacy) or 0x1042 (modern)
+    if (PciFindDevice(VIRTIO_VENDOR_ID, VIRTIO_DEV_ID_BLOCK_MODERN, &virtio_dev) == 0 ||
+        PciFindDevice(VIRTIO_VENDOR_ID, VIRTIO_DEV_ID_BLOCK_LEGACY, &virtio_dev) == 0) {
+        InitializeVirtioBlk(virtio_dev);
+        PrintKernelSuccess("System: VirtIO block driver initialized\n");
+    } else {
+        PrintKernelWarning("VirtIO block device not found\n");
     }
 #endif
 

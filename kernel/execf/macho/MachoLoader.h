@@ -1,7 +1,6 @@
 #ifndef VOIDFRAME_MACHOLOADER_H
 #define VOIDFRAME_MACHOLOADER_H
 
-#pragma once
 #include "stdint.h"
 
 typedef struct {

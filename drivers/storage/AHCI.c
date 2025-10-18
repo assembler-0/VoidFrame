@@ -5,6 +5,7 @@
 #include "MemOps.h"
 #include "VMem.h"
 #include "BlockDevice.h"
+#include "DriveNaming.h"
 #include "Format.h"
 #include "PCI/PCI.h"
 
@@ -402,8 +403,7 @@ int AHCI_Init(void) {
             PrintKernel(" initialized successfully\n");
             
             // Register as block device
-            char dev_name[16];
-            FormatA(dev_name, sizeof(dev_name), "sd%c", 'a' + i);
+            const char* dev_name = GenerateDriveName(DEVICE_TYPE_AHCI);
             
             // Get actual sector count from IDENTIFY command
             uint64_t total_sectors = AHCI_GetDriveCapacity(i);

@@ -66,6 +66,7 @@ set(FS_SOURCES
         fs/BlockDevice.c
         fs/FileSystem.c
         fs/MBR.c
+        fs/DriveNaming.c
 )
 
 set(DRIVER_SOURCES

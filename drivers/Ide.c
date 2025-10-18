@@ -1,5 +1,6 @@
 #include "Ide.h"
 #include "BlockDevice.h"
+#include "DriveNaming.h"
 #include "Format.h"
 #include "SpinlockRust.h"
 #include "APIC.h"
@@ -183,8 +184,7 @@ int IdeInit(void) {
                     model[i] = '\0';
                 }
 
-                char dev_name[16];
-                FormatA(dev_name, sizeof(dev_name), "hd%c", 'a' + (channel * 2 + drive));
+                const char* dev_name = GenerateDriveName(DEVICE_TYPE_IDE);
 
                 BlockDevice* dev = BlockDeviceRegister(
                     DEVICE_TYPE_IDE,

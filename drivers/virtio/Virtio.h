@@ -8,6 +8,10 @@
 
 #define VIRTIO_VENDOR_ID 0x1AF4
 
+// VirtIO Device IDs
+#define VIRTIO_DEV_ID_BLOCK_LEGACY  0x1001
+#define VIRTIO_DEV_ID_BLOCK_MODERN  0x1042
+
 // VirtIO PCI Capability IDs
 #define VIRTIO_CAP_COMMON_CFG   1
 #define VIRTIO_CAP_NOTIFY_CFG   2
