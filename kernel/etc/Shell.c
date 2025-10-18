@@ -1,8 +1,11 @@
 #include "Shell.h"
+#include <Switch/Switch.h>
+#include <arch/x86_64/features/x64.h>
+#include "../../drivers/APIC/APIC.h"
 #include "../../drivers/ethernet/interface/Icmp.h"
 #include "6502/6502.h"
 #include "ACPI.h"
-#include "APIC.h"
+#include "Compositor.h"
 #include "Console.h"
 #include "Editor.h"
 #include "ExecLoader.h"
@@ -12,18 +15,18 @@
 #include "InitRD.h"
 #include "Iso9660.h"
 #include "KernelHeap.h"
+#include "KernelHeapRust.h"
 #include "LPT/LPT.h"
-#include "Scheduler.h"
 #include "MemOps.h"
 #include "PCI/PCI.h"
-#include "Compositor.h"
 #include "PMem.h"
 #include "POST.h"
-#include "PS2.h"
+#include "input/Keyboard.h"
 #include "Packet.h"
 #include "Panic.h"
 #include "RTC/Rtc.h"
 #include "SB16.h"
+#include "Scheduler.h"
 #include "Serial.h"
 #include "StackTrace.h"
 #include "StringOps.h"
@@ -34,9 +37,6 @@
 #include "sound/Generic.h"
 #include "stdlib.h"
 #include "xHCI/xHCI.h"
-#include "KernelHeapRust.h"
-#include <arch/x86_64/features/x64.h>
-#include <Switch/Switch.h>
 
 #define DATE __DATE__
 #define TIME __TIME__
@@ -55,6 +55,8 @@ extern uint8_t _data_start[];
 extern uint8_t _data_end[];
 extern uint8_t _bss_start[];
 extern uint8_t _bss_end[];
+
+#define FNDEF(name) static void name(const char* args)
 
 typedef void (*ShellCommandFunc)(const char* args);
 
@@ -215,7 +217,8 @@ static const HelpEntry hw_cmds[] = {
     {"irqunmask <irq>", "Unmask IRQ"},
     {"setfreq <hz>", "Set PIT timer frequency"},
     {"serialw <msg>", "Write to serial port"},
-    {"parallelw <msg>", "Write to parallel port"}
+    {"parallelw <msg>", "Write to parallel port"},
+    {"gserial", "Get serial input and print to screen"}
 };
 
 static const HelpEntry dev_cmds[] = {
@@ -1185,6 +1188,14 @@ static void LsMntHandler(const char* args) {
     VfsListMount();
 }
 
+FNDEF(GetSerialHandler) {
+    char buff[1024];
+    SerialReadLine(buff, sizeof(buff));
+    PrintKernel("Serial Input: ");
+    PrintKernel(buff);
+    PrintNewline();
+}
+
 static const ShellCommand commands[] = {\
     {"help", HelpHandler},
     {"ps", PSHandler},
@@ -1239,6 +1250,7 @@ static const ShellCommand commands[] = {\
     {"lsblk", BlockDevicePrint},
     {"heapperf", HeapPerfHandler},
     {"lsmnt", LsMntHandler},
+    {"gserial", GetSerialHandler},
 };
 
 void ExecuteCommand(const char* cmd) {

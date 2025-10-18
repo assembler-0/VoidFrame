@@ -1,13 +1,13 @@
 // VoidFrame Kernel Entry File
 #include "Kernel.h"
+#include "../../drivers/APIC/APIC.h"
+#include "../../drivers/storage/Ide.h"
 #include "ACPI.h"
-#include "APIC.h"
 #include "Compositor.h"
 #include "Console.h"
 #include "FileSystem.h"
 #include "Gdt.h"
 #include "ISA.h"
-#include "Ide.h"
 #include "Idt.h"
 #include "InitRD.h"
 #include "Io.h"
@@ -16,6 +16,7 @@
 #include "MemOps.h"
 #include "MemPool.h"
 #include "Multiboot2.h"
+#include "OPIC/OPIC.h"
 #include "PCI/PCI.h"
 #include "PMem.h"
 #include "PS2.h"
@@ -40,7 +41,6 @@
 #include "virtio/Virtio.h"
 #include "virtio/VirtioBlk.h"
 #include "xHCI/xHCI.h"
-#include "OPIC/OPIC.h"
 
 void KernelMainHigherHalf(void);
 #define KERNEL_STACK_SIZE (16 * 1024) // 16KB stack

@@ -94,50 +94,6 @@ corrosion_import_crate(
 )
 
 # ============================================================================
-# Build Include Directories
-# ============================================================================
-include_directories(
-    .
-    include
-    kernel/atomic
-    kernel/core
-    kernel/ipc
-    kernel/sched
-    kernel/etc
-    kernel/execf
-    kernel/execf/elf
-    kernel/execf/pe
-    kernel/execf/aout
-    drivers
-    drivers/PCI
-    drivers/ethernet
-    drivers/ethernet/intel
-    drivers/ethernet/realtek
-    drivers/ethernet/interface
-    drivers/RTC
-    drivers/xHCI
-    drivers/ISA
-    drivers/sound
-    drivers/storage
-    drivers/virtio
-    drivers/vmware
-    fs
-    fs/FAT
-    fs/EXT
-    fs/NTFS
-    mm
-    mm/trace
-    mm/security
-    ports/6502
-    ports
-    arch/x86_64/features
-    arch/x86_64/gdt
-    arch/x86_64/idt
-    arch/x86_64/interrupts
-    arch/x86_64/syscall
-)
-
-# ============================================================================
 # Kernel Linking
 # ============================================================================
 add_executable(voidframe.krnl

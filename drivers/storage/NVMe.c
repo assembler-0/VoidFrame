@@ -420,7 +420,9 @@ int NVMe_Init(void) {
     g_nvme_controller.initialized = 1;
     
     // Register block device
-    const char* dev_name = GenerateDriveName(DEVICE_TYPE_NVME);
+    char dev_name[16];
+    GenerateDriveNameInto(DEVICE_TYPE_NVME, dev_name);
+
     BlockDevice* nvme_device = BlockDeviceRegister(
         DEVICE_TYPE_NVME,
         512, // Block size

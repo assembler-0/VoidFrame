@@ -403,7 +403,8 @@ int AHCI_Init(void) {
             PrintKernel(" initialized successfully\n");
             
             // Register as block device
-            const char* dev_name = GenerateDriveName(DEVICE_TYPE_AHCI);
+            char dev_name[16];
+            GenerateDriveNameInto(DEVICE_TYPE_AHCI, dev_name);
             
             // Get actual sector count from IDENTIFY command
             uint64_t total_sectors = AHCI_GetDriveCapacity(i);

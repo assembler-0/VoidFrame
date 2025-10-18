@@ -153,12 +153,6 @@ typedef struct {
     uint8_t bInterval;
 } USBEndpointDescriptor;
 
-typedef struct {
-    uint8_t modifiers;    // Ctrl, Shift, Alt, etc.
-    uint8_t reserved;     // Reserved byte
-    uint8_t keycodes[6];  // Up to 6 simultaneous key presses
-} USBHIDKeyboardReport;
-
 // USB Request Types
 #define USB_REQ_GET_STATUS       0
 #define USB_REQ_CLEAR_FEATURE    1
@@ -205,9 +199,6 @@ int xHCIBulkTransfer(XhciController* controller, uint8_t slot_id,
 void xHCIScanAndEnumeratePorts(XhciController* controller);
 int xHCIInterruptTransfer(XhciController* controller, uint8_t slot_id,
                            uint8_t endpoint, void* buffer, uint16_t length);
-
-// USB Keyboard
-void xHCISetupUSBKeyboard(XhciController* controller, uint8_t slot_id);
 
 // Misc.
 void xHCIEnumerate(void);

@@ -1,12 +1,12 @@
 #include "Ide.h"
+#include "../APIC/APIC.h"
 #include "BlockDevice.h"
+#include "Console.h"
 #include "DriveNaming.h"
 #include "Format.h"
-#include "SpinlockRust.h"
-#include "APIC.h"
-#include "Console.h"
 #include "Io.h"
 #include "MemOps.h"
+#include "SpinlockRust.h"
 
 static IdeChannel channels[2];
 static RustSpinLock* ide_lock = NULL;
@@ -184,7 +184,8 @@ int IdeInit(void) {
                     model[i] = '\0';
                 }
 
-                const char* dev_name = GenerateDriveName(DEVICE_TYPE_IDE);
+                char dev_name[16];
+                GenerateDriveNameInto(DEVICE_TYPE_IDE, dev_name);
 
                 BlockDevice* dev = BlockDeviceRegister(
                     DEVICE_TYPE_IDE,

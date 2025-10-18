@@ -1,6 +1,6 @@
 #include "MLFQ.h"
 
-#include "APIC.h"
+#include "../../drivers/APIC/APIC.h"
 #include "Atomics.h"
 #include "Cerberus.h"
 #include "Compositor.h"

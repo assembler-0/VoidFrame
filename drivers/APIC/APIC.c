@@ -1,11 +1,11 @@
 #include "APIC.h"
-#include "../include/Io.h"
-#include "../kernel/core/Kernel.h"
-#include "../kernel/etc/Console.h"
-#include "../mm/VMem.h"
-#include "x64.h"
+#include "../../include/Io.h"
+#include "../../kernel/core/Kernel.h"
+#include "../../kernel/etc/Console.h"
+#include "../../mm/VMem.h"
+#include "../sound/Generic.h"
 #include "Panic.h"
-#include "sound/Generic.h" // For PIT definitions
+#include "x64.h"
 
 // --- Register Definitions ---
 

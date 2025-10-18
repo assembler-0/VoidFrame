@@ -70,13 +70,13 @@ set(FS_SOURCES
 )
 
 set(DRIVER_SOURCES
-        drivers/APIC.c
+        drivers/APIC/APIC.c
         drivers/OPIC/OPIC.c
         drivers/TSC.c
         drivers/ACPI.c
         drivers/Serial.c
         drivers/PS2.c
-        drivers/Ide.c
+        drivers/storage/Ide.c
         drivers/Vesa.c
         drivers/PCI/PCI.c
         drivers/RTC/Rtc.c
@@ -87,6 +87,7 @@ set(DRIVER_SOURCES
         drivers/ethernet/interface/Icmp.c
         drivers/ethernet/Network.c
         drivers/xHCI/xHCI.c
+        drivers/usb/hid/USBKeyboard.c
         drivers/ISA/ISA.c
         drivers/sound/SB16.c
         drivers/sound/Generic.c
@@ -95,6 +96,7 @@ set(DRIVER_SOURCES
         drivers/LPT/LPT.c
         drivers/virtio/VirtioBlk.c
         drivers/vmware/SVGAII.c
+        drivers/input/Keyboard.c
 )
 
 set(ARCH_SOURCES
@@ -116,6 +118,55 @@ set(CPP_SOURCES
 )
 
 set(OBJ_SOURCES)
+
+# ============================================================================
+# Build Include Directories
+# ============================================================================
+include_directories(
+        .
+        include
+        kernel/atomic
+        kernel/core
+        kernel/ipc
+        kernel/sched
+        kernel/etc
+        kernel/execf
+        kernel/execf/elf
+        kernel/execf/pe
+        kernel/execf/aout
+        drivers
+        drivers/PCI
+        drivers/ethernet
+        drivers/ethernet/intel
+        drivers/ethernet/realtek
+        drivers/ethernet/interface
+        drivers/RTC
+        drivers/xHCI
+        drivers/ISA
+        drivers/sound
+        drivers/storage
+        drivers/virtio
+        drivers/vmware
+        drivers/APIC
+        drivers/OPIC
+        drivers/usb
+        drivers/usb/hid
+        drivers/input
+        fs
+        fs/FAT
+        fs/EXT
+        fs/NTFS
+        mm
+        mm/trace
+        mm/security
+        ports/6502
+        ports
+        arch/x86_64/features
+        arch/x86_64/gdt
+        arch/x86_64/idt
+        arch/x86_64/interrupts
+        arch/x86_64/syscall
+)
 
 # ============================================================================
 # Sources Configuration

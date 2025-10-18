@@ -167,22 +167,43 @@ void InitializeVirtioBlk(PciDevice device) {
     }
 
     // --- Begin Device Initialization ---
-    common_cfg_ptr->device_status = 0; // 1. Reset
-
-    common_cfg_ptr->device_status |= (1 << 0); // 2. Set ACKNOWLEDGE bit
-    common_cfg_ptr->device_status |= (1 << 1); // 3. Set DRIVER bit
+    PrintKernel("VirtIO-Blk: Starting device initialization...\n");
+    
+    // 1. Reset device
+    common_cfg_ptr->device_status = 0;
+    
+    // Small delay after reset
+    for (volatile int i = 0; i < 1000; i++) {}
+    
+    // 2. Set ACKNOWLEDGE bit
+    common_cfg_ptr->device_status |= (1 << 0);
+    PrintKernel("VirtIO-Blk: ACKNOWLEDGE set\n");
+    
+    // 3. Set DRIVER bit
+    common_cfg_ptr->device_status |= (1 << 1);
+    PrintKernel("VirtIO-Blk: DRIVER set\n");
 
     // 4. Feature Negotiation
     common_cfg_ptr->driver_feature_select = 0;
     uint32_t device_features = common_cfg_ptr->device_feature;
+    PrintKernel("VirtIO-Blk: Device features: 0x");
+    PrintKernelHex(device_features);
+    PrintKernel("\n");
+    
     common_cfg_ptr->driver_feature_select = 0;
     common_cfg_ptr->driver_feature = 0;
+    PrintKernel("VirtIO-Blk: Features negotiated\n");
 
     // 5. Set FEATURES_OK status bit
     common_cfg_ptr->device_status |= (1 << 3);
+    PrintKernel("VirtIO-Blk: FEATURES_OK set\n");
 
     // 6. Re-read status to ensure device accepted features
     uint8_t status = common_cfg_ptr->device_status;
+    PrintKernel("VirtIO-Blk: Device status: 0x");
+    PrintKernelHex(status);
+    PrintKernel("\n");
+    
     if (!(status & (1 << 3))) {
         PrintKernel("VirtIO-Blk: Error - Device rejected features!\n");
         return;
@@ -190,12 +211,19 @@ void InitializeVirtioBlk(PciDevice device) {
 
     // --- Step 7: Virtqueue Setup ---
     common_cfg_ptr->queue_select = 0;
-
+    
+    // Reset queue first
+    common_cfg_ptr->queue_enable = 0;
+    
     vq_size = common_cfg_ptr->queue_size;
     if (vq_size == 0) {
         PrintKernel("VirtIO-Blk: Error - Queue 0 is not available.\n");
         return;
     }
+    
+    PrintKernel("VirtIO-Blk: Queue size: ");
+    PrintKernelInt(vq_size);
+    PrintKernel("\n");
 
     // Allocate memory for the virtqueue components
     vq_desc_table = VMemAlloc(sizeof(struct VirtqDesc) * vq_size);
@@ -236,8 +264,8 @@ void InitializeVirtioBlk(PciDevice device) {
     
     // Register as block device
     uint64_t total_sectors = 0x1000000; // Default 8GB, should read from device config
-    const char* dev_name = GenerateDriveName(DEVICE_TYPE_VIRTIO);
-    
+    char dev_name[16];
+    GenerateDriveNameInto(DEVICE_TYPE_VIRTIO, dev_name);
     BlockDevice* dev = BlockDeviceRegister(
         DEVICE_TYPE_VIRTIO,
         512,
@@ -304,20 +332,26 @@ int VirtioBlkRead(uint64_t sector, void* buffer, uint32_t count) {
     uint16_t avail_idx = vq_avail_ring->idx % vq_size;
     vq_avail_ring->ring[avail_idx] = desc_idx;
     vq_avail_ring->idx++;
-    
+
     // Notify device
-    if (notify_ptr) {
-        *notify_ptr = 0;
-    }
-    
+    __asm__ volatile("" ::: "memory");
+    if (notify_ptr) { *notify_ptr = 0; }
+
     // Wait for completion (simple polling)
-    while (vq_used_ring->idx == last_used_idx) {
+    uint64_t spins = 0, max_spins = 10000000;
+    while (vq_used_ring->idx == last_used_idx && spins++ < max_spins) {
         __asm__ volatile("pause");
     }
-    
+    if (vq_used_ring->idx == last_used_idx) {
+        VMemFree(req, sizeof(struct VirtioBlkReq));
+        VMemFree(status, 1);
+        rust_spinlock_unlock(virtio_lock);
+        return -1;
+    }
+
     last_used_idx = vq_used_ring->idx;
     vq_next_desc_idx = (desc_idx + 3) % vq_size;
-    
+
     int result = (*status == 0) ? 0 : -1;
     
     VMemFree(req, sizeof(struct VirtioBlkReq));
