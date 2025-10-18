@@ -38,6 +38,7 @@
 #include "storage/AHCI.h"
 #include "storage/NVMe.h"
 #include "xHCI/xHCI.h"
+#include "OPIC/OPIC.h"
 
 void KernelMainHigherHalf(void);
 #define KERNEL_STACK_SIZE (16 * 1024) // 16KB stack
@@ -602,6 +603,10 @@ static InitResultT PXS2(void) {
     if (ACPIInit()) PrintKernelSuccess("System: ACPI initialized\n");
     else PrintKernelWarning("System: ACPI initialization failed\n");
 
+#ifdef VF_CONFIG_ENABLE_OPIC
+    if (!OpicInstall()) PrintKernelWarning("System: Opic initialization failed\n");
+    else PrintKernelSuccess("System: Opic initialized\n");
+#endif
 
 #ifdef VF_CONFIG_ENFORCE_MEMORY_PROTECTION
     PrintKernel("Info: Final memory health check...\n");

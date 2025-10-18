@@ -41,6 +41,7 @@ set(EXECF_SOURCES
         kernel/execf/elf/ELFloader.c
         kernel/execf/pe/PEloader.c
         kernel/execf/aout/AoutLoader.c
+        kernel/execf/macho/MachoLoader.c
         kernel/execf/ExecLoader.c
 )
 
@@ -69,6 +70,7 @@ set(FS_SOURCES
 
 set(DRIVER_SOURCES
         drivers/APIC.c
+        drivers/OPIC/OPIC.c
         drivers/TSC.c
         drivers/ACPI.c
         drivers/Serial.c
