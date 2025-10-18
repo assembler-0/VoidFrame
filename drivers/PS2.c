@@ -1,6 +1,6 @@
 #include "PS2.h"
 
-#include "APIC.h"
+#include "APIC/APIC.h"
 #include "Console.h"
 #include "Io.h"
 #include "Vesa.h"
@@ -265,7 +265,7 @@ void PS2Handler(void) {
 
 
 // Existing keyboard functions (unchanged)
-char GetChar(void) {
+char PS2_GetChar(void) {
     if (buffer_count == 0) return 0;
 
     char c = input_buffer[buffer_head];
@@ -274,7 +274,7 @@ char GetChar(void) {
     return c;
 }
 
-int HasInput(void) {
+int PS2_HasInput(void) {
     return buffer_count > 0;
 }
 

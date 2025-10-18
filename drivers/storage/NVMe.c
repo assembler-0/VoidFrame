@@ -5,6 +5,7 @@
 #include "MemOps.h"
 #include "VMem.h"
 #include "BlockDevice.h"
+#include "DriveNaming.h"
 #include "Format.h"
 #include "PCI/PCI.h"
 
@@ -419,11 +420,14 @@ int NVMe_Init(void) {
     g_nvme_controller.initialized = 1;
     
     // Register block device
+    char dev_name[16];
+    GenerateDriveNameInto(DEVICE_TYPE_NVME, dev_name);
+
     BlockDevice* nvme_device = BlockDeviceRegister(
         DEVICE_TYPE_NVME,
         512, // Block size
         g_nvme_controller.namespace_size,
-        "nvme0",
+        dev_name,
         &g_nvme_controller,
         NVMe_ReadBlocksWrapper,
         NVMe_WriteBlocksWrapper

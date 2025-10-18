@@ -94,50 +94,6 @@ corrosion_import_crate(
 )
 
 # ============================================================================
-# Build Include Directories
-# ============================================================================
-include_directories(
-    .
-    include
-    kernel/atomic
-    kernel/core
-    kernel/ipc
-    kernel/sched
-    kernel/etc
-    kernel/execf
-    kernel/execf/elf
-    kernel/execf/pe
-    kernel/execf/aout
-    drivers
-    drivers/PCI
-    drivers/ethernet
-    drivers/ethernet/intel
-    drivers/ethernet/realtek
-    drivers/ethernet/interface
-    drivers/RTC
-    drivers/xHCI
-    drivers/ISA
-    drivers/sound
-    drivers/storage
-    drivers/virtio
-    drivers/vmware
-    fs
-    fs/FAT
-    fs/EXT
-    fs/NTFS
-    mm
-    mm/trace
-    mm/security
-    ports/6502
-    ports
-    arch/x86_64/features
-    arch/x86_64/gdt
-    arch/x86_64/idt
-    arch/x86_64/interrupts
-    arch/x86_64/syscall
-)
-
-# ============================================================================
 # Kernel Linking
 # ============================================================================
 add_executable(voidframe.krnl
@@ -242,11 +198,11 @@ add_custom_target(img
 
 add_custom_target(extra-img
         COMMAND ${QEMU_IMG} create -f raw VirtioDisk.img 128M
-        COMMAND ${MKFS_FAT} -F 16 VirtioDisk.img
+        COMMAND ${MKFS_EXT2} VirtioDisk.img
         COMMAND ${QEMU_IMG} create -f raw SataDisk.img 128M
-        COMMAND ${MKFS_EXT2} -F SataDisk.img
+        COMMAND ${MKFS_EXT2} SataDisk.img
         COMMAND ${QEMU_IMG} create -f raw NVMeDisk.img 256M
-        COMMAND ${MKFS_EXT2} -F NVMeDisk.img
+        COMMAND ${MKFS_EXT2} NVMeDisk.img
         COMMENT "Creating extra disk images"
 )
 

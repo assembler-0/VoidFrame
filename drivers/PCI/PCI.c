@@ -112,20 +112,6 @@ static void PciScanBus(PciDeviceCallback callback) {
     }
 }
 
-static void PciVirtioHandler(PciDevice device) {
-    if (device.vendor_id == VIRTIO_VENDOR_ID) {
-        PrintKernel("Found VirtIO Device -> DID: 0x");
-        PrintKernelHex(device.device_id);
-        PrintKernel("\n");
-
-        // 0x1001 is the transitional block device.
-        // 0x1042 is the modern block device.
-        if (device.device_id == 0x1042 || device.device_id == 0x1001) { // VirtIO Block Device
-            InitializeVirtioBlk(device);
-        }
-    }
-}
-
 // Your old PciEnumerate function, now a simple wrapper around the scanner
 static void PrintPciDeviceInfo(PciDevice device) {
     PrintKernel("PCI: B:0x"); PrintKernelHex(device.bus);
@@ -141,9 +127,6 @@ static void PrintPciDeviceInfo(PciDevice device) {
 void PciInit() {
     PrintKernel("--- PCI Bus Enumeration ---\n");
     PciScanBus(PrintPciDeviceInfo);
-#ifdef VF_CONFIG_ENABLE_VIRTIO
-    PciScanBus(PciVirtioHandler);
-#endif
     PrintKernel("---------------------------\n");
 }
 

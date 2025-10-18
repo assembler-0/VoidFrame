@@ -24,8 +24,8 @@ void KernelHeapTune(size_t small_alloc_threshold, int fast_cache_capacity);
 #define KernelHeapPerfMode(mode)
 #elif defined(VF_CONFIG_HEAP_RUST)
 
+#include "../drivers/APIC/APIC.h"
 #include "KernelHeapRust.h"
-#include "APIC.h"
 
 #define KernelHeapInit() rust_heap_enable_percpu()
 #define KernelMemoryAlloc(size) rust_kmalloc(size)

@@ -1,13 +1,13 @@
 // VoidFrame Kernel Entry File
 #include "Kernel.h"
+#include "../../drivers/APIC/APIC.h"
+#include "../../drivers/storage/Ide.h"
 #include "ACPI.h"
-#include "APIC.h"
 #include "Compositor.h"
 #include "Console.h"
 #include "FileSystem.h"
 #include "Gdt.h"
 #include "ISA.h"
-#include "Ide.h"
 #include "Idt.h"
 #include "InitRD.h"
 #include "Io.h"
@@ -16,6 +16,7 @@
 #include "MemOps.h"
 #include "MemPool.h"
 #include "Multiboot2.h"
+#include "OPIC/OPIC.h"
 #include "PCI/PCI.h"
 #include "PMem.h"
 #include "PS2.h"
@@ -37,6 +38,8 @@
 #include "stdint.h"
 #include "storage/AHCI.h"
 #include "storage/NVMe.h"
+#include "virtio/Virtio.h"
+#include "virtio/VirtioBlk.h"
 #include "xHCI/xHCI.h"
 
 void KernelMainHigherHalf(void);
@@ -602,6 +605,10 @@ static InitResultT PXS2(void) {
     if (ACPIInit()) PrintKernelSuccess("System: ACPI initialized\n");
     else PrintKernelWarning("System: ACPI initialization failed\n");
 
+#ifdef VF_CONFIG_ENABLE_OPIC
+    if (!OpicInstall()) PrintKernelWarning("System: Opic initialization failed\n");
+    else PrintKernelSuccess("System: Opic initialized\n");
+#endif
 
 #ifdef VF_CONFIG_ENFORCE_MEMORY_PROTECTION
     PrintKernel("Info: Final memory health check...\n");
@@ -704,6 +711,20 @@ static InitResultT PXS2(void) {
         PrintKernelSuccess("System: NVMe Driver initialized\n");
     } else {
         PrintKernelWarning("NVMe initialization failed\n");
+    }
+#endif
+
+#ifdef VF_CONFIG_ENABLE_VIRTIO
+    // Initialize VirtIO block driver
+    PrintKernel("Info: Initializing VirtIO block driver...\n");
+    PciDevice virtio_dev;
+    // VirtIO block device has device ID 0x1001 (legacy) or 0x1042 (modern)
+    if (PciFindDevice(VIRTIO_VENDOR_ID, VIRTIO_DEV_ID_BLOCK_MODERN, &virtio_dev) == 0 ||
+        PciFindDevice(VIRTIO_VENDOR_ID, VIRTIO_DEV_ID_BLOCK_LEGACY, &virtio_dev) == 0) {
+        InitializeVirtioBlk(virtio_dev);
+        PrintKernelSuccess("System: VirtIO block driver initialized\n");
+    } else {
+        PrintKernelWarning("VirtIO block device not found\n");
     }
 #endif
 

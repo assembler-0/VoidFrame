@@ -1,4 +1,5 @@
 #include "xHCI.h"
+#include "usb/hid/USBKeyboard.h"
 #include "../../mm/MemOps.h"
 #include "../../mm/VMem.h"
 #include "Console.h"
@@ -583,6 +584,20 @@ static void xHCIProcessEvents(XhciController* controller) {
         
         // Process the event based on its type
         uint32_t trb_type = (event->control >> 10) & 0x3F;
+
+        if (trb_type == 34) { // Transfer Event
+            uint8_t slot_id = (event->control >> 24) & 0xFF;
+            // Assuming endpoint 1 for keyboard for now
+            uint8_t endpoint_id = (event->parameter_lo >> 16) & 0x1F;
+
+            if (endpoint_id == 1) { // Keyboard endpoint
+                USBHIDKeyboardReport* report = (USBHIDKeyboardReport*)(uintptr_t)event->parameter_lo;
+                USBKeyboardHandleInput(report);
+
+                // Re-queue the interrupt transfer
+                xHCIInterruptTransfer(controller, slot_id, 1, report, sizeof(USBHIDKeyboardReport));
+            }
+        }
         
         PrintKernel("xHCI: Event TRB Type: "); PrintKernelInt(trb_type); PrintKernel("\n");
 
@@ -778,8 +793,9 @@ static int xHCIEnumerateDevice(XhciController* controller, uint8_t port) {
     }
 
     if (device_desc->bDeviceClass == 0x03) { // HID class
-        PrintKernelSuccess("xHCI: HID keyboard detected!\n");
-        xHCISetupUSBKeyboard(controller, slot_id);
+        PrintKernelSuccess("xHCI: HID device detected!\n");
+        // Attempt to initialize it as a keyboard
+        USBKeyboardInit(controller, slot_id);
     }
 
     VMemFree(device_desc, sizeof(USBDeviceDescriptor));
@@ -1029,21 +1045,4 @@ int xHCIInterruptTransfer(XhciController* controller, uint8_t slot_id,
     *doorbell = endpoint;
 
     return 0;
-}
-
-// USB Keyboard setup function
-void xHCISetupUSBKeyboard(XhciController* controller, uint8_t slot_id) {
-    PrintKernelSuccess("xHCI: Configuring USB keyboard on slot ");
-    PrintKernelInt(slot_id);
-    PrintKernel("\n");
-
-    if (xHCIConfigureEndpoint(controller, slot_id) == 0) {
-        PrintKernelSuccess("xHCI: USB keyboard configured and ready!\n");
-
-        // Setup continuous interrupt transfers for keyboard input
-        static USBHIDKeyboardReport kbd_report;
-        xHCIInterruptTransfer(controller, slot_id, 1, &kbd_report, sizeof(kbd_report));
-    } else {
-        PrintKernelError("xHCI: Failed to configure keyboard endpoint\n");
-    }
 }

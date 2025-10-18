@@ -1,6 +1,6 @@
 #include "Iso9660.h"
 
-#include "../drivers/Ide.h"
+#include "../drivers/storage/Ide.h"
 #include "../kernel/etc/StringOps.h"
 #include "../mm/KernelHeap.h"
 #include "Console.h"

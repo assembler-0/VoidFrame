@@ -2,9 +2,11 @@
 #include "Console.h"
 #include "MLFQ.h"
 #include "VFS.h"
-#include "elf/ELFloader.h"
-#include "pe/PEloader.h"
 #include "aout/AoutLoader.h"
+#include "elf/ELFloader.h"
+#include "macho/Macho.h"
+#include "macho/MachoLoader.h"
+#include "pe/PEloader.h"
 
 ExecFormat DetectExecutableFormat(const uint8_t* data, uint64_t size) {
     if (!data || size < 4) {
@@ -20,6 +22,11 @@ ExecFormat DetectExecutableFormat(const uint8_t* data, uint64_t size) {
     // Check PE magic (DOS header)
     if (size >= 2 && data[0] == 'M' && data[1] == 'Z') {
         return EXEC_FORMAT_PE32PLUS;
+    }
+
+    // Check Mach-O magic
+    if (size >= 4 && *(uint32_t*)data == MH_MAGIC_64) {
+        return EXEC_FORMAT_MACHO64;
     }
 
     // Check a.out magic
@@ -85,6 +92,16 @@ uint32_t LoadExecutable(const char* filename, const ExecLoadOptions* options) {
                 .process_name = options ? options->process_name : filename
             };
             return CreateProcessFromAout(filename, &aout_opts);
+        }
+
+        case EXEC_FORMAT_MACHO64: {
+            MachoLoadOptions macho_opts = {
+                .privilege_level = options ? options->privilege_level : PROC_PRIV_NORM,
+                .security_flags = options ? options->security_flags : 0,
+                .max_memory = options ? options->max_memory : (16 * 1024 * 1024),
+                .process_name = options ? options->process_name : filename
+            };
+            return CreateProcessFromMacho(filename, &macho_opts);
         }
         
         default:

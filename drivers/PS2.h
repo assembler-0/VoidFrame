@@ -38,6 +38,6 @@ uint8_t GetMouseButtons(void);
 int IsLeftButtonPressed(void);
 int IsRightButtonPressed(void);
 int IsMiddleButtonPressed(void);
-char GetChar(void);
-int HasInput(void);
+char PS2_GetChar(void);
+int PS2_HasInput(void);
 #endif
