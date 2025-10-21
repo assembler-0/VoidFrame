@@ -8,6 +8,10 @@ set(ASM_SOURCES
         arch/x86_64/interrupts/Interrupts.asm
         arch/x86_64/syscall/SyscallEntry.asm
         include/Switch.asm
+        mm/asm/memcpy.asm
+        mm/asm/memset.asm
+        mm/asm/memcmp.asm
+        mm/asm/zeropage.asm
 )
 
 set(KERNEL_CORE_SOURCES
