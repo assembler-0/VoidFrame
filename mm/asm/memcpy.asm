@@ -301,6 +301,7 @@ memcpy_internal_sse2:
 .copy_small:
     ; Copy small blocks using optimized byte-by-byte copy
     mov rcx, rdx
+    cld
     rep movsb
     
     jmp .done
@@ -628,6 +629,7 @@ memcpy_internal_avx2:
 .avx2_copy_small:
     ; Copy small blocks using optimized byte-by-byte copy
     mov rcx, rdx
+    cld
     rep movsb
     
     jmp .avx2_done
@@ -989,6 +991,7 @@ memcpy_internal_avx512:
 .avx512_copy_small:
     ; Copy small blocks using optimized byte-by-byte copy
     mov rcx, rdx
+    cld
     rep movsb
     
     jmp .avx512_done
