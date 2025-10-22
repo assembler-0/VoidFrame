@@ -1,4 +1,4 @@
-; memcpy.asms - Highly optimized memory copy with AVX-512 and non-temporal stores
+; memcpy.asm - Highly optimized memory copy with AVX-512 and non-temporal stores
 ; Based on x86-64-v5
 
 global memcpy_internal_sse2
@@ -11,7 +11,7 @@ global memcpy_internal_avx512
 ;   rsi - memory source
 ;   rdx - number of bytes to copy
 ; Outputs:
-;   rdi - pointer to memory destination
+;   rax - pointer to memory destination
 
 ; Function: memcpy_internal_avx2 (AVX2 optimized)
 ; Inputs:
@@ -19,7 +19,7 @@ global memcpy_internal_avx512
 ;   rsi - memory source
 ;   rdx - number of bytes to copy
 ; Outputs:
-;   rdi - pointer to memory destination
+;   rax - pointer to memory destination
 
 ; Function: memcpy_internal_avx512 (AVX-512 optimized)
 ; Inputs:
@@ -27,7 +27,7 @@ global memcpy_internal_avx512
 ;   rsi - memory source
 ;   rdx - number of bytes to copy
 ; Outputs:
-;   rdi - pointer to memory destination
+;   rax - pointer to memory destination
 
 section .text
 
