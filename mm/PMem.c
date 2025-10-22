@@ -243,7 +243,15 @@ void* AllocPage(void) {
     if (!page_bitmap) return NULL; // Safety check
 
     uint64_t flags = rust_spinlock_lock_irqsave(pmm_lock);
-    // Check low memory condition
+
+    // Quick OOM guard
+    if (used_pages >= total_pages - 1) {
+        allocation_failures++;
+        rust_spinlock_unlock_irqrestore(pmm_lock, flags);
+        return NULL;
+    }
+
+    // Check low memory condition once when crossing threshold
     if (used_pages > (total_pages * 9) / 10) { // 90% used
         if (low_memory_watermark == 0) {
             low_memory_watermark = used_pages;
@@ -253,20 +261,32 @@ void* AllocPage(void) {
         }
     }
 
+    // Ensure hint is not in reserved low memory
+    const uint64_t lowmem_pages = 0x100000 / PAGE_SIZE;
+    if (next_free_hint < lowmem_pages) next_free_hint = lowmem_pages;
+    if (next_free_hint >= total_pages) next_free_hint = lowmem_pages;
+
     // Fast word-based search from hint
     uint64_t start_word = next_free_hint / 64;
 
     // Search from hint word onwards
     for (uint64_t word_idx = start_word; word_idx < bitmap_words; word_idx++) {
-        if (page_bitmap[word_idx] != ~0ULL) { // Not all bits set
-            int bit_pos = FindFirstFreeBit(page_bitmap[word_idx]);
+        uint64_t word = page_bitmap[word_idx];
+        if (word != ~0ULL) { // Not all bits set
+            int bit_pos = FindFirstFreeBit(word);
             if (bit_pos >= 0) {
-                uint64_t page_idx = word_idx * 64 + bit_pos;
+                uint64_t page_idx = word_idx * 64 + (uint64_t)bit_pos;
                 if (page_idx >= total_pages) break;
-                if (page_idx < 0x100000 / PAGE_SIZE) continue; // Skip low memory
+                if (page_idx < lowmem_pages) {
+                    // Skip low memory in this word by forcing hint to next
+                    next_free_hint = (word_idx + 1) * 64;
+                    continue;
+                }
 
                 MarkPageUsed(page_idx);
+                allocation_count++;
                 next_free_hint = page_idx + 1;
+                if (next_free_hint >= total_pages) next_free_hint = lowmem_pages;
                 void* page = (void*)(page_idx * PAGE_SIZE);
                 rust_spinlock_unlock_irqrestore(pmm_lock, flags);
                 return page;
@@ -275,16 +295,19 @@ void* AllocPage(void) {
     }
 
     // Search from beginning to hint
-    uint64_t min_word = (0x100000 / PAGE_SIZE) / 64;
+    uint64_t min_word = lowmem_pages / 64;
     for (uint64_t word_idx = min_word; word_idx < start_word; word_idx++) {
-        if (page_bitmap[word_idx] != ~0ULL) {
-            int bit_pos = FindFirstFreeBit(page_bitmap[word_idx]);
+        uint64_t word = page_bitmap[word_idx];
+        if (word != ~0ULL) {
+            int bit_pos = FindFirstFreeBit(word);
             if (bit_pos >= 0) {
-                uint64_t page_idx = word_idx * 64 + bit_pos;
-                if (page_idx < 0x100000 / PAGE_SIZE) continue;
+                uint64_t page_idx = word_idx * 64 + (uint64_t)bit_pos;
+                if (page_idx < lowmem_pages) continue;
 
                 MarkPageUsed(page_idx);
+                allocation_count++;
                 next_free_hint = page_idx + 1;
+                if (next_free_hint >= total_pages) next_free_hint = lowmem_pages;
                 void* page = (void*)(page_idx * PAGE_SIZE);
                 rust_spinlock_unlock_irqrestore(pmm_lock, flags);
                 return page;
@@ -297,6 +320,126 @@ void* AllocPage(void) {
     return NULL; // Out of memory
 }
 
+// Helpers for fast range checks and updates
+static inline int RangeIsFree(uint64_t start_page, uint64_t page_count) {
+    if (start_page + page_count > total_pages) return 0;
+    uint64_t start_bit = start_page;
+    uint64_t end_bit = start_page + page_count - 1;
+
+    uint64_t start_word = start_bit / 64;
+    uint64_t end_word = end_bit / 64;
+    uint64_t start_offset = start_bit % 64;
+    uint64_t end_offset = end_bit % 64;
+
+    if (start_word == end_word) {
+        uint64_t mask = (~0ULL >> (63 - end_offset)) & (~0ULL << start_offset);
+        return (page_bitmap[start_word] & mask) == 0ULL;
+    }
+
+    // First partial word
+    if ((page_bitmap[start_word] & (~0ULL << start_offset)) != 0ULL) return 0;
+
+    // Full words in between
+    for (uint64_t w = start_word + 1; w < end_word; ++w) {
+        if (page_bitmap[w] != 0ULL) return 0;
+    }
+
+    // Last partial word
+    if ((page_bitmap[end_word] & (~0ULL >> (63 - end_offset))) != 0ULL) return 0;
+
+    return 1;
+}
+
+static inline void RangeSetUsed(uint64_t start_page, uint64_t page_count) {
+    uint64_t start_bit = start_page;
+    uint64_t end_bit = start_page + page_count - 1;
+    uint64_t start_word = start_bit / 64;
+    uint64_t end_word = end_bit / 64;
+    uint64_t start_offset = start_bit % 64;
+    uint64_t end_offset = end_bit % 64;
+
+    if (start_word == end_word) {
+        uint64_t mask = (~0ULL >> (63 - end_offset)) & (~0ULL << start_offset);
+        uint64_t before = page_bitmap[start_word];
+        uint64_t after = before | mask;
+        used_pages += (uint64_t)__builtin_popcountll(after) - (uint64_t)__builtin_popcountll(before);
+        page_bitmap[start_word] = after;
+        return;
+    }
+
+    // First partial
+    {
+        uint64_t mask = ~0ULL << start_offset;
+        uint64_t before = page_bitmap[start_word];
+        uint64_t after = before | mask;
+        used_pages += (uint64_t)__builtin_popcountll(after) - (uint64_t)__builtin_popcountll(before);
+        page_bitmap[start_word] = after;
+    }
+
+    // Middle full words
+    for (uint64_t w = start_word + 1; w < end_word; ++w) {
+        uint64_t before = page_bitmap[w];
+        if (before != ~0ULL) {
+            used_pages += 64 - (uint64_t)__builtin_popcountll(before);
+            page_bitmap[w] = ~0ULL;
+        }
+    }
+
+    // Last partial
+    {
+        uint64_t mask = ~0ULL >> (63 - end_offset);
+        uint64_t before = page_bitmap[end_word];
+        uint64_t after = before | mask;
+        used_pages += (uint64_t)__builtin_popcountll(after) - (uint64_t)__builtin_popcountll(before);
+        page_bitmap[end_word] = after;
+    }
+}
+
+static inline void RangeSetFree(uint64_t start_page, uint64_t page_count) {
+    uint64_t start_bit = start_page;
+    uint64_t end_bit = start_page + page_count - 1;
+    uint64_t start_word = start_bit / 64;
+    uint64_t end_word = end_bit / 64;
+    uint64_t start_offset = start_bit % 64;
+    uint64_t end_offset = end_bit % 64;
+
+    if (start_word == end_word) {
+        uint64_t mask = (~0ULL >> (63 - end_offset)) & (~0ULL << start_offset);
+        uint64_t before = page_bitmap[start_word];
+        uint64_t after = before & ~mask;
+        used_pages -= (uint64_t)__builtin_popcountll(before) - (uint64_t)__builtin_popcountll(after);
+        page_bitmap[start_word] = after;
+        return;
+    }
+
+    // First partial
+    {
+        uint64_t mask = ~0ULL << start_offset;
+        uint64_t before = page_bitmap[start_word];
+        uint64_t after = before & ~mask;
+        used_pages -= (uint64_t)__builtin_popcountll(before) - (uint64_t)__builtin_popcountll(after);
+        page_bitmap[start_word] = after;
+    }
+
+    // Middle full words
+    for (uint64_t w = start_word + 1; w < end_word; ++w) {
+        uint64_t before = page_bitmap[w];
+        if (before != 0ULL) {
+            used_pages -= (uint64_t)__builtin_popcountll(before);
+            page_bitmap[w] = 0ULL;
+        }
+    }
+
+    // Last partial
+    {
+        uint64_t mask = ~0ULL >> (63 - end_offset);
+        uint64_t before = page_bitmap[end_word];
+        uint64_t after = before & ~mask;
+        used_pages -= (uint64_t)__builtin_popcountll(before) - (uint64_t)__builtin_popcountll(after);
+        page_bitmap[end_word] = after;
+    }
+}
+
 void* AllocHugePages(uint64_t num_pages) {
 
     uint64_t flags = rust_spinlock_lock_irqsave(pmm_lock);
@@ -305,26 +448,14 @@ void* AllocHugePages(uint64_t num_pages) {
     uint64_t pages_per_huge = HUGE_PAGE_SIZE / PAGE_SIZE;  // 512
     uint64_t total_needed = num_pages * pages_per_huge;
 
-    // Search for aligned contiguous region
-    for (uint64_t start = HUGE_PAGE_ALIGN_UP(0x100000) / PAGE_SIZE;
-         start + total_needed <= total_pages;
-         start += pages_per_huge) {
+    // Align the search start to the first 2MB boundary above low memory
+    uint64_t start_page = HUGE_PAGE_ALIGN_UP(0x100000) / PAGE_SIZE;
 
-        // Check if all pages in this region are free
-        int all_free = 1;
-        for (uint64_t i = 0; i < total_needed; i++) {
-            if (!IsPageFree(start + i)) {
-                all_free = 0;
-                break;
-            }
-        }
-
-        if (all_free) {
-            // Mark all pages as used
-            for (uint64_t i = 0; i < total_needed; i++) {
-                MarkPageUsed(start + i);
-            }
-
+    for (uint64_t start = start_page; start + total_needed <= total_pages; start += pages_per_huge) {
+        if (RangeIsFree(start, total_needed)) {
+            RangeSetUsed(start, total_needed);
+            next_free_hint = start + total_needed; // move hint forward
+            if (next_free_hint >= total_pages) next_free_hint = 0x100000 / PAGE_SIZE;
             void* huge_page = (void*)(start * PAGE_SIZE);
             rust_spinlock_unlock_irqrestore(pmm_lock, flags);
             ++huge_pages_allocated;
@@ -335,6 +466,33 @@ void* AllocHugePages(uint64_t num_pages) {
     rust_spinlock_unlock_irqrestore(pmm_lock, flags);
     ++allocation_failures;
     return NULL;  // No contiguous region found
+}
+
+void FreeHugePages(void* pages, uint64_t num_pages) {
+    if (!pages || num_pages == 0) return;
+
+    uint64_t addr = (uint64_t)pages;
+    if ((addr % HUGE_PAGE_SIZE) != 0) {
+        PrintKernelError("System: FreeHugePages: address not 2MB-aligned ");
+        PrintKernelHex(addr); PrintKernel("\n");
+        return;
+    }
+
+    uint64_t pages_per_huge = HUGE_PAGE_SIZE / PAGE_SIZE;  // 512
+    uint64_t start_page = addr / PAGE_SIZE;
+    uint64_t total_to_free = num_pages * pages_per_huge;
+
+    if (start_page + total_to_free > total_pages) {
+        PrintKernelError("System: FreeHugePages: range out of bounds\n");
+        return;
+    }
+
+    uint64_t flags = rust_spinlock_lock_irqsave(pmm_lock);
+    RangeSetFree(start_page, total_to_free);
+
+    if (start_page < next_free_hint) next_free_hint = start_page;
+
+    rust_spinlock_unlock_irqrestore(pmm_lock, flags);
 }
 
 
@@ -369,6 +527,7 @@ void FreePage(void* page) {
     }
 
     MarkPageFree(page_idx);
+    free_count++;
 
     // Update hint if this page is before current hint
     if (page_idx < next_free_hint) {
