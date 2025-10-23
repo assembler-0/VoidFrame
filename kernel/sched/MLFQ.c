@@ -16,13 +16,12 @@
 #include "Panic.h"
 #include "Serial.h"
 #include "Shell.h"
-#include "Spinlock.h"
+#include "SpinlockRust.h"
 #include "StackGuard.h"
 #include "VFS.h"
 #include "VMem.h"
 #include "math.h"
 #include "stdbool.h"
-#include "stdlib.h"
 #include "x64.h"
 
 #define offsetof(type, member) ((uint64_t)&(((type*)0)->member))
@@ -40,12 +39,12 @@ static const uint32_t MAX_SECURITY_VIOLATIONS = SECURITY_VIOLATION_LIMIT;
 static MLFQProcessControlBlock processes[MAX_PROCESSES] ALIGNED_CACHE;
 static volatile uint32_t next_pid = 1;
 static uint64_t pid_bitmap[MAX_PROCESSES / 64 + 1] = {0};  // Track used PIDs
-static irq_flags_t pid_lock = 0;
+static RustSpinLock* pid_lock = NULL;
 static volatile uint32_t current_process = 0;
 static volatile uint32_t process_count = 0;
 static volatile int need_schedule = 0;
-static volatile int scheduler_lock = 0;
-rwlock_t process_table_rwlock_mlfq = {0};
+static RustSpinLock* scheduler_lock = NULL;
+RustRwLock* process_table_rwlock_mlfq = NULL;
 
 // Security subsystem
 uint32_t security_manager_pid = 0;
@@ -252,11 +251,11 @@ void __attribute__((visibility("hidden"))) RemoveFromScheduler(uint32_t slot) {
 }
 
 static void __attribute__((visibility("hidden"))) TerminateProcess(uint32_t pid, TerminationReason reason, uint32_t exit_code) {
-    irq_flags_t flags = SpinLockIrqSave(&scheduler_lock);
+    irq_flags_t flags = rust_spinlock_lock_irqsave(scheduler_lock);
     MLFQProcessControlBlock* proc = MLFQGetCurrentProcessByPID(pid);
     if (UNLIKELY(!proc || proc->state == PROC_DYING ||
                  proc->state == PROC_ZOMBIE || proc->state == PROC_TERMINATED)) {
-        SpinUnlockIrqRestore(&scheduler_lock, flags);
+        rust_spinlock_unlock_irqrestore(scheduler_lock, flags);
         return;
     }
 
@@ -265,7 +264,7 @@ static void __attribute__((visibility("hidden"))) TerminateProcess(uint32_t pid,
     uint32_t slot = proc - processes;
 
     if (slot >= MAX_PROCESSES) {
-        SpinUnlockIrqRestore(&scheduler_lock, flags);
+        rust_spinlock_unlock_irqrestore(scheduler_lock, flags);
         return;
     }
 
@@ -278,7 +277,7 @@ static void __attribute__((visibility("hidden"))) TerminateProcess(uint32_t pid,
             if (proc->privilege_level == PROC_PRIV_SYSTEM) {
                 // Only system processes can kill system processes
                 if (caller->privilege_level != PROC_PRIV_SYSTEM) {
-                    SpinUnlockIrqRestore(&scheduler_lock, flags);
+                    rust_spinlock_unlock_irqrestore(scheduler_lock, flags);
                     PrintKernelError("[SECURITY] Process ");
                     PrintKernelInt(caller->pid);
                     PrintKernel(" tried to kill system process ");
@@ -291,14 +290,14 @@ static void __attribute__((visibility("hidden"))) TerminateProcess(uint32_t pid,
 
             // Cannot terminate immune processes
             if (UNLIKELY(proc->token.flags & PROC_FLAG_IMMUNE)) {
-                SpinUnlockIrqRestore(&scheduler_lock, flags);
+                rust_spinlock_unlock_irqrestore(scheduler_lock, flags);
                 TerminateProcess(caller->pid, TERM_SECURITY, 0);
                 return;
             }
 
             // Cannot terminate critical system processes
             if (UNLIKELY(proc->token.flags & PROC_FLAG_CRITICAL)) {
-                SpinUnlockIrqRestore(&scheduler_lock, flags);
+                rust_spinlock_unlock_irqrestore(scheduler_lock, flags);
                 TerminateProcess(caller->pid, TERM_SECURITY, 0);
                 return;
             }
@@ -306,7 +305,7 @@ static void __attribute__((visibility("hidden"))) TerminateProcess(uint32_t pid,
 
         // Validate caller's token before allowing termination
         if (UNLIKELY(!ValidateToken(&caller->token, caller->pid))) {
-            SpinUnlockIrqRestore(&scheduler_lock, flags);
+            rust_spinlock_unlock_irqrestore(scheduler_lock, flags);
             TerminateProcess(caller->pid, TERM_SECURITY, 0);
             return;
         }
@@ -315,7 +314,7 @@ static void __attribute__((visibility("hidden"))) TerminateProcess(uint32_t pid,
     // Atomic state transition
     ProcessState old_state = proc->state;
     if (UNLIKELY(AtomicCmpxchg((volatile uint32_t*)&proc->state, old_state, PROC_DYING) != old_state)) {
-        SpinUnlockIrqRestore(&scheduler_lock, flags);
+        rust_spinlock_unlock_irqrestore(scheduler_lock, flags);
         return; // Race condition, another thread is handling termination
     }
 
@@ -344,17 +343,17 @@ static void __attribute__((visibility("hidden"))) TerminateProcess(uint32_t pid,
     proc->state = PROC_ZOMBIE;           // Set state FIRST
     __atomic_thread_fence(__ATOMIC_SEQ_CST);
     AddToTerminationQueueAtomic(slot);   // Then add to queue
-    SpinLock(&pid_lock);
+    rust_spinlock_lock(pid_lock);
     int idx = proc->pid / 64;
     int bit = proc->pid % 64;
     pid_bitmap[idx] &= ~(1ULL << bit);
-    SpinUnlock(&pid_lock);
+    rust_spinlock_unlock(pid_lock);
     // Update scheduler statistics
     if (MLFQscheduler.total_processes > 0) {
         MLFQscheduler.total_processes--;
     }
 
-    SpinUnlockIrqRestore(&scheduler_lock, flags);
+    rust_spinlock_unlock_irqrestore(scheduler_lock, flags);
 #ifdef VF_CONFIG_USE_CERBERUS
     CerberusUnregisterProcess(proc->pid);
 #endif
@@ -383,11 +382,11 @@ static void __attribute__((visibility("hidden"))) TerminateProcess(uint32_t pid,
 
 // AS's deadly termination function - bypasses all protections
 static void __attribute__((visibility("hidden"))) ASTerminate(uint32_t pid, const char* reason) {
-    irq_flags_t flags = SpinLockIrqSave(&scheduler_lock);
+    irq_flags_t flags = rust_spinlock_lock_irqsave(scheduler_lock);
     MLFQProcessControlBlock* proc = MLFQGetCurrentProcessByPID(pid);
 
     if (!proc || proc->state == PROC_TERMINATED) {
-        SpinUnlockIrqRestore(&scheduler_lock, flags);
+        rust_spinlock_unlock_irqrestore(scheduler_lock, flags);
         return;
     }
 
@@ -413,7 +412,7 @@ static void __attribute__((visibility("hidden"))) ASTerminate(uint32_t pid, cons
         MLFQscheduler.total_processes--;
     }
 
-    SpinUnlockIrqRestore(&scheduler_lock, flags);
+    rust_spinlock_unlock_irqrestore(scheduler_lock, flags);
 #ifdef VF_CONFIG_PROCINFO_AUTO_CLEANUP
     char cleanup_path[256];
     FormatA(cleanup_path, sizeof(cleanup_path), "%s/%d", RuntimeProcesses, proc->pid);
@@ -763,7 +762,7 @@ static inline __attribute__((visibility("hidden"))) __attribute__((always_inline
 
 // Enhanced scheduler with smart preemption and load balancing
 void MLFQSchedule(struct Registers* regs) {
-    irq_flags_t flags = SpinLockIrqSave(&scheduler_lock);
+    irq_flags_t flags = rust_spinlock_lock_irqsave(scheduler_lock);
     uint64_t schedule_start = MLFQscheduler.tick_counter;
 
     AtomicInc(&scheduler_calls);
@@ -849,7 +848,7 @@ void MLFQSchedule(struct Registers* regs) {
         }
 
         if (!should_preempt) {
-            SpinUnlockIrqRestore(&scheduler_lock, flags);
+            rust_spinlock_unlock_irqrestore(scheduler_lock, flags);
             return;
         }
 
@@ -948,7 +947,7 @@ select_next:;
         MLFQscheduler.quantum_remaining = 0;
     }
 
-    SpinUnlockIrqRestore(&scheduler_lock, flags);
+    rust_spinlock_unlock_irqrestore(scheduler_lock, flags);
 }
 
 void MLFQProcessBlocked(uint32_t slot) {
@@ -1013,9 +1012,9 @@ void ProcessExitStub() {
 }
 
 static __attribute__((visibility("hidden"))) uint32_t CreateSecureProcess(const char * name, void (*entry_point)(void), uint8_t privilege, uint32_t initial_flags) {
-    irq_flags_t flags = SpinLockIrqSave(&scheduler_lock);
+    irq_flags_t flags = rust_spinlock_lock_irqsave(scheduler_lock);
     if (UNLIKELY(!entry_point)) {
-        SpinUnlockIrqRestore(&scheduler_lock, flags);
+        rust_spinlock_unlock_irqrestore(scheduler_lock, flags);
         PANIC("CreateSecureProcess: NULL entry point");
     }
 
@@ -1026,7 +1025,7 @@ static __attribute__((visibility("hidden"))) uint32_t CreateSecureProcess(const 
         PrintKernelInt(creator->pid);
         PrintKernelError(" (tried to create a system process).\n");
         // This is a hostile act. Terminate the caller.
-        SpinUnlockIrqRestore(&scheduler_lock, flags);
+        rust_spinlock_unlock_irqrestore(scheduler_lock, flags);
         ASTerminate(creator->pid, "Illegal attempt to create system process");
         return 0; // Return PID 0 to indicate failure
     }
@@ -1034,7 +1033,7 @@ static __attribute__((visibility("hidden"))) uint32_t CreateSecureProcess(const 
 
     // Enhanced security validation
     if (UNLIKELY(!ValidateToken(&creator->token, creator->pid))) {
-        SpinUnlockIrqRestore(&scheduler_lock, flags);
+        rust_spinlock_unlock_irqrestore(scheduler_lock, flags);
         SecurityViolationHandler(creator->pid, "Corrupt token during process creation");
         return 0;
     }
@@ -1042,26 +1041,26 @@ static __attribute__((visibility("hidden"))) uint32_t CreateSecureProcess(const 
     // Privilege escalation check
     if (privilege == PROC_PRIV_SYSTEM) {
         if (UNLIKELY(creator->pid != 0 && creator->privilege_level != PROC_PRIV_SYSTEM)) {
-            SpinUnlockIrqRestore(&scheduler_lock, flags);
+            rust_spinlock_unlock_irqrestore(scheduler_lock, flags);
             SecurityViolationHandler(creator->pid, "Unauthorized system process creation");
             return 0;
         }
     }
 
     if (UNLIKELY(process_count >= MAX_PROCESSES)) {
-        SpinUnlockIrqRestore(&scheduler_lock, flags);
+        rust_spinlock_unlock_irqrestore(scheduler_lock, flags);
         PANIC("CreateSecureProcess: Too many processes");
     }
 
     // Fast slot allocation
     int slot = FindFreeSlotFast();
     if (UNLIKELY(slot == -1)) {
-        SpinUnlockIrqRestore(&scheduler_lock, flags);
+        rust_spinlock_unlock_irqrestore(scheduler_lock, flags);
         PANIC("CreateSecureProcess: No free process slots");
     }
 
     uint32_t new_pid = 0;
-    SpinLock(&pid_lock);
+    rust_spinlock_lock(pid_lock);
     for (int i = 1; i < MAX_PROCESSES; i++) {
         int idx = i / 64;
         int bit = i % 64;
@@ -1071,11 +1070,11 @@ static __attribute__((visibility("hidden"))) uint32_t CreateSecureProcess(const 
             break;
         }
     }
-    SpinUnlock(&pid_lock);
+    rust_spinlock_unlock(pid_lock);
 
     if (new_pid == 0) {
         FreeSlotFast(slot);
-        SpinUnlockIrqRestore(&scheduler_lock, flags);
+        rust_spinlock_unlock_irqrestore(scheduler_lock, flags);
         PANIC("CreateSecureProcess: PID exhaustion");
     }
 
@@ -1086,7 +1085,7 @@ static __attribute__((visibility("hidden"))) uint32_t CreateSecureProcess(const 
     void* stack = VMemAllocStack(STACK_SIZE);
     if (UNLIKELY(!stack)) {
         FreeSlotFast(slot);
-        SpinUnlockIrqRestore(&scheduler_lock, flags);
+        rust_spinlock_unlock_irqrestore(scheduler_lock, flags);
         PANIC("CreateSecureProcess: Failed to allocate stack");
     }
 
@@ -1161,7 +1160,7 @@ static __attribute__((visibility("hidden"))) uint32_t CreateSecureProcess(const 
     // Add to scheduler
     AddToScheduler(slot);
 
-    SpinUnlockIrqRestore(&scheduler_lock, flags);
+    rust_spinlock_unlock_irqrestore(scheduler_lock, flags);
     return new_pid;
 }
 
@@ -1170,7 +1169,7 @@ uint32_t MLFQCreateProcess(const char * name, void (*entry_point)(void)) {
 }
 
 void MLFQCleanupTerminatedProcess(void) {
-    irq_flags_t flags = SpinLockIrqSave(&scheduler_lock);
+    irq_flags_t flags = rust_spinlock_lock_irqsave(scheduler_lock);
     // Process a limited number per call to avoid long interrupt delays
     int cleanup_count = 0;
     const int MAX_CLEANUP_PER_CALL = CLEANUP_MAX_PER_CALL;
@@ -1221,7 +1220,7 @@ void MLFQCleanupTerminatedProcess(void) {
         FormatA(cleanup_path, sizeof(cleanup_path), "%s/%d", RuntimeProcesses, pid_backup);
         VfsDelete(cleanup_path, true);
     }
-    SpinUnlockIrqRestore(&scheduler_lock, flags);
+    rust_spinlock_unlock_irqrestore(scheduler_lock, flags);
 }
 
 MLFQProcessControlBlock* MLFQGetCurrentProcess(void) {
@@ -1233,15 +1232,15 @@ MLFQProcessControlBlock* MLFQGetCurrentProcess(void) {
 
 MLFQProcessControlBlock* MLFQGetCurrentProcessByPID(uint32_t pid) {
     MLFQProcessControlBlock* current = MLFQGetCurrentProcess();
-    ReadLock(&process_table_rwlock_mlfq, current->pid);
+    rust_rwlock_read_lock(process_table_rwlock_mlfq, current->pid);
     for (int i = 0; i < MAX_PROCESSES; i++) {
         if (processes[i].pid == pid && processes[i].state != PROC_TERMINATED) {
             MLFQProcessControlBlock* found = &processes[i];
-            ReadUnlock(&process_table_rwlock_mlfq, current->pid);
+            rust_rwlock_read_unlock(process_table_rwlock_mlfq, current->pid);
             return found;
         }
     }
-    ReadUnlock(&process_table_rwlock_mlfq, current->pid);
+    rust_rwlock_read_unlock(process_table_rwlock_mlfq, current->pid);
     return NULL;
 }
 
@@ -1708,6 +1707,13 @@ static void Astra(void) {
 }
 
 int MLFQSchedInit(void) {
+    if (!scheduler_lock) scheduler_lock = rust_spinlock_new();
+    if (!scheduler_lock) PANIC("Failed to initialize scheduler lock");
+    if (!pid_lock) pid_lock = rust_spinlock_new();
+    if (!pid_lock) PANIC("Failed to initialize PID lock");
+    if (!process_table_rwlock_mlfq) process_table_rwlock_mlfq = rust_rwlock_new();
+    if (!process_table_rwlock_mlfq) PANIC("Failed to initialize process table RW lock");
+
     PrintKernelSuccess("System: Initializing MLFQ scheduler...\n");
     FastMemset(processes, 0, sizeof(MLFQProcessControlBlock) * MAX_PROCESSES);
 
@@ -1915,7 +1921,7 @@ void MLFQKillCurrentProcess(const char * reason) {
 
 // Get detailed process scheduling information
 void MLFQGetProcessStats(uint32_t pid, uint32_t* cpu_time, uint32_t* io_ops, uint32_t* preemptions) {
-    ReadLock(&process_table_rwlock_mlfq, pid);
+    rust_rwlock_read_lock(process_table_rwlock_mlfq, pid);
     MLFQProcessControlBlock* proc = MLFQGetCurrentProcessByPID(pid);
     if (!proc) {
         if (cpu_time) *cpu_time = 0;
@@ -1927,5 +1933,5 @@ void MLFQGetProcessStats(uint32_t pid, uint32_t* cpu_time, uint32_t* io_ops, uin
     if (cpu_time) *cpu_time = (uint32_t)proc->cpu_time_accumulated;
     if (io_ops) *io_ops = proc->io_operations;
     if (preemptions) *preemptions = proc->preemption_count;
-    ReadUnlock(&process_table_rwlock_mlfq, pid);
+    rust_rwlock_read_unlock(process_table_rwlock_mlfq, pid);
 }

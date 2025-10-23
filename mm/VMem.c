@@ -29,6 +29,15 @@ static uint64_t buddy_bitmap[(1ULL << (BUDDY_MAX_ORDER - BUDDY_MIN_ORDER)) / 64]
 static VMemFreeBlock buddy_node_pool[MAX_BUDDY_NODES];
 static VMemFreeBlock* buddy_node_head = NULL;
 
+// Hash table for fast buddy lookup
+#define HASH_TABLE_SIZE 4096 // Must be a power of 2
+static VMemFreeBlock* buddy_hash_table[HASH_TABLE_SIZE];
+
+static inline uint32_t HashAddress(uint64_t addr) {
+    // Multiplicative hashing for better distribution
+    return (uint32_t)(((addr >> BUDDY_MIN_ORDER) * 2654435761) & (HASH_TABLE_SIZE - 1));
+}
+
 // TLB flush batching for efficiency
 #define MAX_TLB_BATCH 64
 static uint64_t tlb_batch[MAX_TLB_BATCH];
@@ -88,6 +97,8 @@ static inline uint64_t GetBuddyAddr(uint64_t addr, uint32_t order) {
     return addr ^ OrderToSize(order);
 }
 
+static void BuddyRemoveFreeBlock(VMemFreeBlock* node, uint32_t order);
+
 static void BuddyAddFreeBlock(uint64_t addr, uint32_t order) {
     if (order >= BUDDY_NUM_ORDERS) return;
 
@@ -96,26 +107,66 @@ static void BuddyAddFreeBlock(uint64_t addr, uint32_t order) {
 
     node->base = addr;
     node->size = OrderToSize(order);
+    node->prev = NULL;
+    node->hnext = NULL;
+
+    // Add to the head of the free list for this order
     node->next = buddy_free_lists[order];
+    if (buddy_free_lists[order]) {
+        buddy_free_lists[order]->prev = node;
+    }
     buddy_free_lists[order] = node;
+
+    // Add to the hash table
+    uint32_t hash = HashAddress(addr);
+    node->hnext = buddy_hash_table[hash];
+    buddy_hash_table[hash] = node;
 }
 
-static VMemFreeBlock* BuddyRemoveFreeBlock(uint64_t addr, uint32_t order) {
-    if (order >= BUDDY_NUM_ORDERS) return NULL;
-
-    VMemFreeBlock* prev = NULL;
-    VMemFreeBlock* curr = buddy_free_lists[order];
+static VMemFreeBlock* BuddyFindFreeBlock(uint64_t addr, uint32_t order) {
+    uint32_t hash = HashAddress(addr);
+    VMemFreeBlock* curr = buddy_hash_table[hash];
+    uint64_t size = OrderToSize(order);
 
     while (curr) {
-        if (curr->base == addr) {
-            if (prev) prev->next = curr->next;
-            else buddy_free_lists[order] = curr->next;
+        if (curr->base == addr && curr->size == size) {
             return curr;
         }
-        prev = curr;
-        curr = curr->next;
+        curr = curr->hnext;
     }
     return NULL;
+}
+
+static void BuddyRemoveFreeBlock(VMemFreeBlock* node, uint32_t order) {
+    // Remove from the doubly-linked free list
+    if (node->prev) {
+        node->prev->next = node->next;
+    } else {
+        buddy_free_lists[order] = node->next;
+    }
+    if (node->next) {
+        node->next->prev = node->prev;
+    }
+
+    // Remove from the hash table
+    uint32_t hash = HashAddress(node->base);
+    VMemFreeBlock* prev_h = NULL;
+    VMemFreeBlock* curr_h = buddy_hash_table[hash];
+    while (curr_h) {
+        if (curr_h == node) {
+            if (prev_h) {
+                prev_h->hnext = curr_h->hnext;
+            } else {
+                buddy_hash_table[hash] = curr_h->hnext;
+            }
+            break;
+        }
+        prev_h = curr_h;
+        curr_h = curr_h->hnext;
+    }
+
+    // The node is now unlinked, release it back to the pool
+    ReleaseBuddyNode(node);
 }
 
 static uint64_t BuddyAlloc(uint64_t size) {
@@ -124,10 +175,32 @@ static uint64_t BuddyAlloc(uint64_t size) {
 
     // Find smallest available block
     for (uint32_t curr_order = order; curr_order < BUDDY_NUM_ORDERS; curr_order++) {
-        if (!buddy_free_lists[curr_order]) continue;
-
         VMemFreeBlock* block = buddy_free_lists[curr_order];
+        if (!block) continue;
+
+        // Unlink the block from the head of the list
+        if (block->next) {
+            block->next->prev = NULL;
+        }
         buddy_free_lists[curr_order] = block->next;
+
+        // Remove from hash table
+        uint32_t hash = HashAddress(block->base);
+        VMemFreeBlock* prev_h = NULL;
+        VMemFreeBlock* curr_h = buddy_hash_table[hash];
+        while (curr_h) {
+            if (curr_h == block) {
+                if (prev_h) {
+                    prev_h->hnext = curr_h->hnext;
+                } else {
+                    buddy_hash_table[hash] = curr_h->hnext;
+                }
+                break;
+            }
+            prev_h = curr_h;
+            curr_h = curr_h->hnext;
+        }
+
         uint64_t addr = block->base;
         ReleaseBuddyNode(block);
 
@@ -151,11 +224,13 @@ static void BuddyFree(uint64_t addr, uint64_t size) {
     // Try to coalesce with buddy
     while (order < BUDDY_NUM_ORDERS - 1) {
         uint64_t buddy_addr = GetBuddyAddr(addr, order);
-        VMemFreeBlock* buddy = BuddyRemoveFreeBlock(buddy_addr, order);
+        VMemFreeBlock* buddy = BuddyFindFreeBlock(buddy_addr, order);
 
         if (!buddy) break; // Buddy not free
 
-        ReleaseBuddyNode(buddy);
+        // Buddy is free, so remove it from the data structures and coalesce
+        BuddyRemoveFreeBlock(buddy, order);
+
         if (buddy_addr < addr) addr = buddy_addr;
         order++;
     }
@@ -231,6 +306,11 @@ void VMemInit(void) {
     // Initialize buddy allocator
     for (int i = 0; i < BUDDY_NUM_ORDERS; i++) {
         buddy_free_lists[i] = NULL;
+    }
+
+    // Initialize hash table
+    for (int i = 0; i < HASH_TABLE_SIZE; i++) {
+        buddy_hash_table[i] = NULL;
     }
 
     // Set up buddy regions

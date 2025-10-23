@@ -5,6 +5,9 @@
 #include "Shared.h"
 #include "stdint.h"
 #include "x64.h"
+#ifdef VF_CONFIG_USE_CERBERUS
+#include "Cerberus.h"
+#endif
 
 // =============================================================================
 // EEVDF Parameters - Earliest Eligible Virtual Deadline First
