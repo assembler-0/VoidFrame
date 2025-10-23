@@ -92,6 +92,8 @@ extern volatile uint32_t APICticks;
 static void EEVDFASTerminate(uint32_t pid, const char* reason);
 static void EEVDFCleanupTerminatedProcessInternal(void);
 static void EEVDFTerminateProcess(uint32_t pid, TerminationReason reason, uint32_t exit_code);
+static inline int EEVDFPostflightCheck(uint32_t slot);
+static inline int EEVDFPreflightCheck(uint32_t slot);
 // =============================================================================
 // Utility Functions
 // =============================================================================
@@ -686,6 +688,13 @@ void EEVDFSchedule(Registers* regs) {
 
     AtomicInc(&scheduler_calls);
     AtomicInc(&eevdf_scheduler.tick_counter);
+
+#ifdef VF_CONFIG_USE_CERBERUS
+    static uint64_t cerberus_tick_counter = 0;
+    if (++cerberus_tick_counter % 10 == 0) {
+        CerberusTick();
+    }
+#endif
     
     EEVDFRunqueue* rq = &eevdf_scheduler.rq;
     uint32_t old_slot = rq->current_slot;
@@ -699,6 +708,12 @@ void EEVDFSchedule(Registers* regs) {
         prev = &processes[old_slot];
         
         if (UNLIKELY(prev->state == PROC_DYING || prev->state == PROC_ZOMBIE || prev->state == PROC_TERMINATED)) {
+            goto pick_next;
+        }
+
+        if (UNLIKELY(!EEVDFPostflightCheck(old_slot))) {
+            // Post-flight check failed, process is corrupt and already terminated.
+            // Do not re-queue.
             goto pick_next;
         }
         
@@ -730,6 +745,11 @@ pick_retry:;
         next_slot = 0; // Idle process
     } else {
         next_slot = next - processes;
+
+        if (UNLIKELY(!EEVDFPreflightCheck(next_slot))) {
+            EEVDFDequeueTask(rq, next);
+            goto pick_retry; // Pick another process
+        }
         
         if (UNLIKELY(next_slot >= EEVDF_MAX_PROCESSES || next->state != PROC_READY)) {
             // Remove invalid process from tree to prevent infinite loop
@@ -955,6 +975,10 @@ uint32_t EEVDFCreateProcess(const char* name, void (*entry_point)(void)) {
     proc->ipc_queue.count = 0;
 
     FormatA(proc->ProcessRuntimePath, sizeof(proc->ProcessRuntimePath), "%s/%d", RuntimeProcesses, new_pid);
+
+#ifdef VF_CONFIG_USE_CERBERUS
+    CerberusRegisterProcess(new_pid, (uint64_t)stack, EEVDF_STACK_SIZE);
+#endif
     
     // Update counters
     __sync_fetch_and_add(&process_count, 1);
@@ -1006,6 +1030,42 @@ static int EEVDFValidateToken(const EEVDFSecurityToken* token, uint32_t pid) {
     
     uint64_t expected_checksum = EEVDFCalculateSecureChecksum(token, pid);
     return token->checksum == expected_checksum;
+}
+
+static inline int EEVDFPreflightCheck(uint32_t slot) {
+    if (slot == 0) return 1; // Idle process is always safe.
+
+    EEVDFProcessControlBlock* proc = &processes[slot];
+
+    if (UNLIKELY(!EEVDFValidateToken(&proc->token, proc->pid))) {
+        EEVDFASTerminate(proc->pid, "Pre-flight token validation failure");
+        return 0; // Do not schedule this process.
+    }
+
+    if (UNLIKELY(proc->privilege_level == EEVDF_PROC_PRIV_SYSTEM &&
+                 !(proc->token.flags & (EEVDF_PROC_FLAG_SUPERVISOR | EEVDF_PROC_FLAG_CRITICAL | EEVDF_PROC_FLAG_IMMUNE)))) {
+        EEVDFASTerminate(proc->pid, "Unauthorized privilege escalation");
+        return 0; // Do not schedule this process.
+    }
+
+#ifdef VF_CONFIG_USE_CERBERUS
+    CerberusPreScheduleCheck(slot);
+#endif
+
+    return 1; // Process appears safe to run.
+}
+
+static inline int EEVDFPostflightCheck(uint32_t slot) {
+    if (slot == 0) return 1; // Idle process is always safe.
+
+    EEVDFProcessControlBlock* proc = &processes[slot];
+
+    if (UNLIKELY(!EEVDFValidateToken(&proc->token, proc->pid))) {
+        EEVDFASTerminate(proc->pid, "Post-execution token corruption");
+        return 0; // Do not re-queue this process
+    }
+
+    return 1; // Process is still safe.
 }
 
 // =============================================================================
