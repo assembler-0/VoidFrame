@@ -82,6 +82,8 @@ typedef struct VMemFreeBlock {
     uint64_t base;
     uint64_t size;
     struct VMemFreeBlock* next;
+    struct VMemFreeBlock* prev;
+    struct VMemFreeBlock* hnext; // For hash table chaining
 } VMemFreeBlock;
 
 /**

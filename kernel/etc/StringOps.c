@@ -1,4 +1,5 @@
 #include "KernelHeap.h"
+#include "StringOps.h"
 
 int StringLength(const char* str) { // simpler than FasStrlen,
     if (!str) return 0;
@@ -15,11 +16,7 @@ size_t FastStrlen(const char* s, size_t max) {
 }
 
 void FastStrCopy(char* dst, const char* src, size_t max_len) {
-    if (!dst || max_len == 0) return;
-    if (!src) { dst[0] = '\0'; return; }
-    size_t i = 0;
-    for (; i + 1 < max_len && src[i]; i++) dst[i] = src[i];
-    dst[i] = '\0';
+    return strncpy(dst, src, max_len);
 }
 
 int FastStrnCmp(const char* str1, const char* str2, size_t n) {
