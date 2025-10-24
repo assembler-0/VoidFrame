@@ -255,6 +255,21 @@ void WindowPrintString(Window* window, const char* str) {
 }
 
 // Clear window text
+void WindowClearText(Window* window) {
+    WindowTextState* state = GetWindowTextState(window);
+    if (!state) return;
+
+    uint64_t flags = rust_spinlock_lock_irqsave(g_text_lock);
+
+    FastMemset(state->buffer, 0, sizeof(state->buffer));
+    state->cursor_row = 0;
+    state->cursor_col = 0;
+    state->needs_refresh = true;
+    window->needs_redraw = true;
+
+    rust_spinlock_unlock_irqrestore(g_text_lock, flags);
+}
+
 static void DrawTaskbar() {
     if (!g_vbe_info) return;
     // Draw taskbar background onto compositor buffer

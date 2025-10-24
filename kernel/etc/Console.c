@@ -80,6 +80,10 @@ static void ConsolePutcharAt(char c, uint32_t x, uint32_t y, uint8_t color) {
 }
 
 void ClearScreen(void) {
+    if (snooze && GetVFShellWindow()) {
+        WindowClearText(GetVFShellWindow());
+        return;
+    }
     rust_spinlock_lock(console_lock);
     if (use_vbe) {
         VBEConsoleClear();
