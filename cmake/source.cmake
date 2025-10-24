@@ -17,7 +17,7 @@ set(ASM_SOURCES
 set(KERNEL_CORE_SOURCES
         kernel/core/Kernel.c
         kernel/core/Panic.c
-        kernel/core/Compositor.c
+        vfcompositor/Compositor.c
         kernel/core/InitRD.c
 )
 
