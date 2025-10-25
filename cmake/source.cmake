@@ -121,6 +121,10 @@ set(CPP_SOURCES
         ports/6502/6502.cpp
 )
 
+set(VFC_SOURCES
+        vfcompostor/Compositor.cpp
+)
+
 set(OBJ_SOURCES)
 
 # ============================================================================
@@ -128,6 +132,7 @@ set(OBJ_SOURCES)
 # ============================================================================
 include_directories(
         .
+        vfcompositor
         include
         kernel/atomic
         kernel/core
