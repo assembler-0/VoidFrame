@@ -803,8 +803,8 @@ void KernelMainHigherHalf(void) {
     StackUsage();
 
 #ifdef VF_CONFIG_SNOOZE_ON_BOOT
-    ClearScreen();
     Unsnooze();
+    ClearScreen();
 #endif
 
     g_HasKernelStarted = true;

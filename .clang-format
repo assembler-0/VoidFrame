@@ -1,6 +1,6 @@
 # Generated from CLion C/C++ Code Style settings
 ---
-Language: Cpp
+Language: C
 BasedOnStyle: LLVM
 AccessModifierOffset: -4
 AlignConsecutiveAssignments: false

@@ -2,6 +2,7 @@
 #include "Console.h"
 #include "KernelHeap.h"
 #include "MemOps.h"
+#include "PS2.h"
 #include "input/Keyboard.h"
 #include "Scheduler.h"
 #include "StringOps.h"
@@ -243,12 +244,12 @@ void EditorOpen(const char* filename) {
         
         char c = GetChar();
         
-        if (c == 19) { // Ctrl+S
+        if (c == PS2_CalcCombo(K_CTRL, 'S')) { // Ctrl+S
             EditorSave();
             continue;
         }
         
-        if (c == 17) { // Ctrl+Q
+        if (c == PS2_CalcCombo(K_CTRL, 'Q')) { // Ctrl+Q
             if (dirty) {
                 PrintKernel("\nUnsaved changes! Press Ctrl+Q again to quit.\n");
                 while (!HasInput()) Yield();
@@ -257,9 +258,9 @@ void EditorOpen(const char* filename) {
             break;
         }
         
-        if (c == 1) { // Ctrl+A - cursor left
+        if (c == PS2_CalcCombo(K_CTRL, 'A')) { // Ctrl+A - cursor left
             if (cursor_pos > 0) cursor_pos--;
-        } else if (c == 4) { // Ctrl+D - cursor right
+        } else if (c == PS2_CalcCombo(K_CTRL, 'D')) { // Ctrl+D - cursor right
             if (cursor_pos < buffer_size) cursor_pos++;
         } else if (c == '\b' || c == 127) { // Backspace
             EditorDeleteChar();
@@ -267,7 +268,7 @@ void EditorOpen(const char* filename) {
             EditorInsertChar(c);
         } else if (c == '\n' || c == '\r') { // Enter
             EditorInsertChar('\n');
-        } else if (c == 12) { // Ctrl+L: Go to line
+        } else if (c == PS2_CalcCombo(K_CTRL, 'L')) { // Ctrl+L: Go to line
             EditorGotoLinePrompt();
         }
     }

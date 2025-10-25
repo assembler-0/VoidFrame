@@ -1,5 +1,4 @@
 #include "Console.h"
-#include "Compositor.h"
 #include "Format.h"
 #include "Io.h"
 #include "Pallete.h"
@@ -11,6 +10,23 @@
 #include "stdarg.h"
 #include "stdbool.h"
 #include "stdint.h"
+
+// Forward declarations for VGA backend
+static void VGAClear(void);
+static void VGAPutChar(char c);
+static void VGAPrint(const char* s);
+static void VGASetColor(uint8_t color);
+static void VGASetCursor(uint32_t x, uint32_t y);
+
+static void ConsolePutchar(char c);
+
+// Unified backend driver interface
+static void (*drv_putc)(char) = 0;
+static void (*drv_print)(const char*) = 0;
+static void (*drv_clear)(void) = 0;
+static void (*drv_set_color)(uint8_t) = 0;
+static void (*drv_set_cursor)(uint32_t, uint32_t) = 0;
+
 
 static RustSpinLock* console_lock = NULL;
 // For future use - a DE/VM?
@@ -35,13 +51,23 @@ ConsoleT console = {
     .color = VGA_COLOR_DEFAULT
 };
 
-static void PrintToVFShell(const char* message) {
-    if (!message) return;
-    Window* vfshell = GetVFShellWindow();
-    if (vfshell) {
-        WindowPrintString(vfshell, message);
-    }
+
+// VGA backend implementations mapped to old logic
+static inline uint16_t MakeVGAEntry(char c, uint8_t color);
+static void VGAClear(void) { 
+    if (!console.buffer) console.buffer = (volatile uint16_t*)VGA_BUFFER_ADDR;
+    const uint16_t blank = MakeVGAEntry(' ', VGA_COLOR_DEFAULT);
+    volatile uint32_t* buffer32 = (volatile uint32_t*)console.buffer;
+    const uint32_t blank32 = ((uint32_t)blank << 16) | blank;
+    const uint32_t size32 = (VGA_WIDTH * VGA_HEIGHT) / 2;
+    for (uint32_t i = 0; i < size32; i++) buffer32[i] = blank32;
+    console.line = 0; console.column = 0; UpdateCursor();
 }
+static void VGAPutChar(char c) { ConsolePutchar(c); }
+static void VGAPrint(const char* s) { for (const char* p=s; *p; ++p) ConsolePutchar(*p); }
+static void VGASetColor(uint8_t color) { console.color = color; }
+static void VGASetCursor(uint32_t x, uint32_t y) { if (x<VGA_WIDTH) console.column=x; if (y<VGA_HEIGHT) console.line=y; UpdateCursor(); }
+
 
 void Snooze() {
     __atomic_store_n(&snooze, 1, __ATOMIC_RELEASE);
@@ -60,9 +86,22 @@ void ConsoleInit(void) {
     if (VBEIsInitialized()) {
         use_vbe = 1;
         VBEConsoleInit();
+        // Bind VBE backend
+
+        drv_putc = VBEConsolePutChar;
+        drv_print = VBEConsolePrint;
+        drv_clear = VBEConsoleClear;
+        drv_set_color = VBEConsoleSetColor;
+        drv_set_cursor = VBEConsoleSetCursor;
     } else {
         use_vbe = 0;
         console.buffer = (volatile uint16_t*)VGA_BUFFER_ADDR;
+        // Bind VGA backend
+        drv_putc = VGAPutChar;
+        drv_print = VGAPrint;
+        drv_clear = VGAClear;
+        drv_set_color = VGASetColor;
+        drv_set_cursor = VGASetCursor;
         ClearScreen();
     }
 }
@@ -80,30 +119,11 @@ static void ConsolePutcharAt(char c, uint32_t x, uint32_t y, uint8_t color) {
 }
 
 void ClearScreen(void) {
-    if (snooze && GetVFShellWindow()) {
-        WindowClearText(GetVFShellWindow());
-        return;
-    }
+    // Snooze mode: skip physical console updates
+    if (snooze) return;
     rust_spinlock_lock(console_lock);
-    if (use_vbe) {
-        VBEConsoleClear();
-    } else {
-        if (!console.buffer) console.buffer = (volatile uint16_t*)VGA_BUFFER_ADDR;
-
-        const uint16_t blank = MakeVGAEntry(' ', VGA_COLOR_DEFAULT);
-        volatile uint32_t* buffer32 = (volatile uint32_t*)console.buffer;
-        const uint32_t blank32 = ((uint32_t)blank << 16) | blank;
-        const uint32_t size32 = (VGA_WIDTH * VGA_HEIGHT) / 2;
-
-        for (uint32_t i = 0; i < size32; i++) {
-            buffer32[i] = blank32;
-        }
-
-        console.line = 0;
-        console.column = 0;
-        UpdateCursor();
-    }
-
+    if (!console.buffer) console.buffer = (volatile uint16_t*)VGA_BUFFER_ADDR;
+    if (drv_clear) drv_clear(); else VGAClear();
     rust_spinlock_unlock(console_lock);
 }
 
@@ -163,30 +183,20 @@ static void ConsolePutchar(char c) {
 
 // For colors to work properly:
 void ConsoleSetColor(uint8_t color) {
-    if (use_vbe) {
-        VBEConsoleSetColor(color);  // Let VBEConsole handle it
-    } else {
-        console.color = color;
-    }
+    if (snooze) return;
+    if (drv_set_color) drv_set_color(color); else console.color = color;
 }
 
 void PrintKernel(const char* str) {
     if (!str) return;
     SerialWrite(str);
-    if (snooze) {
-        PrintToVFShell(str);
-        return;
-    }
+    if (snooze) return;
 
     rust_spinlock_lock(console_lock);
-    if (use_vbe) {
-        VBEConsolePrint(str);
+    if (drv_print) {
+        drv_print(str);
     } else {
-        const uint8_t original_color = console.color;
-        for (const char* p = str; *p; p++) {
-            ConsolePutchar(*p);
-        }
-        console.color = original_color;
+        for (const char* p = str; *p; p++) ConsolePutchar(*p);
     }
     rust_spinlock_unlock(console_lock);
 }
@@ -326,25 +336,18 @@ void PrintKernelAt(const char* str, uint32_t line, uint32_t col) {
     SerialWrite(str);
     SerialWrite("\n");
     // if (snooze) return;
-    if (use_vbe) {
-        VBEConsoleSetCursor(col, line);
-        VBEConsolePrint(str);
-    } else {
+    if (drv_set_cursor) drv_set_cursor(col, line);
+    if (drv_print) drv_print(str); else {
         if (line >= VGA_HEIGHT || col >= VGA_WIDTH) return;
-
         const uint32_t saved_line = console.line;
         const uint32_t saved_col = console.column;
-
         console.line = line;
         console.column = col;
-
         for (const char* p = str; *p && console.column < VGA_WIDTH; p++) {
             if (*p == '\n') break;
             ConsolePutchar(*p);
         }
-
         console.line = saved_line;
         console.column = saved_col;
-
     }
 }

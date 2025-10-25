@@ -36,7 +36,6 @@ void WindowDrawRect(Window* window, int x, int y, int width, int height, uint32_
 void WindowDrawString(Window* window, int x, int y, const char* str, uint32_t fg_color);
 void WindowDrawChar(Window* window, int x, int y, char c, uint32_t fg_color);
 void VFCompositor(void);
-Window* GetVFShellWindow(void);
 void VFCompositorRequestInit(const char * str);
 
 #endif // WINDOW_MANAGER_H

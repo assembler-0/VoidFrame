@@ -51,7 +51,6 @@ typedef struct {
 
 static WindowStateMapping g_window_state_map[MAX_WINDOWS];
 static RustSpinLock* g_text_lock = NULL;
-static Window* g_vfshell_window = NULL;
 
 void VFCompositorRequestInit(const char * str) {
     (void)str;
@@ -394,8 +393,6 @@ static void CompositeAndDraw() {
     }
 }
 
-
-// Update VFCompositor to cache VFShell window reference
 void VFCompositor(void) {
     g_text_lock = rust_spinlock_new();
     if (!g_text_lock) {
@@ -411,13 +408,6 @@ void VFCompositor(void) {
         }
     }
     WindowManagerInit();
-
-    // Create VFShell window and cache reference
-    g_vfshell_window = CreateWindow(50, 50, 640, 480, "VFShell");
-    if (g_vfshell_window) {
-        WindowInitTextMode(g_vfshell_window);
-        g_focused_window = g_vfshell_window;
-    }
 
     while (1) {
         if (VBEIsInitialized()) {
@@ -456,11 +446,6 @@ void VFCompositor(void) {
     }
 
     Unsnooze();
-}
-
-// Get VFShell window (cached reference)
-Window* GetVFShellWindow(void) {
-    return g_vfshell_window;
 }
 
 // Window management functions
