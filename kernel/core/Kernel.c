@@ -1,7 +1,7 @@
 // VoidFrame Kernel Entry File
 #include "Kernel.h"
-#include "../../drivers/APIC/APIC.h"
-#include "../../drivers/storage/Ide.h"
+#include "drivers/APIC/APIC.h"
+#include "drivers/storage/Ide.h"
 #include "ACPI.h"
 #include "Compositor.h"
 #include "Console.h"

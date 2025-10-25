@@ -166,6 +166,8 @@ include_directories(
         fs/EXT
         fs/NTFS
         mm
+        mm/dynamic
+        mm/dynamic/c
         mm/trace
         mm/security
         ports/6502
@@ -182,7 +184,7 @@ include_directories(
 # ============================================================================
 if (VF_CONFIG_HEAP_LANG STREQUAL "C")
     list(APPEND MM_SOURCES
-            mm/KernelHeap.c
+            mm/dynamic/c/Magazine.c
     )
 endif()
 

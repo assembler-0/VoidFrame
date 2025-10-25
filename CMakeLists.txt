@@ -77,7 +77,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 # ============================================================================
 # Manifest paths for Rust components (corrosion with CMake)
 # ============================================================================
-set(RUST_HEAP_MANIFEST_PATH "${CMAKE_SOURCE_DIR}/mm/rust/Cargo.toml")
+set(RUST_HEAP_MANIFEST_PATH "${CMAKE_SOURCE_DIR}/mm/dynamic/rust/Cargo.toml")
 set(RUST_ATOMIC_MANIFEST_PATH "${CMAKE_SOURCE_DIR}/kernel/atomic/rust/Cargo.toml")
 
 # ============================================================================
