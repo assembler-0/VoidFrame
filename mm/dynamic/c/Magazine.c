@@ -5,6 +5,8 @@
 #include "Panic.h"
 #include "SpinlockRust.h"
 #include "../drivers/APIC/APIC.h"
+#include "../../arch/x86_64/features/x64.h"
+#include "../../include/Io.h"
 
 // =================================================================================================
 // Global Variables
@@ -163,54 +165,62 @@ void MagazineFree(void* ptr) {
         return;
     }
 
-    uint64_t flags = rust_spinlock_lock_irqsave(depot.lock); // Acquire lock here
-
-    // --- Determine Slab and Size Class ---
+    // --- Determine Slab and Size Class (lockless via page-hash) ---
     Slab* slab = FindSlabForPointer(ptr);
     if (!slab) {
         // Assume it's a large allocation
         LargeBlockHeader* header = (LargeBlockHeader*)ptr - 1; // Get pointer to header
+        // Basic sanity: header must be mapped; we trust VMem
         VMemFree((void*)header, header->size + sizeof(LargeBlockHeader));
-        rust_spinlock_unlock_irqrestore(depot.lock, flags); // Release lock
         return;
     }
 
-    // Basic check: ensure the pointer is within the slab's bounds
+    // Bounds and alignment checks
     if (ptr < slab->base_ptr || ptr >= (uint8_t*)slab->base_ptr + SLAB_SIZE) {
         PrintKernelError("Heap: Freeing pointer outside of slab bounds!\n");
-        rust_spinlock_unlock_irqrestore(depot.lock, flags);
+        return;
+    }
+    uintptr_t off = (uintptr_t)((uint8_t*)ptr - (uint8_t*)slab->base_ptr);
+    if ((off % slab->block_size) != 0) {
+        PrintKernelError("Heap: Free pointer not aligned to block size!\n");
         return;
     }
 
     int sc_idx = slab->size_class_index;
+
+    // --- Small Allocation Fast Path (per-CPU, IRQ-disabled) ---
+    irq_flags_t iflags = save_irq_flags();
+    cli();
     uint32_t cpu_id = GetCpuId();
     PerCpuCache* cache = &per_cpu_caches[cpu_id];
     Magazine* mag = cache->active_magazines[sc_idx];
 
-    // --- Small Allocation Fast Path ---
-    // If the active magazine is not full, push the block onto it.
     if (mag && mag->count < MAGAZINE_CAPACITY) {
         mag->blocks[mag->count] = ptr;
         mag->count++;
-        rust_spinlock_unlock_irqrestore(depot.lock, flags); // Release lock
+        restore_irq_flags(iflags);
         return;
     }
+    restore_irq_flags(iflags);
 
-    // --- Slow Path: Return to Depot ---
-    // If the current magazine is full or null, we need to return it to the depot
-    // and potentially get a new one, or just free the block directly to a new magazine.
+    // --- Slow Path: Return to Depot and/or install new magazine ---
+    uint64_t flags = rust_spinlock_lock_irqsave(depot.lock);
+    // Reload per-CPU magazine under lock in case another context changed it
+    cpu_id = GetCpuId();
+    cache = &per_cpu_caches[cpu_id];
+    mag = cache->active_magazines[sc_idx];
+
     if (mag) {
         DepotReturn(mag, sc_idx);
     }
-    
-    // Create a new magazine for this CPU and put the freed block in it.
+
     Magazine* new_mag = AllocMagazine();
     if (!new_mag) {
-        // This is a critical error, we can't even get a magazine to free to.
         PANIC("Magazine pool exhausted during free operation!");
     }
     new_mag->blocks[0] = ptr;
     new_mag->count = 1;
+    new_mag->next = NULL;
     cache->active_magazines[sc_idx] = new_mag;
 
     rust_spinlock_unlock_irqrestore(depot.lock, flags);
@@ -225,19 +235,70 @@ void MagazineFree(void* ptr) {
  * This is a linear scan and can be slow. Needs optimization for production.
  * Assumes depot.lock is held by the caller.
  */
-static Slab* FindSlabForPointer(void* ptr) {
-    // TODO: This is a linear scan and will be a major bottleneck. Optimize this for production.
-    // Possible optimizations: sorted list/tree of slabs, hash map, or page-aligned slab lookup.
-    for (int i = 0; i < NUM_SIZE_CLASSES; i++) {
-        Slab* current_slab = depot.size_class_depots[i].slabs;
-        while (current_slab) {
-            // Check if ptr is within this slab's memory range
-            if (ptr >= current_slab->base_ptr && 
-                ptr < (uint8_t*)current_slab->base_ptr + SLAB_SIZE) {
-                return current_slab;
-            }
-            current_slab = current_slab->next;
+// Lightweight slab hash for O(1) pointer-to-slab lookup
+#define SLAB_HASH_SIZE 4096
+
+typedef struct SlabHashNode {
+    uintptr_t page_key; // (addr >> PAGE_SHIFT)
+    Slab* slab;
+    struct SlabHashNode* next;
+} SlabHashNode;
+
+static SlabHashNode* slab_hash[SLAB_HASH_SIZE];
+
+static inline uint32_t slab_hash_index(uintptr_t page_key) {
+    return (uint32_t)(page_key & (SLAB_HASH_SIZE - 1));
+}
+
+static void SlabHashInsert(Slab* slab) {
+    // Map each page in the slab region to this slab
+    uintptr_t start = (uintptr_t)slab->base_ptr;
+    for (uintptr_t addr = start; addr < start + SLAB_SIZE; addr += PAGE_SIZE) {
+        uintptr_t key = addr >> PAGE_SHIFT;
+        uint32_t idx = slab_hash_index(key);
+        SlabHashNode* node = (SlabHashNode*)VMemAlloc(sizeof(SlabHashNode));
+        if (!node) {
+            PANIC("SlabHashInsert: OOM");
         }
+        node->page_key = key;
+        node->slab = slab;
+        node->next = slab_hash[idx];
+        slab_hash[idx] = node;
+    }
+}
+
+static void SlabHashRemove(Slab* slab) {
+    uintptr_t start = (uintptr_t)slab->base_ptr;
+    for (uintptr_t addr = start; addr < start + SLAB_SIZE; addr += PAGE_SIZE) {
+        uintptr_t key = addr >> PAGE_SHIFT;
+        uint32_t idx = slab_hash_index(key);
+        SlabHashNode** pp = &slab_hash[idx];
+        while (*pp) {
+            if ((*pp)->page_key == key) {
+                SlabHashNode* dead = *pp;
+                *pp = dead->next;
+                VMemFree(dead, sizeof(SlabHashNode));
+                break;
+            }
+            pp = &(*pp)->next;
+        }
+    }
+}
+
+static Slab* FindSlabForPointer(void* ptr) {
+    uintptr_t key = ((uintptr_t)ptr) >> PAGE_SHIFT;
+    uint32_t idx = slab_hash_index(key);
+    SlabHashNode* node = slab_hash[idx];
+    while (node) {
+        if (node->page_key == key) {
+            Slab* slab = node->slab;
+            // Verify bounds
+            if (ptr >= slab->base_ptr && ptr < (uint8_t*)slab->base_ptr + SLAB_SIZE) {
+                return slab;
+            }
+            return NULL;
+        }
+        node = node->next;
     }
     return NULL;
 }
@@ -299,18 +360,22 @@ static Magazine* DepotRefill(int size_class_index) {
     }
     FastMemset(new_slab, 0, sizeof(Slab));
 
-    new_slab->base_ptr = VMemAlloc(SLAB_SIZE); // Allocate actual memory for blocks
-    if (!new_slab->base_ptr) {
+    void* mem = VMemAlloc(SLAB_SIZE); // Allocate slab memory
+    if (!mem) {
         VMemFree(new_slab, sizeof(Slab));
         FreeMagazine(mag);
         return NULL;
     }
-    FastMemset(new_slab->base_ptr, 0, SLAB_SIZE);
+    FastMemset(mem, 0, SLAB_SIZE);
 
+    new_slab->alloc_base = mem;
+    new_slab->alloc_size = SLAB_SIZE;
+    new_slab->base_ptr = mem; // Keep identical; SLAB_SIZE granularity not required
     new_slab->block_size = block_size;
     new_slab->size_class_index = size_class_index;
     new_slab->total_blocks = SLAB_SIZE / block_size;
     new_slab->free_blocks = new_slab->total_blocks;
+    new_slab->cookie = rdtsc() ^ ((uintptr_t)new_slab);
 
     // Build free list within the new slab
     for (int i = 0; i < new_slab->total_blocks; i++) {
@@ -322,6 +387,8 @@ static Magazine* DepotRefill(int size_class_index) {
     // Add new slab to depot's slab list
     new_slab->next = sc_depot->slabs;
     sc_depot->slabs = new_slab;
+    // Insert into fast slab lookup hash
+    SlabHashInsert(new_slab);
 
     // Fill the magazine from the new slab
     for (int i = 0; i < MAGAZINE_CAPACITY && new_slab->free_blocks > 0; i++) {
@@ -381,7 +448,8 @@ static void DepotReturn(Magazine* mag, int size_class_index) {
                         sc_depot->slabs = slab->next;
                     }
                     // Free the slab's memory and metadata
-                    VMemFree(slab->base_ptr, SLAB_SIZE);
+                    SlabHashRemove(slab);
+                    VMemFree(slab->alloc_base, slab->alloc_size);
                     VMemFree(slab, sizeof(Slab));
                 }
             }

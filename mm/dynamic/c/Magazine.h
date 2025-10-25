@@ -70,12 +70,15 @@ typedef struct PerCpuCache {
  */
 typedef struct Slab {
     struct Slab* next;          // Slabs for a size class are kept in a linked list.
-    void* base_ptr;             // The start of the memory region allocated from VMem.
+    void* base_ptr;             // SLAB_SIZE-aligned base pointer used for block region.
+    void* alloc_base;           // Original base returned by VMemAlloc (may be unaligned to SLAB_SIZE).
+    uint64_t alloc_size;        // Size passed to VMemAlloc for this slab region.
     size_t block_size;          // The size of blocks this slab provides.
     int size_class_index;       // The size class this slab belongs to.
     uint32_t total_blocks;      // Total number of blocks this slab can hold.
     uint32_t free_blocks;       // Number of free blocks remaining in this slab.
     void* free_list_head;       // Head of a free list within the slab itself.
+    uint64_t cookie;            // Per-slab cookie for validation.
 } Slab;
 
 /**
