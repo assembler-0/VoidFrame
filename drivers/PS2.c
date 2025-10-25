@@ -39,8 +39,22 @@ static char scancode_to_ascii_shift[] = {
     '\t', 'Q', 'W', 'E', 'R', 'T', 'Y', 'U', 'I', 'O', 'P', '{', '}', '\n',
     0, 'A', 'S', 'D', 'F', 'G', 'H', 'J', 'K', 'L', ':', '"', '~',
     0, '|', 'Z', 'X', 'C', 'V', 'B', 'N', 'M', '<', '>', '?', 0,
+
     '*', 0, ' '
 };
+
+// Compute result of a modifier combo with a base character.
+char PS2_CalcCombo(uint8_t mods, char base) {
+    char c = base;
+    if (mods & K_SHIFT) {
+        // Uppercase letters on shift if base is lowercase.
+        if (c >= 'a' && c <= 'z') c = (char)(c - 'a' + 'A');
+    }
+    if (mods & K_CTRL) {
+        c = PS2_Ctrl(c);
+    }
+    return c;
+}
 
 static int wait_for_input_buffer_empty(void) {
     for (int i = 0; i < 100000; i++) {
@@ -160,19 +174,14 @@ static void ProcessKeyboardData(uint8_t scancode) {
     if (key_released) return;
     if (scancode >= sizeof(scancode_to_ascii)) return;
 
-    char c;
-    if (shift_pressed) {
-        c = scancode_to_ascii_shift[scancode];
-    } else {
-        c = scancode_to_ascii[scancode];
-    }
+    char base = shift_pressed ? scancode_to_ascii_shift[scancode]
+                              : scancode_to_ascii[scancode];
 
-    // Handle Ctrl combinations
-    if (ctrl_pressed && c >= 'a' && c <= 'z') {
-        c = c - 'a' + 1;
-    } else if (ctrl_pressed && c >= 'A' && c <= 'Z') {
-        c = c - 'A' + 1;
-    }
+    uint8_t mods = (shift_pressed ? K_SHIFT : 0) |
+                   (ctrl_pressed  ? K_CTRL  : 0) |
+                   (alt_pressed   ? K_ALT   : 0);
+
+    char c = PS2_CalcCombo(mods, base);
 
     if (c) {
         if (buffer_count < 255) {

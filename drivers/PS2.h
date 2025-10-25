@@ -26,6 +26,22 @@ void __attribute__((weak)) OnMouseButtonUp(int x, int y, uint8_t button);
 #define MOUSE_CMD_SET_DEFAULTS  0xF6
 #define MOUSE_CMD_SET_SAMPLE    0xF3
 
+// Modifier flags for combos
+#define K_SHIFT 0x01
+#define K_CTRL  0x02
+#define K_ALT   0x04
+
+// Compute the resulting character for a given modifier combo and base char
+char PS2_CalcCombo(uint8_t mods, char base);
+
+// Fast helper for control-key combos: returns ASCII control code for letters
+static inline char PS2_Ctrl(char c) {
+    if (c >= 'a' && c <= 'z') return (char)(c - 'a' + 1);
+    if (c >= 'A' && c <= 'Z') return (char)(c - 'A' + 1);
+    return c;
+}
+
+
 //keyboard
 void PS2Init(void);
 // Unified PS/2 interrupt handler

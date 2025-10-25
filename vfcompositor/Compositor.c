@@ -28,6 +28,20 @@ static uint32_t* g_compositor_buffer = NULL;
 static int g_mouse_x = 0;
 static int g_mouse_y = 0;
 static Window* g_focused_window = NULL;
+// Taskbar constants
+#define TASKBAR_HEIGHT 28
+#define START_BTN_WIDTH 80
+
+typedef struct {
+    int x, y, w, h;
+    Window* win;
+} TaskButton;
+
+#define MAX_TASK_BUTTONS MAX_WINDOWS
+static TaskButton g_task_buttons[MAX_TASK_BUTTONS];
+static int g_task_button_count = 0;
+static Window* g_start_menu_window = NULL;
+
 
 typedef struct {
     Window*             window;
@@ -37,7 +51,6 @@ typedef struct {
 
 static WindowStateMapping g_window_state_map[MAX_WINDOWS];
 static RustSpinLock* g_text_lock = NULL;
-static Window* g_vfshell_window = NULL;
 
 void VFCompositorRequestInit(const char * str) {
     (void)str;
@@ -256,6 +269,80 @@ void WindowClearText(Window* window) {
     rust_spinlock_unlock_irqrestore(g_text_lock, flags);
 }
 
+static void DrawTaskbar() {
+    if (!g_vbe_info) return;
+    // Draw taskbar background onto compositor buffer
+    int y0 = g_vbe_info->height - TASKBAR_HEIGHT;
+    for (int y = y0; y < (int)g_vbe_info->height; y++) {
+        for (int x = 0; x < (int)g_vbe_info->width; x++) {
+            g_compositor_buffer[y * g_vbe_info->width + x] = TITLE_BAR; // reuse title bar color
+        }
+    }
+    // Draw Start button
+    for (int y = 2; y < TASKBAR_HEIGHT - 2; y++) {
+        for (int x = 2; x < START_BTN_WIDTH - 2; x++) {
+            int px = x;
+            int py = y0 + y;
+            g_compositor_buffer[py * g_vbe_info->width + px] = ACCENT;
+        }
+    }
+    // Label "Start"
+    int text_x = 10;
+    int text_y = y0 + 6;
+    // Render text directly to compositor backbuffer
+    const char* s = "Start";
+    while (*s) {
+        unsigned char c = (unsigned char)*s++;
+        for (int dy = 0; dy < FONT_HEIGHT && (text_y + dy) < (int)g_vbe_info->height; dy++) {
+            unsigned char row = console_font[c][dy];
+            for (int dx = 0; dx < FONT_WIDTH && (text_x + dx) < (int)g_vbe_info->width; dx++) {
+                if (row & (0x80 >> dx)) {
+                    g_compositor_buffer[(text_y + dy) * g_vbe_info->width + (text_x + dx)] = TERMINAL_TEXT;
+                }
+            }
+        }
+        text_x += FONT_WIDTH;
+    }
+    // Build task buttons for current top-level windows
+    g_task_button_count = 0;
+    int btn_x = START_BTN_WIDTH + 8;
+    for (Window* w = g_window_list_head; w && g_task_button_count < MAX_TASK_BUTTONS; w = w->next) {
+        TaskButton* b = &g_task_buttons[g_task_button_count++];
+        b->x = btn_x; b->y = y0 + 4; b->w = 120; b->h = TASKBAR_HEIGHT - 8; b->win = w;
+        // Draw button
+        for (int y = 0; y < b->h; y++) {
+            for (int x = 0; x < b->w; x++) {
+                int px = b->x + x;
+                int py = b->y + y;
+                if (px >= 0 && py >= 0 && px < (int)g_vbe_info->width && py < (int)g_vbe_info->height) {
+                    uint32_t col = (w == g_focused_window) ? ACCENT : BORDER;
+                    g_compositor_buffer[py * g_vbe_info->width + px] = col;
+                }
+            }
+        }
+        // Text label truncated
+        if (w->title) {
+            int tx = b->x + 6;
+            int ty = b->y + 4;
+            const char* p = w->title;
+            int chars = (b->w - 12) / FONT_WIDTH;
+            for (int i = 0; i < chars && *p; i++, p++) {
+                unsigned char c = (unsigned char)*p;
+                for (int dy = 0; dy < FONT_HEIGHT && (ty + dy) < (int)g_vbe_info->height; dy++) {
+                    unsigned char row = console_font[c][dy];
+                    for (int dx = 0; dx < FONT_WIDTH && (tx + dx) < (int)g_vbe_info->width; dx++) {
+                        if (row & (0x80 >> dx)) {
+                            g_compositor_buffer[(ty + dy) * g_vbe_info->width + (tx + dx)] = TERMINAL_TEXT;
+                        }
+                    }
+                }
+                tx += FONT_WIDTH;
+            }
+        }
+        btn_x += b->w + 6;
+    }
+}
+
 static void CompositeAndDraw() {
     if (!g_vbe_info) return;
 
@@ -290,6 +377,7 @@ static void CompositeAndDraw() {
         }
     }
 
+    DrawTaskbar();
     DrawMouseCursor();
     const uint32_t bpp   = g_vbe_info->bpp;
     const uint32_t pitch = g_vbe_info->pitch;
@@ -305,8 +393,6 @@ static void CompositeAndDraw() {
     }
 }
 
-
-// Update VFCompositor to cache VFShell window reference
 void VFCompositor(void) {
     g_text_lock = rust_spinlock_new();
     if (!g_text_lock) {
@@ -322,13 +408,6 @@ void VFCompositor(void) {
         }
     }
     WindowManagerInit();
-
-    // Create VFShell window and cache reference
-    g_vfshell_window = CreateWindow(50, 50, 640, 480, "VFShell");
-    if (g_vfshell_window) {
-        WindowInitTextMode(g_vfshell_window);
-        g_focused_window = g_vfshell_window;
-    }
 
     while (1) {
         if (VBEIsInitialized()) {
@@ -367,11 +446,6 @@ void VFCompositor(void) {
     }
 
     Unsnooze();
-}
-
-// Get VFShell window (cached reference)
-Window* GetVFShellWindow(void) {
-    return g_vfshell_window;
 }
 
 // Window management functions
@@ -430,6 +504,7 @@ void WindowManagerRun(void) {
         current = current->next;
     }
     
+    DrawTaskbar();
     DrawMouseCursor();
     
     // Copy compositor buffer to screen
@@ -540,6 +615,68 @@ void WindowDrawRect(Window* window, int x, int y, int width, int height, uint32_
             int py = y + dy;
             if (px >= 0 && py >= 0 && px < window->rect.width && py < window->rect.height) {
                 window->back_buffer[py * window->rect.width + px] = color;
+            }
+        }
+    }
+    window->needs_redraw = true;
+}
+
+void WindowDrawChar(Window* window, int x, int y, char ch, uint32_t fg_color) {
+    if (!window || !window->back_buffer) return;
+    unsigned char c = (unsigned char)ch;
+    for (int dy = 0; dy < FONT_HEIGHT; dy++) {
+    // Handle taskbar interactions
+    int taskbar_y0 = g_vbe_info ? (int)g_vbe_info->height - TASKBAR_HEIGHT : 0;
+    if (y >= taskbar_y0) {
+        // Start button click
+        if (x >= 2 && x < START_BTN_WIDTH - 2) {
+            // Toggle start menu window
+            if (!g_start_menu_window) {
+                g_start_menu_window = CreateWindow(2, taskbar_y0 - 200, 220, 180, "Start");
+                if (g_start_menu_window) {
+                    WindowFill(g_start_menu_window, WINDOW_BG);
+                    WindowDrawRect(g_start_menu_window, 0, 0, g_start_menu_window->rect.width, 20, TITLE_BAR);
+                    WindowDrawString(g_start_menu_window, 6, 2, "Start", TERMINAL_TEXT);
+                    WindowDrawString(g_start_menu_window, 8, 30, "- Terminal", TERMINAL_TEXT);
+                    WindowDrawString(g_start_menu_window, 8, 50, "- Editor", TERMINAL_TEXT);
+                }
+            } else {
+                DestroyWindow(g_start_menu_window);
+                g_start_menu_window = NULL;
+            }
+            return;
+        }
+        // Task buttons
+        for (int i = 0; i < g_task_button_count; i++) {
+            TaskButton* b = &g_task_buttons[i];
+            if (x >= b->x && x < b->x + b->w && y >= b->y && y < b->y + b->h) {
+                // Focus window and bring to front
+                Window* top = b->win;
+                if (top) {
+                    g_focused_window = top;
+                    if (top != g_window_list_tail) {
+                        if (top->prev) top->prev->next = top->next;
+                        if (top->next) top->next->prev = top->prev;
+                        if (g_window_list_head == top) g_window_list_head = top->next;
+                        top->prev = g_window_list_tail;
+                        top->next = NULL;
+                        if (g_window_list_tail) g_window_list_tail->next = top;
+                        g_window_list_tail = top;
+                    }
+                }
+                return;
+            }
+        }
+    }
+
+        unsigned char font_row = console_font[c][dy];
+        for (int dx = 0; dx < FONT_WIDTH; dx++) {
+            int px = x + dx;
+            int py = y + dy;
+            if (px >= 0 && py >= 0 && px < window->rect.width && py < window->rect.height) {
+                if (font_row & (0x80 >> dx)) {
+                    window->back_buffer[py * window->rect.width + px] = fg_color;
+                }
             }
         }
     }
