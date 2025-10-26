@@ -2,6 +2,7 @@
 # VoidFrame CMake Build Script - v0.0.2-development4
 # ============================================================================
 cmake_minimum_required(VERSION 3.30)
+set_property(GLOBAL PROPERTY RULE_MESSAGES OFF)
 project(VoidFrame
         VERSION 0.0.2
         LANGUAGES C CXX ASM_NASM
@@ -18,10 +19,10 @@ include(cache)
 include(features)
 include(variable)
 include(dependencies)
-include(flags)
 include(configuration)
 include(source)
 include(rust_utils)
+include(flags)
 
 # ============================================================================
 # Platform Checks
@@ -87,15 +88,27 @@ set(RUST_ATOMIC_MANIFEST_PATH "${CMAKE_SOURCE_DIR}/kernel/atomic/rust/Cargo.toml
 # ============================================================================
 # Corrosion
 # ============================================================================
+
 add_subdirectory(corrosion)
 corrosion_import_crate(
         MANIFEST_PATH ${RUST_HEAP_MANIFEST_PATH}
         NO_STD
+        ${Corrosion_CARGO_BUILD_FLAGS}
 )
 corrosion_import_crate(
         MANIFEST_PATH ${RUST_ATOMIC_MANIFEST_PATH}
         NO_STD
+        ${Corrosion_CARGO_BUILD_FLAGS}
 )
+
+if (SILENT_BUILD)
+    corrosion_add_target_rustflags(voidframe_mm "-A" "warnings" "-C" "link-arg=-s")
+    corrosion_add_target_rustflags(voidframe_spinlock "-A" "warnings" "-C" "link-arg=-s")
+endif()
+
+# ============================================================================
+# Flags setup
+# ============================================================================
 
 # ============================================================================
 # Kernel Linking

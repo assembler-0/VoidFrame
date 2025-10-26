@@ -40,13 +40,22 @@
 #define IOAPIC_DEFAULT_PHYS_ADDR        0xFEC00000
 #define LAPIC_LVT_TIMER_SCALE_FACTOR    1
 // --- Global Variables ---
-volatile uint32_t* s_lapic_base = NULL;
+// For now, a single global instance for BSP. Will be replaced by true per-CPU data in SMP.
+static PerCpuData g_bsp_per_cpu_data = {
+    .lapic_base = NULL,
+    .apic_id = 0,
+    .apic_timer_freq_hz = 1000,
+    .apic_timer_ticks = 0,
+    .apic_bus_freq = 0,
+    .apic_calibrated = false,
+};
+
+PerCpuData* GetPerCpuData(void) {
+    return &g_bsp_per_cpu_data;
+}
+
 static volatile uint32_t* s_ioapic_base = NULL;
-static uint32_t s_apic_timer_freq_hz = 1000; // Default to 1KHz
-volatile uint32_t s_apic_timer_ticks = 0;
 volatile uint32_t APIC_HZ = 250;
-uint32_t s_apic_bus_freq = 0; // Cached bus frequency, non static for TSC.c access
-static bool s_calibrated = false; // Calibration flag
 
 // --- Forward Declarations ---
 static void lapic_write(uint32_t reg, uint32_t value);
@@ -79,11 +88,11 @@ void PICMaskAll() {
 // --- MMIO Functions ---
 
 static void lapic_write(uint32_t reg, uint32_t value) {
-    s_lapic_base[reg / 4] = value;
+    GetPerCpuData()->lapic_base[reg / 4] = value;
 }
 
 static uint32_t lapic_read(uint32_t reg) {
-    return s_lapic_base[reg / 4];
+    return GetPerCpuData()->lapic_base[reg / 4];
 }
 
 uint8_t lapic_get_id() {
@@ -129,7 +138,6 @@ bool ApicInstall() {
         return false;
     }
 
-    PrintKernelSuccess("APIC: Successfully initialized Local APIC and I/O APIC.\n");
     return true;
 }
 
@@ -174,21 +182,23 @@ void ApicMaskAll() {
 // --- APIC Timer Management ---
 
 void ApicTimerInstall(uint32_t frequency_hz) {
-    s_apic_timer_freq_hz = frequency_hz;
+    PerCpuData* cpu_data = GetPerCpuData();
+    cpu_data->apic_timer_freq_hz = frequency_hz;
 
     // Calibrate and set the initial count
-    ApicTimerSetFrequency(s_apic_timer_freq_hz);
+    ApicTimerSetFrequency(cpu_data->apic_timer_freq_hz);
 
     PrintKernelF("APIC: Timer installed at %d Hz.\n", frequency_hz);
 }
 
 void ApicTimerSetFrequency(uint32_t frequency_hz) {
     if (frequency_hz == 0) return;
-    s_apic_timer_freq_hz = frequency_hz;
-    APIC_HZ = frequency_hz;
+    PerCpuData* cpu_data = GetPerCpuData();
+    cpu_data->apic_timer_freq_hz = frequency_hz;
+    APIC_HZ = frequency_hz; // Global for now, but should be per-CPU
 
     // Only calibrate once to avoid expensive operations
-    if (!s_calibrated) {
+    if (!cpu_data->apic_calibrated) {
         // Set divider first
         lapic_write(LAPIC_TIMER_DIV, 0xB); // Divide by 1 (no division)
         
@@ -223,17 +233,15 @@ void ApicTimerSetFrequency(uint32_t frequency_hz) {
         
         if (timeout > 0) {
             uint32_t ticks_per_10ms = start_count - end_count;
-            s_apic_bus_freq = ticks_per_10ms * 100;
-            s_calibrated = true;
-            // PrintKernelF("APIC: Calibrated - ticks/10ms=%u, bus_freq=%u Hz\n", ticks_per_10ms, s_apic_bus_freq);
+            cpu_data->apic_bus_freq = ticks_per_10ms * 100;
+            cpu_data->apic_calibrated = true;
         } else {
-            s_apic_bus_freq = 100000000; // Fallback: 100MHz
+            cpu_data->apic_bus_freq = 100000000; // Fallback: 100MHz
             PrintKernelWarning("APIC: Calibration timeout, using fallback frequency\n");
         }
     }
     
-    uint32_t initial_count = s_apic_bus_freq / frequency_hz;
-    // PrintKernelF("APIC: Setting timer - freq=%u Hz, bus_freq=%u, initial_count=%u\n", frequency_hz, s_apic_bus_freq, initial_count);
+    uint32_t initial_count = cpu_data->apic_bus_freq / frequency_hz;
     lapic_write(LAPIC_LVT_TIMER, 32 | (0b01 << 17)); // Periodic mode
     lapic_write(LAPIC_TIMER_INIT_COUNT, initial_count);
 }
@@ -255,18 +263,19 @@ static bool setup_lapic() {
     uint64_t lapic_phys_base = lapic_base_msr & 0xFFFFFFFFFFFFF000ULL;
 
     // Map the LAPIC into virtual memory
-    s_lapic_base = (volatile uint32_t*)VMemAlloc(PAGE_SIZE);
-    if (!s_lapic_base) {
+    PerCpuData* cpu_data = GetPerCpuData();
+    cpu_data->lapic_base = (volatile uint32_t*)VMemAlloc(PAGE_SIZE);
+    if (!cpu_data->lapic_base) {
         PrintKernelError("APIC: Failed to allocate virtual memory for LAPIC.\n");
         return false;
     }
 
-    if (VMemUnmap((uint64_t)s_lapic_base, PAGE_SIZE) != VMEM_SUCCESS) {
+    if (VMemUnmap((uint64_t)cpu_data->lapic_base, PAGE_SIZE) != VMEM_SUCCESS) {
         PrintKernelError("APIC: Failed to unmap LAPIC MMIO.\n");
         return false;
     }
 
-    if (VMemMapMMIO((uint64_t)s_lapic_base, lapic_phys_base, PAGE_SIZE, PAGE_WRITABLE | PAGE_NOCACHE) != VMEM_SUCCESS) {
+    if (VMemMapMMIO((uint64_t)cpu_data->lapic_base, lapic_phys_base, PAGE_SIZE, PAGE_WRITABLE | PAGE_NOCACHE) != VMEM_SUCCESS) {
         PrintKernelError("APIC: Failed to map LAPIC MMIO.\n");
         return false;
     }
@@ -277,9 +286,6 @@ static bool setup_lapic() {
     lapic_write(LAPIC_SVR, 0x1FF);
     // Set TPR to 0 to accept all interrupts
     lapic_write(LAPIC_TPR, 0);
-    PrintKernelF("APIC: LAPIC enabled at physical addr 0x%llx, mapped to 0x%llx\n",
-                 (unsigned long long)lapic_phys_base,
-                 (unsigned long long)(uintptr_t)s_lapic_base);
     return true;
 }
 
@@ -300,7 +306,6 @@ static bool setup_ioapic() {
     // Read the I/O APIC version to verify it's working
     uint32_t version_reg = ioapic_read(IOAPIC_REG_VER);
     uint8_t max_redirects = (version_reg >> 16) & 0xFF;
-    PrintKernelF("APIC: I/O APIC version %d, max redirects: %d\n", version_reg & 0xFF, max_redirects + 1);
 
     // Mask all interrupts initially
     ApicMaskAll();

@@ -1,6 +1,7 @@
 #include "TSC.h"
 #include "x64.h"
 #include "Console.h"
+#include "APIC/APIC.h"
 
 uint64_t tsc_freq_hz = 0;
 static bool tsc_calibrated = false;
@@ -8,7 +9,7 @@ static bool tsc_calibrated = false;
 void TSCInit(void) {
     // Calibrate TSC frequency using APIC timer
     extern volatile uint32_t APIC_HZ;
-    extern uint32_t s_apic_bus_freq;
+    PerCpuData* cpu_data = GetPerCpuData();
     
     if (APIC_HZ == 0) {
         tsc_freq_hz = 3000000000ULL; // Fallback: 3GHz
@@ -19,12 +20,11 @@ void TSCInit(void) {
     
     // Use 10ms calibration period
     uint64_t start_tsc = rdtsc();
-    uint32_t calibration_ticks = s_apic_bus_freq / 100; // 10 ms worth of APIC ticks
+    uint32_t calibration_ticks = cpu_data->apic_bus_freq / 100; // 10 ms worth of APIC ticks
 
     // Wait using APIC timer current count
-    extern volatile uint32_t* s_lapic_base;
-    uint32_t target = s_lapic_base[0x390/4] - calibration_ticks;
-    while (s_lapic_base[0x390/4] > target);
+    uint32_t target = cpu_data->lapic_base[0x390/4] - calibration_ticks;
+    while (cpu_data->lapic_base[0x390/4] > target);
     
     uint64_t end_tsc = rdtsc();
     tsc_freq_hz = (end_tsc - start_tsc) * 100; // Scale to 1 second
