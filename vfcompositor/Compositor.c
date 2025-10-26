@@ -2,10 +2,12 @@
 #include "Console.h"
 #include "Font.h"
 #include "KernelHeap.h"
+#include "Keyboard.h"
 #include "MLFQ.h"
 #include "MemOps.h"
 #include "Pallete.h"
 #include "Panic.h"
+#include "PS2.h"
 #include "Scheduler.h"
 #include "SpinlockRust.h"
 #include "StringOps.h"
@@ -41,6 +43,17 @@ typedef struct {
 static TaskButton g_task_buttons[MAX_TASK_BUTTONS];
 static int g_task_button_count = 0;
 static Window* g_start_menu_window = NULL;
+
+// Deferred destruction to avoid race with render loop
+static Window* g_pending_destroy[MAX_WINDOWS];
+static int g_pending_destroy_count = 0;
+
+static void RequestDestroyWindow(Window* w) {
+    if (!w) return;
+    // avoid duplicates
+    for (int i = 0; i < g_pending_destroy_count; i++) if (g_pending_destroy[i] == w) return;
+    if (g_pending_destroy_count < MAX_WINDOWS) g_pending_destroy[g_pending_destroy_count++] = w;
+}
 
 
 typedef struct {
@@ -271,14 +284,14 @@ void WindowClearText(Window* window) {
 
 static void DrawTaskbar() {
     if (!g_vbe_info) return;
-    // Draw taskbar background onto compositor buffer
     int y0 = g_vbe_info->height - TASKBAR_HEIGHT;
+    // Background
     for (int y = y0; y < (int)g_vbe_info->height; y++) {
         for (int x = 0; x < (int)g_vbe_info->width; x++) {
-            g_compositor_buffer[y * g_vbe_info->width + x] = TITLE_BAR; // reuse title bar color
+            g_compositor_buffer[y * g_vbe_info->width + x] = TITLE_BAR;
         }
     }
-    // Draw Start button
+    // Start button
     for (int y = 2; y < TASKBAR_HEIGHT - 2; y++) {
         for (int x = 2; x < START_BTN_WIDTH - 2; x++) {
             int px = x;
@@ -286,10 +299,9 @@ static void DrawTaskbar() {
             g_compositor_buffer[py * g_vbe_info->width + px] = ACCENT;
         }
     }
-    // Label "Start"
+    // "Start" label
     int text_x = 10;
     int text_y = y0 + 6;
-    // Render text directly to compositor backbuffer
     const char* s = "Start";
     while (*s) {
         unsigned char c = (unsigned char)*s++;
@@ -303,24 +315,22 @@ static void DrawTaskbar() {
         }
         text_x += FONT_WIDTH;
     }
-    // Build task buttons for current top-level windows
+    // Task buttons
     g_task_button_count = 0;
     int btn_x = START_BTN_WIDTH + 8;
     for (Window* w = g_window_list_head; w && g_task_button_count < MAX_TASK_BUTTONS; w = w->next) {
         TaskButton* b = &g_task_buttons[g_task_button_count++];
         b->x = btn_x; b->y = y0 + 4; b->w = 120; b->h = TASKBAR_HEIGHT - 8; b->win = w;
-        // Draw button
         for (int y = 0; y < b->h; y++) {
             for (int x = 0; x < b->w; x++) {
                 int px = b->x + x;
                 int py = b->y + y;
                 if (px >= 0 && py >= 0 && px < (int)g_vbe_info->width && py < (int)g_vbe_info->height) {
-                    uint32_t col = (w == g_focused_window) ? ACCENT : BORDER;
+                    uint32_t col = (w == g_focused_window) ? ACCENT : (w->minimized ? BORDER : TITLE_BAR);
                     g_compositor_buffer[py * g_vbe_info->width + px] = col;
                 }
             }
         }
-        // Text label truncated
         if (w->title) {
             int tx = b->x + 6;
             int ty = b->y + 4;
@@ -352,24 +362,31 @@ static void CompositeAndDraw() {
     }
 
     for (Window* win = g_window_list_head; win != NULL; win = win->next) {
-        if (!win->back_buffer) continue;
+        if (!win->back_buffer || win->minimized) continue;
         
-        // Safe clipping with proper bounds checking
+        // Simple drop shadow
+        int sx0 = MAX(0, win->rect.x + 3);
+        int sy0 = MAX(0, win->rect.y + 3);
+        int sx1 = MIN((int)g_vbe_info->width, win->rect.x + win->rect.width + 3);
+        int sy1 = MIN((int)g_vbe_info->height, win->rect.y + win->rect.height + 3);
+        for (int sy = sy0; sy < sy1; sy++) {
+            for (int sx = sx0; sx < sx1; sx++) {
+                g_compositor_buffer[sy * g_vbe_info->width + sx] = BORDER;
+            }
+        }
+        
+        // Blit window with clipping
         int src_y_start = MAX(0, -win->rect.y);
         int src_y_end = MIN(win->rect.height, (int)g_vbe_info->height - win->rect.y);
         int src_x_start = MAX(0, -win->rect.x);
         int src_x_end = MIN(win->rect.width, (int)g_vbe_info->width - win->rect.x);
-        
         if (src_y_start >= src_y_end || src_x_start >= src_x_end) continue;
-        
         for (int y = src_y_start; y < src_y_end; y++) {
             int screen_y = win->rect.y + y;
             if (screen_y < 0 || screen_y >= g_vbe_info->height) continue;
-            
             int src_idx = y * win->rect.width + src_x_start;
             int dst_idx = screen_y * g_vbe_info->width + (win->rect.x + src_x_start);
             int copy_width = src_x_end - src_x_start;
-            
             if (src_idx >= 0 && src_idx + copy_width <= win->rect.width * win->rect.height &&
                 dst_idx >= 0 && dst_idx + copy_width <= g_vbe_info->width * g_vbe_info->height) {
                 FastMemcpy(&g_compositor_buffer[dst_idx], &win->back_buffer[src_idx], copy_width * 4);
@@ -382,7 +399,6 @@ static void CompositeAndDraw() {
     const uint32_t bpp   = g_vbe_info->bpp;
     const uint32_t pitch = g_vbe_info->pitch;
     if (bpp != 32 || pitch == 0) {
-        // Fallback: avoid undefined behavior on unsupported modes
         return;
     }
     uint8_t* dst        = (uint8_t*)g_vbe_info->framebuffer;
@@ -390,6 +406,17 @@ static void CompositeAndDraw() {
     const uint32_t row_bytes = g_vbe_info->width * 4;
     for (uint32_t row = 0; row < g_vbe_info->height; row++) {
         FastMemcpy(dst + row * pitch, src + row * row_bytes, row_bytes);
+    }
+}
+
+void VFCompositorShutdown(void) {
+    if (g_compositor_buffer) {
+        KernelFree(g_compositor_buffer);
+        g_compositor_buffer = NULL;
+    }
+    if (g_text_lock) {
+        rust_spinlock_free(g_text_lock);
+        g_text_lock = NULL;
     }
 }
 
@@ -412,16 +439,51 @@ void VFCompositor(void) {
     while (1) {
         if (VBEIsInitialized()) {
             // Render text content for all windows that need it
+            if (HasInput()) {
+                const char c = GetChar();
+                if (c == PS2_CalcCombo(K_CTRL, 0x1B)) {
+                    Unsnooze();
+                    ClearScreen();
+                    PrintKernelWarning("VFCompositor: exiting...\n");
+                    VFCompositorShutdown();
+                    KillProcess(GetCurrentProcess()->pid);
+                    return;
+                }
+                if (c == PS2_CalcCombo(K_CTRL, 'N')) {
+                    Window* w = CreateWindow(50, 50, 480, 360, "New Window");
+                    if (w) { w->minimized = false; WindowFill(w, WINDOW_BG); WindowDrawRect(w, 0, 0, w->rect.width, 20, TITLE_BAR); g_focused_window = w; }
+                } else if  (c == PS2_CalcCombo(K_CTRL, 'W')) {
+                    Window* w = g_focused_window; if (w) { RequestDestroyWindow(w); }
+                } else if (c == PS2_CalcCombo(K_CTRL, 'M')) {
+                    Window* w = g_focused_window; if (w) { w->minimized = !w->minimized; }
+                } else if (c == PS2_CalcCombo(K_CTRL, 'T')) {
+                    Window* w = g_focused_window; if (w) { w->is_moving = true; w->move_offset_x = g_mouse_x - w->rect.x; }
+                } else if (c == PS2_CalcCombo(K_ALT, '\t')) {
+                    Window* w = g_focused_window ? g_focused_window->next : g_window_list_head;
+                    while (w && w->minimized) w = w->next;
+                    if (!w) { w = g_window_list_head; while (w && w->minimized) w = w->next; }
+                    if (w) g_focused_window = w;
+                }
+            }
             Window* current = g_window_list_head;
             while (current) {
                 WindowTextState* state = GetWindowTextState(current);
                 if (state && state->needs_refresh) {
                     // Clear window and redraw title bar
                     WindowFill(current, WINDOW_BG);
-                    WindowDrawRect(current, 0, 0, current->rect.width, 20, TITLE_BAR);
+                    uint32_t tb_col = (current == g_focused_window && !current->minimized) ? ACCENT : TITLE_BAR;
+                    WindowDrawRect(current, 0, 0, current->rect.width, 20, tb_col);
                     if (current->title) {
                         WindowDrawString(current, 5, 2, current->title, TERMINAL_TEXT);
                     }
+                    // Title bar controls
+                    const int btn_size = 14; const int pad = 3;
+                    int close_x = current->rect.width - pad - btn_size;
+                    int min_x   = close_x - 2 - btn_size;
+                    WindowDrawRect(current, min_x, pad, btn_size, btn_size, BORDER);
+                    WindowDrawRect(current, close_x, pad, btn_size, btn_size, ERROR_COLOR);
+                    WindowDrawChar(current, min_x + 4, pad + 4, '-', TERMINAL_TEXT);
+                    WindowDrawChar(current, close_x + 4, pad + 4, 'x', TERMINAL_TEXT);
                     
                     // Redraw text content
                     int text_y = 25; // Start below title bar
@@ -439,6 +501,13 @@ void VFCompositor(void) {
                 current = current->next;
             }
             
+            // Process deferred destroys safely on compositor thread
+            if (g_pending_destroy_count) {
+                for (int i = 0; i < g_pending_destroy_count; i++) {
+                    DestroyWindow(g_pending_destroy[i]);
+                }
+                g_pending_destroy_count = 0;
+            }
             CompositeAndDraw();
         } else {
             Yield();
@@ -524,6 +593,7 @@ Window* CreateWindow(int x, int y, int width, int height, const char* title) {
     window->is_moving = false;
     window->move_offset_x = 0;
     window->move_offset_y = 0;
+    window->minimized = false;
     window->next = NULL;
     window->prev = NULL;
     
@@ -565,20 +635,20 @@ Window* CreateWindow(int x, int y, int width, int height, const char* title) {
 
 void DestroyWindow(Window* window) {
     if (!window) return;
-    
+    bool was_focused = (g_focused_window == window);
+
     // Remove from window list
     if (window->prev) {
         window->prev->next = window->next;
     } else {
         g_window_list_head = window->next;
     }
-    
     if (window->next) {
         window->next->prev = window->prev;
     } else {
         g_window_list_tail = window->prev;
     }
-    
+
     // Remove from state map
     for (int i = 0; i < MAX_WINDOWS; i++) {
         if (g_window_state_map[i].in_use && g_window_state_map[i].window == window) {
@@ -586,15 +656,24 @@ void DestroyWindow(Window* window) {
             break;
         }
     }
-    
+
+    // Clear special pointers
+    if (g_start_menu_window == window) {
+        g_start_menu_window = NULL;
+    }
+
     // Free resources
-    if (window->back_buffer) {
-        KernelFree(window->back_buffer);
-    }
-    if (window->title) {
-        KernelFree((void*)window->title);
-    }
+    if (window->back_buffer) KernelFree(window->back_buffer);
+    if (window->title) KernelFree((void*)window->title);
     KernelFree(window);
+
+    // Reassign focus to a safe window
+    if (was_focused) {
+        g_focused_window = g_window_list_tail;
+        while (g_focused_window && g_focused_window->minimized) {
+            g_focused_window = g_focused_window->prev;
+        }
+    }
 }
 
 void WindowFill(Window* window, uint32_t color) {
@@ -625,50 +704,6 @@ void WindowDrawChar(Window* window, int x, int y, char ch, uint32_t fg_color) {
     if (!window || !window->back_buffer) return;
     unsigned char c = (unsigned char)ch;
     for (int dy = 0; dy < FONT_HEIGHT; dy++) {
-    // Handle taskbar interactions
-    int taskbar_y0 = g_vbe_info ? (int)g_vbe_info->height - TASKBAR_HEIGHT : 0;
-    if (y >= taskbar_y0) {
-        // Start button click
-        if (x >= 2 && x < START_BTN_WIDTH - 2) {
-            // Toggle start menu window
-            if (!g_start_menu_window) {
-                g_start_menu_window = CreateWindow(2, taskbar_y0 - 200, 220, 180, "Start");
-                if (g_start_menu_window) {
-                    WindowFill(g_start_menu_window, WINDOW_BG);
-                    WindowDrawRect(g_start_menu_window, 0, 0, g_start_menu_window->rect.width, 20, TITLE_BAR);
-                    WindowDrawString(g_start_menu_window, 6, 2, "Start", TERMINAL_TEXT);
-                    WindowDrawString(g_start_menu_window, 8, 30, "- Terminal", TERMINAL_TEXT);
-                    WindowDrawString(g_start_menu_window, 8, 50, "- Editor", TERMINAL_TEXT);
-                }
-            } else {
-                DestroyWindow(g_start_menu_window);
-                g_start_menu_window = NULL;
-            }
-            return;
-        }
-        // Task buttons
-        for (int i = 0; i < g_task_button_count; i++) {
-            TaskButton* b = &g_task_buttons[i];
-            if (x >= b->x && x < b->x + b->w && y >= b->y && y < b->y + b->h) {
-                // Focus window and bring to front
-                Window* top = b->win;
-                if (top) {
-                    g_focused_window = top;
-                    if (top != g_window_list_tail) {
-                        if (top->prev) top->prev->next = top->next;
-                        if (top->next) top->next->prev = top->prev;
-                        if (g_window_list_head == top) g_window_list_head = top->next;
-                        top->prev = g_window_list_tail;
-                        top->next = NULL;
-                        if (g_window_list_tail) g_window_list_tail->next = top;
-                        g_window_list_tail = top;
-                    }
-                }
-                return;
-            }
-        }
-    }
-
         unsigned char font_row = console_font[c][dy];
         for (int dx = 0; dx < FONT_WIDTH; dx++) {
             int px = x + dx;
@@ -737,43 +772,103 @@ void OnMouseMove(int x, int y, int dx, int dy) {
 
         g_focused_window->rect.x = new_x;
         g_focused_window->rect.y = new_y;
+        g_focused_window->needs_redraw = true;
     }
 }
 
 void OnMouseButtonDown(int x, int y, uint8_t button) {
-    if (button == 1) { // Left button
-        Window* top_window = NULL;
-        // Iterate backwards to find the topmost visible window
-        for (Window* win = g_window_list_tail; win != NULL; win = win->prev) {
-            if (x >= win->rect.x && x < win->rect.x + win->rect.width &&
-                y >= win->rect.y && y < win->rect.y + win->rect.height) {
-                top_window = win;
-                break; // First match is the topmost window
+    if (button != 1) return; // Only left button for now
+
+    // Taskbar region
+    if (g_vbe_info) {
+        int taskbar_y0 = (int)g_vbe_info->height - TASKBAR_HEIGHT;
+        if (y >= taskbar_y0) {
+            // Start button
+            if (x >= 2 && x < START_BTN_WIDTH - 2) {
+                if (!g_start_menu_window) {
+                    g_start_menu_window = CreateWindow(2, taskbar_y0 - 200, 220, 180, "Start");
+                    if (g_start_menu_window) {
+                        WindowFill(g_start_menu_window, WINDOW_BG);
+                        WindowDrawRect(g_start_menu_window, 0, 0, g_start_menu_window->rect.width, 20, TITLE_BAR);
+                        WindowDrawString(g_start_menu_window, 6, 2, "Start", TERMINAL_TEXT);
+                        WindowDrawString(g_start_menu_window, 8, 30, "- Terminal", TERMINAL_TEXT);
+                        WindowDrawString(g_start_menu_window, 8, 50, "- Editor", TERMINAL_TEXT);
+                    }
+                } else {
+                    RequestDestroyWindow(g_start_menu_window);
+                    g_start_menu_window = NULL;
                 }
-        }
-        if (top_window) {
-            g_focused_window = top_window;
-            // Move focused window to front (tail of list for correct rendering order)
-            if (top_window != g_window_list_tail) {
-                // Remove from current position
-                if (top_window->prev)
-                    top_window->prev->next = top_window->next;
-                if (top_window->next)
-                    top_window->next->prev = top_window->prev;
-                if (g_window_list_head == top_window)
-                    g_window_list_head = top_window->next;
-                // Add to tail
-                top_window->prev = g_window_list_tail;
-                top_window->next = NULL;
-                if (g_window_list_tail)
-                    g_window_list_tail->next = top_window;
-                g_window_list_tail = top_window;
+                return;
             }
-            // Check if the click is on the title bar
-            if (y - top_window->rect.y < 20) {
-                g_focused_window->is_moving = true;
+            // Task buttons
+            for (int i = 0; i < g_task_button_count; i++) {
+                TaskButton* b = &g_task_buttons[i];
+                if (x >= b->x && x < b->x + b->w && y >= b->y && y < b->y + b->h) {
+                    Window* top = b->win;
+                    if (top) {
+                        if (top->minimized) {
+                            top->minimized = false;
+                        } else if (g_focused_window == top) {
+                            top->minimized = true;
+                        } else {
+                            g_focused_window = top;
+                        }
+                        // Bring to front
+                        if (top != g_window_list_tail) {
+                            if (top->prev) top->prev->next = top->next;
+                            if (top->next) top->next->prev = top->prev;
+                            if (g_window_list_head == top) g_window_list_head = top->next;
+                            top->prev = g_window_list_tail;
+                            top->next = NULL;
+                            if (g_window_list_tail) g_window_list_tail->next = top;
+                            g_window_list_tail = top;
+                        }
+                    }
+                    return;
+                }
             }
         }
+    }
+
+    // Find topmost window under cursor
+    Window* top_window = NULL;
+    for (Window* win = g_window_list_tail; win != NULL; win = win->prev) {
+        if (win->minimized) continue;
+        if (x >= win->rect.x && x < win->rect.x + win->rect.width &&
+            y >= win->rect.y && y < win->rect.y + win->rect.height) {
+            top_window = win; break;
+        }
+    }
+    if (!top_window) return;
+
+    g_focused_window = top_window;
+    if (top_window != g_window_list_tail) {
+        if (top_window->prev) top_window->prev->next = top_window->next;
+        if (top_window->next) top_window->next->prev = top_window->prev;
+        if (g_window_list_head == top_window) g_window_list_head = top_window->next;
+        top_window->prev = g_window_list_tail;
+        top_window->next = NULL;
+        if (g_window_list_tail) g_window_list_tail->next = top_window;
+        g_window_list_tail = top_window;
+    }
+
+    // Title bar interactions
+    int rel_x = x - top_window->rect.x;
+    int rel_y = y - top_window->rect.y;
+    if (rel_y < 20) {
+        const int btn_size = 14; const int pad = 3;
+        int close_x = top_window->rect.width - pad - btn_size;
+        int min_x   = close_x - 2 - btn_size;
+        if (rel_x >= close_x && rel_x < close_x + btn_size && rel_y >= pad && rel_y < pad + btn_size) {
+            RequestDestroyWindow(top_window);
+            return;
+        }
+        if (rel_x >= min_x && rel_x < min_x + btn_size && rel_y >= pad && rel_y < pad + btn_size) {
+            top_window->minimized = true;
+            return;
+        }
+        top_window->is_moving = true;
+        return;
     }
 }
 

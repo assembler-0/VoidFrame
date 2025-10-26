@@ -28,6 +28,9 @@ struct Window {
     bool is_moving;
     int move_offset_x;
     int move_offset_y;
+
+    // Window state
+    bool minimized;
 };
 
 #endif // WINDOW_H

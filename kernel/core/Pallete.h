@@ -101,7 +101,7 @@
 // Easy palette switching system
 // =============================================================================
 #ifndef CURRENT_PALETTE
-#define CURRENT_PALETTE 1
+#define CURRENT_PALETTE 2
 #endif
 
 #if CURRENT_PALETTE == 1
