@@ -1011,7 +1011,7 @@ void ProcessExitStub() {
     __builtin_unreachable();
 }
 
-static __attribute__((visibility("hidden"))) uint32_t CreateSecureProcess(const char * name, void (*entry_point)(void), uint8_t privilege, uint32_t initial_flags) {
+uint32_t CreateSecureProcess(const char * name, void (*entry_point)(void), uint8_t privilege, uint32_t initial_flags) {
     irq_flags_t flags = rust_spinlock_lock_irqsave(scheduler_lock);
     if (UNLIKELY(!entry_point)) {
         rust_spinlock_unlock_irqrestore(scheduler_lock, flags);

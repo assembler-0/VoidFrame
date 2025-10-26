@@ -41,8 +41,18 @@ static const size_t size_classes[NUM_SIZE_CLASSES] = {
  * @brief Header for large allocations that bypass the magazine system.
  * This allows tracking the size of such allocations for proper freeing.
  */
+#define LARGE_BLOCK_MAGIC 0x4C42484D41474E31ULL /* 'LBHmagN1' */
+#define MAGAZINE_BLOCK_MAGIC 0x4D42484D41474E31ULL /* 'MBHmagN1' */
+
+typedef struct {
+    uint64_t magic;
+    uint8_t sc_idx;
+} MagazineBlockHeader;
+
+
 typedef struct LargeBlockHeader {
-    size_t size; // The original requested size of the allocation.
+    uint64_t magic;             // Magic to identify magazine large blocks
+    size_t size;                // The original requested size of the allocation.
 } LargeBlockHeader;
 
 /**
@@ -118,5 +128,9 @@ void* MagazineAlloc(size_t size);
 void MagazineFree(void* ptr);
 void* MagazineAllocate(size_t num, size_t size);
 void* MagazineReallocate(void* ptr, size_t size);
+void MagazinePrintStats(void);
+void MagazineSetValidationLevel(int level);
+void MagazineFlushCaches(void);
+void MagazineSetPerfMode(int mode);
 
 #endif // MAGAZINE_HEAP_H

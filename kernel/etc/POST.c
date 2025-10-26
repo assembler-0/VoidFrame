@@ -6,6 +6,7 @@
 #include "Serial.h"
 #include "VMem.h"
 #include "stdbool.h"
+#include "x64.h"
 
 #define N 512
 void * ptrs[N] = {0};
@@ -21,23 +22,32 @@ bool SerialTest() {
 }
 
 bool MemoryTest() {
+    uint64_t start = rdtsc();
     for (int i = 1; i < 1000; i++) {
         size_t sz = (i % 7 == 0) ? 4096 : (i % 100 + 1);
         void *ptr = KernelMemoryAlloc(sz);
         if (!ptr) return false;
         KernelFree(ptr);
     }
+    PrintKernelF("Loop 1 took: %llu sycles\n", rdtsc() - start);
 
+    start = rdtsc();
     for (int i = 0; i < N; i++) ptrs[i] = KernelMemoryAlloc(128);
+    PrintKernelF("Loop 2 took: %llu sycles\n", rdtsc() - start);
 
+    start = rdtsc();
     // free every other block
     for (int i = 0; i < N; i += 2) KernelFree(ptrs[i]);
+    PrintKernelF("Loop 3 took: %llu sycles\n", rdtsc() - start);
 
+    start = rdtsc();
     // re-allocate in different sizes
     for (int i = 0; i < N/2; i++) {
         ptrs[i] = KernelMemoryAlloc((i % 2) ? 64 : 256);
     }
+    PrintKernelF("Loop 4 took: %llu sycles\n", rdtsc() - start);
 
+    start = rdtsc();
     for (int i = 0; i < 1000; i++) {
         size_t sz = (i % 500) + 1;
         uint8_t *p = (uint8_t*)KernelMemoryAlloc(sz);
@@ -46,6 +56,7 @@ bool MemoryTest() {
             if (p[j] != (uint8_t)(i ^ j)) PANIC("Memory corruption!");
         KernelFree(p);
     }
+    PrintKernelF("Loop 5 took: %llu sycles\n", rdtsc() - start);
 
     return true;
 }

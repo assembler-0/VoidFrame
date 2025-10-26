@@ -31,6 +31,7 @@ struct Window {
 
     // Window state
     bool minimized;
+    uint32_t owner_pid; // PID of the process that created this window
 };
 
 #endif // WINDOW_H

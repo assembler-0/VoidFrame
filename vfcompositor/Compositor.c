@@ -13,6 +13,7 @@
 #include "SpinlockRust.h"
 #include "StringOps.h"
 #include "Vesa.h"
+#include "app/GUIShell.h"
 
 #ifndef MAX
 #define MAX(a, b) ((a) > (b) ? (a) : (b))
@@ -24,6 +25,27 @@
 // --- Globals are now part of CompositorContext ---
 
 CompositorContext g_compositor_ctx;
+
+#define MOUSE_CURSOR_WIDTH 16
+#define MOUSE_CURSOR_HEIGHT 16
+const uint32_t mouse_cursor_bitmap[MOUSE_CURSOR_HEIGHT * MOUSE_CURSOR_WIDTH] = {
+    0xFF000000, 0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x00000000, // X
+    0xFF000000, 0xFFFFFFFF, 0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x00000000, // XW
+    0xFF000000, 0xFFFFFFFF, 0xFFFFFFFF, 0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x00000000, // XWW
+    0xFF000000, 0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF, 0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x00000000, // XWWW
+    0xFF000000, 0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF, 0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x00000000, // XWWWW
+    0xFF000000, 0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF, 0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x00000000, // XWWWWW
+    0xFF000000, 0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF, 0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x00000000, // XWWWWWW
+    0xFF000000, 0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF, 0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x00000000, // XWWWWWWW
+    0xFF000000, 0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF, 0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x00000000, // XWWWWWWWW
+    0xFF000000, 0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF, 0xFF000000, 0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x00000000, // XWWWWWWX
+    0xFF000000, 0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF, 0xFF000000, 0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x00000000, // XWWWWWX
+    0xFF000000, 0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF, 0xFF000000, 0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x00000000, // XWWWWX
+    0xFF000000, 0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF, 0xFF000000, 0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x00000000, // XWWWX
+    0xFF000000, 0xFFFFFFFF, 0xFFFFFFFF, 0xFF000000, 0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x00000000, // XWWX
+    0xFF000000, 0xFFFFFFFF, 0xFF000000, 0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x00000000, // XWX
+    0xFF000000, 0xFF000000, 0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x00000000  // XX
+};
 
 void RequestDestroyWindow(CompositorContext* ctx, Window* w) {
     if (!w) return;
@@ -105,12 +127,15 @@ Window* GetWindowByTitle(CompositorContext* ctx, const char* title) {
 static void DrawMouseCursor(CompositorContext* ctx) {
     if (!ctx->g_vbe_info || !ctx->g_compositor_buffer) return;
 
-    for (int y = 0; y < 10 && (ctx->g_mouse_y + y) < ctx->g_vbe_info->height; y++) {
-        for (int x = 0; x < 10 && (ctx->g_mouse_x + x) < ctx->g_vbe_info->width; x++) {
+    for (int y = 0; y < MOUSE_CURSOR_HEIGHT; y++) {
+        for (int x = 0; x < MOUSE_CURSOR_WIDTH; x++) {
             int screen_x = ctx->g_mouse_x + x;
             int screen_y = ctx->g_mouse_y + y;
-            if (screen_x >= 0 && screen_y >= 0) {
-                ctx->g_compositor_buffer[screen_y * ctx->g_vbe_info->width + screen_x] = 0xFFFFFF; // White cursor
+            if (screen_x >= 0 && screen_y >= 0 && screen_x < (int)ctx->g_vbe_info->width && screen_y < (int)ctx->g_vbe_info->height) {
+                uint32_t pixel_color = mouse_cursor_bitmap[y * MOUSE_CURSOR_WIDTH + x];
+                if (pixel_color != 0x00000000) { // Assuming 0x00000000 is transparent
+                    ctx->g_compositor_buffer[screen_y * ctx->g_vbe_info->width + screen_x] = pixel_color;
+                }
             }
         }
     }
@@ -415,7 +440,7 @@ void VFCompositor(void) {
     }
     CompositorInit(&g_compositor_ctx);
 
-    Window* w = CreateWindow(&g_compositor_ctx, 50, 50, 480, 360, "VFCompositor Help Menu");
+    Window* w = CreateWindow(&g_compositor_ctx, 50, 50, 480, 360, "VFCompositor Help Menu", 0);
     if (w) {
         w->minimized = false;
         WindowFill(w, WINDOW_BG);
@@ -424,10 +449,12 @@ void VFCompositor(void) {
         WindowPrintString(&g_compositor_ctx, w, "[--- Version: v0.0.2-development4 ---]\n");
         WindowPrintString(&g_compositor_ctx, w, "CTRL + W: Closes active window\n");
         WindowPrintString(&g_compositor_ctx, w, "CTRL + M: Minimize active window\n");
-        WindowPrintString(&g_compositor_ctx, w, "CTRL + T: Make the active window move with your mouse\n");
-        WindowPrintString(&g_compositor_ctx, w, "CTRL + T: Create a blank window\n");
+        WindowPrintString(&g_compositor_ctx, w, "CTRL + L: Make the active window move with your mouse\n");
+        WindowPrintString(&g_compositor_ctx, w, "CTRL + T: Creates new window\n");
+        WindowPrintString(&g_compositor_ctx, w, "CTRL + S: Creates VFShell GUI\n");
         WindowPrintString(&g_compositor_ctx, w, "CTRL + <ESC>: Quit VFCompositor\n");
         WindowPrintString(&g_compositor_ctx, w, "ATL + <TAB>: Switches between window\n");
+        WindowDrawRect(w, 0, 25, w->rect.width, w->rect.height - 25, TERMINAL_TEXT);
     }
 
     while (1) {
@@ -442,20 +469,18 @@ void VFCompositor(void) {
                     VFCompositorShutdown(&g_compositor_ctx);
                     return;
                 }
-                if (c == PS2_CalcCombo(K_CTRL, 'N')) {
-                    Window* w = CreateWindow(&g_compositor_ctx, 50, 50, 480, 360, "Window");
-                    if (w) { 
-                        w->minimized = false; 
-                        WindowFill(w, WINDOW_BG); 
-                        WindowDrawRect(w, 0, 0, w->rect.width, 20, TITLE_BAR); 
-                        g_compositor_ctx.g_focused_window = w;
-                        WindowPrintString(&g_compositor_ctx, w, "This is a test window.\n");
-                    }
-                } else if  (c == PS2_CalcCombo(K_CTRL, 'W')) {
+                if (c == PS2_CalcCombo(K_CTRL, 'T')) {
+                    Window* w = CreateWindow(&g_compositor_ctx, 50, 50, 480, 360, "Window", 0);
+                    w->minimized = false;
+                    WindowFill(w, WINDOW_BG);
+                    WindowPrintString(&g_compositor_ctx, w, "Blank window\n");
+                } else if (c == PS2_CalcCombo(K_CTRL, 'W')) {
                     Window* w = g_compositor_ctx.g_focused_window; if (w) { RequestDestroyWindow(&g_compositor_ctx, w); }
+                } else if (c == PS2_CalcCombo(K_CTRL, 'S')) {
+                    CreateProcess("VFShellGUI", VFShellProcess);
                 } else if (c == PS2_CalcCombo(K_CTRL, 'M')) {
                     Window* w = g_compositor_ctx.g_focused_window; if (w) { w->minimized = !w->minimized; }
-                } else if (c == PS2_CalcCombo(K_CTRL, 'T')) {
+                } else if (c == PS2_CalcCombo(K_CTRL, 'L')) {
                     Window* w = g_compositor_ctx.g_focused_window; if (w) { w->is_moving = true; w->move_offset_x = g_compositor_ctx.g_mouse_x - w->rect.x; }
                 } else if (c == PS2_CalcCombo(K_SUPER, 'W')) {
                     Window* w = g_compositor_ctx.g_focused_window; if (w) { RequestDestroyWindow(&g_compositor_ctx, w); }
@@ -483,8 +508,8 @@ void VFCompositor(void) {
                     int min_x   = close_x - 2 - btn_size;
                     WindowDrawRect(current, min_x, pad, btn_size, btn_size, BORDER);
                     WindowDrawRect(current, close_x, pad, btn_size, btn_size, ERROR_COLOR);
-                    WindowDrawChar(current, min_x + 3, pad + 1, '-', TERMINAL_TEXT);
-                    WindowDrawChar(current, close_x + 3, pad + 1, 'x', TERMINAL_TEXT);
+                    WindowDrawChar(current, min_x + 3, pad, '-', TERMINAL_TEXT);
+                    WindowDrawChar(current, close_x + 3, pad - 1, 'x', TERMINAL_TEXT);
                     
                     // Redraw text content
                     int text_y = 25; // Start below title bar
@@ -540,7 +565,7 @@ void CompositorInit(CompositorContext* ctx) {
     ctx->g_mouse_y = ctx->g_vbe_info->height / 2;
 }
 
-Window* CreateWindow(CompositorContext* ctx, int x, int y, int width, int height, const char* title) {
+Window* CreateWindow(CompositorContext* ctx, int x, int y, int width, int height, const char* title, uint32_t owner_pid) {
     Window* window = (Window*)KernelMemoryAlloc(sizeof(Window));
     if (!window) return NULL;
     
@@ -553,6 +578,7 @@ Window* CreateWindow(CompositorContext* ctx, int x, int y, int width, int height
     window->move_offset_x = 0;
     window->move_offset_y = 0;
     window->minimized = false;
+    window->owner_pid = owner_pid; // Store the owner PID
     window->next = NULL;
     window->prev = NULL;
     
@@ -625,6 +651,11 @@ void DestroyWindow(CompositorContext* ctx, Window* window) {
     if (window->back_buffer) KernelFree(window->back_buffer);
     if (window->title) KernelFree((void*)window->title);
     KernelFree(window);
+
+    // Kill the owning process if it exists
+    if (window->owner_pid != 0) {
+        KillProcess(window->owner_pid);
+    }
 
     // Reassign focus to a safe window
     if (was_focused) {
@@ -746,7 +777,7 @@ void OnMouseButtonDown(CompositorContext* ctx, int x, int y, uint8_t button) {
             // Start button
             if (x >= 2 && x < START_BTN_WIDTH - 2) {
                 if (!ctx->g_start_menu_window) {
-                    ctx->g_start_menu_window = CreateWindow(ctx, 2, taskbar_y0 - 200, 220, 180, "Start");
+                    ctx->g_start_menu_window = CreateWindow(ctx, 2, taskbar_y0 - 200, 220, 180, "Start", 0);
                     if (ctx->g_start_menu_window) {
                         WindowFill(ctx->g_start_menu_window, WINDOW_BG);
                         WindowDrawRect(ctx->g_start_menu_window, 0, 0, ctx->g_start_menu_window->rect.width, 20, TITLE_BAR);

@@ -2,9 +2,6 @@
 #include "Multiboot2.h"
 #include "Console.h"
 #include "VFS.h"
-#include "KernelHeap.h"
-#include "MemOps.h"
-
 extern uint32_t g_multiboot_info_addr;
 
 void InitRDLoad(void) {

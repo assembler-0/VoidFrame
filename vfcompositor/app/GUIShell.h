@@ -1,0 +1,6 @@
+#ifndef VOIDFRAME_GUISHELL_H
+#define VOIDFRAME_GUISHELL_H
+
+void VFShellProcess();
+
+#endif //VOIDFRAME_GUISHELL_H

@@ -180,6 +180,7 @@ typedef struct {
 // Core scheduler functions
 int EEVDFSchedInit(void);
 uint32_t EEVDFCreateProcess(const char* name, void (*entry_point)(void));
+uint32_t EEVDFCreateSecureProcess(const char* name, void (*entry_point)(void), uint8_t priv, uint8_t flag);
 EEVDFProcessControlBlock* EEVDFGetCurrentProcess(void);
 EEVDFProcessControlBlock* EEVDFGetCurrentProcessByPID(uint32_t pid);
 void EEVDFYield(void);

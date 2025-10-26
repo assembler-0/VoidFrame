@@ -9,7 +9,7 @@
 #define WINDOW_BG_1         0x151515  // Very dark gray
 #define TITLE_BAR_1         0x1A1A2E  // Dark blue-gray
 #define BORDER_1            0x2A2A3A  // Subtle border
-#define ACCENT_1            0x6B73FF  // Bright blue accent
+#define ACCENT_1            0x1D234A  // Bright blue accent
 #define ERROR_1             0xFF6B6B  // Soft red
 #define SUCCESS_1           0x51CF66  // Muted green
 
@@ -101,7 +101,7 @@
 // Easy palette switching system
 // =============================================================================
 #ifndef CURRENT_PALETTE
-#define CURRENT_PALETTE 2
+#define CURRENT_PALETTE 1
 #endif
 
 #if CURRENT_PALETTE == 1

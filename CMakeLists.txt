@@ -42,6 +42,11 @@ else()
     message(STATUS "Using toolchain file: ${CMAKE_TOOLCHAIN_FILE}")
 endif()
 
+if(NOT CMAKE_BUILD_TYPE)
+    set(CMAKE_BUILD_TYPE "Release" CACHE STRING "Build type" FORCE)
+    message(WARNING "CMAKE_BUILD_TYPE not set. Defaulting to Release.")
+endif()
+
 if(CMAKE_GENERATOR STREQUAL "Ninja")
     message(STATUS "CMake: Generator: ${CMAKE_GENERATOR}")
 else()
@@ -63,7 +68,6 @@ message(STATUS "CMake Current Binary Directory: ${CMAKE_CURRENT_BINARY_DIR}")
 message(STATUS "CMake Host System Name: ${CMAKE_HOST_SYSTEM_NAME}")
 message(STATUS "CMake Host System Processor: ${CMAKE_HOST_SYSTEM_PROCESSOR}")
 message(STATUS "VoidFrame Scheduler: ${VF_SCHEDULER}")
-message(STATUS "VoidFrame Heap Management Language: ${VF_CONFIG_HEAP_LANG}")
 message(STATUS "CMake sources configured.")
 
 # ============================================================================

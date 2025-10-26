@@ -42,7 +42,6 @@ jobs:
             cmake .. -G Ninja \
               -DCMAKE_BUILD_TYPE=Release \
               -DVF_SCHEDULER=EEVDF \
-              -DVF_CONFIG_HEAP_LANG=RUST \
               -DCMAKE_TOOLCHAIN_FILE=../cmake/toolchain/linux-x64.cmake \
               -DCMAKE_ASM_NASM_COMPILER=$(which nasm)
             cd ..

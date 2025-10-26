@@ -3,6 +3,7 @@
 #ifdef VF_CONFIG_USE_CERBERUS
 #include "Cerberus.h"
 #endif
+#include "Compositor.h"
 #include "Console.h"
 #include "Format.h"
 #include "Ipc.h"
@@ -864,7 +865,7 @@ int EEVDFSchedInit(void) {
 #ifdef VF_CONFIG_USE_VFSHELL
     // Create shell process
     PrintKernel("System: Creating shell process...\n");
-    const uint32_t shell_pid = EEVDFCreateProcess("VFShell", ShellProcess);
+    const uint32_t shell_pid = EEVDFCreateSecureProcess("VFShell", ShellProcess, EEVDF_PROC_PRIV_SYSTEM, EEVDF_PROC_FLAG_CORE);
     if (!shell_pid) {
 #ifndef VF_CONFIG_PANIC_OVERRIDE
         PANIC("CRITICAL: Failed to create shell process");
@@ -881,7 +882,7 @@ int EEVDFSchedInit(void) {
     return 0;
 }
 
-uint32_t EEVDFCreateProcess(const char* name, void (*entry_point)(void)) {
+uint32_t EEVDFCreateSecureProcess(const char* name, void (*entry_point)(void), uint8_t priv, uint8_t flag) {
     if (UNLIKELY(!entry_point)) {
         PANIC("EEVDFCreateProcess: NULL entry point");
     }
@@ -938,7 +939,7 @@ uint32_t EEVDFCreateProcess(const char* name, void (*entry_point)(void)) {
     proc->pid = new_pid;
     proc->state = PROC_READY;
     proc->stack = stack;
-    proc->privilege_level = EEVDF_PROC_PRIV_NORM;
+    proc->privilege_level = priv;
     proc->creation_time = EEVDFGetSystemTicks();
     EEVDFSetTaskNice(proc, EEVDF_DEFAULT_NICE);
 
@@ -950,8 +951,8 @@ uint32_t EEVDFCreateProcess(const char* name, void (*entry_point)(void)) {
     EEVDFSecurityToken* token = &proc->token;
     token->magic = EEVDF_SECURITY_MAGIC;
     token->creator_pid = creator->pid;
-    token->privilege = EEVDF_PROC_PRIV_NORM;
-    token->flags = EEVDF_PROC_FLAG_NONE;
+    token->privilege = priv;
+    token->flags = flag;
     token->creation_tick = proc->creation_time;
     token->checksum = EEVDFCalculateSecureChecksum(token, new_pid);
 
@@ -991,6 +992,10 @@ uint32_t EEVDFCreateProcess(const char* name, void (*entry_point)(void)) {
     rust_spinlock_unlock_irqrestore(eevdf_lock, flags);
 
     return new_pid;
+}
+
+uint32_t EEVDFCreateProcess(const char* name, void (*entry_point)(void)) {
+    return EEVDFCreateSecureProcess(name, entry_point, EEVDF_PROC_PRIV_NORM, EEVDF_PROC_FLAG_NONE);
 }
 
 EEVDFProcessControlBlock* EEVDFGetCurrentProcess(void) {
