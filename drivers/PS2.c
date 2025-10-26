@@ -1,3 +1,4 @@
+#include "Compositor.h"
 #include "PS2.h"
 
 #include "APIC/APIC.h"
@@ -229,23 +230,19 @@ static void ProcessMouseData(uint8_t data) {
             if (mouse.y >= (int)vbe->height) mouse.y = vbe->height - 1;
         }
 
-        if (OnMouseMove) {
-            OnMouseMove(mouse.x, mouse.y, delta_x, -delta_y);
-        }
+    if (OnMouseMove) {
+        OnMouseMove(&g_compositor_ctx, mouse.x, mouse.y, delta_x, -delta_y);
+    }
 
-        uint8_t changed_buttons = mouse.buttons ^ old_buttons;
-        if (changed_buttons) {
-            for (int i = 0; i < 3; i++) {
-                uint8_t mask = 1 << i;
-                if (changed_buttons & mask) {
-                    if ((mouse.buttons & mask) && OnMouseButtonDown) {
-                        OnMouseButtonDown(mouse.x, mouse.y, i + 1);
-                    } else if (OnMouseButtonUp) {
-                        OnMouseButtonUp(mouse.x, mouse.y, i + 1);
-                    }
-                }
-            }
+    // Handle button presses
+    for (int i = 0; i < 3; i++) {
+        uint8_t mask = 1 << i;
+        if ((mouse.buttons & mask) && OnMouseButtonDown) {
+            OnMouseButtonDown(&g_compositor_ctx, mouse.x, mouse.y, i + 1);
+        } else if (OnMouseButtonUp) {
+            OnMouseButtonUp(&g_compositor_ctx, mouse.x, mouse.y, i + 1);
         }
+    }
     }
 }
 

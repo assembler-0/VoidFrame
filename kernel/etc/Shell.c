@@ -15,7 +15,7 @@
 #include "InitRD.h"
 #include "Iso9660.h"
 #include "KernelHeap.h"
-#include "KernelHeapRust.h"
+#include "../../mm/dynamic/rust/KernelHeapRust.h"
 #include "LPT/LPT.h"
 #include "MemOps.h"
 #include "PCI/PCI.h"
@@ -65,7 +65,7 @@ typedef struct {
     ShellCommandFunc func;
 } ShellCommand;
 
-static char* GetArg(const char* cmd, int arg_num) {
+char* GetArg(const char* cmd, int arg_num) {
     static char arg_buf[64];
     int word = 0, pos = 0, buf_pos = 0;
     
@@ -158,9 +158,9 @@ static void ARPTestHandler(const char * args) {
 
 static void VersionHandler(const char * args) {
     (void)args;
-    PrintKernelSuccess("VoidFrame v0.0.2-development3\n");
+    PrintKernelSuccess("VoidFrame v0.0.2-development4\n");
     PrintKernelF("Built on %s at %s\n", DATE, TIME);
-    PrintKernelSuccess("VoidFrame Shell v0.0.2-development3\n");
+    PrintKernelSuccess("VoidFrame Shell v0.0.2-development4\n");
 }
 
 typedef struct {
@@ -1294,7 +1294,7 @@ void ShellInit(void) {
 }
 
 void ShellProcess(void) {
-    PrintKernelSuccess("System: VoidFrame Shell v0.0.2-development3 ('help' for list of commands)\n");
+    PrintKernelSuccess("System: VoidFrame Shell v0.0.2-development4 ('help' for list of commands)\n");
     ExecuteCommand("help");
     while (1) {
         if (HasInput()) {
