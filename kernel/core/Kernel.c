@@ -3,6 +3,7 @@
 #include "drivers/APIC/APIC.h"
 #include "drivers/storage/Ide.h"
 #include "ACPI.h"
+#include "CharDevice.h"
 #include "Compositor.h"
 #include "Console.h"
 #include "CRC32.h"
@@ -383,6 +384,9 @@ static void PrintBootstrapSummary(void) {
 // Pre-eXecutionSystem 1
 void PXS1(const uint32_t info) {
     PICMaskAll();
+    CharDeviceInit();
+    PrintKernel("System: Char device subsystem initialized\n");
+
     int sret = SerialInit();
     if (sret != 0) {
         PrintKernelWarning("[WARN] COM1 failed, probing other COM ports...\n");

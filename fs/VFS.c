@@ -66,9 +66,6 @@ int VfsInit(void) {
     }
     PrintKernel( "VFS: Mount table cleared\n");
 
-    CharDeviceInit();
-    PrintKernel("VFS: Char device subsystem initialized\n");
-
     // Register filesystems
     static FileSystemDriver ntfs_driver = {"NTFS", NtfsDetect, NtfsMount};
     FileSystemRegister(&ntfs_driver);

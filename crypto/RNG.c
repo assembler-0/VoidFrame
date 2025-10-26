@@ -17,15 +17,25 @@ uint64_t xoroshiro128plus(void) {
     return result;
 }
 
-void rng_seed(uint64_t a, uint64_t b) {
-    s[0] ^= a;
-    s[1] ^= b;
+static uint64_t splitmix64(uint64_t* x) {
+    *x += 0x9e3779b97f4a7c15ULL;
+    uint64_t z = *x;
+    z = (z ^ (z >> 30)) * 0xbf58476d1ce4e5b9ULL;
+    z = (z ^ (z >> 27)) * 0x94d049bb133111ebULL;
+    return z ^ (z >> 31);
+}
+
+void rng_seed(uint64_t seed_lo, uint64_t seed_hi) {
+    uint64_t seed = seed_lo ^ (seed_hi + 0x9e3779b97f4a7c15ULL);
+    s[0] ^= splitmix64(&seed);
+    s[1] ^= splitmix64(&seed);
+    if ((s[0] | s[1]) == 0) s[0] = 0x8a5cd789635d2dffULL; // ensure non-zero state
 }
 
 int rdrand_supported(void) {
-    unsigned int eax, ebx, ecx, edx;
+    uint32_t eax, ebx, ecx, edx;
     cpuid(1, &eax, &ebx, &ecx, &edx);
-    return (ecx >> 30) & 1;
+    return (ecx & (1u << 30)) != 0;
 }
 
 uint16_t rdrand16(void) {

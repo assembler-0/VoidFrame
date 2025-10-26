@@ -59,7 +59,7 @@ cd VoidFrame
 mkdir build
 cd build
 cmake .. -DCMAKE_BUILD_TYPE=Release \
-    -DCMAKE_TOOLCHAIN_FILE=../cmake/toolchain/<linux/windows/macos>-x64.cmake \
+    -DCMAKE_TOOLCHAIN_FILE=../cmake/toolchain/linux-x64.cmake \
     -G Ninja \
     -DVF_SCHEDULER=<MLFQ/EEVDF>
 ccmake . # Optinal, tune as needed
@@ -137,6 +137,12 @@ ninja run
     - [x] Create
     - [x] Delete
     - [x] List
+- DEVFS
+    - [x] Read
+    - [x] Write
+    - [x] Create (register)
+    - [ ] Delete (unregister)
+    - [x] List
 - ISO9660 (RO)
     - [x] Read
     - [x] List
@@ -145,6 +151,7 @@ ninja run
     - [x] EXT2
     - [x] FAT1x
     - [x] VFRFS
+    - [ ] DEVFS
     - [ ] ISO9660 
 ### Drivers
 - Network

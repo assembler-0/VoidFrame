@@ -1,6 +1,7 @@
 #include "Serial.h"
 #include "Io.h"
 #include "../fs/CharDevice.h"
+#include "../kernel/etc/Console.h"
 
 // Serial port register offsets
 #define SERIAL_DATA_REG     0  // Data register (DLAB=0)
@@ -38,8 +39,13 @@
 static uint16_t serial_port = COM1;
 static int serial_initialized = 0;
 
+// Function prototypes for internal use
+int SerialInitPort(uint16_t port);
+
 static int SerialDevRead(struct CharDevice* dev, void* buffer, uint32_t size) {
-    if (!serial_initialized) return -1;
+    if (!serial_initialized) {
+        return -1;
+    }
     char* buf = (char*)buffer;
     uint32_t i = 0;
     while (i < size) {
@@ -53,7 +59,9 @@ static int SerialDevRead(struct CharDevice* dev, void* buffer, uint32_t size) {
 }
 
 static int SerialDevWrite(struct CharDevice* dev, const void* buffer, uint32_t size) {
-    if (!serial_initialized) return -1;
+    if (!serial_initialized) {
+        return -1;
+    }
     const char* buf = (const char*)buffer;
     for (uint32_t i = 0; i < size; i++) {
         if (SerialWriteChar(buf[i]) < 0) {
