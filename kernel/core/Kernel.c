@@ -760,17 +760,6 @@ static InitResultT PXS2(void) {
     return INIT_SUCCESS;
 }
 
-void A20Test(void) {
-    volatile uint32_t *low = (uint32_t*)0x000000;
-    volatile uint32_t *high = (uint32_t*)0x100000;
-
-    *low = 0x12345678;
-    *high = 0x87654321;
-
-    if (*low == *high) PrintKernelWarning("A20 is disabled - memory is contiguous\n");
-    else PrintKernelSuccess("A20 is enabled - memory is not contiguous\n");
-}
-
 void StackUsage(void) {
     uintptr_t current_sp;
     __asm__ __volatile__("mov %%rsp, %0" : "=r"(current_sp));
@@ -785,8 +774,6 @@ asmlinkage void KernelMain(const uint32_t magic, const uint32_t info) {
         PrintKernelHex(magic);
         PANIC("Unrecognized Multiboot2 magic.");
     }
-
-    A20Test();
 
     console.buffer = (volatile uint16_t*)VGA_BUFFER_ADDR;
 

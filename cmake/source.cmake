@@ -76,6 +76,8 @@ set(FS_SOURCES
         fs/FileSystem.c
         fs/MBR.c
         fs/DriveNaming.c
+        fs/CharDevice.c
+        fs/devfs/DevFS.c
 )
 
 set(DRIVER_SOURCES
@@ -171,6 +173,7 @@ include_directories(
         fs/FAT
         fs/EXT
         fs/NTFS
+        fs/devfs
         mm
         mm/dynamic
         mm/dynamic/c
