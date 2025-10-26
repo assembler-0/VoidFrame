@@ -78,7 +78,7 @@ void VFCompositorRequestInit(const char * args) {
             cached_vfc_pid = 0;
         }
         PrintKernel("System: Creating VFCompositor...\n");
-        uint32_t vfc_pid = CreateSecureProcess("VFCompositor", VFCompositor, PROC_PRIV_SYSTEM, PROC_FLAG_CORE);
+        uint32_t vfc_pid = CreateProcess("VFCompositor", VFCompositor);
         if (!vfc_pid) {
 #ifndef VF_CONFIG_PANIC_OVERRIDE
             PANIC("CRITICAL: Failed to create VFCompositor process");
@@ -477,7 +477,7 @@ void VFCompositor(void) {
                 } else if (c == PS2_CalcCombo(K_CTRL, 'W')) {
                     Window* w = g_compositor_ctx.g_focused_window; if (w) { RequestDestroyWindow(&g_compositor_ctx, w); }
                 } else if (c == PS2_CalcCombo(K_CTRL, 'S')) {
-                    CreateSecureProcess("VFShellGUI", VFShellProcess, PROC_PRIV_SYSTEM, PROC_FLAG_CORE);
+                    CreateProcess("VFShellGUI", VFShellProcess);
                 } else if (c == PS2_CalcCombo(K_CTRL, 'M')) {
                     Window* w = g_compositor_ctx.g_focused_window; if (w) { w->minimized = !w->minimized; }
                 } else if (c == PS2_CalcCombo(K_CTRL, 'L')) {
