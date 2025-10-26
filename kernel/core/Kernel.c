@@ -824,7 +824,6 @@ void KernelMainHigherHalf(void) {
 
     while (1) {
         if (g_svgaII_active || VBEIsInitialized()) {
-            WindowManagerRun();
             Yield();
         } else {
             Yield();

@@ -1,13 +1,8 @@
 #include "stdint.h"
+#include "Compositor.h"
 
 #ifndef PS2_H
 #define PS2_H
-
-// --- Event Handler Function Pointers ---
-// These are weak symbols that can be overridden by the window manager.
-void __attribute__((weak)) OnMouseMove(int x, int y, int dx, int dy);
-void __attribute__((weak)) OnMouseButtonDown(int x, int y, uint8_t button);
-void __attribute__((weak)) OnMouseButtonUp(int x, int y, uint8_t button);
 
 #define KEYBOARD_DATA_PORT 0x60
 #define KEYBOARD_STATUS_PORT 0x64
@@ -30,6 +25,7 @@ void __attribute__((weak)) OnMouseButtonUp(int x, int y, uint8_t button);
 #define K_SHIFT 0x01
 #define K_CTRL  0x02
 #define K_ALT   0x04
+#define K_SUPER 0x08
 
 // Compute the resulting character for a given modifier combo and base char
 char PS2_CalcCombo(uint8_t mods, char base);

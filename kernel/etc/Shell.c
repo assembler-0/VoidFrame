@@ -65,7 +65,7 @@ typedef struct {
     ShellCommandFunc func;
 } ShellCommand;
 
-static char* GetArg(const char* cmd, int arg_num) {
+char* GetArg(const char* cmd, int arg_num) {
     static char arg_buf[64];
     int word = 0, pos = 0, buf_pos = 0;
     
