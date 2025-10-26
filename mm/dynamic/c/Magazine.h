@@ -42,6 +42,13 @@ static const size_t size_classes[NUM_SIZE_CLASSES] = {
  * This allows tracking the size of such allocations for proper freeing.
  */
 #define LARGE_BLOCK_MAGIC 0x4C42484D41474E31ULL /* 'LBHmagN1' */
+#define MAGAZINE_BLOCK_MAGIC 0x4D42484D41474E31ULL /* 'MBHmagN1' */
+
+typedef struct {
+    uint64_t magic;
+    uint8_t sc_idx;
+} MagazineBlockHeader;
+
 
 typedef struct LargeBlockHeader {
     uint64_t magic;             // Magic to identify magazine large blocks

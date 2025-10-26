@@ -40,15 +40,15 @@ pub struct HeapBlock {
 impl HeapBlock {
     #[inline(always)]
     pub(crate) fn is_free(&self) -> bool { self.is_free != 0 }
-    
+
     #[inline(always)]
     pub(crate) fn set_free(&mut self, free: bool) {
         self.is_free = if free { 1 } else { 0 };
     }
-    
+
     #[inline(always)]
     pub(crate) fn in_cache(&self) -> bool { self.in_cache != 0 }
-    
+
     #[inline(always)]
     pub(crate) fn set_in_cache(&mut self, cached: bool) {
         self.in_cache = if cached { 1 } else { 0 };
@@ -156,17 +156,17 @@ impl HeapBlock {
         if self.next.is_null() || !(*self.next).is_free() || (*self.next).in_cache() {
             return false;
         }
-        
+
         if !self.are_adjacent(self.next) { return false; }
-        
+
         let next_block = self.next;
         self.size += size_of::<HeapBlock>() + (*next_block).size;
         self.next = (*next_block).next;
-        
+
         if !self.next.is_null() {
             (*self.next).prev = self;
         }
-        
+
         self.checksum = compute_checksum(self as *const HeapBlock);
         COALESCE_COUNTER.fetch_add(1, Ordering::Relaxed);
         true
@@ -264,11 +264,11 @@ unsafe fn find_free_block(size: usize) -> *mut HeapBlock {
         let block = &*current;
         if block.is_free() && !block.in_cache() && block.size >= size {
             if block.size == size { return current; }
-            
+
             if size <= 1024 && block.size <= size * 2 {
                 return current; // Close fit for small allocations
             }
-            
+
             if block.size < best_size {
                 best_fit = current;
                 best_size = block.size;
@@ -316,7 +316,7 @@ pub unsafe fn rust_kmalloc_backend(size: usize) -> *mut u8 {
         let actual_size = SIZE_CLASSES[size_class];
         let mut heap = HEAP.lock();
         let cache = &mut heap.fast_caches[size_class];
-        
+
         if !cache.free_list.is_null() {
             let block = cache.free_list;
             cache.free_list = (*block).cache_next;
@@ -337,7 +337,7 @@ pub unsafe fn rust_kmalloc_backend(size: usize) -> *mut u8 {
     let block = find_free_block(aligned_size);
     let block = if !block.is_null() {
         if !(*block).validate() { return ptr::null_mut(); }
-        
+
         if (*block).size > aligned_size {
             split_block(block, aligned_size);
         }
@@ -402,7 +402,7 @@ pub unsafe fn rust_kfree_backend(ptr: *mut u8) {
         if block_size == SIZE_CLASSES[size_class] {
             // Zero user data for security
             ptr::write_bytes(ptr, 0, block_size);
-            
+
             let mut heap = HEAP.lock();
             let cache = &mut heap.fast_caches[size_class];
             if cache.count < FAST_CACHE_SIZE as i32 {
@@ -419,11 +419,11 @@ pub unsafe fn rust_kfree_backend(ptr: *mut u8) {
     // Standard free path with coalescing
     ptr::write_bytes(ptr, 0, block_size);
     (*block).init(block_size, true);
-    
+
     // Coalesce with adjacent blocks
     let current = block;
     while (*current).coalesce_with_next() {}
-    
+
     // Try coalescing with previous
     if !(*current).prev.is_null() && (*(*current).prev).is_free() {
         let prev = (*current).prev;

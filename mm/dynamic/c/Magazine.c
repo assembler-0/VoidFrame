@@ -140,6 +140,7 @@ void MagazineInit() {
         PANIC("Failed to initialize depot lock for magazine allocator");
     }
 
+
     // Initialize all depot and cache structures to zero.
     FastMemset(&depot.size_class_depots, 0, sizeof(depot.size_class_depots));
     FastMemset(&per_cpu_caches, 0, sizeof(per_cpu_caches));
@@ -190,14 +191,19 @@ void* MagazineAlloc(size_t size) {
     // If the active magazine is not empty, pop a block and return it.
     if (mag && mag->count > 0) {
         mag->count--;
-        // stats: fast-path alloc hit
         StatsAdd(cpu_id, sc_idx, &heap_stats_per_cpu[cpu_id].alloc_fast_hits[sc_idx]);
-        void* ret = mag->blocks[mag->count];
+
+        void* raw_block = mag->blocks[mag->count];
+        MagazineBlockHeader* header = (MagazineBlockHeader*)raw_block;
+        header->magic = MAGAZINE_BLOCK_MAGIC;
+        header->sc_idx = sc_idx;
+
+        void* user_ptr = (void*)(header + 1);
+
         if (g_validation_level == KHEAP_VALIDATION_FULL) {
-            // Scribble allocated memory to detect use of uninitialized memory in debug mode
-            FastMemset(ret, 0xCD, size_classes[sc_idx]);
+            FastMemset(user_ptr, 0xCD, size_classes[sc_idx]);
         }
-        return ret;
+        return user_ptr;
     }
 
     // --- Slow Path: Refill from Depot ---
@@ -219,19 +225,26 @@ void* MagazineAlloc(size_t size) {
     // Install the new magazine and retry the allocation.
     cache->active_magazines[sc_idx] = mag;
     mag->count--;
-    void* ret = mag->blocks[mag->count];
+
+    void* raw_block = mag->blocks[mag->count];
+    MagazineBlockHeader* header = (MagazineBlockHeader*)raw_block;
+    header->magic = MAGAZINE_BLOCK_MAGIC;
+    header->sc_idx = sc_idx;
+
+    void* user_ptr = (void*)(header + 1);
+
     if (g_validation_level == KHEAP_VALIDATION_FULL) {
-        FastMemset(ret, 0xCD, size_classes[sc_idx]);
+        FastMemset(user_ptr, 0xCD, size_classes[sc_idx]);
     }
-    return ret;
+    return user_ptr;
 }
 
 /**
  * @brief Frees a block of memory.
  */
-static inline void PoisonOnFreeSmall(Slab* slab, void* ptr) {
+static inline void PoisonOnFreeSmall(void* ptr, size_t size) {
     if (g_validation_level == KHEAP_VALIDATION_NONE) return;
-    size_t sz = slab->block_size;
+    size_t sz = size;
     if (g_validation_level == KHEAP_VALIDATION_BASIC) {
         // Poison a small header and trailer region if possible
         size_t n = sz < 32 ? sz : 32;
@@ -246,168 +259,81 @@ void MagazineFree(void* ptr) {
         return;
     }
 
-    // --- Determine Slab and Size Class (lockless via page-hash) ---
-    Slab* slab = FindSlabForPointer(ptr);
-    if (!slab) {
-        // Not found in any slab: either a magazine large allocation or foreign (e.g., Rust) allocation in HYBRID mode
-        LargeBlockHeader* header = (LargeBlockHeader*)ptr - 1; // Get pointer to header
-        if (header && header->magic == LARGE_BLOCK_MAGIC) {
-            // Magazine large allocation
-            if (g_validation_level != KHEAP_VALIDATION_NONE) {
-                FastMemset(ptr, 0xDD, header->size);
-            }
-            VMemFree((void*)header, header->size + sizeof(LargeBlockHeader));
+    // Check for small allocation magic number from our header
+    MagazineBlockHeader* header = (MagazineBlockHeader*)ptr - 1;
+
+    if (header && header->magic == MAGAZINE_BLOCK_MAGIC) {
+        // --- Small Allocation Fast Path ---
+        int sc_idx = header->sc_idx;
+        void* raw_block = (void*)header;
+
+        irq_flags_t iflags = save_irq_flags();
+        cli();
+        uint32_t cpu_id = GetCpuId();
+        PerCpuCache* cache = &per_cpu_caches[cpu_id];
+        Magazine* mag = cache->active_magazines[sc_idx];
+
+        if (mag && mag->count < MAGAZINE_CAPACITY) {
+            PoisonOnFreeSmall(ptr, size_classes[sc_idx]);
+            mag->blocks[mag->count] = raw_block;
+            mag->count++;
+            StatsAdd(cpu_id, sc_idx, &heap_stats_per_cpu[cpu_id].free_fast_hits[sc_idx]);
+            restore_irq_flags(iflags);
             return;
         }
-#ifdef VF_CONFIG_HEAP_HYBRID
-        // Delegate to Rust heap for unknown blocks
-        rust_kfree(ptr);
-        return;
-#else
-        // Fallback: treat as large block without magic (legacy)
-        if (g_validation_level != KHEAP_VALIDATION_NONE) {
-            FastMemset(ptr, 0xDD, header ? header->size : 0);
-        }
-        if (header) VMemFree((void*)header, header->size + sizeof(LargeBlockHeader));
-        return;
-#endif
-    }
-
-    // Bounds and alignment checks
-    if (ptr < slab->base_ptr || ptr >= (uint8_t*)slab->base_ptr + SLAB_SIZE) {
-        PrintKernelError("Heap: Freeing pointer outside of slab bounds!\n");
-        return;
-    }
-    uintptr_t off = (uintptr_t)((uint8_t*)ptr - (uint8_t*)slab->base_ptr);
-    if ((off % slab->block_size) != 0) {
-        PrintKernelError("Heap: Free pointer not aligned to block size!\n");
-        return;
-    }
-
-    int sc_idx = slab->size_class_index;
-
-    // --- Small Allocation Fast Path (per-CPU, IRQ-disabled) ---
-    irq_flags_t iflags = save_irq_flags();
-    cli();
-    uint32_t cpu_id = GetCpuId();
-    PerCpuCache* cache = &per_cpu_caches[cpu_id];
-    Magazine* mag = cache->active_magazines[sc_idx];
-
-    if (mag && mag->count < MAGAZINE_CAPACITY) {
-        PoisonOnFreeSmall(slab, ptr);
-        mag->blocks[mag->count] = ptr;
-        mag->count++;
-        // stats: fast-path free hit
-        StatsAdd(cpu_id, sc_idx, &heap_stats_per_cpu[cpu_id].free_fast_hits[sc_idx]);
         restore_irq_flags(iflags);
+
+        // --- Slow Path: Return to Depot ---
+        uint64_t flags = rust_spinlock_lock_irqsave(depot.lock);
+        cpu_id = GetCpuId(); // Reload per-CPU magazine under lock
+        cache = &per_cpu_caches[cpu_id];
+        mag = cache->active_magazines[sc_idx];
+
+        if (mag) {
+            DepotReturn(mag, sc_idx);
+        }
+
+        Magazine* new_mag = AllocMagazine();
+        if (!new_mag) {
+            PANIC("Magazine pool exhausted during free operation!");
+        }
+        PoisonOnFreeSmall(ptr, size_classes[sc_idx]);
+        new_mag->blocks[0] = raw_block;
+        new_mag->count = 1;
+        new_mag->next = NULL;
+        cache->active_magazines[sc_idx] = new_mag;
+
+        StatsAdd(cpu_id, sc_idx, &heap_stats_per_cpu[cpu_id].free_slow_paths[sc_idx]);
+        StatsAdd(cpu_id, sc_idx, &heap_stats_per_cpu[cpu_id].magazine_swaps[sc_idx]);
+
+        rust_spinlock_unlock_irqrestore(depot.lock, flags);
         return;
     }
-    restore_irq_flags(iflags);
 
-    // --- Slow Path: Return to Depot and/or install new magazine ---
-    uint64_t flags = rust_spinlock_lock_irqsave(depot.lock);
-    // Reload per-CPU magazine under lock in case another context changed it
-    cpu_id = GetCpuId();
-    cache = &per_cpu_caches[cpu_id];
-    mag = cache->active_magazines[sc_idx];
-
-    if (mag) {
-        DepotReturn(mag, sc_idx);
+    // --- Large or Foreign Allocation ---
+    LargeBlockHeader* large_header = (LargeBlockHeader*)ptr - 1;
+    if (large_header && large_header->magic == LARGE_BLOCK_MAGIC) {
+        if (g_validation_level != KHEAP_VALIDATION_NONE) {
+            FastMemset(ptr, 0xDD, large_header->size);
+        }
+        VMemFree((void*)large_header, large_header->size + sizeof(LargeBlockHeader));
+        return;
     }
 
-    Magazine* new_mag = AllocMagazine();
-    if (!new_mag) {
-        PANIC("Magazine pool exhausted during free operation!");
-    }
-    PoisonOnFreeSmall(slab, ptr);
-    new_mag->blocks[0] = ptr;
-    new_mag->count = 1;
-    new_mag->next = NULL;
-    cache->active_magazines[sc_idx] = new_mag;
-
-    // stats: slow-path free and magazine swap
-    StatsAdd(cpu_id, sc_idx, &heap_stats_per_cpu[cpu_id].free_slow_paths[sc_idx]);
-    StatsAdd(cpu_id, sc_idx, &heap_stats_per_cpu[cpu_id].magazine_swaps[sc_idx]);
-
-    rust_spinlock_unlock_irqrestore(depot.lock, flags);
+#ifdef VF_CONFIG_HEAP_HYBRID
+    // Delegate to Rust heap for unknown blocks
+    rust_kfree(ptr);
+    return;
+#else
+    PANIC("MagazineFree: unknown pointer freed");
+#endif
 }
 
 // =================================================================================================
 // Depot Logic (Slow Path) - Implementation
 // =================================================================================================
 
-/**
- * @brief Finds the Slab that contains the given pointer.
- * This is a linear scan and can be slow. Needs optimization for production.
- * Assumes depot.lock is held by the caller.
- */
-// Lightweight slab hash for O(1) pointer-to-slab lookup
-#define SLAB_HASH_SIZE 4096
 
-typedef struct SlabHashNode {
-    uintptr_t page_key; // (addr >> PAGE_SHIFT)
-    Slab* slab;
-    struct SlabHashNode* next;
-} SlabHashNode;
-
-static SlabHashNode* slab_hash[SLAB_HASH_SIZE];
-
-static inline uint32_t slab_hash_index(uintptr_t page_key) {
-    return (uint32_t)(page_key & (SLAB_HASH_SIZE - 1));
-}
-
-static void SlabHashInsert(Slab* slab) {
-    // Map each page in the slab region to this slab
-    uintptr_t start = (uintptr_t)slab->base_ptr;
-    for (uintptr_t addr = start; addr < start + SLAB_SIZE; addr += PAGE_SIZE) {
-        uintptr_t key = addr >> PAGE_SHIFT;
-        uint32_t idx = slab_hash_index(key);
-        SlabHashNode* node = (SlabHashNode*)VMemAlloc(sizeof(SlabHashNode));
-        if (!node) {
-            PANIC("SlabHashInsert: OOM");
-        }
-        node->page_key = key;
-        node->slab = slab;
-        node->next = slab_hash[idx];
-        slab_hash[idx] = node;
-    }
-}
-
-static void SlabHashRemove(Slab* slab) {
-    uintptr_t start = (uintptr_t)slab->base_ptr;
-    for (uintptr_t addr = start; addr < start + SLAB_SIZE; addr += PAGE_SIZE) {
-        uintptr_t key = addr >> PAGE_SHIFT;
-        uint32_t idx = slab_hash_index(key);
-        SlabHashNode** pp = &slab_hash[idx];
-        while (*pp) {
-            if ((*pp)->page_key == key) {
-                SlabHashNode* dead = *pp;
-                *pp = dead->next;
-                VMemFree(dead, sizeof(SlabHashNode));
-                break;
-            }
-            pp = &(*pp)->next;
-        }
-    }
-}
-
-static Slab* FindSlabForPointer(void* ptr) {
-    uintptr_t key = ((uintptr_t)ptr) >> PAGE_SHIFT;
-    uint32_t idx = slab_hash_index(key);
-    SlabHashNode* node = slab_hash[idx];
-    while (node) {
-        if (node->page_key == key) {
-            Slab* slab = node->slab;
-            // Verify bounds
-            if (ptr >= slab->base_ptr && ptr < (uint8_t*)slab->base_ptr + SLAB_SIZE) {
-                return slab;
-            }
-            return NULL;
-        }
-        node = node->next;
-    }
-    return NULL;
-}
 
 /**
  * @brief Gets a new or partially full magazine from the depot.
@@ -416,7 +342,6 @@ static Slab* FindSlabForPointer(void* ptr) {
  */
 static Magazine* DepotRefill(int size_class_index) {
     SizeClassDepot* sc_depot = &depot.size_class_depots[size_class_index];
-    size_t block_size = size_classes[size_class_index];
     Magazine* mag = NULL;
 
     // 1. Prefer a full magazine for maximum fast-path allocations
@@ -483,18 +408,20 @@ static Magazine* DepotRefill(int size_class_index) {
     }
     // Avoid zeroing the entire slab for speed; blocks are uninitialized by design.
 
+    size_t chunk_size = sizeof(MagazineBlockHeader) + size_classes[size_class_index];
+
     new_slab->alloc_base = mem;
     new_slab->alloc_size = SLAB_SIZE;
     new_slab->base_ptr = mem; // Keep identical; SLAB_SIZE granularity not required
-    new_slab->block_size = block_size;
+    new_slab->block_size = chunk_size;
     new_slab->size_class_index = size_class_index;
-    new_slab->total_blocks = SLAB_SIZE / block_size;
+    new_slab->total_blocks = SLAB_SIZE / chunk_size;
     new_slab->free_blocks = new_slab->total_blocks;
     new_slab->cookie = rdtsc() ^ ((uintptr_t)new_slab);
 
     // Build free list within the new slab
     for (int i = 0; i < new_slab->total_blocks; i++) {
-        void* block = (uint8_t*)new_slab->base_ptr + (i * block_size);
+        void* block = (uint8_t*)new_slab->base_ptr + (i * chunk_size);
         *((void**)block) = new_slab->free_list_head; // Push to free list
         new_slab->free_list_head = block;
     }
@@ -502,8 +429,6 @@ static Magazine* DepotRefill(int size_class_index) {
     // Add new slab to depot's slab list
     new_slab->next = sc_depot->slabs;
     sc_depot->slabs = new_slab;
-    // Insert into fast slab lookup hash
-    SlabHashInsert(new_slab);
     // Stats: track slab allocation
     StatsSlabAllocated(size_class_index);
 
@@ -570,22 +495,31 @@ void* MagazineReallocate(void* ptr, size_t size) {
         return NULL;
     }
 
-    // Get original size from header for large allocations, or from slab for small.
+    // Get original size from header for large allocations, or from our new header for small.
     size_t old_size = 0;
-    Slab* slab = FindSlabForPointer(ptr);
-    if (slab) {
-        old_size = slab->block_size; // For small allocations, size is block_size
+    MagazineBlockHeader* small_header = (MagazineBlockHeader*)ptr - 1;
+
+    if (small_header && small_header->magic == MAGAZINE_BLOCK_MAGIC) {
+        old_size = size_classes[small_header->sc_idx];
     } else {
-        // Assume large allocation
-        LargeBlockHeader* header = (LargeBlockHeader*)ptr - 1;
-        old_size = header->size;
+        LargeBlockHeader* large_header = (LargeBlockHeader*)ptr - 1;
+        if (large_header && large_header->magic == LARGE_BLOCK_MAGIC) {
+            old_size = large_header->size;
+        } else {
+            // In a hybrid system, realloc should be handled by a dispatcher
+            // that knows which allocator owns the pointer.
+            // Since we can't know the size, we can't safely reallocate.
+            PANIC("MagazineReallocate: unknown pointer type");
+        }
     }
 
     void* new_ptr = MagazineAlloc(size);
     if (!new_ptr) {
         return NULL;
     }
-    FastMemcpy(new_ptr, ptr, (size < old_size) ? size : old_size);
+
+    size_t copy_size = (size < old_size) ? size : old_size;
+    FastMemcpy(new_ptr, ptr, copy_size);
     MagazineFree(ptr);
     return new_ptr;
 }

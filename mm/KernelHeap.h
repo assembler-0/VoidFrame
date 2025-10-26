@@ -47,7 +47,7 @@
 
 // Threshold for routing to Rust small-object allocator
 #ifndef HYBRID_SMALL_THRESHOLD
-#define HYBRID_SMALL_THRESHOLD 256
+#define HYBRID_SMALL_THRESHOLD 512
 #endif
 
 #define KernelHeapInit() do { MagazineInit(); rust_heap_enable_percpu(); } while (0)
