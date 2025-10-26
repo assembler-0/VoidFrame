@@ -122,6 +122,12 @@ set(INCLUDE_SOURCES
         include/Io.c
 )
 
+set(CRYPTO_SOURCES
+        crypto/RNG.c
+        crypto/CRC32.c
+        crypto/SHA256.c
+)
+
 set(CPP_SOURCES
         ports/6502/6502.cpp
 )
@@ -181,6 +187,7 @@ include_directories(
         arch/x86_64/syscall
         vfcompositor
         vfcompositor/app
+        crypto
 )
 
 # ============================================================================
@@ -209,4 +216,5 @@ set(C_SOURCES
         ${ARCH_SOURCES}
         ${INCLUDE_SOURCES}
         ${VFC_SOURCES}
+        ${CRYPTO_SOURCES}
 )

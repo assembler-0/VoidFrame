@@ -4,7 +4,6 @@
 
 ---
 
-- Roadmap/Features: [here!](docs/ROADMAP.md)
 - How it works: [here!](docs/ARCHITECTURE.md)
 - Development Guide: [here!](docs/DEVELOPMENT.md)
 

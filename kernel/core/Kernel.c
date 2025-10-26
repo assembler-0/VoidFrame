@@ -5,6 +5,7 @@
 #include "ACPI.h"
 #include "Compositor.h"
 #include "Console.h"
+#include "CRC32.h"
 #include "FileSystem.h"
 #include "Gdt.h"
 #include "ISA.h"
@@ -750,6 +751,10 @@ static InitResultT PXS2(void) {
     InitRDLoad();
     PrintKernelSuccess("System: Multiboot modules loaded\n");
 #endif
+
+    PrintKernel("Info: Initializing CRC32...\n");
+    CRC32Init();
+    PrintKernelSuccess("System: CRC32 initialized\n");
 
     SchedulerInit();
     return INIT_SUCCESS;
