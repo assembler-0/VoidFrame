@@ -785,7 +785,7 @@ asmlinkage void KernelMain(const uint32_t magic, const uint32_t info) {
 
     console.buffer = (volatile uint16_t*)VGA_BUFFER_ADDR;
 
-    PrintKernelSuccess("System: VoidFrame Kernel - Version 0.0.2-development3 loaded\n");
+    PrintKernelSuccess("System: VoidFrame Kernel - Version 0.0.2-development4 loaded\n");
     PrintKernel("Magic: ");
     PrintKernelHex(magic);
     PrintKernel(", Info: ");

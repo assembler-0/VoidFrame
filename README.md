@@ -13,7 +13,7 @@
 ## Status
 ![CI/CD](https://github.com/assembler-0/VoidFrame/actions/workflows/main.yaml/badge.svg)
 ![License](https://img.shields.io/badge/License-GPLv2-blue)
-![Version](https://img.shields.io/badge/Current%20Version-v0.0.2%20development3-brightgreen)
+![Version](https://img.shields.io/badge/Current%20Version-v0.0.2%20development4-brightgreen)
 
 ## About
 
