@@ -66,7 +66,7 @@ extern CompositorContext g_compositor_ctx;
 // Window management functions
 void CompositorInit(CompositorContext* ctx);
 Window* GetWindowByTitle(CompositorContext* ctx, const char* title);
-Window* CreateWindow(CompositorContext* ctx, int x, int y, int width, int height, const char* title);
+Window* CreateWindow(CompositorContext* ctx, int x, int y, int width, int height, const char* title, uint32_t owner_pid);
 void DestroyWindow(CompositorContext* ctx, Window* window);
 void RequestDestroyWindow(CompositorContext* ctx, Window* w);
 

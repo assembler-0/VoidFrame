@@ -17,8 +17,12 @@ set(ASM_SOURCES
 set(KERNEL_CORE_SOURCES
         kernel/core/Kernel.c
         kernel/core/Panic.c
-        vfcompositor/Compositor.c
         kernel/core/InitRD.c
+)
+
+set(VFC_SOURCES
+        vfcompositor/Compositor.c
+        vfcompositor/app/GUIShell.c
 )
 
 set(SCHED_SOURCES
@@ -128,7 +132,6 @@ set(OBJ_SOURCES)
 # ============================================================================
 include_directories(
         .
-        vfcompositor
         include
         kernel/atomic
         kernel/core
@@ -175,6 +178,8 @@ include_directories(
         arch/x86_64/idt
         arch/x86_64/interrupts
         arch/x86_64/syscall
+        vfcompositor
+        vfcompositor/app
 )
 
 # ============================================================================
@@ -207,4 +212,5 @@ set(C_SOURCES
         ${DRIVER_SOURCES}
         ${ARCH_SOURCES}
         ${INCLUDE_SOURCES}
+        ${VFC_SOURCES}
 )

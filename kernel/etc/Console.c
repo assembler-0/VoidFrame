@@ -1,8 +1,7 @@
 #include "Console.h"
 #include "Format.h"
 #include "Io.h"
-#include "Pallete.h"
-#include "Scheduler.h"
+#include "Compositor.h"
 #include "Serial.h"
 #include "SpinlockRust.h"
 #include "VBEConsole.h"
@@ -76,6 +75,13 @@ void Unsnooze() {
     __atomic_store_n(&snooze, 0, __ATOMIC_RELEASE);
 }
 
+extern CompositorContext g_compositor_ctx;
+static Window* console_window = NULL;
+
+void ConsoleSetWindowPrint(Window* w) {
+    console_window = w;
+}
+
 // Initialize console - auto-detect VBE or VGA
 void ConsoleInit(void) {
     console_lock = rust_spinlock_new();
@@ -120,6 +126,7 @@ static void ConsolePutcharAt(char c, uint32_t x, uint32_t y, uint8_t color) {
 
 void ClearScreen(void) {
     // Snooze mode: skip physical console updates
+    if (console_window) WindowClearText(&g_compositor_ctx, console_window);
     if (snooze) return;
     rust_spinlock_lock(console_lock);
     if (!console.buffer) console.buffer = (volatile uint16_t*)VGA_BUFFER_ADDR;
@@ -128,6 +135,7 @@ void ClearScreen(void) {
 }
 
 static void ConsoleScroll(void) {
+    if (console_window) WindowScrollUp(&g_compositor_ctx, console_window);
     if (use_vbe) return; // VBE handles scrolling internally
 
     for (uint32_t i = 0; i < (VGA_HEIGHT - 1) * VGA_WIDTH; i++) {
@@ -190,6 +198,7 @@ void ConsoleSetColor(uint8_t color) {
 void PrintKernel(const char* str) {
     if (!str) return;
     SerialWrite(str);
+    if (console_window) WindowPrintString(&g_compositor_ctx, console_window, str);
     if (snooze) return;
 
     rust_spinlock_lock(console_lock);

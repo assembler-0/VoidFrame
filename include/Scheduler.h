@@ -2,6 +2,7 @@
 ///@brief Unified wrapper for multiple scheduler implementations
 #ifndef VOIDFRAME_SCHEDULER_H
 #define VOIDFRAME_SCHEDULER_H
+#include "MLFQ.h"
 
 #if defined(VF_CONFIG_SCHED_MLFQ)
 #include "MLFQ.h"
@@ -34,6 +35,16 @@ static inline __attribute__((always_inline)) uint32_t CreateProcess(const char *
     return MLFQCreateProcess (name, entry_point);
 #elif defined(VF_CONFIG_SCHED_EEVDF)
     return EEVDFCreateProcess (name, entry_point);
+#elif defined(VF_CONFIG_SCHED_CFS)
+    return 0; // not implemented
+#endif
+}
+
+static inline __attribute__((always_inline)) uint32_t CreateSecureProcess(const char * name, void (*entry_point)(), uint8_t priv, uint8_t flag) {
+#if defined(VF_CONFIG_SCHED_MLFQ)
+    return MLFQCreateSecureProcess(name, entry_point, priv, flag);
+#elif defined(VF_CONFIG_SCHED_EEVDF)
+    return EEVDFCreateSecureProcess(name, entry_point, priv, flag);
 #elif defined(VF_CONFIG_SCHED_CFS)
     return 0; // not implemented
 #endif

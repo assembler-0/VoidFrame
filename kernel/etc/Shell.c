@@ -43,7 +43,7 @@
 
 static char command_buffer[256];
 static int cmd_pos = 0;
-static char current_dir[256] = "/";
+char current_dir[256] = "/";
 
 extern uint8_t _kernel_phys_start[];
 extern uint8_t _kernel_phys_end[];
@@ -186,6 +186,7 @@ static const HelpEntry system_cmds[] = {
     {"memstat", "Show memory statistics"},
     {"stacksize", "Show stack usage"},
     {"lscpu", "List CPU features"},
+    {"vfc NULL/fork", "Start VFCompositor as another process or on the currently session"},
     {"snoozer <on/off>", "Snooze messages from PrintKernel"},
     {"acpi sd/rb", "Shutdown (sd) or reboot (rb) via ACPI"},
 };

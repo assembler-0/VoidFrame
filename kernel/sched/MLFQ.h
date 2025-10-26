@@ -206,6 +206,7 @@ typedef struct {
 // Core process functions
 int MLFQSchedInit(void);
 uint32_t MLFQCreateProcess(const char * name, void (*entry_point)(void));
+uint32_t MLFQCreateSecureProcess(const char * name, void (*entry_point)(void), uint8_t privilege, uint32_t initial_flags);
 MLFQProcessControlBlock* MLFQGetCurrentProcess(void);
 MLFQProcessControlBlock* MLFQGetCurrentProcessByPID(uint32_t pid);
 void MLFQCleanupTerminatedProcess(void);

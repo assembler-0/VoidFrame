@@ -74,6 +74,7 @@ void SerialWriteF(const char* format, ...);
 void PrintKernelErrorF(const char* format, ...);
 void PrintKernelWarningF(const char* format, ...);
 void PrintKernelSuccessF(const char* format, ...);
+// void ConsoleSetWindowPrint(Window* w);
 #ifdef __cplusplus
 }
 #endif
