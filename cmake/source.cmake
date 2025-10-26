@@ -76,6 +76,8 @@ set(FS_SOURCES
         fs/FileSystem.c
         fs/MBR.c
         fs/DriveNaming.c
+        fs/CharDevice.c
+        fs/devfs/DevFS.c
 )
 
 set(DRIVER_SOURCES
@@ -122,6 +124,12 @@ set(INCLUDE_SOURCES
         include/Io.c
 )
 
+set(CRYPTO_SOURCES
+        crypto/RNG.c
+        crypto/CRC32.c
+        crypto/SHA256.c
+)
+
 set(CPP_SOURCES
         ports/6502/6502.cpp
 )
@@ -165,6 +173,7 @@ include_directories(
         fs/FAT
         fs/EXT
         fs/NTFS
+        fs/devfs
         mm
         mm/dynamic
         mm/dynamic/c
@@ -181,6 +190,7 @@ include_directories(
         arch/x86_64/syscall
         vfcompositor
         vfcompositor/app
+        crypto
 )
 
 # ============================================================================
@@ -209,4 +219,5 @@ set(C_SOURCES
         ${ARCH_SOURCES}
         ${INCLUDE_SOURCES}
         ${VFC_SOURCES}
+        ${CRYPTO_SOURCES}
 )

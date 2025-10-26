@@ -3,8 +3,10 @@
 #include "drivers/APIC/APIC.h"
 #include "drivers/storage/Ide.h"
 #include "ACPI.h"
+#include "CharDevice.h"
 #include "Compositor.h"
 #include "Console.h"
+#include "CRC32.h"
 #include "FileSystem.h"
 #include "Gdt.h"
 #include "ISA.h"
@@ -382,6 +384,9 @@ static void PrintBootstrapSummary(void) {
 // Pre-eXecutionSystem 1
 void PXS1(const uint32_t info) {
     PICMaskAll();
+    CharDeviceInit();
+    PrintKernel("System: Char device subsystem initialized\n");
+
     int sret = SerialInit();
     if (sret != 0) {
         PrintKernelWarning("[WARN] COM1 failed, probing other COM ports...\n");
@@ -751,19 +756,12 @@ static InitResultT PXS2(void) {
     PrintKernelSuccess("System: Multiboot modules loaded\n");
 #endif
 
+    PrintKernel("Info: Initializing CRC32...\n");
+    CRC32Init();
+    PrintKernelSuccess("System: CRC32 initialized\n");
+
     SchedulerInit();
     return INIT_SUCCESS;
-}
-
-void A20Test(void) {
-    volatile uint32_t *low = (uint32_t*)0x000000;
-    volatile uint32_t *high = (uint32_t*)0x100000;
-
-    *low = 0x12345678;
-    *high = 0x87654321;
-
-    if (*low == *high) PrintKernelWarning("A20 is disabled - memory is contiguous\n");
-    else PrintKernelSuccess("A20 is enabled - memory is not contiguous\n");
 }
 
 void StackUsage(void) {
@@ -780,8 +778,6 @@ asmlinkage void KernelMain(const uint32_t magic, const uint32_t info) {
         PrintKernelHex(magic);
         PANIC("Unrecognized Multiboot2 magic.");
     }
-
-    A20Test();
 
     console.buffer = (volatile uint16_t*)VGA_BUFFER_ADDR;
 

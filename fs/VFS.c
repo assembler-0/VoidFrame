@@ -1,7 +1,9 @@
 #include "VFS.h"
 #include "../mm/MemOps.h"
 #include "BlockDevice.h"
+#include "CharDevice.h"
 #include "Console.h"
+#include "devfs/DevFS.h"
 #include "EXT/Ext2.h"
 #include "FAT/FAT1x.h"
 #include "FileSystem.h"
@@ -74,10 +76,18 @@ int VfsInit(void) {
     static FileSystemDriver ext2_driver = {"EXT2", Ext2Detect, Ext2Mount};
     FileSystemRegister(&ext2_driver);
     PrintKernel("VFS: EXT2 driver registered\n");
+    static FileSystemDriver devfs_driver = {"DevFS", NULL, DevfsMount};
+    FileSystemRegister(&devfs_driver);
+    PrintKernel("VFS: DevFS driver registered\n");
 
     int result = VfsMount("/", NULL, NULL); // RamFS doesn't need a device or driver
     if (result != 0) {
         SerialWrite("VFS: Failed to mount root\n");
+    }
+
+    result = VfsMount(DevicesDir, NULL, &devfs_driver);
+    if (result != 0) {
+        SerialWrite("VFS: Failed to mount /Devices\n");
     }
 
     PrintKernelSuccess("VFS: Virtual File System initialized\n");
@@ -154,6 +164,8 @@ int VfsReadFile(const char* path, void* buffer, uint32_t max_size) {
         } else if (FastStrCmp(mount->fs_driver->name, "NTFS") == 0) {
             NtfsSetActive(mount->device);
             return NtfsReadFile(local_path, buffer, max_size);
+        } else if (FastStrCmp(mount->fs_driver->name, "DevFS") == 0) {
+            return DevfsReadFile(local_path, buffer, max_size);
         }
     } else {
         FsNode* node = FsFind(local_path);
@@ -185,6 +197,8 @@ int VfsWriteFile(const char* path, const void* buffer, uint32_t size) {
         } else if (FastStrCmp(mount->fs_driver->name, "NTFS") == 0) {
             NtfsSetActive(mount->device);
             return NtfsWriteFile(local_path, buffer, size);
+        } else if (FastStrCmp(mount->fs_driver->name, "DevFS") == 0) {
+            return DevfsWriteFile(local_path, buffer, size);
         }
     } else {
         int fd = FsOpen(local_path, FS_WRITE);
@@ -214,6 +228,8 @@ int VfsListDir(const char* path) {
         } else if (FastStrCmp(mount->fs_driver->name, "NTFS") == 0) {
             NtfsSetActive(mount->device);
             return NtfsListDir(local_path);
+        } else if (FastStrCmp(mount->fs_driver->name, "DevFS") == 0) {
+            return DevfsListDir(local_path);
         }
     } else {
         return FsListDir(local_path);
@@ -319,6 +335,8 @@ int VfsIsDir(const char* path) {
         } else if (FastStrCmp(mount->fs_driver->name, "NTFS") == 0) {
             NtfsSetActive(mount->device);
             return NtfsIsDir(local_path);
+        } else if (FastStrCmp(mount->fs_driver->name, "DevFS") == 0) {
+            return DevfsIsDir(local_path);
         }
     } else {
         FsNode* node = FsFind(local_path);
