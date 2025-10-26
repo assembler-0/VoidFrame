@@ -14,7 +14,6 @@ add_compile_definitions(
         VF_CONFIG_ENABLE_NVME
         VF_CONFIG_ENABLE_GENERIC_SOUND
         VF_CONFIG_RTC_CENTURY
-        VF_CONFIG_LOAD_MB_MODULES
         VF_CONFIG_ENFORCE_MEMORY_PROTECTION
         VF_CONFIG_VM_HOST
         VF_CONFIG_SNOOZE_ON_BOOT
@@ -34,6 +33,7 @@ add_compile_definitions(
         #    VF_CONFIG_CERBERUS_THREAT_REPORTING
         #    VF_CONFIG_PROCINFO_AUTO_CLEANUP
         #    VF_CONFIG_PANIC_OVERRIDE
+        #    VF_CONFIG_LOAD_MB_MODULES
 )
 
 if(EXCLUDE_EXTRA_OBJECTS)
@@ -50,14 +50,4 @@ elseif(VF_SCHEDULER STREQUAL "EEVDF")
     add_compile_definitions(VF_CONFIG_SCHED_EEVDF)
 else()
     message(FATAL_ERROR "Invalid scheduler: ${VF_SCHEDULER}. Did you pass: -DVF_SCHEDULER=<MLFQ/EEVDF>?")
-endif()
-
-if(VF_CONFIG_HEAP_LANG STREQUAL "RUST")
-    add_compile_definitions(VF_CONFIG_HEAP_RUST)
-elseif(VF_CONFIG_HEAP_LANG STREQUAL "C")
-    add_compile_definitions(VF_CONFIG_HEAP_C)
-elseif(VF_CONFIG_HEAP_LANG STREQUAL "HYBRID")
-    add_compile_definitions(VF_CONFIG_HEAP_HYBRID)
-else()
-    message(FATAL_ERROR "Invalid heap language: ${VF_CONFIG_HEAP_LANG}. Did you pass: -DVF_CONFIG_HEAP_LANG=<RUST/C>?")
 endif()

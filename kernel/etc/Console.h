@@ -83,4 +83,6 @@ static inline __attribute__((always_inline)) void PrintNewline(void) {
     PrintKernel("\n");
 }
 
+#define LOG() PrintKernelF("[%s:%d]:[%s]\n", __FILE__, __LINE__, __FUNCTION__)
+
 #endif // VOIDFRAME_CONSOLE_H

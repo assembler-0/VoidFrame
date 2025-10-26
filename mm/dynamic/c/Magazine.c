@@ -165,22 +165,10 @@ void* MagazineAlloc(size_t size) {
 
     int sc_idx = GetSizeClass(size);
 
-    // --- Large Allocation Fallback ---
+    // With the new three-tier dispatcher, MagazineAlloc should never be called for large allocations.
+    // If it is, this is a critical logic error in the dispatcher.
     if (sc_idx < 0) {
-        // Allocate space for the header + requested size
-        size_t total_size = size + sizeof(LargeBlockHeader);
-        void* raw_mem = VMemAlloc(total_size);
-        if (!raw_mem) {
-            return NULL;
-        }
-        LargeBlockHeader* header = (LargeBlockHeader*)raw_mem;
-        header->magic = LARGE_BLOCK_MAGIC;
-        header->size = size;
-        void* user_ptr = (void*)(header + 1);
-        if (g_validation_level == KHEAP_VALIDATION_FULL) {
-            FastMemset(user_ptr, 0xCD, size);
-        }
-        return user_ptr; // Return pointer to user data
+        PANIC("MagazineAlloc called with oversized allocation");
     }
 
     // --- Small Allocation Fast Path ---

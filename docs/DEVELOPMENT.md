@@ -29,7 +29,9 @@ Here are the commands to install the required dependencies on various platforms.
 
 ```bash
 # Update package list and install dependencies
-sudo pacman -Syu cmake ninja clang nasm qemu-full dosfstools e2fsprogs grub xorriso mtools
+sudo pacman -Syu cmake ninja clang nasm qemu-full dosfstools e2fsprogs grub xorriso mtools rustup
+rustup target add x86_64-unknown-none
+rustup toolchain install nightly
 ```
 
 </details>
@@ -41,6 +43,10 @@ sudo pacman -Syu cmake ninja clang nasm qemu-full dosfstools e2fsprogs grub xorr
 # Update package list and install dependencies
 sudo apt update
 sudo apt install -y cmake ninja-build clang nasm qemu-system-x86 dosfstools e2fsprogs grub-pc-bin xorriso mtools
+curl --proto '=https' --tlsv1.3 https://sh.rustup.rs -sSf | sh -s -- -y
+source ~/.cargo/env
+rustup toolchain install nightly
+rustup target add x86_64-unknown-none
 ```
 
 </details>
@@ -51,6 +57,10 @@ sudo apt install -y cmake ninja-build clang nasm qemu-system-x86 dosfstools e2fs
 ```bash
 # Install dependencies
 sudo dnf install -y cmake ninja-build clang nasm qemu-system-x86 dosfstools e2fsprogs grub2-tools-extra xorriso mtools
+curl --proto '=https' --tlsv1.3 https://sh.rustup.rs -sSf | sh -s -- -y
+source ~/.cargo/env
+rustup toolchain install nightly
+rustup target add x86_64-unknown-none
 ```
 
 </details>
