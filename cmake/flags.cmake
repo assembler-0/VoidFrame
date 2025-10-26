@@ -5,8 +5,10 @@ set(C_FLAGS " -m64 -target x86_64-unknown-none-elf -O2 -fno-omit-frame-pointer -
 
 if(SILENT_BUILD)
     string(APPEND C_FLAGS " -w")
-    string(APPEND CMAKE_ASM_NASM_FLAGS " -w-all")
-    set(Corrosion_CARGO_BUILD_FLAGS "--quiet")
+    string(APPEND CMAKE_ASM_NASM_FLAGS " -w-all -Wno-all")
+    set(Corrosion_CARGO_BUILD_FLAGS FLAGS "--quiet")
+else()
+    set(Corrosion_CARGO_BUILD_FLAGS "")
 endif()
 
 if(STACK_PROTECTION)
