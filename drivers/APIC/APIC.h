@@ -4,6 +4,19 @@
 #include <stdint.h>
 #include <stdbool.h>
 
+// Per-CPU data structure for APIC
+typedef struct {
+    volatile uint32_t* lapic_base; // Mapped virtual address of this CPU's LAPIC
+    uint32_t apic_id;              // This CPU's APIC ID
+    uint32_t apic_timer_freq_hz;   // This CPU's APIC timer frequency
+    uint32_t apic_timer_ticks;     // This CPU's APIC timer ticks
+    uint32_t apic_bus_freq;        // This CPU's APIC bus frequency
+    bool apic_calibrated;          // Flag if this CPU's APIC timer is calibrated
+} PerCpuData;
+
+// Function to get the current CPU's PerCpuData
+PerCpuData* GetPerCpuData(void);
+
 // Main initialization function to detect and set up both Local APIC and I/O APIC.
 // Returns true on success, false on failure (e.g., no APIC found).
 bool ApicInstall();

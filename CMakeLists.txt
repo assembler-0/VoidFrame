@@ -2,6 +2,7 @@
 # VoidFrame CMake Build Script - v0.0.2-development4
 # ============================================================================
 cmake_minimum_required(VERSION 3.30)
+set_property(GLOBAL PROPERTY RULE_MESSAGES OFF)
 project(VoidFrame
         VERSION 0.0.2
         LANGUAGES C CXX ASM_NASM
