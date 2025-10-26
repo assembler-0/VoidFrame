@@ -168,6 +168,7 @@ include_directories(
         mm
         mm/dynamic
         mm/dynamic/c
+        mm/dynamic/rust
         mm/trace
         mm/security
         ports/6502

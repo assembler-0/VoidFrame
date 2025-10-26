@@ -15,7 +15,7 @@
 #include "InitRD.h"
 #include "Iso9660.h"
 #include "KernelHeap.h"
-#include "KernelHeapRust.h"
+#include "../../mm/dynamic/rust/KernelHeapRust.h"
 #include "LPT/LPT.h"
 #include "MemOps.h"
 #include "PCI/PCI.h"
