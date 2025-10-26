@@ -61,6 +61,7 @@ set(MM_SOURCES
         mm/MemPool.c
         mm/trace/StackTrace.c
         mm/security/Cerberus.c
+        mm/dynamic/c/Magazine.c
         mm/PageFaultHandler.c
 )
 
@@ -185,11 +186,6 @@ include_directories(
 # ============================================================================
 # Sources Configuration
 # ============================================================================
-if (VF_CONFIG_HEAP_LANG STREQUAL "C")
-    list(APPEND MM_SOURCES
-            mm/dynamic/c/Magazine.c
-    )
-endif()
 
 if(NOT EXCLUDE_EXTRA_OBJECTS)
     set(OBJ_SOURCES
