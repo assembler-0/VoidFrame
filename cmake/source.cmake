@@ -121,10 +121,6 @@ set(CPP_SOURCES
         ports/6502/6502.cpp
 )
 
-set(VFC_SOURCES
-        vfcompostor/Compositor.cpp
-)
-
 set(OBJ_SOURCES)
 
 # ============================================================================
@@ -173,6 +169,7 @@ include_directories(
         mm/security
         ports/6502
         ports
+        ports/raytracer
         arch/x86_64/features
         arch/x86_64/gdt
         arch/x86_64/idt

@@ -415,6 +415,21 @@ void VFCompositor(void) {
     }
     CompositorInit(&g_compositor_ctx);
 
+    Window* w = CreateWindow(&g_compositor_ctx, 50, 50, 480, 360, "VFCompositor Help Menu");
+    if (w) {
+        w->minimized = false;
+        WindowFill(w, WINDOW_BG);
+        WindowDrawRect(w, 0, 0, w->rect.width, 20, TITLE_BAR);
+        WindowPrintString(&g_compositor_ctx, w, "[--- VoidFrame - VFCompositor ---]\n");
+        WindowPrintString(&g_compositor_ctx, w, "[--- Version: v0.0.2-development4 ---]\n");
+        WindowPrintString(&g_compositor_ctx, w, "CTRL + W: Closes active window\n");
+        WindowPrintString(&g_compositor_ctx, w, "CTRL + M: Minimize active window\n");
+        WindowPrintString(&g_compositor_ctx, w, "CTRL + T: Make the active window move with your mouse\n");
+        WindowPrintString(&g_compositor_ctx, w, "CTRL + T: Create a blank window\n");
+        WindowPrintString(&g_compositor_ctx, w, "CTRL + <ESC>: Quit VFCompositor\n");
+        WindowPrintString(&g_compositor_ctx, w, "ATL + <TAB>: Switches between window\n");
+    }
+
     while (1) {
         if (VBEIsInitialized()) {
             // Render text content for all windows that need it
@@ -425,17 +440,16 @@ void VFCompositor(void) {
                     ClearScreen();
                     PrintKernelWarning("VFCompositor: exiting...\n");
                     VFCompositorShutdown(&g_compositor_ctx);
-                    KillProcess(GetCurrentProcess()->pid);
                     return;
                 }
                 if (c == PS2_CalcCombo(K_CTRL, 'N')) {
-                    Window* w = CreateWindow(&g_compositor_ctx, 50, 50, 480, 360, "New Window");
+                    Window* w = CreateWindow(&g_compositor_ctx, 50, 50, 480, 360, "Window");
                     if (w) { 
                         w->minimized = false; 
                         WindowFill(w, WINDOW_BG); 
                         WindowDrawRect(w, 0, 0, w->rect.width, 20, TITLE_BAR); 
                         g_compositor_ctx.g_focused_window = w;
-                        WindowPrintString(&g_compositor_ctx, w, "Hello from VoidFrame!\nThis is a test window.\n");
+                        WindowPrintString(&g_compositor_ctx, w, "This is a test window.\n");
                     }
                 } else if  (c == PS2_CalcCombo(K_CTRL, 'W')) {
                     Window* w = g_compositor_ctx.g_focused_window; if (w) { RequestDestroyWindow(&g_compositor_ctx, w); }
