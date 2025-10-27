@@ -28,6 +28,7 @@ set(VFC_SOURCES
 set(SCHED_SOURCES
         kernel/sched/MLFQ.c
         kernel/sched/EEVDF.c
+        kernel/sched/Scheduler.c
 )
 
 set(KERNEL_ETC_SOURCES

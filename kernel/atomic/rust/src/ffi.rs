@@ -6,6 +6,7 @@ extern "C" {
     fn save_irq_flags() -> u64;
     fn restore_irq_flags(flags: u64);
     fn cli();
+    pub(crate) fn Yield(); // Declare the C function for yielding
 }
 
 #[panic_handler]
