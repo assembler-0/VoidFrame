@@ -1,6 +1,6 @@
 #include "MLFQ.h"
-
-#include "../../drivers/APIC/APIC.h"
+#include "Scheduler.h"
+#include "drivers/APIC/APIC.h"
 #include "Atomics.h"
 #include "Cerberus.h"
 #include "Compositor.h"
@@ -1011,11 +1011,11 @@ void ProcessExitStub() {
     __builtin_unreachable();
 }
 
-uint32_t CreateSecureProcess(const char * name, void (*entry_point)(void), uint8_t privilege, uint32_t initial_flags) {
+uint32_t MLFQCreateSecureProcess(const char * name, void (*entry_point)(void), uint8_t privilege, uint32_t initial_flags) {
     irq_flags_t flags = rust_spinlock_lock_irqsave(scheduler_lock);
     if (UNLIKELY(!entry_point)) {
         rust_spinlock_unlock_irqrestore(scheduler_lock, flags);
-        PANIC("CreateSecureProcess: NULL entry point");
+        PANIC("MLFQCreateSecureProcess: NULL entry point");
     }
 
     MLFQProcessControlBlock* creator = MLFQGetCurrentProcess();
@@ -1049,14 +1049,14 @@ uint32_t CreateSecureProcess(const char * name, void (*entry_point)(void), uint8
 
     if (UNLIKELY(process_count >= MAX_PROCESSES)) {
         rust_spinlock_unlock_irqrestore(scheduler_lock, flags);
-        PANIC("CreateSecureProcess: Too many processes");
+        PANIC("MLFQCreateSecureProcess: Too many processes");
     }
 
     // Fast slot allocation
     int slot = FindFreeSlotFast();
     if (UNLIKELY(slot == -1)) {
         rust_spinlock_unlock_irqrestore(scheduler_lock, flags);
-        PANIC("CreateSecureProcess: No free process slots");
+        PANIC("MLFQCreateSecureProcess: No free process slots");
     }
 
     uint32_t new_pid = 0;
@@ -1075,7 +1075,7 @@ uint32_t CreateSecureProcess(const char * name, void (*entry_point)(void), uint8
     if (new_pid == 0) {
         FreeSlotFast(slot);
         rust_spinlock_unlock_irqrestore(scheduler_lock, flags);
-        PANIC("CreateSecureProcess: PID exhaustion");
+        PANIC("MLFQCreateSecureProcess: PID exhaustion");
     }
 
     // Clear slot securely
@@ -1086,7 +1086,7 @@ uint32_t CreateSecureProcess(const char * name, void (*entry_point)(void), uint8
     if (UNLIKELY(!stack)) {
         FreeSlotFast(slot);
         rust_spinlock_unlock_irqrestore(scheduler_lock, flags);
-        PANIC("CreateSecureProcess: Failed to allocate stack");
+        PANIC("MLFQCreateSecureProcess: Failed to allocate stack");
     }
 
     // Initialize process with enhanced security and scheduling data
@@ -1165,7 +1165,7 @@ uint32_t CreateSecureProcess(const char * name, void (*entry_point)(void), uint8
 }
 
 uint32_t MLFQCreateProcess(const char * name, void (*entry_point)(void)) {
-    return CreateSecureProcess(name, entry_point, PROC_PRIV_NORM, PROC_FLAG_NONE);
+    return MLFQCreateSecureProcess(name, entry_point, PROC_PRIV_NORM, PROC_FLAG_NONE);
 }
 
 void MLFQCleanupTerminatedProcess(void) {
@@ -1605,7 +1605,7 @@ static void Astra(void) {
                 case 'p': PANIC("Astra: CRITICAL: Manual panic triggered via ProcINFO\n"); break;
                 case 't': threat_level += 10; break; // for fun
                 case 'k': ASTerminate(current->pid, "ProcINFO"); break;
-                case 'a': CreateSecureProcess("Astra", Astra, PROC_PRIV_SYSTEM, PROC_FLAG_CORE); break;
+                case 'a': MLFQCreateSecureProcess("Astra", Astra, PROC_PRIV_SYSTEM, PROC_FLAG_CORE); break;
                 default: break;
             }
             int del_rc = VfsDelete(astra_path, false);
@@ -1747,7 +1747,7 @@ int MLFQSchedInit(void) {
 
 #ifdef VF_CONFIG_USE_ASTRA
     PrintKernel("System: Creating AS (Astra)...\n");
-    uint32_t AS_pid = CreateSecureProcess("Astra", Astra, PROC_PRIV_SYSTEM, PROC_FLAG_CORE);
+    uint32_t AS_pid = MLFQCreateSecureProcess("Astra", Astra, PROC_PRIV_SYSTEM, PROC_FLAG_CORE);
     if (!AS_pid) {
 #ifndef VF_CONFIG_PANIC_OVERRIDE
         PANIC("CRITICAL: Failed to create Astra");
@@ -1763,7 +1763,7 @@ int MLFQSchedInit(void) {
 #ifdef VF_CONFIG_USE_VFSHELL
     // Create shell process
     PrintKernel("System: Creating shell process...\n");
-    uint32_t shell_pid = CreateSecureProcess("VFShell", ShellProcess, PROC_PRIV_SYSTEM, PROC_FLAG_CORE);
+    uint32_t shell_pid = MLFQCreateSecureProcess("VFShell", ShellProcess, PROC_PRIV_SYSTEM, PROC_FLAG_CORE);
     if (!shell_pid) {
 #ifndef VF_CONFIG_PANIC_OVERRIDE
         PANIC("CRITICAL: Failed to create shell process");
@@ -1778,7 +1778,7 @@ int MLFQSchedInit(void) {
 
 #ifdef VF_CONFIG_USE_DYNAMOX
     PrintKernel("System: Creating DynamoX...\n");
-    uint32_t dx_pid = CreateSecureProcess("DynamoX",DynamoX, PROC_PRIV_SYSTEM, PROC_FLAG_CORE);
+    uint32_t dx_pid = MLFQCreateSecureProcess("DynamoX",DynamoX, PROC_PRIV_SYSTEM, PROC_FLAG_CORE);
     if (!dx_pid) {
 #ifndef VF_CONFIG_PANIC_OVERRIDE
         PANIC("CRITICAL: Failed to create DynamoX process");

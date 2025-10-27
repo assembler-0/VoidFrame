@@ -11,6 +11,21 @@
 #endif
 
 #if defined(VF_CONFIG_SCHED_MLFQ)
+#define PROC_FLAG_NONE          0U
+#define PROC_FLAG_IMMUNE        (1U << 0)
+#define PROC_FLAG_CRITICAL      (1U << 1)
+#define PROC_FLAG_SUPERVISOR    (1U << 3)
+#define PROC_FLAG_CORE          (PROC_FLAG_IMMUNE | PROC_FLAG_SUPERVISOR | PROC_FLAG_CRITICAL)
+#elif defined(VF_CONFIG_SCHED_EEVDF)
+#define PROC_FLAG_NONE          EEVDF_CAP_NONE
+#define PROC_FLAG_IMMUNE        EEVDF_CAP_IMMUNE
+#define PROC_FLAG_CRITICAL      EEVDF_CAP_CRITICAL
+#define PROC_FLAG_SUPERVISOR    EEVDF_CAP_SUPERVISOR
+#define PROC_FLAG_CORE          EEVDF_CAP_CORE
+#endif
+
+
+#if defined(VF_CONFIG_SCHED_MLFQ)
 typedef MLFQProcessControlBlock CurrentProcessControlBlock;
 #elif defined(VF_CONFIG_SCHED_EEVDF)
 typedef EEVDFProcessControlBlock CurrentProcessControlBlock;

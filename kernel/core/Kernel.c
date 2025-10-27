@@ -288,6 +288,7 @@ static void SetupMemoryProtection(void) {
     __asm__ volatile("mov %0, %%cr0" :: "r"(cr0) : "memory");
     PrintKernel("System: Write Protection (WP) enabled\n");
 
+
     // Enable FSGSBASE for faster userspace context switches
     __asm__ volatile("cpuid" : "=a"(eax), "=b"(ebx), "=c"(ecx), "=d"(edx) : "a"(7), "c"(0));
     if (ebx & (1 << 0)) {

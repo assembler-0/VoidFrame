@@ -51,12 +51,24 @@
 #define EEVDF_PROC_PRIV_NORM       PROC_PRIV_NORM
 #define EEVDF_PROC_PRIV_RESTRICTED PROC_PRIV_RESTRICTED
 
-// Security flags (same as MLFQ)
-#define EEVDF_PROC_FLAG_NONE          PROC_FLAG_NONE
-#define EEVDF_PROC_FLAG_IMMUNE        PROC_FLAG_IMMUNE
-#define EEVDF_PROC_FLAG_CRITICAL      PROC_FLAG_CRITICAL
-#define EEVDF_PROC_FLAG_SUPERVISOR    PROC_FLAG_SUPERVISOR
-#define EEVDF_PROC_FLAG_CORE          (EEVDF_PROC_FLAG_IMMUNE | EEVDF_PROC_FLAG_SUPERVISOR | EEVDF_PROC_FLAG_CRITICAL)
+// Security flags (now granular capabilities)
+#define EEVDF_CAP_NONE          0ULL
+#define EEVDF_CAP_SYS_ADMIN     (1ULL << 0)  // Full system control
+#define EEVDF_CAP_NET_ADMIN     (1ULL << 1)  // Network administration
+#define EEVDF_CAP_NET_RAW       (1ULL << 2)  // Raw socket access
+#define EEVDF_CAP_FILE_READ     (1ULL << 3)  // Read any file
+#define EEVDF_CAP_FILE_WRITE    (1ULL << 4)  // Write any file
+#define EEVDF_CAP_IPC_OWNER     (1ULL << 5)  // Own IPC objects
+#define EEVDF_CAP_KILL          (1ULL << 6)  // Send signals to other processes
+#define EEVDF_CAP_SETUID        (1ULL << 7)  // Change UID
+#define EEVDF_CAP_SETGID        (1ULL << 8)  // Change GID
+#define EEVDF_CAP_SYS_NICE      (1ULL << 9)  // Change process nice value
+#define EEVDF_CAP_SYS_RESOURCE  (1ULL << 10) // Modify resource limits
+#define EEVDF_CAP_SYS_MODULE    (1ULL << 11) // Load/unload kernel modules
+#define EEVDF_CAP_IMMUNE        (1ULL << 12) // Process cannot be killed by non-system processes
+#define EEVDF_CAP_CRITICAL      (1ULL << 13) // Process is critical for system operation
+#define EEVDF_CAP_SUPERVISOR    (1ULL << 14) // Process runs with supervisor privileges
+#define EEVDF_CAP_CORE          (EEVDF_CAP_IMMUNE | EEVDF_CAP_SUPERVISOR | EEVDF_CAP_CRITICAL)
 
 // Nice-to-weight conversion table (based on Linux CFS)
 extern const uint32_t eevdf_nice_to_weight[40];
@@ -67,9 +79,10 @@ typedef struct {
     uint64_t magic;
     uint32_t creator_pid;
     uint8_t  privilege;
-    uint8_t  flags;
+    uint64_t capabilities; // Renamed from 'flags' to be more explicit
     uint64_t creation_tick;
-    uint64_t checksum;
+    uint64_t checksum;     // Checksum for the token itself
+    uint64_t pcb_hash;     // Hash for critical PCB fields
 } __attribute__((packed)) EEVDFSecurityToken;
 
 // Use the same structure for context switching to avoid mismatches
@@ -180,7 +193,7 @@ typedef struct {
 // Core scheduler functions
 int EEVDFSchedInit(void);
 uint32_t EEVDFCreateProcess(const char* name, void (*entry_point)(void));
-uint32_t EEVDFCreateSecureProcess(const char* name, void (*entry_point)(void), uint8_t priv, uint8_t flag);
+uint32_t EEVDFCreateSecureProcess(const char* name, void (*entry_point)(void), uint8_t priv, uint64_t capabilities);
 EEVDFProcessControlBlock* EEVDFGetCurrentProcess(void);
 EEVDFProcessControlBlock* EEVDFGetCurrentProcessByPID(uint32_t pid);
 void EEVDFYield(void);
