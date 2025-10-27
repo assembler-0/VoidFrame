@@ -6,6 +6,7 @@
 #include "Compositor.h"
 #include "Console.h"
 #include "Format.h"
+#include "Gdt.h"
 #include "Ipc.h"
 #include "MemOps.h"
 #include "Panic.h"
@@ -605,8 +606,7 @@ static uint64_t EEVDFCalculatePCBHash(const EEVDFProcessControlBlock* pcb) {
     hash = EEVDFSecureHash(&pcb->privilege_level, sizeof(pcb->privilege_level), hash);
     hash = EEVDFSecureHash(&pcb->token.capabilities, sizeof(pcb->token.capabilities), hash);
     hash = EEVDFSecureHash(&pcb->stack, sizeof(pcb->stack), hash);
-    // hash = EEVDFSecureHash(&pcb->context.rip, sizeof(pcb->context.rip), hash);
-    hash = EEVDFSecureHash(pcb->ProcessRuntimePath, sizeof(pcb->ProcessRuntimePath), hash);
+    hash = EEVDFSecureHash(&pcb->initial_entry_point, sizeof(pcb->initial_entry_point), hash);
     
     return hash;
 }
@@ -865,6 +865,7 @@ int EEVDFSchedInit(void) {
     EEVDFSetTaskNice(idle_proc, 0);
     idle_proc->vruntime = 0;
     idle_proc->exec_start = GetNS();
+    idle_proc->initial_entry_point = 0; // Idle process has no specific entry point
     
     // Initialize idle process security token
     EEVDFSecurityToken* token = &idle_proc->token;
@@ -961,6 +962,7 @@ uint32_t EEVDFCreateSecureProcess(const char* name, void (*entry_point)(void), u
     proc->privilege_level = priv;
     proc->creation_time = EEVDFGetSystemTicks();
     EEVDFSetTaskNice(proc, EEVDF_DEFAULT_NICE);
+    proc->initial_entry_point = (uint64_t)entry_point; // Store the immutable entry point
 
     // Set virtual time to current minimum to ensure fairness
     proc->vruntime = eevdf_scheduler.rq.min_vruntime;
@@ -974,7 +976,6 @@ uint32_t EEVDFCreateSecureProcess(const char* name, void (*entry_point)(void), u
     token->capabilities = capabilities;
     token->creation_tick = proc->creation_time;
     token->checksum = EEVDFCalculateTokenChecksum(token);
-    token->pcb_hash = EEVDFCalculatePCBHash(proc);
 
     // Set up context
     uint64_t rsp = (uint64_t)stack;
@@ -987,8 +988,8 @@ uint32_t EEVDFCreateSecureProcess(const char* name, void (*entry_point)(void), u
     proc->context.rsp = rsp;
     proc->context.rip = (uint64_t)entry_point;
     proc->context.rflags = 0x202;
-    proc->context.cs = 0x08;
-    proc->context.ss = 0x10;
+    proc->context.cs = KERNEL_CODE_SELECTOR;
+    proc->context.ss = KERNEL_DATA_SELECTOR;
     
     // Initialize IPC queue
     proc->ipc_queue.head = 0;
@@ -1044,8 +1045,6 @@ EEVDFProcessControlBlock* EEVDFGetCurrentProcessByPID(uint32_t pid) {
 void EEVDFYield(void) {
     // Simple yield - just request a schedule
     need_schedule = 1;
-    volatile int delay = eevdf_scheduler.total_processes * 100;
-    while (delay-- > 0) __builtin_ia32_pause();
 }
 
 // =============================================================================

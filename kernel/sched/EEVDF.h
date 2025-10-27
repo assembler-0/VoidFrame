@@ -128,6 +128,7 @@ typedef struct {
     
     // Security and system fields (same as MLFQ)
     uint8_t privilege_level;
+    uint64_t initial_entry_point;       // Immutable entry point for security hashing
     uint32_t io_operations;
     uint32_t preemption_count;
     uint64_t cpu_time_accumulated;

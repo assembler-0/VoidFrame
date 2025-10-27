@@ -10,6 +10,7 @@
 #endif
 #include "Console.h"
 #include "Format.h"
+#include "Gdt.h"
 #include "Io.h"
 #include "Ipc.h"
 #include "MemOps.h"
@@ -1145,8 +1146,8 @@ uint32_t MLFQCreateSecureProcess(const char * name, void (*entry_point)(void), u
     processes[slot].context.rsp = rsp;
     processes[slot].context.rip = (uint64_t)entry_point;
     processes[slot].context.rflags = 0x202;
-    processes[slot].context.cs = 0x08;
-    processes[slot].context.ss = 0x10;
+    processes[slot].context.cs = KERNEL_CODE_SELECTOR;
+    processes[slot].context.ss = KERNEL_DATA_SELECTOR;
 
     // Initialize IPC queue
     processes[slot].ipc_queue.head = 0;
