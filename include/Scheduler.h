@@ -11,6 +11,21 @@
 #endif
 
 #if defined(VF_CONFIG_SCHED_MLFQ)
+#define PROC_FLAG_NONE          0U
+#define PROC_FLAG_IMMUNE        (1U << 0)
+#define PROC_FLAG_CRITICAL      (1U << 1)
+#define PROC_FLAG_SUPERVISOR    (1U << 3)
+#define PROC_FLAG_CORE          (PROC_FLAG_IMMUNE | PROC_FLAG_SUPERVISOR | PROC_FLAG_CRITICAL)
+#elif defined(VF_CONFIG_SCHED_EEVDF)
+#define PROC_FLAG_NONE          EEVDF_CAP_NONE
+#define PROC_FLAG_IMMUNE        EEVDF_CAP_IMMUNE
+#define PROC_FLAG_CRITICAL      EEVDF_CAP_CRITICAL
+#define PROC_FLAG_SUPERVISOR    EEVDF_CAP_SUPERVISOR
+#define PROC_FLAG_CORE          EEVDF_CAP_CORE
+#endif
+
+
+#if defined(VF_CONFIG_SCHED_MLFQ)
 typedef MLFQProcessControlBlock CurrentProcessControlBlock;
 #elif defined(VF_CONFIG_SCHED_EEVDF)
 typedef EEVDFProcessControlBlock CurrentProcessControlBlock;
@@ -19,142 +34,37 @@ typedef void CurrentProcessControlBlock;
 #endif
 
 // Initialize the active scheduler
-static inline __attribute__((always_inline)) int SchedulerInit() {
-#if defined(VF_CONFIG_SCHED_MLFQ)
-    return MLFQSchedInit();
-#elif defined(VF_CONFIG_SCHED_EEVDF)
-    return EEVDFSchedInit();
-#elif defined(VF_CONFIG_SCHED_CFS)
-    return 0; // not implemented
-#endif
-}
+int SchedulerInit();
 
 // Create a new process
-static inline __attribute__((always_inline)) uint32_t CreateProcess(const char * name, void (*entry_point)()) {
-#if defined(VF_CONFIG_SCHED_MLFQ)
-    return MLFQCreateProcess (name, entry_point);
-#elif defined(VF_CONFIG_SCHED_EEVDF)
-    return EEVDFCreateProcess (name, entry_point);
-#elif defined(VF_CONFIG_SCHED_CFS)
-    return 0; // not implemented
-#endif
-}
+uint32_t CreateProcess(const char * name, void (*entry_point)());
 
-static inline __attribute__((always_inline)) uint32_t CreateSecureProcess(const char * name, void (*entry_point)(), uint8_t priv, uint8_t flag) {
-#if defined(VF_CONFIG_SCHED_MLFQ)
-    return MLFQCreateSecureProcess(name, entry_point, priv, flag);
-#elif defined(VF_CONFIG_SCHED_EEVDF)
-    return EEVDFCreateSecureProcess(name, entry_point, priv, flag);
-#elif defined(VF_CONFIG_SCHED_CFS)
-    return 0; // not implemented
-#endif
-}
+uint32_t CreateSecureProcess(const char * name, void (*entry_point)(), uint8_t priv, uint8_t flag);
 
-static inline __attribute__((always_inline)) CurrentProcessControlBlock* GetCurrentProcess() {
-#if defined(VF_CONFIG_SCHED_MLFQ)
-    return MLFQGetCurrentProcess();
-#elif defined(VF_CONFIG_SCHED_EEVDF)
-    return EEVDFGetCurrentProcess();
-#elif defined(VF_CONFIG_SCHED_CFS)
-    return 0; // not implemented
-#endif
-}
+CurrentProcessControlBlock* GetCurrentProcess();
 
-static inline __attribute__((always_inline)) CurrentProcessControlBlock* GetCurrentProcessByPID(uint32_t pid) {
-#if defined(VF_CONFIG_SCHED_MLFQ)
-    return MLFQGetCurrentProcessByPID(pid);
-#elif  defined(VF_CONFIG_SCHED_EEVDF)
-    return EEVDFGetCurrentProcessByPID(pid);
-#elif  defined(VF_CONFIG_SCHED_CFS)
-    return 0; // not implemented
-#endif
-}
+CurrentProcessControlBlock* GetCurrentProcessByPID(uint32_t pid);
 
 // Yield CPU
-static inline __attribute__((always_inline)) void Yield() {
-#if defined(VF_CONFIG_SCHED_MLFQ)
-    return MLFQYield();
-#elif defined(VF_CONFIG_SCHED_EEVDF)
-    return EEVDFYield();
-#elif defined(VF_CONFIG_SCHED_CFS)
-    return 0; // not implemented
-#endif
-}
+void Yield();
 
 // Main scheduler function (called from interrupt handler)
-static inline __attribute__((always_inline)) void Schedule(Registers* regs) {
-#if defined(VF_CONFIG_SCHED_MLFQ)
-    return MLFQSchedule(regs);
-#elif defined(VF_CONFIG_SCHED_EEVDF)
-    return EEVDFSchedule(regs);
-#elif defined(VF_CONFIG_SCHED_CFS)
-    return 0; // not implemented
-#endif
-}
+void Schedule(Registers* regs);
 
 // Kill a process
-static inline __attribute__((always_inline)) void KillProcess(uint32_t pid) {
-#if defined(VF_CONFIG_SCHED_MLFQ)
-    return MLFQKillProcess(pid);
-#elif defined(VF_CONFIG_SCHED_EEVDF)
-    return EEVDFKillProcess(pid);
-#elif defined(VF_CONFIG_SCHED_CFS)
-    return 0; // not implemented
-#endif
-}
+void KillProcess(uint32_t pid);
 
-static inline __attribute__((always_inline)) void KillCurrentProcess(const char * reason) {
-#if defined(VF_CONFIG_SCHED_MLFQ)
-    return MLFQKillCurrentProcess(reason);
-#elif defined(VF_CONFIG_SCHED_EEVDF)
-    return EEVDFKillCurrentProcess(reason);
-#elif defined(VF_CONFIG_SCHED_CFS)
-    return 0; // not implemented
-#endif
-}
+void KillCurrentProcess(const char * reason);
 
 // List processes
-static inline __attribute__((always_inline)) void ListProcesses() {
-#if defined(VF_CONFIG_SCHED_MLFQ)
-    return MLFQListProcesses();
-#elif defined(VF_CONFIG_SCHED_EEVDF)
-    return EEVDFListProcesses();
-#elif defined(VF_CONFIG_SCHED_CFS)
-    return 0; // not implemented
-#endif
-}
+void ListProcesses();
 
 // Performande stats
-static inline __attribute__((always_inline)) void DumpPerformanceStats() {
-#if defined(VF_CONFIG_SCHED_MLFQ)
-    return MLFQDumpPerformanceStats();
-#elif defined(VF_CONFIG_SCHED_EEVDF)
-    return EEVDFDumpPerformanceStats();
-#elif defined(VF_CONFIG_SCHED_CFS)
-    return 0; // not implemented
-#endif
-}
+void DumpPerformanceStats();
 
 // Dump scheduler state
-static inline __attribute__((always_inline)) void DumpSchedulerState() {
-#if defined(VF_CONFIG_SCHED_MLFQ)
-    return MLFQDumpSchedulerState();
-#elif defined(VF_CONFIG_SCHED_EEVDF)
-    return EEVDFDumpSchedulerState();
-#elif defined(VF_CONFIG_SCHED_CFS)
-    return 0; // not implemented
+void DumpSchedulerState();
+
+uint64_t GetSystemTicks();
+
 #endif
-}
-
-static inline __attribute__((always_inline)) uint64_t GetSystemTicks() {
-#if defined(VF_CONFIG_SCHED_MLFQ)
-    return MLFQGetSystemTicks();
-#elif defined(VF_CONFIG_SCHED_EEVDF)
-    return EEVDFGetSystemTicks();
-#elif defined(VF_CONFIG_SCHED_CFS)
-    return 0; // not implemented
-#endif
-}
-
-
-#endif // VOIDFRAME_SCHEDULER_H

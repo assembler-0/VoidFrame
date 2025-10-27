@@ -28,6 +28,7 @@ set(VFC_SOURCES
 set(SCHED_SOURCES
         kernel/sched/MLFQ.c
         kernel/sched/EEVDF.c
+        kernel/sched/Scheduler.c
 )
 
 set(KERNEL_ETC_SOURCES
@@ -183,6 +184,8 @@ include_directories(
         ports/6502
         ports
         ports/raytracer
+        arch/x86_64
+        arch/x86_64/asm
         arch/x86_64/features
         arch/x86_64/gdt
         arch/x86_64/idt

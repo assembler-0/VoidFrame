@@ -1,72 +1,17 @@
-section .multiboot
-header_start:
-    dd 0xE85250D6                ; Multiboot2 magic number
-    dd 0                         ; Architecture 0 (protected mode i386)
-    dd header_end - header_start ; header length
-    ; checksum = -(magic + arch + length)
-    dd -(0xE85250D6 + 0 + (header_end - header_start))
-
-%ifdef VF_CONFIG_VESA_FB
-    ; Framebuffer tag - request specific graphics mode
-    align 8
-framebuffer_tag_start:
-    dw 5        ; type = framebuffer
-    dw 0        ; flags
-    dd 24       ; size
-    dd 800      ; width
-    dd 600      ; height
-    dd 32       ; depth (bits per pixel)
-framebuffer_tag_end:
-
-    ; VBE tag - request VBE info
-    align 8
-vbe_tag_start:
-    dw 7        ; type = VBE
-    dw 0        ; flags
-    dd vbe_tag_end - vbe_tag_start ; size
-vbe_tag_end:
-%endif
-
-    ; End tag - required
-    align 8
-    dw 0    ; type
-    dw 0    ; flags
-    dd 8    ; size
-header_end:
+; ============================================================================
+; VoidFrame start code for x86_64 architecture
+; ============================================================================
 
 [bits 32]
 
+%include "multiboot2.asm"
+%include "bss.asm"
+
 section .text
 
-; Macro for debugging output on Bochs/QEMU's 0xE9 port
-%macro debug_print 1
-    mov dx, 0xE9
-    mov al, %1
-    out dx, al
-%endmacro
-
-gdt64:
-    ; Null Descriptor
-    dq 0
-.code: equ $ - gdt64 ; offset 0x08
-    dw 0xFFFF      ; limit
-    dw 0           ; base
-    db 0           ; base
-    db 10011010b   ; 0x9A - Present, DPL 0, Code, Executable, Read/Write
-    db 10101111b   ; 0xAF - Granularity (4K), 64-bit Code (L-bit=1), Limit
-    db 0           ; base
-.data: equ $ - gdt64 ; offset 0x10
-    dw 0xFFFF      ; limit
-    dw 0           ; base
-    db 0           ; base
-    db 10010010b   ; 0x92 - Present, DPL 0, Data, Read/Write
-    db 11001111b   ; 0xCF - Granularity (4K), 32-bit Segment, Limit
-    db 0           ; base
-gdt_end:
-
-gdt64_pointer:
-    dw gdt_end - gdt64 - 1 ; GDT size
-    dq gdt64               ; GDT base address
+%include "macros.asm"
+%include "gdt.asm"
+%include "features.asm"
 
 global start
 start:
@@ -365,82 +310,6 @@ setup_dynamic_paging:
     popa
     ret
 
-check_and_enable_features:
-    ; Test for CPUID capability (ID bit in EFLAGS)
-    pushfd
-    pop eax
-    mov ecx, eax
-    xor eax, 1 << 21 ; Flip the ID bit
-    push eax
-    popfd
-    pushfd
-    pop eax
-    xor eax, ecx
-    jz .no_cpuid_present ; If ID bit couldn't be flipped, CPUID not supported.
-
-    debug_print 'C' ; CPUID detected
-
-    ; Get basic CPU features (CPUID Leaf 1)
-    mov eax, 1
-    cpuid
-
-    ; EAX = Version Info (Model, Family, Stepping)
-    ; EBX = Brand Index, CLFLUSH size, Number of Logical Processors, APIC ID
-    ; ECX = Feature flags 1 (SSE3, SSSE3, SSE4.1, SSE4.2, AVX, etc.)
-    ; EDX = Feature flags 2 (FPU, VME, MMX, SSE, SSE2, FXSR, MSR, PAE, APIC, PGE, PSN, CMOV, MTRR, HTT, etc.)
-
-    ; --- Enable FPU/SSE/SSE2/XMM support ---
-    ; This is required for modern C/C++ compiled code that uses floating point.
-    ; CR0.EM (Emulation) should be 0.
-    ; CR0.MP (Monitor Coprocessor) should be 1.
-    ; CR4.OSFXSR (Operating System FXSAVE/FXRSTOR Support) should be 1.
-    ; CR4.OSXMMEXCPT (Operating System Unmasked SIMD Floating-Point Exception Support) should be 1.
-
-    ; Check for SSE support (EDX bit 25)
-    test edx, 1 << 25   ; SSE
-    jz .skip_sse_enable
-
-    mov eax, cr0
-    and eax, ~(1 << 2)  ; Clear EM (Emulation)
-    or eax, 1 << 1      ; Set MP (Monitor Coprocessor)
-    mov cr0, eax
-
-    mov eax, cr4
-    or eax, 1 << 9      ; Set OSFXSR (Operating System FXSAVE/FXRSTOR Support)
-    or eax, 1 << 10     ; Set OSXMMEXCPT (Operating System Unmasked SIMD Floating-Point Exception Support)
-    mov cr4, eax
-    debug_print 'S' ; SSE Enabled
-
-.skip_sse_enable:
-
-    ; --- Enable Write Protect (WP) in CR0 ---
-    ; CR0.WP (bit 16) protects read-only pages from ring 0 writes.
-    ; This is crucial for proper memory protection.
-    mov eax, cr0
-    or eax, 1 << 16     ; Set WP bit
-    mov cr0, eax
-    debug_print 'W' ; Write Protect Enabled
-
-    ; --- Enable No-Execute (NXE) in EFER MSR ---
-    ; This feature helps prevent buffer overflow attacks by marking memory pages as non-executable.
-    ; Requires PAE to be enabled.
-    ; Check for NX support (EDX bit 20 from CPUID leaf 1)
-    mov eax, 1
-    cpuid
-    test edx, 1 << 20   ; NX (Execute Disable Bit)
-    jz .skip_nxe_enable
-
-    mov ecx, 0xC0000080 ; EFER MSR
-    rdmsr
-    or eax, 1 << 11     ; Set NXE (No-Execute Enable) bit
-    wrmsr
-    debug_print 'N' ; NX Enabled
-
-.skip_nxe_enable:
-
-.no_cpuid_present:
-    ret
-
 [bits 64]
 
 [extern KernelMain]
@@ -463,7 +332,7 @@ long_mode:
     ; RDI is the first argument in the System V AMD64 ABI
     ; RSI is the second argument
     ; Use RDI/RSI directly, as Multiboot2 info pointer can be > 4GB
-    [default rel]
+    default rel
     mov edi, [multiboot_magic] ; EAX holds magic, so EDI will get the 32-bit magic
     mov rsi, [multiboot_info]  ; EBX holds info pointer, but could be 64-bit, so use RSI
 
@@ -477,29 +346,3 @@ long_mode:
     cli
     hlt
     jmp .halt
-
-section .bss
-align 4096
-pml4_table: resb 4096
-pdp_table:  resb 4096
-pd_table:   resb 4096
-pd_table2:  resb 4096
-pd_table3:  resb 4096
-pd_table4:  resb 4096
-; Reserve space for up to 64 additional PD tables (64GB support)
-pd_tables_extended: resb (4096 * 60)
-
-align 16
-stack_bottom: resb 16384  ; 16KB stack
-stack_top:
-
-section .data
-multiboot_magic: dd 0
-multiboot_info:  dq 0 ; The info pointer can be a 64-bit address, use dq
-
-; Dynamic memory mapping variables
-highest_phys_addr_low:  dd 0
-highest_phys_addr_high: dd 0
-memory_to_map_low:      dd 0
-memory_to_map_high:     dd 0
-num_pdp_entries:        dd 0

@@ -6,6 +6,7 @@
 #include "Compositor.h"
 #include "Console.h"
 #include "Format.h"
+#include "Gdt.h"
 #include "Ipc.h"
 #include "MemOps.h"
 #include "Panic.h"
@@ -594,7 +595,25 @@ static uint64_t EEVDFSecureHash(const void* data, const uint64_t len, uint64_t s
     return hash;
 }
 
+static uint64_t EEVDFCalculateTokenChecksum(const EEVDFSecurityToken* token) {
+    return EEVDFSecureHash(token, offsetof(EEVDFSecurityToken, checksum), EEVDF_SECURITY_SALT);
+}
+
+static uint64_t EEVDFCalculatePCBHash(const EEVDFProcessControlBlock* pcb) {
+    uint64_t hash = EEVDF_SECURITY_SALT;
+
+    hash = EEVDFSecureHash(&pcb->pid, sizeof(pcb->pid), hash);
+    hash = EEVDFSecureHash(&pcb->privilege_level, sizeof(pcb->privilege_level), hash);
+    hash = EEVDFSecureHash(&pcb->token.capabilities, sizeof(pcb->token.capabilities), hash);
+    hash = EEVDFSecureHash(&pcb->stack, sizeof(pcb->stack), hash);
+    hash = EEVDFSecureHash(&pcb->initial_entry_point, sizeof(pcb->initial_entry_point), hash);
+    
+    return hash;
+}
+
 static uint64_t EEVDFCalculateSecureChecksum(const EEVDFSecurityToken* token, uint32_t pid) {
+    // This function is now deprecated. Use EEVDFCalculateTokenChecksum and EEVDFCalculatePCBHash instead.
+    // Keeping it for now to avoid immediate compile errors, but it should be removed.
     uint64_t base_hash = EEVDFSecureHash(token, offsetof(EEVDFSecurityToken, checksum), EEVDF_SECURITY_SALT);
     uint64_t pid_hash = EEVDFSecureHash(&pid, sizeof(pid), EEVDF_SECURITY_SALT);
     return base_hash ^ pid_hash;
@@ -846,16 +865,17 @@ int EEVDFSchedInit(void) {
     EEVDFSetTaskNice(idle_proc, 0);
     idle_proc->vruntime = 0;
     idle_proc->exec_start = GetNS();
+    idle_proc->initial_entry_point = 0; // Idle process has no specific entry point
     
     // Initialize idle process security token
     EEVDFSecurityToken* token = &idle_proc->token;
     token->magic = EEVDF_SECURITY_MAGIC;
     token->creator_pid = 0;
     token->privilege = EEVDF_PROC_PRIV_SYSTEM;
-    token->flags = EEVDF_PROC_FLAG_CORE;
+    token->capabilities = EEVDF_CAP_CORE;
     token->creation_tick = idle_proc->creation_time;
-    token->checksum = 0;
-    token->checksum = EEVDFCalculateSecureChecksum(token, 0);
+    token->checksum = EEVDFCalculateTokenChecksum(token);
+    token->pcb_hash = EEVDFCalculatePCBHash(idle_proc);
     
     FormatA(idle_proc->ProcessRuntimePath, sizeof(idle_proc->ProcessRuntimePath), "%s/%d", RuntimeServices, idle_proc->pid);
     
@@ -865,7 +885,7 @@ int EEVDFSchedInit(void) {
 #ifdef VF_CONFIG_USE_VFSHELL
     // Create shell process
     PrintKernel("System: Creating shell process...\n");
-    const uint32_t shell_pid = EEVDFCreateSecureProcess("VFShell", ShellProcess, EEVDF_PROC_PRIV_SYSTEM, EEVDF_PROC_FLAG_CORE);
+    const uint32_t shell_pid = EEVDFCreateSecureProcess("VFShell", ShellProcess, EEVDF_PROC_PRIV_SYSTEM, EEVDF_CAP_CORE);
     if (!shell_pid) {
 #ifndef VF_CONFIG_PANIC_OVERRIDE
         PANIC("CRITICAL: Failed to create shell process");
@@ -882,7 +902,7 @@ int EEVDFSchedInit(void) {
     return 0;
 }
 
-uint32_t EEVDFCreateSecureProcess(const char* name, void (*entry_point)(void), uint8_t priv, uint8_t flag) {
+uint32_t EEVDFCreateSecureProcess(const char* name, void (*entry_point)(void), uint8_t priv, uint64_t capabilities) {
     if (UNLIKELY(!entry_point)) {
         PANIC("EEVDFCreateProcess: NULL entry point");
     }
@@ -942,6 +962,7 @@ uint32_t EEVDFCreateSecureProcess(const char* name, void (*entry_point)(void), u
     proc->privilege_level = priv;
     proc->creation_time = EEVDFGetSystemTicks();
     EEVDFSetTaskNice(proc, EEVDF_DEFAULT_NICE);
+    proc->initial_entry_point = (uint64_t)entry_point; // Store the immutable entry point
 
     // Set virtual time to current minimum to ensure fairness
     proc->vruntime = eevdf_scheduler.rq.min_vruntime;
@@ -952,9 +973,9 @@ uint32_t EEVDFCreateSecureProcess(const char* name, void (*entry_point)(void), u
     token->magic = EEVDF_SECURITY_MAGIC;
     token->creator_pid = creator->pid;
     token->privilege = priv;
-    token->flags = flag;
+    token->capabilities = capabilities;
     token->creation_tick = proc->creation_time;
-    token->checksum = EEVDFCalculateSecureChecksum(token, new_pid);
+    token->checksum = EEVDFCalculateTokenChecksum(token);
 
     // Set up context
     uint64_t rsp = (uint64_t)stack;
@@ -967,8 +988,8 @@ uint32_t EEVDFCreateSecureProcess(const char* name, void (*entry_point)(void), u
     proc->context.rsp = rsp;
     proc->context.rip = (uint64_t)entry_point;
     proc->context.rflags = 0x202;
-    proc->context.cs = 0x08;
-    proc->context.ss = 0x10;
+    proc->context.cs = KERNEL_CODE_SELECTOR;
+    proc->context.ss = KERNEL_DATA_SELECTOR;
     
     // Initialize IPC queue
     proc->ipc_queue.head = 0;
@@ -976,6 +997,9 @@ uint32_t EEVDFCreateSecureProcess(const char* name, void (*entry_point)(void), u
     proc->ipc_queue.count = 0;
 
     FormatA(proc->ProcessRuntimePath, sizeof(proc->ProcessRuntimePath), "%s/%d", RuntimeProcesses, new_pid);
+
+    // Recalculate PCB hash after all relevant fields are set
+    token->pcb_hash = EEVDFCalculatePCBHash(proc);
 
 #ifdef VF_CONFIG_USE_CERBERUS
     CerberusRegisterProcess(new_pid, (uint64_t)stack, EEVDF_STACK_SIZE);
@@ -995,7 +1019,7 @@ uint32_t EEVDFCreateSecureProcess(const char* name, void (*entry_point)(void), u
 }
 
 uint32_t EEVDFCreateProcess(const char* name, void (*entry_point)(void)) {
-    return EEVDFCreateSecureProcess(name, entry_point, EEVDF_PROC_PRIV_NORM, EEVDF_PROC_FLAG_NONE);
+    return EEVDFCreateSecureProcess(name, entry_point, EEVDF_PROC_PRIV_NORM, EEVDF_CAP_NONE);
 }
 
 EEVDFProcessControlBlock* EEVDFGetCurrentProcess(void) {
@@ -1021,20 +1045,31 @@ EEVDFProcessControlBlock* EEVDFGetCurrentProcessByPID(uint32_t pid) {
 void EEVDFYield(void) {
     // Simple yield - just request a schedule
     need_schedule = 1;
-    volatile int delay = eevdf_scheduler.total_processes * 100;
-    while (delay-- > 0) __builtin_ia32_pause();
 }
 
 // =============================================================================
 // Security and Validation Functions
 // =============================================================================
 
-static int EEVDFValidateToken(const EEVDFSecurityToken* token, uint32_t pid) {
-    if (UNLIKELY(!token)) return 0;
+static int EEVDFValidateToken(const EEVDFSecurityToken* token, const EEVDFProcessControlBlock* pcb) {
+    if (UNLIKELY(!token || !pcb)) return 0;
     if (UNLIKELY(token->magic != EEVDF_SECURITY_MAGIC)) return 0;
     
-    uint64_t expected_checksum = EEVDFCalculateSecureChecksum(token, pid);
-    return token->checksum == expected_checksum;
+    // Verify the token's internal checksum
+    uint64_t expected_token_checksum = EEVDFCalculateTokenChecksum(token);
+    if (token->checksum != expected_token_checksum) {
+        PrintKernelErrorF("EEVDF: Token checksum mismatch for PID %d. Expected 0x%lx, got 0x%lx\n", pcb->pid, expected_token_checksum, token->checksum);
+        return 0;
+    }
+
+    // Verify the PCB hash stored within the token against the current PCB state
+    uint64_t current_pcb_hash = EEVDFCalculatePCBHash(pcb);
+    if (token->pcb_hash != current_pcb_hash) {
+        PrintKernelErrorF("EEVDF: PCB hash mismatch for PID %d. Expected 0x%lx, got 0x%lx\n", pcb->pid, current_pcb_hash, token->pcb_hash);
+        return 0;
+    }
+
+    return 1;
 }
 
 static inline int EEVDFPreflightCheck(uint32_t slot) {
@@ -1042,13 +1077,13 @@ static inline int EEVDFPreflightCheck(uint32_t slot) {
 
     EEVDFProcessControlBlock* proc = &processes[slot];
 
-    if (UNLIKELY(!EEVDFValidateToken(&proc->token, proc->pid))) {
+    if (UNLIKELY(!EEVDFValidateToken(&proc->token, proc))) {
         EEVDFASTerminate(proc->pid, "Pre-flight token validation failure");
         return 0; // Do not schedule this process.
     }
 
     if (UNLIKELY(proc->privilege_level == EEVDF_PROC_PRIV_SYSTEM &&
-                 !(proc->token.flags & (EEVDF_PROC_FLAG_SUPERVISOR | EEVDF_PROC_FLAG_CRITICAL | EEVDF_PROC_FLAG_IMMUNE)))) {
+                 !(proc->token.capabilities & (EEVDF_CAP_SUPERVISOR | EEVDF_CAP_CRITICAL | EEVDF_CAP_IMMUNE)))) {
         EEVDFASTerminate(proc->pid, "Unauthorized privilege escalation");
         return 0; // Do not schedule this process.
     }
@@ -1065,7 +1100,7 @@ static inline int EEVDFPostflightCheck(uint32_t slot) {
 
     EEVDFProcessControlBlock* proc = &processes[slot];
 
-    if (UNLIKELY(!EEVDFValidateToken(&proc->token, proc->pid))) {
+    if (UNLIKELY(!EEVDFValidateToken(&proc->token, proc))) {
         EEVDFASTerminate(proc->pid, "Post-execution token corruption");
         return 0; // Do not re-queue this process
     }
@@ -1116,14 +1151,14 @@ static void EEVDFTerminateProcess(uint32_t pid, TerminationReason reason, uint32
             }
 
             // Cannot terminate immune processes
-            if (UNLIKELY(proc->token.flags & EEVDF_PROC_FLAG_IMMUNE)) {
+            if (UNLIKELY(proc->token.capabilities & EEVDF_CAP_IMMUNE)) {
                 rust_spinlock_unlock_irqrestore(eevdf_lock, flags);
                 EEVDFASTerminate(caller->pid, "Attempted termination of immune process");
                 return;
             }
 
             // Cannot terminate critical system processes
-            if (UNLIKELY(proc->token.flags & EEVDF_PROC_FLAG_CRITICAL)) {
+            if (UNLIKELY(proc->token.capabilities & EEVDF_CAP_CRITICAL)) {
                 rust_spinlock_unlock_irqrestore(eevdf_lock, flags);
                 EEVDFASTerminate(caller->pid, "Attempted termination of critical process");
                 return;
@@ -1131,7 +1166,7 @@ static void EEVDFTerminateProcess(uint32_t pid, TerminationReason reason, uint32
         }
 
         // Validate caller's token before allowing termination
-        if (UNLIKELY(!EEVDFValidateToken(&caller->token, caller->pid))) {
+        if (UNLIKELY(!EEVDFValidateToken(&caller->token, caller))) {
             rust_spinlock_unlock_irqrestore(eevdf_lock, flags);
             EEVDFASTerminate(caller->pid, "Token validation failed");
             return;

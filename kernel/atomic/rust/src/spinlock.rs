@@ -104,9 +104,11 @@ impl SpinLock {
                 backoff_delay(backoff);
                 backoff = (backoff * 2).min(MAX_BACKOFF_CYCLES);
             } else {
-                // High contention: yield to scheduler (kernel would implement this)
-                backoff_delay(MAX_BACKOFF_CYCLES);
+                // High contention: yield to scheduler
+                unsafe { crate::ffi::Yield(); }
                 local_spins = 0;
+                // Reset attempts to prevent immediate re-yielding if not scheduled away
+                attempts = 0;
             }
         }
     }
