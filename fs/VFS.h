@@ -54,6 +54,7 @@ static const char * RuntimeMounts = "/Runtime/Mounts";
 // VFS Functions
 int VfsInit(void);
 int VfsMount(const char* path, BlockDevice* device, FileSystemDriver* fs_driver);
+int VfsUmount(const char* path);
 int VfsReadFile(const char* path, void* buffer, uint32_t max_size);
 int VfsWriteFile(const char* path, const void* buffer, uint32_t size);
 int VfsListDir(const char* path);
@@ -102,3 +103,4 @@ int VfsAnalyze(const char* path, uint32_t* byte_counts, uint32_t* entropy);
 VfsMountStruct* VfsFindMount(const char* path);
 void VfsListMount(void);
 const char* VfsStripMount(const char* path, VfsMountStruct* mount);
+int VfsUnmountAll();

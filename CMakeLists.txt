@@ -217,7 +217,7 @@ add_custom_target(extra-img
         COMMAND ${QEMU_IMG} create -f raw VirtioDisk.img 128M
         COMMAND ${MKFS_EXT2} VirtioDisk.img
         COMMAND ${QEMU_IMG} create -f raw SataDisk.img 128M
-        COMMAND ${MKFS_EXT2} SataDisk.img
+        COMMAND ${MKFS_FAT} -F12 SataDisk.img
         COMMAND ${QEMU_IMG} create -f raw NVMeDisk.img 256M
         COMMAND ${MKFS_EXT2} NVMeDisk.img
         COMMENT "Creating extra disk images"

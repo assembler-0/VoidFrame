@@ -1917,7 +1917,15 @@ void MLFQDumpSchedulerState(void) {
 void MLFQKillCurrentProcess(const char * reason) {
     MLFQProcessControlBlock* current = MLFQGetCurrentProcess();
     if (current) ASTerminate(current->pid, reason);
+}
 
+void MLFQKillAllProcesses(const char * reason) {
+    for (int i = 1; i < MAX_PROCESSES; i++) {
+        MLFQProcessControlBlock* p = &processes[i];
+        if (p->state != PROC_TERMINATED && p->pid != 0) {
+            ASTerminate(p->pid, reason);
+        }
+    }
 }
 
 // Get detailed process scheduling information

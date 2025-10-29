@@ -56,6 +56,8 @@ void KillProcess(uint32_t pid);
 
 void KillCurrentProcess(const char * reason);
 
+void KillAllProcess(const char* reason);
+
 // List processes
 void ListProcesses();
 

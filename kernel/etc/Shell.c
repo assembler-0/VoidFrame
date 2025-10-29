@@ -9,6 +9,8 @@
 #include "Console.h"
 #include "Editor.h"
 #include "ExecLoader.h"
+#include "Ext2.h"
+#include "FAT1x.h"
 #include "Format.h"
 #include "FsUtils.h"
 #include "ISA.h"
@@ -18,6 +20,7 @@
 #include "../../mm/dynamic/rust/KernelHeapRust.h"
 #include "LPT/LPT.h"
 #include "MemOps.h"
+#include "NTFS.h"
 #include "PCI/PCI.h"
 #include "PMem.h"
 #include "POST.h"
@@ -212,6 +215,8 @@ static const HelpEntry hw_cmds[] = {
     {"lsusb", "List USB devices"},
     {"lsblk", "List Block devices"},
     {"lsmnt", "List Mountpoints"},
+    {"mount <type> <dev>", "Mount a filesystem"},
+    {"umount <path>", "Unmount a filesystem"},
     {"beep <x>", "Send beep x times"},
     {"pcbeep <x>", "PC speaker beep  for <x> seconds (200hz)"},
     {"irqmask <irq>", "Mask IRQ"},
@@ -1189,6 +1194,61 @@ static void LsMntHandler(const char* args) {
     VfsListMount();
 }
 
+static void MountHandler(const char* args) {
+    char* fs_type = GetArg(args, 1);
+    char* dev_name = GetArg(args, 2);
+
+    if (!fs_type || !dev_name) {
+        PrintKernel("Usage: mount <type> <device>\n");
+        if (fs_type) KernelFree(fs_type);
+        if (dev_name) KernelFree(dev_name);
+        return;
+    }
+
+    BlockDevice* dev = SearchBlockDevice(dev_name);
+    if (!dev) {
+        PrintKernel("Device not found\n");
+        KernelFree(fs_type);
+        KernelFree(dev_name);
+        return;
+    }
+
+    char mount_point[64];
+    FormatA(mount_point, sizeof(mount_point), "%s/%s", RuntimeMounts, dev_name);
+
+    if (FastStrCmp(fs_type, "fat1x") == 0) {
+        Fat1xMount(dev, mount_point);
+    } else if (FastStrCmp(fs_type, "ext2") == 0) {
+        Ext2Mount(dev, mount_point);
+    } else if (FastStrCmp(fs_type, "ntfs") == 0) {
+        NtfsMount(dev, mount_point);
+    } else {
+        PrintKernel("Unknown filesystem type\n");
+    }
+
+    KernelFree(fs_type);
+    KernelFree(dev_name);
+}
+
+static void UnmountHandler(const char* args) {
+    char* mount_point = GetArg(args, 1);
+    if (!mount_point) {
+        PrintKernel("Usage: umount <mount_point>\n");
+        return;
+    }
+
+    char new_path[256];
+    ResolvePath(mount_point, new_path, 256);
+
+    if (VfsUmount(new_path) != 0) {
+        PrintKernel("Failed to unmount\n");
+    } else {
+        PrintKernel("Unmounted successfully\n");
+    }
+
+    KernelFree(mount_point);
+}
+
 FNDEF(GetSerialHandler) {
     char buff[1024];
     SerialReadLine(buff, sizeof(buff));
@@ -1251,6 +1311,8 @@ static const ShellCommand commands[] = {\
     {"lsblk", BlockDevicePrint},
     {"heapperf", HeapPerfHandler},
     {"lsmnt", LsMntHandler},
+    {"mount", MountHandler},
+    {"umount", UnmountHandler},
     {"gserial", GetSerialHandler},
 };
 

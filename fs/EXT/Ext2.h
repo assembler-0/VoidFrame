@@ -101,6 +101,7 @@ typedef struct {
 
 // Function prototypes for VFS integration
 int Ext2Mount(BlockDevice* device, const char* mount_point);
+int Ext2Unmount(BlockDevice* device);
 int Ext2Detect(BlockDevice* device);
 void Ext2SetActive(BlockDevice* device);
 int Ext2ReadFile(const char* path, void* buffer, uint32_t max_size);

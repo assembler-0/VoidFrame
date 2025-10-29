@@ -118,7 +118,7 @@ int Ext2ReadBlock(uint32_t block, void* buffer) {
     return 0;
 }
 
-static FileSystemDriver ext2_driver = {"EXT2", Ext2Detect, Ext2Mount};
+static FileSystemDriver ext2_driver = {"EXT2", Ext2Detect, Ext2Mount, Ext2Unmount};
 
 int Ext2Mount(BlockDevice* device, const char* mount_point) {
     // Prepare or reuse per-device volume
@@ -222,8 +222,34 @@ int Ext2Mount(BlockDevice* device, const char* mount_point) {
     }
     PrintKernelF("EXT2: Mounted filesystem\n");
 
-    PrintKernelSuccess("EXT2: Filesystem initialized successfully.\n");
+    PrintKernelSuccess("EXT2: Filesystem mounted.\n");
     rust_rwlock_write_unlock(volume.lock);
+    return 0;
+}
+
+int Ext2Unmount(BlockDevice* device) {
+    if (!device) { return -1; }
+    int device_id = device->id;
+    if (device_id < 0 || device_id >= MAX_BLOCK_DEVICES) { return -1; }
+    Ext2Volume* vol = g_ext2_by_dev[device_id];
+    if (!vol) { return -1; } // Not mounted
+    RustRwLock* lock = vol->lock;
+    if (lock) {
+        rust_rwlock_write_lock(lock, GetCurrentProcess()->pid);
+    }
+    if (g_ext2_active == vol) {
+        g_ext2_active = NULL;
+    }
+    if (vol->group_descs) {
+        KernelFree(vol->group_descs);
+        vol->group_descs = NULL;
+    }
+    g_ext2_by_dev[device_id] = NULL;
+    if (lock) {
+        rust_rwlock_write_unlock(lock);
+        rust_rwlock_free(lock);
+    }
+    KernelFree(vol);
     return 0;
 }
 

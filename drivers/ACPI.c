@@ -2,9 +2,11 @@
 #include "Console.h"
 #include "Io.h"
 #include "MemOps.h"
+#include "Scheduler.h"
 #include "StringOps.h"
 #include "VMem.h"
 #include "TSC.h"
+#include "VFS.h"
 
 static ACPIFADT* g_fadt = NULL;
 static bool g_acpi_initialized = false;
@@ -47,116 +49,113 @@ static bool ValidateChecksum(void* table, uint32_t length) {
 
 // Map ACPI table to virtual memory
 static void* MapACPITable(uint32_t phys_addr, uint32_t size) {
-    // Align to page boundaries
-    uint32_t aligned_addr = phys_addr & ~0xFFF;
-    uint32_t offset = phys_addr - aligned_addr;
-    uint32_t aligned_size = ((size + offset + 0xFFF) & ~0xFFF);
-    
+    uint64_t aligned_addr = phys_addr & ~0xFFF;
+    uint64_t offset = phys_addr - aligned_addr;
+    uint64_t aligned_size = ((size + offset + 0xFFF) & ~0xFFF);
+
     void* virt_addr = VMemAlloc(aligned_size);
-    if (!virt_addr) return NULL;
-    
+    if (!virt_addr) {
+        PrintKernelError("ACPI: Failed to allocate virtual memory for ACPI table\n");
+        return NULL;
+    }
+
     if (VMemUnmap((uint64_t)virt_addr, aligned_size) != VMEM_SUCCESS) {
         VMemFree(virt_addr, aligned_size);
+        PrintKernelError("ACPI: Failed to unmap virtual memory for ACPI table\n");
         return NULL;
     }
-    
+
     if (VMemMapMMIO((uint64_t)virt_addr, aligned_addr, aligned_size, PAGE_WRITABLE | PAGE_NOCACHE) != VMEM_SUCCESS) {
-        VMemFree(virt_addr, aligned_size);
+        // No need to free here as VMemMapMMIO should handle cleanup on failure
+        PrintKernelError("ACPI: Failed to map MMIO for ACPI table\n");
         return NULL;
     }
-    
+
     return (uint8_t*)virt_addr + offset;
+}
+
+static ACPIRSDT* g_rsdt = NULL;
+
+void* AcpiFindTable(const char* signature) {
+    if (!g_rsdt) {
+        return NULL;
+    }
+
+    uint32_t entries = (g_rsdt->header.length - sizeof(ACPISDTHeader)) / 4;
+    for (uint32_t i = 0; i < entries; i++) {
+        ACPISDTHeader* header = (ACPISDTHeader*)MapACPITable(g_rsdt->table_pointers[i], sizeof(ACPISDTHeader));
+        if (!header) {
+            continue;
+        }
+
+        if (FastMemcmp(header->signature, signature, 4) == 0) {
+            void* table = MapACPITable(g_rsdt->table_pointers[i], header->length);
+            VMemUnmap((uint64_t)header - (g_rsdt->table_pointers[i] & 0xFFF), ((sizeof(ACPISDTHeader) + (g_rsdt->table_pointers[i] & 0xFFF) + 0xFFF) & ~0xFFF));
+            return table;
+        }
+
+        VMemUnmap((uint64_t)header - (g_rsdt->table_pointers[i] & 0xFFF), ((sizeof(ACPISDTHeader) + (g_rsdt->table_pointers[i] & 0xFFF) + 0xFFF) & ~0xFFF));
+    }
+
+    return NULL;
 }
 
 bool ACPIInit(void) {
     PrintKernel("ACPI: Initializing ACPI subsystem...\n");
-    
-    // Find RSDP
+
     ACPIRSDPv1* rsdp = FindRSDP();
     if (!rsdp) {
         PrintKernelError("ACPI: RSDP not found\n");
         return false;
     }
-    
-    PrintKernel("ACPI: Found RSDP at 0x");
-    PrintKernelHex((uint64_t)rsdp);
-    PrintKernel("\n");
-    
-    // Validate RSDP checksum
+
     if (!ValidateChecksum(rsdp, sizeof(ACPIRSDPv1))) {
         PrintKernelError("ACPI: Invalid RSDP checksum\n");
         return false;
     }
 
-    ACPIRSDT* rsdt = (ACPIRSDT*)MapACPITable(rsdp->rsdt_address,
-                                             sizeof(ACPISDTHeader));
-    if (!rsdt) {
-        PrintKernelError("ACPI: Failed to map RSDT\n");
+    g_rsdt = (ACPIRSDT*)MapACPITable(rsdp->rsdt_address, sizeof(ACPISDTHeader));
+    if (!g_rsdt) {
+        PrintKernelError("ACPI: Failed to map RSDT header\n");
         return false;
     }
-    // Validate RSDT signature
-    if (FastMemcmp(rsdt->header.signature, ACPI_RSDT_SIG, 4) != 0) {
+
+    if (FastMemcmp(g_rsdt->header.signature, ACPI_RSDT_SIG, 4) != 0) {
         PrintKernelError("ACPI: Invalid RSDT signature\n");
-        // Clean up the initial header‐only mapping
-        VMemUnmap((uint64_t)rsdt - (rsdp->rsdt_address & 0xFFF),
-                  ((sizeof(ACPISDTHeader) + (rsdp->rsdt_address & 0xFFF) + 0xFFF)
-                   & ~0xFFF));
+        VMemUnmap((uint64_t)g_rsdt - (rsdp->rsdt_address & 0xFFF), ((sizeof(ACPISDTHeader) + (rsdp->rsdt_address & 0xFFF) + 0xFFF) & ~0xFFF));
         return false;
     }
-    // Remap with the full table length
-    uint32_t rsdt_size = rsdt->header.length;
-    // Remember the old header mapping so we can free it afterward
-    void*    old_rsdt   = rsdt;
-    uint32_t old_offset = rsdp->rsdt_address & 0xFFF;
-    rsdt = (ACPIRSDT*)MapACPITable(rsdp->rsdt_address, rsdt_size);
-    // Now unmap the temporary header‐only region
-    VMemUnmap((uint64_t)old_rsdt - old_offset,
-              ((sizeof(ACPISDTHeader) + old_offset + 0xFFF) & ~0xFFF));
-    
-    PrintKernel("ACPI: RSDT mapped, length=");
-    PrintKernelInt(rsdt_size);
-    PrintKernel("\n");
-    
-    // Find FADT
-    uint32_t entries = (rsdt_size - sizeof(ACPISDTHeader)) / 4;
-    for (uint32_t i = 0; i < entries; i++) {
-        ACPISDTHeader* header = (ACPISDTHeader*)MapACPITable(
-            rsdt->table_pointers[i],
-            sizeof(ACPISDTHeader)
-        );
-        if (!header) continue;
 
-        bool is_fadt = FastMemcmp(header->signature, ACPI_FADT_SIG, 4) == 0;
-        uint32_t table_length = header->length;
-        uint32_t header_offset = rsdt->table_pointers[i] & 0xFFF;
-
-        // Unmap the header mapping now that we've inspected it
-        VMemUnmap(
-            (uint64_t)header - header_offset,
-            ( (sizeof(ACPISDTHeader) + header_offset + 0xFFF) & ~0xFFF )
-        );
-
-        if (is_fadt) {
-            PrintKernel("ACPI: Found FADT\n");
-            g_fadt = (ACPIFADT*)MapACPITable(
-                rsdt->table_pointers[i],
-                table_length
-            );
-            break;
-        }
+    uint32_t rsdt_size = g_rsdt->header.length;
+    VMemUnmap((uint64_t)g_rsdt - (rsdp->rsdt_address & 0xFFF), ((sizeof(ACPISDTHeader) + (rsdp->rsdt_address & 0xFFF) + 0xFFF) & ~0xFFF));
+    g_rsdt = (ACPIRSDT*)MapACPITable(rsdp->rsdt_address, rsdt_size);
+    if (!g_rsdt) {
+        PrintKernelError("ACPI: Failed to map full RSDT\n");
+        return false;
     }
-    
-    PrintKernelError("ACPI: FADT not found or invalid\n");
-    return false;
+
+    g_fadt = (ACPIFADT*)AcpiFindTable(ACPI_FADT_SIG);
+    if (!g_fadt) {
+        PrintKernelError("ACPI: FADT not found or invalid\n");
+        return false;
+    }
+
+    g_acpi_initialized = true;
+    PrintKernelSuccess("ACPI: Subsystem initialized\n");
+    return true;
+}
+
+void ACPIResetProcedure() {
+    PrintKernel("ACPI: Unmounting Filesystems...\n");
+    VfsUnmountAll();
+    PrintKernelSuccess("ACPI: Filesystems unmounted\n");
+
+    PrintKernel("ACPI: Stopping all processes and services...\n");
+    KillAllProcess("SHUTDOWN");
+    PrintKernelSuccess("ACPI: All processes and services stopped\n");
 }
 
 void ACPIShutdown(void) {
-    if (!g_acpi_initialized || !g_fadt) {
-        PrintKernel("ACPI: Shutdown not available, using fallback\n");
-        outw(0x604, 0x2000);
-        return;
-    }
-    
     PrintKernel("ACPI: Initiating shutdown...\n");
     
     // Enable ACPI mode if needed
@@ -164,11 +163,12 @@ void ACPIShutdown(void) {
         PrintKernel("ACPI: Enabling ACPI mode via SMI\n");
         outb(g_fadt->smi_command_port, g_fadt->acpi_enable);
     }
-    
+
+    ACPIResetProcedure();
+
     // Try multiple shutdown methods
-    uint16_t shutdown_values[] = {0x2000, 0x3C00, 0x1400, 0x0000};
-    
     for (int i = 0; i < 4; i++) {
+        const uint16_t shutdown_values[] = {0x2000, 0x3C00, 0x1400, 0x0000};
         PrintKernel("ACPI: Trying shutdown value 0x");
         PrintKernelHex(shutdown_values[i]);
         PrintKernel(" on port 0x");
@@ -180,11 +180,7 @@ void ACPIShutdown(void) {
         // Wait a bit
         delay(10);
     }
-    
-    // Fallback methods
-    PrintKernel("ACPI: Trying QEMU shutdown\n");
-    outw(0x604, 0x2000);
-    
+
     PrintKernel("ACPI: Trying Bochs shutdown\n");
     outw(0xB004, 0x2000);
     
@@ -192,6 +188,9 @@ void ACPIShutdown(void) {
 }
 
 void ACPIReboot(void) {
+
+    ACPIResetProcedure();
+
     PrintKernel("ACPI: Initiating reboot...\n");
     
     // Try keyboard controller reset

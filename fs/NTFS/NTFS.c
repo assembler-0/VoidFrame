@@ -43,7 +43,7 @@ int NtfsDetect(struct BlockDevice* device) {
     return 1;
 }
 
-static FileSystemDriver ntfs_driver = {"NTFS", NtfsDetect, NtfsMount};
+static FileSystemDriver ntfs_driver = {"NTFS", NtfsDetect, NtfsMount, NtfsUnmount};
 
 int NtfsMount(struct BlockDevice* device, const char* mount_point) {
     if (!device || !device->read_blocks) return -1;
@@ -145,6 +145,28 @@ int NtfsMount(struct BlockDevice* device, const char* mount_point) {
     PrintKernel("\n");
     
     rust_rwlock_write_unlock(volume.lock);
+    return 0;
+}
+
+int NtfsUnmount(BlockDevice* device) {
+    if (!device) return -1;
+    int id = device->id;
+    if (id < 0 || id >= MAX_BLOCK_DEVICES) return -1;
+
+    NtfsVolume* vol = g_ntfs_by_dev[id];
+    if (!vol) return -1; // Not mounted
+
+    if (g_ntfs_active == vol) {
+        g_ntfs_active = NULL;
+    }
+
+    if (vol->lock) {
+        rust_rwlock_free(vol->lock);
+    }
+
+    KernelFree(vol);
+    g_ntfs_by_dev[id] = NULL;
+
     return 0;
 }
 

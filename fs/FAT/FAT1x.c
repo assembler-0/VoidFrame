@@ -41,7 +41,7 @@ int Fat1xDetect(BlockDevice* device) {
     return 1;
 }
 
-static FileSystemDriver fat_driver = {"FAT1x", Fat1xDetect, Fat1xMount};
+static FileSystemDriver fat_driver = {"FAT1x", Fat1xDetect, Fat1xMount, Fat1xUnmount};
 
 int Fat1xMount(BlockDevice* device, const char* mount_point) {
     if (!device) return -1;
@@ -59,16 +59,22 @@ int Fat1xMount(BlockDevice* device, const char* mount_point) {
     // Read boot sector
     uint8_t boot_sector[512];
     if (BlockDeviceRead(device->id, 0, 1, boot_sector) != 0) {
+        g_fat1x_by_dev[device->id] = NULL; // Critical: Free volume if read fails
+        KernelFree(vol);
         return -1;
     }
     FastMemcpy(&volume.boot, boot_sector, sizeof(Fat1xBootSector));
 
     if (volume.boot.bytes_per_sector != 512) {
+        g_fat1x_by_dev[device->id] = NULL; // Critical: Free volume if read fails
+        KernelFree(vol);
         return -1;
     }
 
-    sector_buffer = FastAlloc(POOL_SIZE_512);
+    sector_buffer = KernelMemoryAlloc(POOL_SIZE_512);
     if (!sector_buffer) {
+        g_fat1x_by_dev[device->id] = NULL; // Critical: Free volume if read fails
+        KernelFree(vol);
         return -1;
     }
 
@@ -96,6 +102,43 @@ int Fat1xMount(BlockDevice* device, const char* mount_point) {
     }
 
     VfsMount(mount_point, device, &fat_driver);
+    return 0;
+}
+
+int Fat1xUnmount(BlockDevice* device) {
+    if (!device) return -1;
+    int id = device->id;
+    if (id < 0 || id >= MAX_BLOCK_DEVICES) return -1;
+
+    Fat1xVolume* vol = g_fat1x_by_dev[id];
+    if (!vol) return -1; // Not mounted
+
+    if (g_fat1x_active == vol) {
+        g_fat1x_active = NULL;
+    }
+
+    // if (vol->fat_table) {
+    //     KernelFree(vol->fat_table);
+    //     vol->fat_table = NULL;
+    // }
+
+    KernelFree(vol);
+    g_fat1x_by_dev[id] = NULL;
+
+    // If no other FAT volumes are active, free the shared sector buffer
+    bool any_active = false;
+    for (int i = 0; i < MAX_BLOCK_DEVICES; i++) {
+        if (g_fat1x_by_dev[i]) {
+            any_active = true;
+            break;
+        }
+    }
+
+    if (!any_active && sector_buffer) {
+        KernelFree(sector_buffer);
+        sector_buffer = NULL;
+    }
+
     return 0;
 }
 

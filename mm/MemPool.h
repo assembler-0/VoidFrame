@@ -37,7 +37,5 @@ void* MemPoolAlloc(MemPool* pool);
 void MemPoolFree(MemPool* pool, void* ptr);
 void DestroyMemPool(MemPool* pool);
 void InitDefaultPools(void);
-void* FastAlloc(uint64_t size);  // Auto-select appropriate pool
-void FastFree(void* ptr);
 
 #endif
