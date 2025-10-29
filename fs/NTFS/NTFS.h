@@ -133,6 +133,7 @@ typedef struct {
 // VFS Interface Functions
 int NtfsDetect(struct BlockDevice* device);
 int NtfsMount(struct BlockDevice* device, const char* mount_point);
+int NtfsUnmount(struct BlockDevice* device);
 int NtfsReadFile(const char* path, void* buffer, uint32_t max_size);
 int NtfsWriteFile(const char* path, const void* buffer, uint32_t size);
 int NtfsListDir(const char* path);

@@ -8,11 +8,13 @@ struct FileSystemDriver;
 
 typedef int (*DetectFunc)(struct BlockDevice* device);
 typedef int (*MountFunc)(struct BlockDevice* device, const char* mount_point);
+typedef int (*UnmountFunc)(struct BlockDevice* device);
 
 typedef struct FileSystemDriver {
     const char* name;
     DetectFunc detect;
     MountFunc mount;
+    UnmountFunc unmount;
 } FileSystemDriver;
 
 void FileSystemInit();

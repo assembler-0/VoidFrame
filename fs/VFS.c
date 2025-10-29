@@ -58,6 +58,24 @@ int VfsMount(const char* path, BlockDevice* device, FileSystemDriver* fs_driver)
     return -1;
 }
 
+int VfsUmount(const char* path) {
+    VfsMountStruct* mount = VfsFindMount(path);
+    if (!mount) {
+        return -1; // Mount point not found
+    }
+
+    if (mount->fs_driver && mount->fs_driver->unmount) {
+        int result = mount->fs_driver->unmount(mount->device);
+        if (result != 0) {
+            return result; // Filesystem-specific unmount failed
+        }
+        FsDelete(mount->mount_point);
+    }
+
+    mount->active = 0;
+    return 0;
+}
+
 int VfsInit(void) {
     PrintKernel("VFS: Initializing Virtual File System...\n");
 
@@ -67,16 +85,16 @@ int VfsInit(void) {
     PrintKernel( "VFS: Mount table cleared\n");
 
     // Register filesystems
-    static FileSystemDriver ntfs_driver = {"NTFS", NtfsDetect, NtfsMount};
+    static FileSystemDriver ntfs_driver = {"NTFS", NtfsDetect, NtfsMount, NtfsUnmount};
     FileSystemRegister(&ntfs_driver);
     PrintKernel("VFS: NTFS driver registered\n");
-    static FileSystemDriver fat_driver = {"FAT1x", Fat1xDetect, Fat1xMount};
+    static FileSystemDriver fat_driver = {"FAT1x", Fat1xDetect, Fat1xMount, Fat1xUnmount};
     FileSystemRegister(&fat_driver);
     PrintKernel("VFS: FAT1x driver registered\n");
-    static FileSystemDriver ext2_driver = {"EXT2", Ext2Detect, Ext2Mount};
+    static FileSystemDriver ext2_driver = {"EXT2", Ext2Detect, Ext2Mount, Ext2Unmount};
     FileSystemRegister(&ext2_driver);
     PrintKernel("VFS: EXT2 driver registered\n");
-    static FileSystemDriver devfs_driver = {"DevFS", NULL, DevfsMount};
+    static FileSystemDriver devfs_driver = {"DevFS", NULL, DevfsMount, NULL};
     FileSystemRegister(&devfs_driver);
     PrintKernel("VFS: DevFS driver registered\n");
 
