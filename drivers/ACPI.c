@@ -2,9 +2,11 @@
 #include "Console.h"
 #include "Io.h"
 #include "MemOps.h"
+#include "Scheduler.h"
 #include "StringOps.h"
 #include "VMem.h"
 #include "TSC.h"
+#include "VFS.h"
 
 static ACPIFADT* g_fadt = NULL;
 static bool g_acpi_initialized = false;
@@ -150,13 +152,17 @@ bool ACPIInit(void) {
     return false;
 }
 
+void ACPIResetProcedure() {
+    PrintKernel("ACPI: Unmounting Filesystems...\n");
+    VfsUnmountAll();
+    PrintKernelSuccess("ACPI: Filesystems unmounted\n");
+
+    PrintKernel("ACPI: Stopping all processes and services...\n");
+    KillAllProcess("SHUTDOWN");
+    PrintKernelSuccess("ACPI: All processes and services stopped\n");
+}
+
 void ACPIShutdown(void) {
-    if (!g_acpi_initialized || !g_fadt) {
-        PrintKernel("ACPI: Shutdown not available, using fallback\n");
-        outw(0x604, 0x2000);
-        return;
-    }
-    
     PrintKernel("ACPI: Initiating shutdown...\n");
     
     // Enable ACPI mode if needed
@@ -164,11 +170,12 @@ void ACPIShutdown(void) {
         PrintKernel("ACPI: Enabling ACPI mode via SMI\n");
         outb(g_fadt->smi_command_port, g_fadt->acpi_enable);
     }
-    
+
+    ACPIResetProcedure();
+
     // Try multiple shutdown methods
-    uint16_t shutdown_values[] = {0x2000, 0x3C00, 0x1400, 0x0000};
-    
     for (int i = 0; i < 4; i++) {
+        const uint16_t shutdown_values[] = {0x2000, 0x3C00, 0x1400, 0x0000};
         PrintKernel("ACPI: Trying shutdown value 0x");
         PrintKernelHex(shutdown_values[i]);
         PrintKernel(" on port 0x");
@@ -180,11 +187,7 @@ void ACPIShutdown(void) {
         // Wait a bit
         delay(10);
     }
-    
-    // Fallback methods
-    PrintKernel("ACPI: Trying QEMU shutdown\n");
-    outw(0x604, 0x2000);
-    
+
     PrintKernel("ACPI: Trying Bochs shutdown\n");
     outw(0xB004, 0x2000);
     
@@ -192,6 +195,9 @@ void ACPIShutdown(void) {
 }
 
 void ACPIReboot(void) {
+
+    ACPIResetProcedure();
+
     PrintKernel("ACPI: Initiating reboot...\n");
     
     // Try keyboard controller reset

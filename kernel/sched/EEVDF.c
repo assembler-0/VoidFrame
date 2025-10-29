@@ -1318,6 +1318,15 @@ void EEVDFKillProcess(uint32_t pid) {
     EEVDFTerminateProcess(pid, TERM_KILLED, 1);
 }
 
+void EEVDFKillAllProcesses(const char* reason) {
+    for (int i = 0; i < EEVDF_MAX_PROCESSES; i++) {
+        EEVDFProcessControlBlock* proc = &processes[i];
+        if (proc->state != PROC_TERMINATED && proc->pid != 0) {
+            EEVDFASTerminate(proc->pid, reason);
+        }
+    }
+}
+
 void EEVDFKillCurrentProcess(const char* reason) {
     EEVDFProcessControlBlock* current = EEVDFGetCurrentProcess();
     if (current) EEVDFASTerminate(current->pid, reason);

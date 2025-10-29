@@ -220,6 +220,7 @@ uint64_t MLFQGetSystemTicks(void);
 void MLFQListProcesses(void);
 void MLFQGetProcessStats(uint32_t pid, uint32_t* cpu_time, uint32_t* io_ops, uint32_t* preemptions);
 void MLFQKillProcess(uint32_t pid);
+void MLFQKillAllProcesses(const char* reason);
 
 // DEBUG
 void MLFQDumpPerformanceStats(void);

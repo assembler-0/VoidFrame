@@ -76,6 +76,15 @@ int VfsUmount(const char* path) {
     return 0;
 }
 
+int VfsUnmountAll() {
+    for (int i = 0; i < VFS_MAX_MOUNTS; i++) {
+        if (mounts[i].active) {
+            VfsUmount(mounts[i].mount_point);
+        }
+    }
+    return 0;
+}
+
 int VfsInit(void) {
     PrintKernel("VFS: Initializing Virtual File System...\n");
 

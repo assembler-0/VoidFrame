@@ -85,6 +85,16 @@ void KillProcess(uint32_t pid) {
 #endif
 }
 
+void KillAllProcess(const char* reason) {
+#if defined(VF_CONFIG_SCHED_MLFQ)
+    return MLFQKillAllProcess(reason);
+#elif defined(VF_CONFIG_SCHED_EEVDF)
+    return EEVDFKillAllProcesses(reason);
+#elif defined(VF_CONFIG_SCHED_CFS)
+    return; // not implemented
+#endif
+}
+
 void KillCurrentProcess(const char * reason) {
 #if defined(VF_CONFIG_SCHED_MLFQ)
     return MLFQKillCurrentProcess(reason);

@@ -103,3 +103,4 @@ int VfsAnalyze(const char* path, uint32_t* byte_counts, uint32_t* entropy);
 VfsMountStruct* VfsFindMount(const char* path);
 void VfsListMount(void);
 const char* VfsStripMount(const char* path, VfsMountStruct* mount);
+int VfsUnmountAll();
