@@ -201,7 +201,7 @@ void EEVDFYield(void);
 void EEVDFSchedule(Registers* regs);
 void EEVDFKillProcess(uint32_t pid);
 void EEVDFKillCurrentProcess(const char* reason);
-void EEVDFKillAllProcesses(const char* reason);
+void EEVDFKillAllProcess(const char* reason);
 
 // Time management
 uint64_t EEVDFGetSystemTicks(void);

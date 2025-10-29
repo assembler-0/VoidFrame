@@ -228,28 +228,28 @@ int Ext2Mount(BlockDevice* device, const char* mount_point) {
 }
 
 int Ext2Unmount(BlockDevice* device) {
-    if (!device) return -1;
-    int id = device->id;
-    if (id < 0 || id >= MAX_BLOCK_DEVICES) return -1;
-
-    Ext2Volume* vol = g_ext2_by_dev[id];
-    if (!vol) return -1; // Not mounted
-
+    if (!device) { return -1; }
+    int device_id = device->id;
+    if (device_id < 0 || device_id >= MAX_BLOCK_DEVICES) { return -1; }
+    Ext2Volume* vol = g_ext2_by_dev[device_id];
+    if (!vol) { return -1; } // Not mounted
+    RustRwLock* lock = vol->lock;
+    if (lock) {
+        rust_rwlock_write_lock(lock, GetCurrentProcess()->pid);
+    }
     if (g_ext2_active == vol) {
         g_ext2_active = NULL;
     }
-
     if (vol->group_descs) {
         KernelFree(vol->group_descs);
+        vol->group_descs = NULL;
     }
-
-    if (vol->lock) {
-        rust_rwlock_free(vol->lock);
+    g_ext2_by_dev[device_id] = NULL;
+    if (lock) {
+        rust_rwlock_write_unlock(lock);
+        rust_rwlock_free(lock);
     }
-
     KernelFree(vol);
-    g_ext2_by_dev[id] = NULL;
-
     return 0;
 }
 

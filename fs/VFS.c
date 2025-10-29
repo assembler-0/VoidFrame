@@ -77,7 +77,7 @@ int VfsUmount(const char* path) {
 }
 
 int VfsUnmountAll() {
-    for (int i = 0; i < VFS_MAX_MOUNTS; i++) {
+    for (int i = VFS_MAX_MOUNTS - 1; i >= 0; i--) {
         if (mounts[i].active) {
             VfsUmount(mounts[i].mount_point);
         }

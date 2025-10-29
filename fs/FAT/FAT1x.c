@@ -59,16 +59,22 @@ int Fat1xMount(BlockDevice* device, const char* mount_point) {
     // Read boot sector
     uint8_t boot_sector[512];
     if (BlockDeviceRead(device->id, 0, 1, boot_sector) != 0) {
+        g_fat1x_by_dev[device->id] = NULL; // Critical: Free volume if read fails
+        KernelFree(vol);
         return -1;
     }
     FastMemcpy(&volume.boot, boot_sector, sizeof(Fat1xBootSector));
 
     if (volume.boot.bytes_per_sector != 512) {
+        g_fat1x_by_dev[device->id] = NULL; // Critical: Free volume if read fails
+        KernelFree(vol);
         return -1;
     }
 
     sector_buffer = KernelMemoryAlloc(POOL_SIZE_512);
     if (!sector_buffer) {
+        g_fat1x_by_dev[device->id] = NULL; // Critical: Free volume if read fails
+        KernelFree(vol);
         return -1;
     }
 
@@ -111,6 +117,10 @@ int Fat1xUnmount(BlockDevice* device) {
         g_fat1x_active = NULL;
     }
 
+    // if (vol->fat_table) {
+    //     KernelFree(vol->fat_table);
+    //     vol->fat_table = NULL;
+    // }
 
     KernelFree(vol);
     g_fat1x_by_dev[id] = NULL;

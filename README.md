@@ -1,10 +1,10 @@
 # [VoidFrame] - a ring 0 kernel 💫
 
-> A fast, simple, secure 64-bit ring-0 kernel written in C and assembly. With modern capabilities.
+> A fast, simple, secure 64-bit ring-0 kernel written in C (Rust) and assembly. With modern capabilities.
 
 ---
 
-- How it works: [here!](docs/ARCHITECTURE.md)
+- How it works (outdated): [here!](docs/ARCHITECTURE.md)
 - Development Guide: [here!](docs/DEVELOPMENT.md)
 
 ---
@@ -28,7 +28,6 @@ It would be amazing if you could contribute to this project!
 - x64-compatible cpu (used: Intel i3-12100F)
 - POSIX-compliant OS (SysV ABI) (used: Arch Linux 6.16.9-arch1-1)
 - cmake >= 3.20 (used: cmake 4.1.2)
-- meson >= 1.4 (used: meson 1.9.1)
 - ninja >= 1.11 (used: ninja 1.21.1)
 - clang/++ >= 18.0.0 (used: 20.1.8)
 - rustup (nightly, bare metal toolchain) >= 1.89.0 (used: 1.92.0-nightly)
@@ -40,18 +39,6 @@ It would be amazing if you could contribute to this project!
     - Note: depending on your distro, grub-mkrescue may require xorriso and mtools packages.
 
 ### Quickstart
-#### Full development setup
-```bash
-# Meson
-git clone https://github.com/assembler-0/VoidFrame.git
-cd VoidFrame
-meson setup build
-cd build
-ninja -j$(nproc)
-ninja img
-ninja extra-img
-ninja run
-```
 ```bash
 # CMake
 git clone https://github.com/assembler-0/VoidFrame.git
@@ -61,7 +48,7 @@ cd build
 cmake .. -DCMAKE_BUILD_TYPE=Release \
     -DCMAKE_TOOLCHAIN_FILE=../cmake/toolchain/linux-x64.cmake \
     -G Ninja \
-    -DVF_SCHEDULER=<MLFQ/EEVDF>
+    -DVF_SCHEDULER=EEVDF
 ccmake . # Optinal, tune as needed
 ninja -j$(nproc)
 ninja run
