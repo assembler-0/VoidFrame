@@ -7,7 +7,6 @@
 
 #include "stdint.h"
 #include "stddef.h"
-#include "Console.h"
 #include "VMem.h"
 #include "APIC.h"
 #include "Magazine.h"

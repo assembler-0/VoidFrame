@@ -3,6 +3,7 @@
 
 #include "stdint.h"
 #include "PCI/PCI.h"
+#include "kernel/atomic/SpinlockRust.h"
 
 // NVMe PCI Class/Subclass
 #define NVME_CLASS_CODE     0x01
@@ -42,6 +43,8 @@
 #define NVME_ADMIN_QUEUE_SIZE   64
 #define NVME_IO_QUEUE_SIZE      256
 
+#define PRP_LIST_ENTRIES 512
+
 // NVMe Submission Queue Entry
 typedef struct {
     uint32_t cdw0;      // Command Dword 0
@@ -73,6 +76,9 @@ typedef struct {
     PciDevice pci_device;
     volatile uint8_t* mmio_base;
     uint64_t mmio_size;
+    RustSpinLock* lock;
+    uint64_t* prp_list;
+    uint64_t prp_list_phys;
     
     // Doorbell parameters
     uint8_t dstrd; // CAP.DSTRD value (stride as 2^n of 4-byte units)
@@ -102,6 +108,7 @@ typedef struct {
 
 // Function prototypes
 int NVMe_Init(void);
+void NVMe_Shutdown(void);
 int NVMe_ReadSectors(uint64_t lba, uint16_t count, void* buffer);
 int NVMe_WriteSectors(uint64_t lba, uint16_t count, const void* buffer);
 

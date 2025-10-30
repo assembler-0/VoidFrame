@@ -1,6 +1,7 @@
 #include "Panic.h"
 #include "Io.h"
 // The ONLY necessary includes for display are now Console and Serial
+#include "ACPI.h"
 #include "../../mm/KernelHeap.h"
 #include "../../mm/PMem.h"
 #include "Console.h"
@@ -78,8 +79,16 @@ void __attribute__((noreturn)) KernelPanicHandler(const char* message, uint64_t 
         VBEShowPanic();
 #endif
         PrintKernel("[FATAL] - [KERNEL PANIC] - ");
-        if (message) PrintKernel(message);
+        if (message) {
+            PrintKernel(message);
+            PrintNewline();
+        }
         else PrintKernel("No message provided.");
+
+        PrintKernel("Starting reset procedure...\n");
+        ACPIResetProcedure();
+        PrintKernelSuccess("Reset procedure complete\n");
+
         PrintKernel("\n");
         if (ctx) {
             char hex[20];
@@ -141,7 +150,7 @@ void __attribute__((noreturn)) KernelPanicHandler(const char* message, uint64_t 
             PrintKernelInt(stats.fragmentation_score);
             PrintKernel("% fragmented\n");
             PrintVMemStats();
-            PrintHeapStats();
+            // PrintHeapStats();
 
             PrintKernelAt("SYSTEM HALTED.", 50, 45);
             ConsoleSetColor(VGA_COLOR_DEFAULT);
