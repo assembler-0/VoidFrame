@@ -84,3 +84,4 @@ bool ACPIInit(void);
 void ACPIShutdown(void);
 void ACPIReboot(void);
 void* AcpiFindTable(const char* signature);
+void ACPIResetProcedure(void);

@@ -33,6 +33,11 @@ void TSCInit(void) {
     PrintKernelF("TSC: Calibrated frequency: %llu Hz\n", tsc_freq_hz);
 }
 
+uint64_t GetTimeInMs(void) {
+    if (!tsc_calibrated) return 0;
+    return (rdtsc() * 1000) / tsc_freq_hz;
+}
+
 void delay_us(uint32_t microseconds) {
     if (!tsc_calibrated) return;
     

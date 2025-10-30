@@ -2,6 +2,7 @@
 #include "Console.h"
 #include "Io.h"
 #include "MemOps.h"
+#include "NVMe.h"
 #include "Scheduler.h"
 #include "StringOps.h"
 #include "VMem.h"
@@ -153,6 +154,10 @@ void ACPIResetProcedure() {
     PrintKernel("ACPI: Stopping all processes and services...\n");
     KillAllProcess("SHUTDOWN");
     PrintKernelSuccess("ACPI: All processes and services stopped\n");
+
+    PrintKernel("ACPI: Stopping NVMe driver...\n");
+    NVMe_Shutdown();
+    PrintKernelSuccess("ACPI: NVMe driver stopped\n");
 }
 
 void ACPIShutdown(void) {
