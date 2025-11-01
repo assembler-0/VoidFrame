@@ -1207,7 +1207,7 @@ static void MountHandler(const char* args) {
     }
 
     char mount_point[64];
-    FormatA(mount_point, sizeof(mount_point), "%s/%s", RuntimeMounts, dev_name);
+    snprintf(mount_point, sizeof(mount_point), "%s/%s", RuntimeMounts, dev_name);
 
     if (FastStrCmp(fs_type, "fat1x") == 0) {
         Fat1xMount(dev, mount_point);

@@ -694,7 +694,7 @@ static void SmartAging(void) {
 
 static inline __attribute__((visibility("hidden"))) __attribute__((always_inline)) int RuntimePathValidation(const MLFQProcessControlBlock * proc) {
     char expected[sizeof(proc->ProcessRuntimePath)];
-    FormatA(expected, sizeof(expected), "%s/%d", RuntimeProcesses, proc->pid);
+    snprintf(expected, sizeof(expected), "%s/%d", RuntimeProcesses, proc->pid);
     return FastStrCmp(proc->ProcessRuntimePath, expected) == 0;
 }
 
@@ -1062,7 +1062,7 @@ uint32_t MLFQCreateSecureProcess(const char * name, void (*entry_point)(void), u
     }
 
     // Initialize process with enhanced security and scheduling data
-    FormatA(processes[slot].name, sizeof(processes[slot].name), "%s", name ? name : FormatS("proc%d", slot));
+    snprintf(processes[slot].name, sizeof(processes[slot].name), "%s", name ? name : FormatS("proc%d", slot));
     processes[slot].pid = new_pid;
     processes[slot].state = PROC_READY;
     processes[slot].stack = stack;
@@ -1076,7 +1076,7 @@ uint32_t MLFQCreateSecureProcess(const char * name, void (*entry_point)(void), u
     processes[slot].io_operations = 0;
     processes[slot].preemption_count = 0;
     processes[slot].wait_time = 0;
-    FormatA(processes[slot].ProcessRuntimePath, sizeof(processes[slot].ProcessRuntimePath), "%s/%d", RuntimeProcesses, new_pid);
+    snprintf(processes[slot].ProcessRuntimePath, sizeof(processes[slot].ProcessRuntimePath), "%s/%d", RuntimeProcesses, new_pid);
 #ifdef VF_CONFIG_USE_CERBERUS
     CerberusRegisterProcess(new_pid, (uint64_t)stack, STACK_SIZE);
 #endif
@@ -1464,7 +1464,7 @@ static void Astra(void) {
     // register
     security_manager_pid = current->pid;
 
-    FormatA(astra_path, sizeof(astra_path), "%s/astra", current->ProcessRuntimePath);
+    snprintf(astra_path, sizeof(astra_path), "%s/astra", current->ProcessRuntimePath);
     if (VfsCreateFile(astra_path) != 0) PANIC("Failed to create Astra process info file");
 
     PrintKernelSuccess("Astra: Astra active.\n");
@@ -1677,13 +1677,13 @@ int MLFQSchedInit(void) {
     InitSchedulerNodePool();
     // Initialize idle process
     MLFQProcessControlBlock* idle_proc = &processes[0];
-    FormatA(idle_proc->name, sizeof(idle_proc->name), "Idle");
+    snprintf(idle_proc->name, sizeof(idle_proc->name), "Idle");
     idle_proc->pid = 0;
     idle_proc->state = PROC_RUNNING;
     idle_proc->privilege_level = PROC_PRIV_SYSTEM;
     idle_proc->scheduler_node = NULL;
     idle_proc->creation_time = MLFQGetSystemTicks();
-    FormatA(idle_proc->ProcessRuntimePath, sizeof(idle_proc->ProcessRuntimePath), "%s/%d", RuntimeServices, idle_proc->pid);
+    snprintf(idle_proc->ProcessRuntimePath, sizeof(idle_proc->ProcessRuntimePath), "%s/%d", RuntimeServices, idle_proc->pid);
     ProcFSRegisterProcess(0, 0);
     // Securely initialize the token for the Idle Process
     MLFQSecurityToken* token = &idle_proc->token;

@@ -78,7 +78,7 @@ void FileSystemAutoMount() {
                     PrintKernel("\n");
                     // Simple mount point naming for now
                     char mount_point[64];
-                    FormatA(mount_point, sizeof(mount_point), "%s/%s", RuntimeMounts, dev->name);
+                    snprintf(mount_point, sizeof(mount_point), "%s/%s", RuntimeMounts, dev->name);
                     PrintKernel("FS: Mounting at ");
                     PrintKernel(mount_point);
                     PrintKernel("\n");

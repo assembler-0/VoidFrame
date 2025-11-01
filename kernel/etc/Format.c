@@ -226,11 +226,7 @@ int vsprintf(char *buf, const char *fmt, va_list args)
 	return vsnprintf(buf, 0x7FFFFFFF, fmt, args);
 }
 
-int Format(char* buffer, size_t size, const char* format, va_list args) {
-    return vsnprintf(buffer, size, format, args);
-}
-
-int FormatA(char* buffer, size_t size, const char* format, ...) {
+int snprintf(char* buffer, size_t size, const char* format, ...) {
     va_list args;
     va_start(args, format);
     int result = vsnprintf(buffer, size, format, args);

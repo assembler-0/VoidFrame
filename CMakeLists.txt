@@ -15,7 +15,9 @@ enable_language(ASM_NASM)
 # Module Path & Includes
 # ============================================================================
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_SOURCE_DIR}/cmake")
+
 include(cache)
+include(ccache)
 include(features)
 include(variable)
 include(dependencies)
@@ -38,7 +40,17 @@ else()
 endif()
 
 if(NOT CMAKE_TOOLCHAIN_FILE)
-    message(FATAL_ERROR "CMAKE_TOOLCHAIN_FILE is not set. Please provide a toolchain file.")
+    message(WARNING "CMAKE_TOOLCHAIN_FILE is not set. Automatically selecting toolchain file...")
+    if (CMAKE_HOST_SYSTEM_NAME STREQUAL "Linux")
+        set(CMAKE_TOOLCHAIN_FILE "${CMAKE_SOURCE_DIR}/cmake/toolchains/linux-x64.cmake" CACHE PATH "Toolchain file" FORCE)
+        message(STATUS "Defaulting to Linux x86_64 toolchain file: ${CMAKE_TOOLCHAIN_FILE}")
+    elseif (CMAKE_HOST_SYSTEM_NAME STREQUAL "Darwin")
+        set(CMAKE_TOOLCHAIN_FILE "${CMAKE_SOURCE_DIR}/cmake/toolchains/macos-x64.cmake" CACHE PATH "Toolchain file" FORCE)
+        message(STATUS "Defaulting to macOS x86_64 toolchain file: ${CMAKE_TOOLCHAIN_FILE}")
+    elseif (CMAKE_HOST_SYSTEM_NAME STREQUAL "Windows")
+        set(CMAKE_TOOLCHAIN_FILE "${CMAKE_SOURCE_DIR}/cmake/toolchains/windows-x64.cmake" CACHE PATH "Toolchain file" FORCE)
+        message(STATUS "Defaulting to Windows x86_64 toolchain file: ${CMAKE_TOOLCHAIN_FILE}")
+    endif()
 else()
     message(STATUS "Using toolchain file: ${CMAKE_TOOLCHAIN_FILE}")
 endif()
@@ -48,19 +60,14 @@ if(NOT CMAKE_BUILD_TYPE)
     message(WARNING "CMAKE_BUILD_TYPE not set. Defaulting to Release.")
 endif()
 
-if(CMAKE_GENERATOR STREQUAL "Ninja")
-    message(STATUS "CMake: Generator: ${CMAKE_GENERATOR}")
-else()
-    message(WARNING "CMake: Non-Ninja generator detected: ${CMAKE_GENERATOR}. Ninja is recommended.")
-endif()
-
 if(CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64")
-    message(STATUS "CMake: Target Architecture: ${CMAKE_SYSTEM_PROCESSOR}")
+    message(STATUS "CMake Target Architecture: ${CMAKE_SYSTEM_PROCESSOR}")
     set(Rust_CARGO_TARGET "x86_64-unknown-none")
 else()
     message(FATAL_ERROR "Unsupported target architecture: ${CMAKE_SYSTEM_PROCESSOR}")
 endif()
 
+message(STATUS "CMake Generator: ${CMAKE_GENERATOR}")
 message(STATUS "CMake Build Type: ${CMAKE_BUILD_TYPE}")
 message(STATUS "CMake Source Directory: ${CMAKE_SOURCE_DIR}")
 message(STATUS "CMake Binary Directory: ${CMAKE_BINARY_DIR}")
@@ -105,10 +112,6 @@ if (SILENT_BUILD)
     corrosion_add_target_rustflags(voidframe_mm "-A" "warnings" "-C" "link-arg=-s")
     corrosion_add_target_rustflags(voidframe_spinlock "-A" "warnings" "-C" "link-arg=-s")
 endif()
-
-# ============================================================================
-# Flags setup
-# ============================================================================
 
 # ============================================================================
 # Kernel Linking

@@ -1,40 +1,93 @@
 # ============================================================================
 # VoidFrame Feature Configuration Flags
 # ============================================================================
-add_compile_definitions(
-        VF_CONFIG_ENABLE_XHCI
-        VF_CONFIG_ENABLE_VIRTIO
-        VF_CONFIG_ENABLE_ISA
-        VF_CONFIG_ENABLE_LPT
-        VF_CONFIG_ENABLE_PCI
-        VF_CONFIG_ENABLE_PS2
-        VF_CONFIG_ENABLE_IDE
-        VF_CONFIG_ENABLE_VFCOMPOSITOR
-        VF_CONFIG_ENABLE_AHCI
-        VF_CONFIG_ENABLE_NVME
-        VF_CONFIG_ENABLE_GENERIC_SOUND
-        VF_CONFIG_RTC_CENTURY
-        VF_CONFIG_ENFORCE_MEMORY_PROTECTION
-        VF_CONFIG_VM_HOST
-        VF_CONFIG_SNOOZE_ON_BOOT
-        VF_CONFIG_PROCINFO_CREATE_DEFAULT
-        VF_CONFIG_USE_VFSHELL
-        VF_CONFIG_USE_DYNAMOX
-        VF_CONFIG_USE_ASTRA
-        VF_CONFIG_USE_CERBERUS
-        VF_CONFIG_CERBERUS_STACK_PROTECTION
-        VF_CONFIG_INTEL
-        VF_CONFIG_ENABLE_OPIC
-)
 
-add_compile_definitions(
-        #    VF_CONFIG_ENABLE_VMWARE_SVGA_II
-        #    VF_CONFIG_ENABLE_CERBERUS_VFS_LOGGING
-        #    VF_CONFIG_CERBERUS_THREAT_REPORTING
-        #    VF_CONFIG_PROCINFO_AUTO_CLEANUP
-        #    VF_CONFIG_PANIC_OVERRIDE
-        #    VF_CONFIG_LOAD_MB_MODULES
-)
+if(VF_CONFIG_ENABLE_XHCI)
+    add_compile_definitions(VF_CONFIG_ENABLE_XHCI)
+endif()
+if(VF_CONFIG_ENABLE_VIRTIO)
+    add_compile_definitions(VF_CONFIG_ENABLE_VIRTIO)
+endif()
+if(VF_CONFIG_ENABLE_ISA)
+    add_compile_definitions(VF_CONFIG_ENABLE_ISA)
+endif()
+if(VF_CONFIG_ENABLE_LPT)
+    add_compile_definitions(VF_CONFIG_ENABLE_LPT)
+endif()
+if(VF_CONFIG_ENABLE_PCI)
+    add_compile_definitions(VF_CONFIG_ENABLE_PCI)
+endif()
+if(VF_CONFIG_ENABLE_PS2)
+    add_compile_definitions(VF_CONFIG_ENABLE_PS2)
+endif()
+if(VF_CONFIG_ENABLE_IDE)
+    add_compile_definitions(VF_CONFIG_ENABLE_IDE)
+endif()
+if(VF_CONFIG_ENABLE_VFCOMPOSITOR)
+    add_compile_definitions(VF_CONFIG_ENABLE_VFCOMPOSITOR)
+endif()
+if(VF_CONFIG_ENABLE_AHCI)
+    add_compile_definitions(VF_CONFIG_ENABLE_AHCI)
+endif()
+if(VF_CONFIG_ENABLE_NVME)
+    add_compile_definitions(VF_CONFIG_ENABLE_NVME)
+endif()
+if(VF_CONFIG_ENABLE_GENERIC_SOUND)
+    add_compile_definitions(VF_CONFIG_ENABLE_GENERIC_SOUND)
+endif()
+if(VF_CONFIG_RTC_CENTURY)
+    add_compile_definitions(VF_CONFIG_RTC_CENTURY)
+endif()
+if(VF_CONFIG_ENFORCE_MEMORY_PROTECTION)
+    add_compile_definitions(VF_CONFIG_ENFORCE_MEMORY_PROTECTION)
+endif()
+if(VF_CONFIG_VM_HOST)
+    add_compile_definitions(VF_CONFIG_VM_HOST)
+endif()
+if(VF_CONFIG_SNOOZE_ON_BOOT)
+    add_compile_definitions(VF_CONFIG_SNOOZE_ON_BOOT)
+endif()
+if(VF_CONFIG_USE_VFSHELL)
+    add_compile_definitions(VF_CONFIG_USE_VFSHELL)
+endif()
+if(VF_CONFIG_USE_DYNAMOX)
+    add_compile_definitions(VF_CONFIG_USE_DYNAMOX)
+endif()
+if(VF_CONFIG_USE_ASTRA)
+    add_compile_definitions(VF_CONFIG_USE_ASTRA)
+endif()
+if(VF_CONFIG_USE_CERBERUS)
+    add_compile_definitions(VF_CONFIG_USE_CERBERUS)
+endif()
+if(VF_CONFIG_CERBERUS_STACK_PROTECTION)
+    add_compile_definitions(VF_CONFIG_CERBERUS_STACK_PROTECTION)
+endif()
+if(VF_CONFIG_INTEL)
+    add_compile_definitions(VF_CONFIG_INTEL)
+endif()
+if(VF_CONFIG_ENABLE_OPIC)
+    add_compile_definitions(VF_CONFIG_ENABLE_OPIC)
+endif()
+
+if(VF_CONFIG_ENABLE_VMWARE_SVGA_II)
+    add_compile_definitions(VF_CONFIG_ENABLE_VMWARE_SVGA_II)
+endif()
+
+if(VF_CONFIG_ENABLE_CERBERUS_VFS_LOGGING)
+    add_compile_definitions(VF_CONFIG_ENABLE_CERBERUS_VFS_LOGGING)
+endif()
+
+if(VF_CONFIG_CERBERUS_THREAT_REPORTING)
+    add_compile_definitions(VF_CONFIG_CERBERUS_THREAT_REPORTING)
+endif()
+
+if(VF_CONFIG_PANIC_OVERRIDE)
+    add_compile_definitions(VF_CONFIG_PANIC_OVERRIDE)
+endif()
+
+if(VF_CONFIG_LOAD_MB_MODULES)
+    add_compile_definitions(VF_CONFIG_LOAD_MB_MODULES)
+endif()
 
 if(EXCLUDE_EXTRA_OBJECTS)
     add_compile_definitions(VF_CONFIG_EXCLUDE_EXTRA_OBJECTS)
