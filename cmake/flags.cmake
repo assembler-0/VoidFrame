@@ -22,4 +22,9 @@ endif()
 
 set(CMAKE_C_FLAGS "${C_FLAGS}")
 set(CMAKE_CXX_FLAGS "${C_FLAGS} -fno-exceptions -fno-rtti -fno-threadsafe-statics")
-set(CMAKE_ASM_NASM_FLAGS "-f elf64 -DVF_CONFIG_VESA_FB")
+
+set(ASM_NASM_FLAGS "-f elf64")
+if(VF_CONFIG_VESA_FB)
+    string(APPEND ASM_NASM_FLAGS " -DVF_CONFIG_VESA_FB")
+endif()
+set(CMAKE_ASM_NASM_FLAGS "${ASM_NASM_FLAGS}")
