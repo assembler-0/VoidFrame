@@ -1,5 +1,6 @@
 #include "Network.h"
 #include "Console.h"
+#include "StringOps.h"
 #include "intel/E1000.h"
 #include "interface/Arp.h"
 #include "realtek/RTL8139.h"
@@ -11,7 +12,6 @@ void Net_Initialize(void) {
     PrintKernel("Initializing network devices...\n");
     g_device_count = 0;
     ArpInit();
-
 
     // Try to initialize E1000
     if (E1000_Init() == 0) {
@@ -29,14 +29,7 @@ void Net_Initialize(void) {
 void Net_RegisterDevice(const char* name, send_packet_t sender, get_mac_t mac_getter, poll_receive_t poller) {
     if (g_device_count < MAX_NETWORK_DEVICES) {
         NetworkDevice* dev = &g_network_devices[g_device_count++];
-        // Simple string copy
-        int i = 0;
-        while(name[i] != '\0' && i < 31) {
-            dev->name[i] = name[i];
-            i++;
-        }
-        dev->name[i] = '\0';
-
+        FastStrCopy(dev->name, name, 256);
         dev->send_packet = sender;
         dev->get_mac_address = mac_getter;
         dev->poll_receive = poller;
@@ -46,6 +39,10 @@ void Net_RegisterDevice(const char* name, send_packet_t sender, get_mac_t mac_ge
     } else {
         PrintKernel("Cannot register more network devices.\n");
     }
+}
+
+void Net_UnregisterDevice() {
+
 }
 
 NetworkDevice* Net_GetDevice(int index) {

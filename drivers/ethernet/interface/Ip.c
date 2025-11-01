@@ -24,10 +24,10 @@ static uint16_t IpChecksum(const void* data, size_t length) {
 }
 
 void IpSend(uint8_t dest_ip[4], uint8_t protocol, const void* data, uint16_t len) {
-    NetworkDevice* net_dev = Net_GetDevice(0);
-    if (!net_dev) {
-        PrintKernel("IP: No network device found.\n");
-        return;
+    NetworkDevice* net_dev = NULL;
+    for (int i = 0; i < MAX_NETWORK_DEVICES; i++) {
+        net_dev = Net_GetDevice(i);
+        if (net_dev) break;
     }
 
     uint8_t dest_mac[6];

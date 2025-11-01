@@ -4,6 +4,9 @@
 global memcpy_internal_sse2
 global memcpy_internal_avx2
 global memcpy_internal_avx512
+global memcpy_internal_sse2_wc
+global memcpy_internal_avx2_wc
+global memcpy_internal_avx512_wc
 
 ; Function: memcpy_internal_sse2 (SSE2 optimized)
 ; Inputs:
@@ -28,6 +31,7 @@ global memcpy_internal_avx512
 ;   rdx - number of bytes to copy
 ; Outputs:
 ;   rax - pointer to memory destination
+; snip... same for _wc versions (_wc indicates write-combining stores)
 
 section .text
 
@@ -82,7 +86,7 @@ memcpy_internal_sse2:
     movntdq [rdi + 80], xmm5
     movntdq [rdi + 96], xmm6
     movntdq [rdi + 112], xmm7
-    
+
     add rsi, 128
     add rdi, 128
     
@@ -107,7 +111,7 @@ memcpy_internal_sse2:
     movntdq [rdi + 16], xmm1
     movntdq [rdi + 32], xmm2
     movntdq [rdi + 48], xmm3
-    
+
     add rsi, 64
     add rdi, 64
     
@@ -126,7 +130,7 @@ memcpy_internal_sse2:
     ; Use non-temporal stores
     movntdq [rdi], xmm0
     movntdq [rdi + 16], xmm1
-    
+
     add rsi, 32
     add rdi, 32
     
@@ -143,7 +147,7 @@ memcpy_internal_sse2:
     
     ; Use non-temporal stores
     movntdq [rdi], xmm0
-    
+
     add rsi, 16
     add rdi, 16
     
@@ -307,6 +311,288 @@ memcpy_internal_sse2:
     jmp .done
     
 .done:
+    ; Restore registers
+    pop rsi
+    pop rcx
+    pop rbx
+    
+    ; Return destination pointer
+    mov rax, rdi
+    ret
+
+; Standard memcpy using SSE2 (Write-Combining)
+memcpy_internal_sse2_wc:
+    ; Save registers we will use
+    push rbx
+    push rcx
+    push rsi
+    
+    ; rdi = dest
+    ; rsi = src
+    ; rdx = count
+    
+    ; Check for zero count
+    test rdx, rdx
+    jz .wc_done
+    
+    ; Check for small counts
+    cmp rdx, 128
+    jb .wc_copy_small
+    
+    ; Check memory alignment for optimal performance
+    test rdi, 15
+    jnz .wc_copy_unaligned
+    
+    test rsi, 15
+    jnz .wc_copy_unaligned
+    
+    ; Aligned copy using SSE2
+    mov rcx, rdx
+    shr rcx, 7  ; count / 128
+    jz .wc_copy_64_bytes
+    
+.wc_copy_128_bytes_loop:
+    ; Load 128 bytes using SSE2
+    movdqa xmm0, [rsi]
+    movdqa xmm1, [rsi + 16]
+    movdqa xmm2, [rsi + 32]
+    movdqa xmm3, [rsi + 48]
+    movdqa xmm4, [rsi + 64]
+    movdqa xmm5, [rsi + 80]
+    movdqa xmm6, [rsi + 96]
+    movdqa xmm7, [rsi + 112]
+    
+    ; Use standard stores
+    movdqa [rdi], xmm0
+    movdqa [rdi + 16], xmm1
+    movdqa [rdi + 32], xmm2
+    movdqa [rdi + 48], xmm3
+    movdqa [rdi + 64], xmm4
+    movdqa [rdi + 80], xmm5
+    movdqa [rdi + 96], xmm6
+    movdqa [rdi + 112], xmm7
+
+    add rsi, 128
+    add rdi, 128
+    
+    dec rcx
+    jnz .wc_copy_128_bytes_loop
+    
+    ; Process remaining 64 bytes
+    mov rcx, rdx
+    shr rcx, 6  ; count / 64
+    and rcx, 1  ; Check if we have 64 bytes remaining
+    jz .wc_copy_32_bytes
+    
+.wc_copy_64_bytes:
+    ; Load 64 bytes using SSE2
+    movdqa xmm0, [rsi]
+    movdqa xmm1, [rsi + 16]
+    movdqa xmm2, [rsi + 32]
+    movdqa xmm3, [rsi + 48]
+    
+    ; Use standard stores
+    movdqa [rdi], xmm0
+    movdqa [rdi + 16], xmm1
+    movdqa [rdi + 32], xmm2
+    movdqa [rdi + 48], xmm3
+
+    add rsi, 64
+    add rdi, 64
+    
+.wc_copy_32_bytes:
+    ; Process remaining 32 bytes
+    mov rcx, rdx
+    shr rcx, 5  ; count / 32
+    and rcx, 1  ; Check if we have 32 bytes remaining
+    jz .wc_copy_16_bytes
+    
+.wc_copy_32_bytes_loop:
+    ; Load 32 bytes using SSE2
+    movdqa xmm0, [rsi]
+    movdqa xmm1, [rsi + 16]
+    
+    ; Use standard stores
+    movdqa [rdi], xmm0
+    movdqa [rdi + 16], xmm1
+
+    add rsi, 32
+    add rdi, 32
+    
+.wc_copy_16_bytes:
+    ; Process remaining 16 bytes
+    mov rcx, rdx
+    shr rcx, 4  ; count / 16
+    and rcx, 1  ; Check if we have 16 bytes remaining
+    jz .wc_copy_8_bytes
+    
+.wc_copy_16_bytes_loop:
+    ; Load 16 bytes using SSE2
+    movdqa xmm0, [rsi]
+    
+    ; Use standard stores
+    movdqa [rdi], xmm0
+
+    add rsi, 16
+    add rdi, 16
+    
+.wc_copy_8_bytes:
+    ; Process remaining 8 bytes
+    mov rcx, rdx
+    shr rcx, 3  ; count / 8
+    and rcx, 1  ; Check if we have 8 bytes remaining
+    jz .wc_copy_4_bytes
+    
+.wc_copy_8_bytes_loop:
+    ; Load 8 bytes
+    mov rax, [rsi]
+    
+    ; Store 8 bytes
+    mov [rdi], rax
+    
+    add rsi, 8
+    add rdi, 8
+    
+    .wc_copy_4_bytes:
+    ; Process remaining 4 bytes
+    mov rcx, rdx
+    shr rcx, 2  ; count / 4
+    and rcx, 1  ; Check if we have 4 bytes remaining
+    jz .wc_copy_2_bytes
+    
+.wc_copy_4_bytes_loop:
+    ; Load 4 bytes
+    mov eax, [rsi]
+    
+    ; Store 4 bytes
+    mov [rdi], eax
+    
+    add rsi, 4
+    add rdi, 4
+    
+.wc_copy_2_bytes:
+    ; Process remaining 2 bytes
+    mov rcx, rdx
+    shr rcx, 1  ; count / 2
+    and rcx, 1  ; Check if we have 2 bytes remaining
+    jz .wc_copy_1_byte
+    
+.wc_copy_2_bytes_loop:
+    ; Load 2 bytes
+    mov ax, [rsi]
+    
+    ; Store 2 bytes
+    mov [rdi], ax
+    
+    add rsi, 2
+    add rdi, 2
+    
+.wc_copy_1_byte:
+    ; Process remaining byte
+    and rdx, 1  ; count % 2
+    jz .wc_copy_done
+    
+    ; Load 1 byte
+    mov al, [rsi]
+    
+    ; Store 1 byte
+    mov [rdi], al
+    
+.wc_copy_done:
+    jmp .wc_done
+    
+.wc_copy_unaligned:
+    ; Unaligned copy using SSE2
+    mov rcx, rdx
+    shr rcx, 4  ; count / 16
+    jz .wc_copy_unaligned_8_bytes
+    
+.wc_copy_unaligned_loop:
+    ; Load 16 bytes using unaligned SSE2
+    movdqu xmm0, [rsi]
+    
+    ; Store 16 bytes using unaligned SSE2
+    movdqu [rdi], xmm0
+    
+    add rsi, 16
+    add rdi, 16
+    
+    dec rcx
+    jnz .wc_copy_unaligned_loop
+    
+.wc_copy_unaligned_8_bytes:
+    ; Process remaining 8 bytes
+    mov rcx, rdx
+    shr rcx, 3  ; count / 8
+    and rcx, 1  ; Check if we have 8 bytes remaining
+    jz .wc_copy_unaligned_4_bytes
+    
+.wc_copy_unaligned_8_bytes_loop:
+    ; Load 8 bytes
+    mov rax, [rsi]
+    
+    ; Store 8 bytes
+    mov [rdi], rax
+    
+    add rsi, 8
+    add rdi, 8
+    
+.wc_copy_unaligned_4_bytes:
+    ; Process remaining 4 bytes
+    mov rcx, rdx
+    shr rcx, 2  ; count / 4
+    and rcx, 1  ; Check if we have 4 bytes remaining
+    jz .wc_copy_unaligned_2_bytes
+    
+.wc_copy_unaligned_4_bytes_loop:
+    ; Load 4 bytes
+    mov eax, [rsi]
+    
+    ; Store 4 bytes
+    mov [rdi], eax
+    
+    add rsi, 4
+    add rdi, 4
+    
+.wc_copy_unaligned_2_bytes:
+    ; Process remaining 2 bytes
+    mov rcx, rdx
+    shr rcx, 1  ; count / 2
+    and rcx, 1  ; Check if we have 2 bytes remaining
+    jz .wc_copy_unaligned_1_byte
+    
+.wc_copy_unaligned_2_bytes_loop:
+    ; Load 2 bytes
+    mov ax, [rsi]
+    
+    ; Store 2 bytes
+    mov [rdi], ax
+    
+    add rsi, 2
+    add rdi, 2
+    
+.wc_copy_unaligned_1_byte:
+    ; Process remaining byte
+    and rdx, 1  ; count % 2
+    jz .wc_copy_done
+    
+    ; Load 1 byte
+    mov al, [rsi]
+    
+    ; Store 1 byte
+    mov [rdi], al
+    
+    jmp .wc_copy_done
+    
+.wc_copy_small:
+    ; Copy small blocks using optimized byte-by-byte copy
+    mov rcx, rdx
+    cld
+    rep movsb
+    
+    jmp .wc_done
+    
+.wc_done:
     ; Restore registers
     pop rsi
     pop rcx
@@ -642,10 +928,1053 @@ memcpy_internal_avx2:
     
     ; Return destination pointer
     mov rax, rdi
+ret
+
+; Advanced memcpy using AVX2 (Write-Combining)
+memcpy_internal_avx2_wc:
+    ; Save registers we will use
+    push rbx
+    push rcx
+    push rsi
+    
+    ; rdi = dest
+    ; rsi = src
+    ; rdx = count
+    
+    ; Check for zero count
+    test rdx, rdx
+    jz .avx2_wc_done
+    
+    ; Check for AVX2 support
+    push rbx
+    mov eax, 7
+    xor ecx, ecx
+    cpuid
+    pop rbx
+    test ebx, 1 << 5  ; Check AVX2 bit
+    jz memcpy_internal_sse2_wc  ; Fall back to SSE2 WC implementation
+    
+    ; Check for small counts
+    cmp rdx, 256
+    jb .avx2_wc_copy_small
+    
+    ; Check memory alignment for optimal performance
+    test rdi, 31
+    jnz .avx2_wc_copy_unaligned
+    
+    test rsi, 31
+    jnz .avx2_wc_copy_unaligned
+    
+    ; Aligned copy using AVX2
+    mov rcx, rdx
+    shr rcx, 8  ; count / 256
+    jz .avx2_wc_copy_128_bytes
+    
+.avx2_wc_copy_256_bytes_loop:
+    ; Load 256 bytes using AVX2
+    vmovdqa ymm0, [rsi]
+    vmovdqa ymm1, [rsi + 32]
+    vmovdqa ymm2, [rsi + 64]
+    vmovdqa ymm3, [rsi + 96]
+    vmovdqa ymm4, [rsi + 128]
+    vmovdqa ymm5, [rsi + 160]
+    vmovdqa ymm6, [rsi + 192]
+    vmovdqa ymm7, [rsi + 224]
+    
+    ; Use standard stores
+    vmovdqa [rdi], ymm0
+    vmovdqa [rdi + 32], ymm1
+    vmovdqa [rdi + 64], ymm2
+    vmovdqa [rdi + 96], ymm3
+    vmovdqa [rdi + 128], ymm4
+    vmovdqa [rdi + 160], ymm5
+    vmovdqa [rdi + 192], ymm6
+    vmovdqa [rdi + 224], ymm7
+    
+    add rsi, 256
+    add rdi, 256
+    
+    dec rcx
+    jnz .avx2_wc_copy_256_bytes_loop
+    
+    ; Process remaining 128 bytes
+    mov rcx, rdx
+    shr rcx, 7  ; count / 128
+    and rcx, 1  ; Check if we have 128 bytes remaining
+    jz .avx2_wc_copy_64_bytes
+    
+.avx2_wc_copy_128_bytes:
+    ; Load 128 bytes using AVX2
+    vmovdqa ymm0, [rsi]
+    vmovdqa ymm1, [rsi + 32]
+    vmovdqa ymm2, [rsi + 64]
+    vmovdqa ymm3, [rsi + 96]
+    
+    ; Use standard stores
+    vmovdqa [rdi], ymm0
+    vmovdqa [rdi + 32], ymm1
+    vmovdqa [rdi + 64], ymm2
+    vmovdqa [rdi + 96], ymm3
+    
+    add rsi, 128
+    add rdi, 128
+    
+.avx2_wc_copy_64_bytes:
+    ; Process remaining 64 bytes
+    mov rcx, rdx
+    shr rcx, 6  ; count / 64
+    and rcx, 1  ; Check if we have 64 bytes remaining
+    jz .avx2_wc_copy_32_bytes
+    
+.avx2_wc_copy_64_bytes_loop:
+    ; Load 64 bytes using AVX2
+    vmovdqa ymm0, [rsi]
+    vmovdqa ymm1, [rsi + 32]
+    
+    ; Use standard stores
+    vmovdqa [rdi], ymm0
+    vmovdqa [rdi + 32], ymm1
+    
+    add rsi, 64
+    add rdi, 64
+    
+.avx2_wc_copy_32_bytes:
+    ; Process remaining 32 bytes
+    mov rcx, rdx
+    shr rcx, 5  ; count / 32
+    and rcx, 1  ; Check if we have 32 bytes remaining
+    jz .avx2_wc_copy_16_bytes
+    
+.avx2_wc_copy_32_bytes_loop:
+    ; Load 32 bytes using AVX2
+    vmovdqa ymm0, [rsi]
+    
+    ; Use standard stores
+    vmovdqa [rdi], ymm0
+    
+    add rsi, 32
+    add rdi, 32
+    
+.avx2_wc_copy_16_bytes:
+    ; Process remaining 16 bytes
+    mov rcx, rdx
+    shr rcx, 4  ; count / 16
+    and rcx, 1  ; Check if we have 16 bytes remaining
+    jz .avx2_wc_copy_8_bytes
+    
+.avx2_wc_copy_16_bytes_loop:
+    ; Load 16 bytes using SSE
+    movdqa xmm0, [rsi]
+    
+    ; Use standard stores
+    movdqa [rdi], xmm0
+    
+    add rsi, 16
+    add rdi, 16
+    
+.avx2_wc_copy_8_bytes:
+    ; Process remaining 8 bytes
+    mov rcx, rdx
+    shr rcx, 3  ; count / 8
+    and rcx, 1  ; Check if we have 8 bytes remaining
+    jz .avx2_wc_copy_4_bytes
+    
+.avx2_wc_copy_8_bytes_loop:
+    ; Load 8 bytes
+    mov rax, [rsi]
+    
+    ; Store 8 bytes
+    mov [rdi], rax
+    
+    add rsi, 8
+    add rdi, 8
+    
+.avx2_wc_copy_4_bytes:
+    ; Process remaining 4 bytes
+    mov rcx, rdx
+    shr rcx, 2  ; count / 4
+    and rcx, 1  ; Check if we have 4 bytes remaining
+    jz .avx2_wc_copy_2_bytes
+    
+.avx2_wc_copy_4_bytes_loop:
+    ; Load 4 bytes
+    mov eax, [rsi]
+    
+    ; Store 4 bytes
+    mov [rdi], eax
+    
+    add rsi, 4
+    add rdi, 4
+    
+.avx2_wc_copy_2_bytes:
+    ; Process remaining 2 bytes
+    mov rcx, rdx
+    shr rcx, 1  ; count / 2
+    and rcx, 1  ; Check if we have 2 bytes remaining
+    jz .avx2_wc_copy_1_byte
+    
+.avx2_wc_copy_2_bytes_loop:
+    ; Load 2 bytes
+    mov ax, [rsi]
+    
+    ; Store 2 bytes
+    mov [rdi], ax
+    
+    add rsi, 2
+    add rdi, 2
+    
+.avx2_wc_copy_1_byte:
+    ; Process remaining byte
+    and rdx, 1  ; count % 2
+    jz .avx2_wc_copy_done
+    
+    ; Load 1 byte
+    mov al, [rsi]
+    
+    ; Store 1 byte
+    mov [rdi], al
+    
+.avx2_wc_copy_done:
+    jmp .avx2_wc_done
+    
+.avx2_wc_copy_unaligned:
+    ; Unaligned copy using AVX2
+    mov rcx, rdx
+    shr rcx, 5  ; count / 32
+    jz .avx2_wc_copy_unaligned_16_bytes
+    
+.avx2_wc_copy_unaligned_loop:
+    ; Load 32 bytes using unaligned AVX2
+    vmovdqu ymm0, [rsi]
+    
+    ; Store 32 bytes using unaligned AVX2
+    vmovdqu [rdi], ymm0
+    
+    add rsi, 32
+    add rdi, 32
+    
+    dec rcx
+    jnz .avx2_wc_copy_unaligned_loop
+    
+.avx2_wc_copy_unaligned_16_bytes:
+    ; Process remaining 16 bytes
+    mov rcx, rdx
+    shr rcx, 4  ; count / 16
+    and rcx, 1  ; Check if we have 16 bytes remaining
+    jz .avx2_wc_copy_unaligned_8_bytes
+    
+.avx2_wc_copy_unaligned_16_bytes_loop:
+    ; Load 16 bytes using unaligned SSE
+    movdqu xmm0, [rsi]
+    
+    ; Store 16 bytes using unaligned SSE
+    movdqu [rdi], xmm0
+    
+    add rsi, 16
+    add rdi, 16
+    
+.avx2_wc_copy_unaligned_8_bytes:
+    ; Process remaining 8 bytes
+    mov rcx, rdx
+    shr rcx, 3  ; count / 8
+    and rcx, 1  ; Check if we have 8 bytes remaining
+    jz .avx2_wc_copy_unaligned_4_bytes
+    
+.avx2_wc_copy_unaligned_8_bytes_loop:
+    ; Load 8 bytes
+    mov rax, [rsi]
+    
+    ; Store 8 bytes
+    mov [rdi], rax
+    
+    add rsi, 8
+    add rdi, 8
+    
+.avx2_wc_copy_unaligned_4_bytes:
+    ; Process remaining 4 bytes
+    mov rcx, rdx
+    shr rcx, 2  ; count / 4
+    and rcx, 1  ; Check if we have 4 bytes remaining
+    jz .avx2_wc_copy_unaligned_2_bytes
+    
+.avx2_wc_copy_unaligned_4_bytes_loop:
+    ; Load 4 bytes
+    mov eax, [rsi]
+    
+    ; Store 4 bytes
+    mov [rdi], eax
+    
+    add rsi, 4
+    add rdi, 4
+    
+.avx2_wc_copy_unaligned_2_bytes:
+    ; Process remaining 2 bytes
+    mov rcx, rdx
+    shr rcx, 1  ; count / 2
+    and rcx, 1  ; Check if we have 2 bytes remaining
+    jz .avx2_wc_copy_unaligned_1_byte
+    
+.avx2_wc_copy_unaligned_2_bytes_loop:
+    ; Load 2 bytes
+    mov ax, [rsi]
+    
+    ; Store 2 bytes
+    mov [rdi], ax
+    
+    add rsi, 2
+    add rdi, 2
+    
+.avx2_wc_copy_unaligned_1_byte:
+    ; Process remaining byte
+    and rdx, 1  ; count % 2
+    jz .avx2_wc_copy_done
+    
+    ; Load 1 byte
+    mov al, [rsi]
+    
+    ; Store 1 byte
+    mov [rdi], al
+    
+    jmp .avx2_wc_copy_done
+    
+.avx2_wc_copy_small:
+    ; Copy small blocks using optimized byte-by-byte copy
+    mov rcx, rdx
+    cld
+    rep movsb
+    
+    jmp .avx2_wc_done
+    
+.avx2_wc_done:
+    ; Restore registers
+    pop rsi
+    pop rcx
+    pop rbx
+    
+    ; Return destination pointer
+    mov rax, rdi
     ret
 
 ; Ultra-fast memcpy using AVX-512
 memcpy_internal_avx512:
+    ; Save registers we will use
+    push rbx
+    push rcx
+    push rsi
+    
+    ; rdi = dest
+    ; rsi = src
+    ; rdx = count
+    
+    ; Check for zero count
+    test rdx, rdx
+    jz .avx512_done
+    
+    ; Check for AVX-512 support
+    push rbx
+    mov eax, 7
+    xor ecx, ecx
+    cpuid
+    pop rbx
+    test ebx, 1 << 16  ; Check AVX512F bit
+    jz memcpy_internal_avx2  ; Fall back to AVX2 implementation
+    
+    ; Check for small counts
+    cmp rdx, 512
+    jb .avx512_copy_small
+    
+    ; Check memory alignment for optimal performance
+    test rdi, 63
+    jnz .avx512_copy_unaligned
+    
+    test rsi, 63
+    jnz .avx512_copy_unaligned
+    
+    ; Aligned copy using AVX-512 with non-temporal stores for large copies
+    mov rcx, rdx
+    shr rcx, 9  ; count / 512
+    jz .avx512_copy_256_bytes
+    
+.avx512_copy_512_bytes_loop:
+    ; Load 512 bytes using AVX-512
+    vmovdqa64 zmm0, [rsi]
+    vmovdqa64 zmm1, [rsi + 64]
+    vmovdqa64 zmm2, [rsi + 128]
+    vmovdqa64 zmm3, [rsi + 192]
+    vmovdqa64 zmm4, [rsi + 256]
+    vmovdqa64 zmm5, [rsi + 320]
+    vmovdqa64 zmm6, [rsi + 384]
+    vmovdqa64 zmm7, [rsi + 448]
+    
+    ; Use non-temporal stores to avoid polluting the cache
+    vmovntdq [rdi], zmm0
+    vmovntdq [rdi + 64], zmm1
+    vmovntdq [rdi + 128], zmm2
+    vmovntdq [rdi + 192], zmm3
+    vmovntdq [rdi + 256], zmm4
+    vmovntdq [rdi + 320], zmm5
+    vmovntdq [rdi + 384], zmm6
+    vmovntdq [rdi + 448], zmm7
+    
+    add rsi, 512
+    add rdi, 512
+    
+    dec rcx
+    jnz .avx512_copy_512_bytes_loop
+    
+    ; Process remaining 256 bytes
+    mov rcx, rdx
+    shr rcx, 8  ; count / 256
+    and rcx, 1  ; Check if we have 256 bytes remaining
+    jz .avx512_copy_128_bytes
+    
+.avx512_copy_256_bytes:
+    ; Load 256 bytes using AVX-512
+    vmovdqa64 zmm0, [rsi]
+    vmovdqa64 zmm1, [rsi + 64]
+    vmovdqa64 zmm2, [rsi + 128]
+    vmovdqa64 zmm3, [rsi + 192]
+    
+    ; Use non-temporal stores
+    vmovntdq [rdi], zmm0
+    vmovntdq [rdi + 64], zmm1
+    vmovntdq [rdi + 128], zmm2
+    vmovntdq [rdi + 192], zmm3
+    
+    add rsi, 256
+    add rdi, 256
+    
+.avx512_copy_128_bytes:
+    ; Process remaining 128 bytes
+    mov rcx, rdx
+    shr rcx, 7  ; count / 128
+    and rcx, 1  ; Check if we have 128 bytes remaining
+    jz .avx512_copy_64_bytes
+    
+.avx512_copy_128_bytes_loop:
+    ; Load 128 bytes using AVX-512
+    vmovdqa64 zmm0, [rsi]
+    vmovdqa64 zmm1, [rsi + 64]
+    
+    ; Use non-temporal stores
+    vmovntdq [rdi], zmm0
+    vmovntdq [rdi + 64], zmm1
+    
+    add rsi, 128
+    add rdi, 128
+    
+.avx512_copy_64_bytes:
+    ; Process remaining 64 bytes
+    mov rcx, rdx
+    shr rcx, 6  ; count / 64
+    and rcx, 1  ; Check if we have 64 bytes remaining
+    jz .avx512_copy_32_bytes
+    
+.avx512_copy_64_bytes_loop:
+    ; Load 64 bytes using AVX-512
+    vmovdqa64 zmm0, [rsi]
+    
+    ; Use non-temporal stores
+    vmovntdq [rdi], zmm0
+    
+    add rsi, 64
+    add rdi, 64
+    
+.avx512_copy_32_bytes:
+    ; Process remaining 32 bytes
+    mov rcx, rdx
+    shr rcx, 5  ; count / 32
+    and rcx, 1  ; Check if we have 32 bytes remaining
+    jz .avx512_copy_16_bytes
+    
+.avx512_copy_32_bytes_loop:
+    ; Load 32 bytes using AVX2
+    vmovdqa ymm0, [rsi]
+    
+    ; Use non-temporal stores
+    vmovntdq [rdi], ymm0
+    
+    add rsi, 32
+    add rdi, 32
+    
+.avx512_copy_16_bytes:
+    ; Process remaining 16 bytes
+    mov rcx, rdx
+    shr rcx, 4  ; count / 16
+    and rcx, 1  ; Check if we have 16 bytes remaining
+    jz .avx512_copy_8_bytes
+    
+.avx512_copy_16_bytes_loop:
+    ; Load 16 bytes using SSE
+    movdqa xmm0, [rsi]
+    
+    ; Use non-temporal stores
+    movntdq [rdi], xmm0
+    
+    add rsi, 16
+    add rdi, 16
+    
+.avx512_copy_8_bytes:
+    ; Process remaining 8 bytes
+    mov rcx, rdx
+    shr rcx, 3  ; count / 8
+    and rcx, 1  ; Check if we have 8 bytes remaining
+    jz .avx512_copy_4_bytes
+    
+.avx512_copy_8_bytes_loop:
+    ; Load 8 bytes
+    mov rax, [rsi]
+    
+    ; Store 8 bytes
+    mov [rdi], rax
+    
+    add rsi, 8
+    add rdi, 8
+    
+.avx512_copy_4_bytes:
+    ; Process remaining 4 bytes
+    mov rcx, rdx
+    shr rcx, 2  ; count / 4
+    and rcx, 1  ; Check if we have 4 bytes remaining
+    jz .avx512_copy_2_bytes
+    
+.avx512_copy_4_bytes_loop:
+    ; Load 4 bytes
+    mov eax, [rsi]
+    
+    ; Store 4 bytes
+    mov [rdi], eax
+    
+    add rsi, 4
+    add rdi, 4
+    
+.avx512_copy_2_bytes:
+    ; Process remaining 2 bytes
+    mov rcx, rdx
+    shr rcx, 1  ; count / 2
+    and rcx, 1  ; Check if we have 2 bytes remaining
+    jz .avx512_copy_1_byte
+    
+.avx512_copy_2_bytes_loop:
+    ; Load 2 bytes
+    mov ax, [rsi]
+    
+    ; Store 2 bytes
+    mov [rdi], ax
+    
+    add rsi, 2
+    add rdi, 2
+    
+.avx512_copy_1_byte:
+    ; Process remaining byte
+    and rdx, 1  ; count % 2
+    jz .avx512_copy_done
+    
+    ; Load 1 byte
+    mov al, [rsi]
+    
+    ; Store 1 byte
+    mov [rdi], al
+    
+.avx512_copy_done:
+    ; SFENCE to ensure non-temporal stores are visible
+    sfence
+    
+    jmp .avx512_done
+    
+.avx512_copy_unaligned:
+    ; Unaligned copy using AVX-512
+    mov rcx, rdx
+    shr rcx, 6  ; count / 64
+    jz .avx512_copy_unaligned_32_bytes
+    
+.avx512_copy_unaligned_loop:
+    ; Load 64 bytes using unaligned AVX-512
+    vmovdqu64 zmm0, [rsi]
+    
+    ; Store 64 bytes using unaligned AVX-512
+    vmovdqu64 [rdi], zmm0
+    
+    add rsi, 64
+    add rdi, 64
+    
+    dec rcx
+    jnz .avx512_copy_unaligned_loop
+    
+.avx512_copy_unaligned_32_bytes:
+    ; Process remaining 32 bytes
+    mov rcx, rdx
+    shr rcx, 5  ; count / 32
+    and rcx, 1  ; Check if we have 32 bytes remaining
+    jz .avx512_copy_unaligned_16_bytes
+    
+.avx512_copy_unaligned_32_bytes_loop:
+    ; Load 32 bytes using unaligned AVX2
+    vmovdqu ymm0, [rsi]
+    
+    ; Store 32 bytes using unaligned AVX2
+    vmovdqu [rdi], ymm0
+    
+    add rsi, 32
+    add rdi, 32
+    
+.avx512_copy_unaligned_16_bytes:
+    ; Process remaining 16 bytes
+    mov rcx, rdx
+    shr rcx, 4  ; count / 16
+    and rcx, 1  ; Check if we have 16 bytes remaining
+    jz .avx512_copy_unaligned_8_bytes
+    
+.avx512_copy_unaligned_16_bytes_loop:
+    ; Load 16 bytes using unaligned SSE
+    movdqu xmm0, [rsi]
+    
+    ; Store 16 bytes using unaligned SSE
+    movdqu [rdi], xmm0
+    
+    add rsi, 16
+    add rdi, 16
+    
+.avx512_copy_unaligned_8_bytes:
+    ; Process remaining 8 bytes
+    mov rcx, rdx
+    shr rcx, 3  ; count / 8
+    and rcx, 1  ; Check if we have 8 bytes remaining
+    jz .avx512_copy_unaligned_4_bytes
+    
+.avx512_copy_unaligned_8_bytes_loop:
+    ; Load 8 bytes
+    mov rax, [rsi]
+    
+    ; Store 8 bytes
+    mov [rdi], rax
+    
+    add rsi, 8
+    add rdi, 8
+    
+.avx512_copy_unaligned_4_bytes:
+    ; Process remaining 4 bytes
+    mov rcx, rdx
+    shr rcx, 2  ; count / 4
+    and rcx, 1  ; Check if we have 4 bytes remaining
+    jz .avx512_copy_unaligned_2_bytes
+    
+.avx512_copy_unaligned_4_bytes_loop:
+    ; Load 4 bytes
+    mov eax, [rsi]
+    
+    ; Store 4 bytes
+    mov [rdi], eax
+    
+    add rsi, 4
+    add rdi, 4
+    
+.avx512_copy_unaligned_2_bytes:
+    ; Process remaining 2 bytes
+    mov rcx, rdx
+    shr rcx, 1  ; count / 2
+    and rcx, 1  ; Check if we have 2 bytes remaining
+    jz .avx512_copy_unaligned_1_byte
+    
+.avx512_copy_unaligned_2_bytes_loop:
+    ; Load 2 bytes
+    mov ax, [rsi]
+    
+    ; Store 2 bytes
+    mov [rdi], ax
+    
+    add rsi, 2
+    add rdi, 2
+    
+.avx512_copy_unaligned_1_byte:
+    ; Process remaining byte
+    and rdx, 1  ; count % 2
+    jz .avx512_copy_done
+    
+    ; Load 1 byte
+    mov al, [rsi]
+    
+    ; Store 1 byte
+    mov [rdi], al
+    
+    jmp .avx512_copy_done
+    
+.avx512_copy_small:
+    ; Copy small blocks using optimized byte-by-byte copy
+    mov rcx, rdx
+    cld
+    rep movsb
+    
+    jmp .avx512_done
+    
+.avx512_done:
+    ; Restore registers
+    pop rsi
+    pop rcx
+    pop rbx
+    
+    ; Return destination pointer
+    mov rax, rdi
+ret
+
+; Ultra-fast memcpy using AVX-512 (Write-Combining)
+memcpy_internal_avx512_wc:
+    ; Save registers we will use
+    push rbx
+    push rcx
+    push rsi
+    
+    ; rdi = dest
+    ; rsi = src
+    ; rdx = count
+    
+    ; Check for zero count
+    test rdx, rdx
+    jz .avx512_wc_done
+    
+    ; Check for AVX-512 support
+    push rbx
+    mov eax, 7
+    xor ecx, ecx
+    cpuid
+    pop rbx
+    test ebx, 1 << 16  ; Check AVX512F bit
+    jz memcpy_internal_avx2_wc  ; Fall back to AVX2 WC implementation
+    
+    ; Check for small counts
+    cmp rdx, 512
+    jb .avx512_wc_copy_small
+    
+    ; Check memory alignment for optimal performance
+    test rdi, 63
+    jnz .avx512_wc_copy_unaligned
+    
+    test rsi, 63
+    jnz .avx512_wc_copy_unaligned
+    
+    ; Aligned copy using AVX-512
+    mov rcx, rdx
+    shr rcx, 9  ; count / 512
+    jz .avx512_wc_copy_256_bytes
+    
+.avx512_wc_copy_512_bytes_loop:
+    ; Load 512 bytes using AVX-512
+    vmovdqa64 zmm0, [rsi]
+    vmovdqa64 zmm1, [rsi + 64]
+    vmovdqa64 zmm2, [rsi + 128]
+    vmovdqa64 zmm3, [rsi + 192]
+    vmovdqa64 zmm4, [rsi + 256]
+    vmovdqa64 zmm5, [rsi + 320]
+    vmovdqa64 zmm6, [rsi + 384]
+    vmovdqa64 zmm7, [rsi + 448]
+    
+    ; Use standard stores
+    vmovdqa64 [rdi], zmm0
+    vmovdqa64 [rdi + 64], zmm1
+    vmovdqa64 [rdi + 128], zmm2
+    vmovdqa64 [rdi + 192], zmm3
+    vmovdqa64 [rdi + 256], zmm4
+    vmovdqa64 [rdi + 320], zmm5
+    vmovdqa64 [rdi + 384], zmm6
+    vmovdqa64 [rdi + 448], zmm7
+    
+    add rsi, 512
+    add rdi, 512
+    
+    dec rcx
+    jnz .avx512_wc_copy_512_bytes_loop
+    
+    ; Process remaining 256 bytes
+    mov rcx, rdx
+    shr rcx, 8  ; count / 256
+    and rcx, 1  ; Check if we have 256 bytes remaining
+    jz .avx512_wc_copy_128_bytes
+    
+.avx512_wc_copy_256_bytes:
+    ; Load 256 bytes using AVX-512
+    vmovdqa64 zmm0, [rsi]
+    vmovdqa64 zmm1, [rsi + 64]
+    vmovdqa64 zmm2, [rsi + 128]
+    vmovdqa64 zmm3, [rsi + 192]
+    
+    ; Use standard stores
+    vmovdqa64 [rdi], zmm0
+    vmovdqa64 [rdi + 64], zmm1
+    vmovdqa64 [rdi + 128], zmm2
+    vmovdqa64 [rdi + 192], zmm3
+    
+    add rsi, 256
+    add rdi, 256
+    
+.avx512_wc_copy_128_bytes:
+    ; Process remaining 128 bytes
+    mov rcx, rdx
+    shr rcx, 7  ; count / 128
+    and rcx, 1  ; Check if we have 128 bytes remaining
+    jz .avx512_wc_copy_64_bytes
+    
+.avx512_wc_copy_128_bytes_loop:
+    ; Load 128 bytes using AVX-512
+    vmovdqa64 zmm0, [rsi]
+    vmovdqa64 zmm1, [rsi + 64]
+    
+    ; Use standard stores
+    vmovdqa64 [rdi], zmm0
+    vmovdqa64 [rdi + 64], zmm1
+    
+    add rsi, 128
+    add rdi, 128
+    
+.avx512_wc_copy_64_bytes:
+    ; Process remaining 64 bytes
+    mov rcx, rdx
+    shr rcx, 6  ; count / 64
+    and rcx, 1  ; Check if we have 64 bytes remaining
+    jz .avx512_wc_copy_32_bytes
+    
+.avx512_wc_copy_64_bytes_loop:
+    ; Load 64 bytes using AVX-512
+    vmovdqa64 zmm0, [rsi]
+    
+    ; Use standard stores
+    vmovdqa64 [rdi], zmm0
+    
+    add rsi, 64
+    add rdi, 64
+    
+.avx512_wc_copy_32_bytes:
+    ; Process remaining 32 bytes
+    mov rcx, rdx
+    shr rcx, 5  ; count / 32
+    and rcx, 1  ; Check if we have 32 bytes remaining
+    jz .avx512_wc_copy_16_bytes
+    
+.avx512_wc_copy_32_bytes_loop:
+    ; Load 32 bytes using AVX2
+    vmovdqa ymm0, [rsi]
+    
+    ; Use standard stores
+    vmovdqa [rdi], ymm0
+    
+    add rsi, 32
+    add rdi, 32
+    
+.avx512_wc_copy_16_bytes:
+    ; Process remaining 16 bytes
+    mov rcx, rdx
+    shr rcx, 4  ; count / 16
+    and rcx, 1  ; Check if we have 16 bytes remaining
+    jz .avx512_wc_copy_8_bytes
+    
+.avx512_wc_copy_16_bytes_loop:
+    ; Load 16 bytes using SSE
+    movdqa xmm0, [rsi]
+    
+    ; Use standard stores
+    movdqa [rdi], xmm0
+    
+    add rsi, 16
+    add rdi, 16
+    
+.avx512_wc_copy_8_bytes:
+    ; Process remaining 8 bytes
+    mov rcx, rdx
+    shr rcx, 3  ; count / 8
+    and rcx, 1  ; Check if we have 8 bytes remaining
+    jz .avx512_wc_copy_4_bytes
+    
+.avx512_wc_copy_8_bytes_loop:
+    ; Load 8 bytes
+    mov rax, [rsi]
+    
+    ; Store 8 bytes
+    mov [rdi], rax
+    
+    add rsi, 8
+    add rdi, 8
+    
+.avx512_wc_copy_4_bytes:
+    ; Process remaining 4 bytes
+    mov rcx, rdx
+    shr rcx, 2  ; count / 4
+    and rcx, 1  ; Check if we have 4 bytes remaining
+    jz .avx512_wc_copy_2_bytes
+    
+.avx512_wc_copy_4_bytes_loop:
+    ; Load 4 bytes
+    mov eax, [rsi]
+    
+    ; Store 4 bytes
+    mov [rdi], eax
+    
+    add rsi, 4
+    add rdi, 4
+    
+.avx512_wc_copy_2_bytes:
+    ; Process remaining 2 bytes
+    mov rcx, rdx
+    shr rcx, 1  ; count / 2
+    and rcx, 1  ; Check if we have 2 bytes remaining
+    jz .avx512_wc_copy_1_byte
+    
+.avx512_wc_copy_2_bytes_loop:
+    ; Load 2 bytes
+    mov ax, [rsi]
+    
+    ; Store 2 bytes
+    mov [rdi], ax
+    
+    add rsi, 2
+    add rdi, 2
+    
+.avx512_wc_copy_1_byte:
+    ; Process remaining byte
+    and rdx, 1  ; count % 2
+    jz .avx512_wc_copy_done
+    
+    ; Load 1 byte
+    mov al, [rsi]
+    
+    ; Store 1 byte
+    mov [rdi], al
+    
+.avx512_wc_copy_done:
+    jmp .avx512_wc_done
+    
+.avx512_wc_copy_unaligned:
+    ; Unaligned copy using AVX-512
+    mov rcx, rdx
+    shr rcx, 6  ; count / 64
+    jz .avx512_wc_copy_unaligned_32_bytes
+    
+.avx512_wc_copy_unaligned_loop:
+    ; Load 64 bytes using unaligned AVX-512
+    vmovdqu64 zmm0, [rsi]
+    
+    ; Store 64 bytes using unaligned AVX-512
+    vmovdqu64 [rdi], zmm0
+    
+    add rsi, 64
+    add rdi, 64
+    
+    dec rcx
+    jnz .avx512_wc_copy_unaligned_loop
+    
+.avx512_wc_copy_unaligned_32_bytes:
+    ; Process remaining 32 bytes
+    mov rcx, rdx
+    shr rcx, 5  ; count / 32
+    and rcx, 1  ; Check if we have 32 bytes remaining
+    jz .avx512_wc_copy_unaligned_16_bytes
+    
+.avx512_wc_copy_unaligned_32_bytes_loop:
+    ; Load 32 bytes using unaligned AVX2
+    vmovdqu ymm0, [rsi]
+    
+    ; Store 32 bytes using unaligned AVX2
+    vmovdqu [rdi], ymm0
+    
+    add rsi, 32
+    add rdi, 32
+    
+.avx512_wc_copy_unaligned_16_bytes:
+    ; Process remaining 16 bytes
+    mov rcx, rdx
+    shr rcx, 4  ; count / 16
+    and rcx, 1  ; Check if we have 16 bytes remaining
+    jz .avx512_wc_copy_unaligned_8_bytes
+    
+.avx512_wc_copy_unaligned_16_bytes_loop:
+    ; Load 16 bytes using unaligned SSE
+    movdqu xmm0, [rsi]
+    
+    ; Store 16 bytes using unaligned SSE
+    movdqu [rdi], xmm0
+    
+    add rsi, 16
+    add rdi, 16
+    
+.avx512_wc_copy_unaligned_8_bytes:
+    ; Process remaining 8 bytes
+    mov rcx, rdx
+    shr rcx, 3  ; count / 8
+    and rcx, 1  ; Check if we have 8 bytes remaining
+    jz .avx512_wc_copy_unaligned_4_bytes
+    
+.avx512_wc_copy_unaligned_8_bytes_loop:
+    ; Load 8 bytes
+    mov rax, [rsi]
+    
+    ; Store 8 bytes
+    mov [rdi], rax
+    
+    add rsi, 8
+    add rdi, 8
+    
+.avx512_wc_copy_unaligned_4_bytes:
+    ; Process remaining 4 bytes
+    mov rcx, rdx
+    shr rcx, 2  ; count / 4
+    and rcx, 1  ; Check if we have 4 bytes remaining
+    jz .avx512_wc_copy_unaligned_2_bytes
+    
+.avx512_wc_copy_unaligned_4_bytes_loop:
+    ; Load 4 bytes
+    mov eax, [rsi]
+    
+    ; Store 4 bytes
+    mov [rdi], eax
+    
+    add rsi, 4
+    add rdi, 4
+    
+.avx512_wc_copy_unaligned_2_bytes:
+    ; Process remaining 2 bytes
+    mov rcx, rdx
+    shr rcx, 1  ; count / 2
+    and rcx, 1  ; Check if we have 2 bytes remaining
+    jz .avx512_wc_copy_unaligned_1_byte
+    
+.avx512_wc_copy_unaligned_2_bytes_loop:
+    ; Load 2 bytes
+    mov ax, [rsi]
+    
+    ; Store 2 bytes
+    mov [rdi], ax
+    
+    add rsi, 2
+    add rdi, 2
+    
+.avx512_wc_copy_unaligned_1_byte:
+    ; Process remaining byte
+    and rdx, 1  ; count % 2
+    jz .avx512_wc_copy_done
+    
+    ; Load 1 byte
+    mov al, [rsi]
+    
+    ; Store 1 byte
+    mov [rdi], al
+    
+    jmp .avx512_wc_copy_done
+    
+.avx512_wc_copy_small:
+    ; Copy small blocks using optimized byte-by-byte copy
+    mov rcx, rdx
+    cld
+    rep movsb
+    
+    jmp .avx512_wc_done
+    
+.avx512_wc_done:
+    ; Restore registers
+    pop rsi
+    pop rcx
+    pop rbx
+    
+    ; Return destination pointer
+    mov rax, rdi
+    ret
     ; Save registers we will use
     push rbx
     push rcx
