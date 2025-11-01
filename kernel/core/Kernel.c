@@ -22,6 +22,7 @@
 #include "PCI/PCI.h"
 #include "PMem.h"
 #include "PS2.h"
+#include "Random.h"
 #include "Panic.h"
 #include "SVGAII.h"
 #include "Scheduler.h"
@@ -606,6 +607,11 @@ static InitResultT PXS2(void) {
     // Initialize TSC for precise delays
     TSCInit();
     PrintKernelSuccess("System: TSC initialized\n");
+    
+    // Initialize Random Device
+    PrintKernel("Info: Initializing Random Device...\n");
+    RandomInit();
+    PrintKernelSuccess("System: Random Device initialized\n");
     
     // Initialize ACPI for power management
     if (ACPIInit()) PrintKernelSuccess("System: ACPI initialized\n");

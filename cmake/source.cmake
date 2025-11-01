@@ -87,6 +87,7 @@ set(DRIVER_SOURCES
         drivers/TSC.c
         drivers/ACPI.c
         drivers/Serial.c
+        drivers/Random.c
         drivers/PS2.c
         drivers/storage/Ide.c
         drivers/Vesa.c
