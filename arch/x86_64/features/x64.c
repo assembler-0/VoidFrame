@@ -62,8 +62,9 @@ void CpuInit(void) {
     // Most importantly, check if the CPU supports OSXSAVE (bit 27 of ECX).
     // If this is not set, the OS is not allowed to set XCR0 to enable AVX.
     cpu_features.osxsave = (ecx >> 27) & 1;
+#ifndef VF_CONFIG_VM_HOST
     if (!cpu_features.osxsave) {
-        PrintKernelWarning("System: CPU: OSXSAVE not supported. AVX/2/512F will be disabled.\n");
+        PrintKernel("System: CPU: OSXSAVE not supported. AVX/2/512F will be disabled.\n");
         cpu_features.avx = false;
         cpu_features.avx2 = false;
         cpu_features.avx512f = false;
@@ -71,6 +72,14 @@ void CpuInit(void) {
         return;
     }
     PrintKernelSuccess("System: CPU: OSXSAVE supported.\n");
+#else
+    PrintKernel("System: CPU: OSXSAVE not supported. AVX/2/512F will be disabled.\n");
+    cpu_features.avx = false;
+    cpu_features.avx2 = false;
+    cpu_features.avx512f = false;
+    CPUFeatureValidation();
+    return;
+#endif
 
     // --- Step 3: Enable AVX by setting the XCR0 Control Register ---
     // The OS must set bits 1 (SSE state) and 2 (AVX state) in XCR0.

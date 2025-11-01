@@ -97,6 +97,10 @@ if(AUTOMATIC_POST)
     add_compile_definitions(VF_CONFIG_AUTOMATIC_POST)
 endif()
 
+if(VF_CONFIG_MEMCPY_NT)
+    add_compile_definitions(VF_CONFIG_MEMCPY_NT)
+endif()
+
 if(VF_SCHEDULER STREQUAL "MLFQ")
     add_compile_definitions(VF_CONFIG_SCHED_MLFQ)
 elseif(VF_SCHEDULER STREQUAL "EEVDF")

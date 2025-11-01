@@ -174,23 +174,26 @@ add_custom_target(run
         -vga vmware
         -enable-kvm
         -cdrom ${CMAKE_CURRENT_BINARY_DIR}/VoidFrame.iso
-        -debugcon file:bootstrap.log
-        -serial stdio
         -no-reboot -no-shutdown
         -m 4G
+        -boot d
+        # Debug console and serial output
+        -debugcon file:bootstrap.log
+        -serial stdio
+        -parallel file:printer.out
+        # Network configuration
+        -netdev user,id=net0 -device rtl8139,netdev=net0
+        # USB controller and tablet
+        -device nec-usb-xhci,id=xhci
+        -usb -device usb-tablet
+        # Audio device
+        -audio pa,id=myaudio
+        # Disks configuration
         -drive file=VoidFrameDisk.img,if=ide
         -drive file=SataDisk.img,if=none,id=sata0
         -device ahci,id=ahci
         -device ide-hd,drive=sata0,bus=ahci.0
-        -boot d
-        -device rtl8139
-        -device e1000
-        -device nec-usb-xhci,id=xhci
-        -device ich9-intel-hda
-        -usb -device usb-tablet
-        -audio pa,id=myaudio
         -device sb16,iobase=0x220,irq=5,dma=1,dma16=5
-        -parallel file:printer.out
         -drive file=VirtioDisk.img,format=raw,id=virtio_disk,if=none
         -device virtio-blk-pci,drive=virtio_disk,disable-legacy=on
         -drive file=NVMeDisk.img,format=raw,id=nvme_disk,if=none

@@ -7,6 +7,10 @@ extern void* memcpy_internal_sse2(void* restrict dest, const void* restrict src,
 extern void* memcpy_internal_avx2(void* restrict dest, const void* restrict src, uint64_t size);
 extern void* memcpy_internal_avx512(void* restrict dest, const void* restrict src, uint64_t size);
 
+extern void* memcpy_internal_sse2_wc(void* restrict dest, const void* restrict src, uint64_t size);
+extern void* memcpy_internal_avx2_wc(void* restrict dest, const void* restrict src, uint64_t size);
+extern void* memcpy_internal_avx512_wc(void* restrict dest, const void* restrict src, uint64_t size);
+
 extern void* memset_internal_sse2(void* restrict dest, int value, uint64_t size);
 extern void* memset_internal_avx2(void* restrict dest, int value, uint64_t size);
 extern void* memset_internal_avx512(void* restrict dest, int value, uint64_t size);
@@ -60,9 +64,15 @@ void* FastMemcpy(void* restrict dest, const void* restrict src, uint64_t size) {
 
     const CpuFeatures * features = GetCpuFeatures();
 
+#ifdef VF_CONFIG_MEMCPY_NT
     if (features->avx512f) return memcpy_internal_avx512(d, s, size);
     if (features->avx2) return memcpy_internal_avx2(d, s, size);
     if (features->sse2) return memcpy_internal_sse2(d, s, size);
+#else
+    if (features->avx512f) return memcpy_internal_avx512_wc(d, s, size);
+    if (features->avx2) return memcpy_internal_avx2_wc(d, s, size);
+    if (features->sse2) return memcpy_internal_sse2_wc(d, s, size);
+#endif
 
     while (size--) *d++ = *s++;
 

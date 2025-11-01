@@ -36,3 +36,4 @@ option(VF_CONFIG_CERBERUS_STACK_PROTECTION "Enable Cerberus stack protection" ON
 option(VF_CONFIG_INTEL "Enable Intel-specific optimizations" ON)
 option(VF_CONFIG_ENABLE_OPIC "Enable OPIC support" ON)
 option(VF_CONFIG_VESA_FB "Enable VESA framebuffer support" ON)
+option(VF_CONFIG_MEMCPY_NT "Enable non-temporal memcpy optimizations" OFF)
