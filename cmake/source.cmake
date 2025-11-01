@@ -71,6 +71,7 @@ set(FS_SOURCES
         fs/FAT/FAT1x.c
         fs/EXT/Ext2.c
         fs/NTFS/NTFS.c
+        fs/procfs/ProcFS.c
         fs/Iso9660.c
         fs/VFS.c
         fs/BlockDevice.c

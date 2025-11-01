@@ -24,6 +24,7 @@
 #include "math.h"
 #include "stdbool.h"
 #include "x64.h"
+#include "procfs/ProcFS.h"
 
 #define offsetof(type, member) ((uint64_t)&(((type*)0)->member))
 
@@ -359,25 +360,7 @@ static void __attribute__((visibility("hidden"))) TerminateProcess(uint32_t pid,
     CerberusUnregisterProcess(proc->pid);
 #endif
 
-#ifdef VF_CONFIG_PROCINFO_AUTO_CLEANUP
-    char cleanup_path[256];
-    FormatA(cleanup_path, sizeof(cleanup_path), "%s/%d", RuntimeProcesses, proc->pid);
-
-    // Add debug output
-    PrintKernel("System: Attempting cleanup of ");
-    PrintKernel(cleanup_path);
-    PrintKernel(" for PID ");
-    PrintKernelInt(proc->pid);
-    PrintKernel("\n");
-    int cleanup_result = VfsDelete(cleanup_path, true);
-    if (cleanup_result != 0) {
-        PrintKernelError("System: Cleanup failed with code ");
-        PrintKernelInt(cleanup_result);
-        PrintKernel("\n");
-    } else {
-        PrintKernel("System: Cleanup successful\n");
-    }
-#endif
+    ProcFSUnregisterProcess(proc->pid);
 }
 
 
@@ -414,25 +397,13 @@ static void __attribute__((visibility("hidden"))) ASTerminate(uint32_t pid, cons
     }
 
     rust_spinlock_unlock_irqrestore(scheduler_lock, flags);
-#ifdef VF_CONFIG_PROCINFO_AUTO_CLEANUP
-    char cleanup_path[256];
-    FormatA(cleanup_path, sizeof(cleanup_path), "%s/%d", RuntimeProcesses, proc->pid);
 
-    // Add debug output
-    PrintKernel("System: Attempting cleanup of ");
-    PrintKernel(cleanup_path);
-    PrintKernel(" for PID ");
-    PrintKernelInt(proc->pid);
-
-    int cleanup_result = VfsDelete(cleanup_path, true);
-    if (cleanup_result != 0) {
-        PrintKernelError("System: Cleanup failed with code ");
-        PrintKernelInt(cleanup_result);
-        PrintKernel("\n");
-    } else {
-        PrintKernel("System: Cleanup successful\n");
-    }
+#ifdef VF_CONFIG_USE_CERBERUS
+    CerberusUnregisterProcess(proc->pid);
 #endif
+
+    ProcFSUnregisterProcess(proc->pid);
+
     PrintKernelSuccessF("Astra: Terminated PID %d with reason %s\n", pid, reason);
 }
 
@@ -1110,17 +1081,8 @@ uint32_t MLFQCreateSecureProcess(const char * name, void (*entry_point)(void), u
     CerberusRegisterProcess(new_pid, (uint64_t)stack, STACK_SIZE);
 #endif
 
-#ifdef VF_CONFIG_PROCINFO_CREATE_DEFAULT
-    if (!VfsIsDir(processes[slot].ProcessRuntimePath)) {
-        int rc = VfsCreateDir(processes[slot].ProcessRuntimePath);
-        if (rc != 0 && !VfsIsDir(processes[slot].ProcessRuntimePath)) {
-            PrintKernelError("ProcINFO: failed to create dir for PID ");
-            PrintKernelInt(processes[slot].pid);
-            PrintKernel("\n");
-            /* Non-fatal: ProcINFO features degrade for this process */
-        }
-    }
-#endif
+    ProcFSRegisterProcess(new_pid, stack);
+
     // Initialize CPU burst history with reasonable defaults
     for (int i = 0; i < CPU_BURST_HISTORY; i++) {
         processes[slot].cpu_burst_history[i] = QUANTUM_BASE / 2;
@@ -1206,20 +1168,12 @@ void MLFQCleanupTerminatedProcess(void) {
         proc->ipc_queue.count = 0;
 
         // Clear process structure - this will set state to PROC_TERMINATED (0)
-        uint32_t pid_backup = proc->pid; // Keep for logging
         FastMemset(proc, 0, sizeof(MLFQProcessControlBlock));
 
         // Free the slot
         FreeSlotFast(slot);
         process_count--;
         cleanup_count++;
-
-        PrintKernel("System: Process PID ");
-        PrintKernelInt(pid_backup);
-        PrintKernel(" cleaned up successfully (state now PROC_TERMINATED=0)\n");
-        char cleanup_path[256];
-        FormatA(cleanup_path, sizeof(cleanup_path), "%s/%d", RuntimeProcesses, pid_backup);
-        VfsDelete(cleanup_path, true);
     }
     rust_spinlock_unlock_irqrestore(scheduler_lock, flags);
 }
@@ -1730,9 +1684,7 @@ int MLFQSchedInit(void) {
     idle_proc->scheduler_node = NULL;
     idle_proc->creation_time = MLFQGetSystemTicks();
     FormatA(idle_proc->ProcessRuntimePath, sizeof(idle_proc->ProcessRuntimePath), "%s/%d", RuntimeServices, idle_proc->pid);
-#ifdef VF_CONFIG_PROCINFO_CREATE_DEFAULT
-    if (VfsCreateDir(idle_proc->ProcessRuntimePath) != 0) PANIC("Failed to create ProcINFO directory");
-#endif
+    ProcFSRegisterProcess(0, 0);
     // Securely initialize the token for the Idle Process
     MLFQSecurityToken* token = &idle_proc->token;
     token->magic = SECURITY_MAGIC;
