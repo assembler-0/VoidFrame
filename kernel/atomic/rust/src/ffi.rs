@@ -73,6 +73,47 @@ pub extern "C" fn rust_spinlock_try_lock(lock: *mut SpinLock) -> bool {
     }
 }
 
+#[no_mangle]
+pub extern "C" fn rust_spinlock_contention_level(lock: *mut SpinLock) -> u32 {
+    if !lock.is_null() {
+        unsafe { (*lock).contention_level() }
+    } else {
+        0
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn rust_spinlock_lock_order(lock: *mut SpinLock) -> u32 {
+    if !lock.is_null() {
+        unsafe { (*lock).lock_order() }
+    } else {
+        0
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn rust_spinlock_owner_cpu(lock: *mut SpinLock) -> u32 {
+    if !lock.is_null() {
+        unsafe { (*lock).owner_cpu() }
+    } else {
+        u32::MAX
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn rust_spinlock_new_with_order(order: u32) -> *mut SpinLock {
+    unsafe {
+        for i in 0..64 {
+            if !SPINLOCK_USED[i] {
+                SPINLOCK_USED[i] = true;
+                SPINLOCK_STORAGE[i] = SpinLock::new_with_order(order);
+                return &mut SPINLOCK_STORAGE[i] as *mut SpinLock;
+            }
+        }
+    }
+    core::ptr::null_mut()
+}
+
 // Static storage for MCS locks and nodes
 static mut MCS_LOCK_STORAGE: [McsLock; 32] = [const { McsLock::new() }; 32];
 static mut MCS_LOCK_USED: [bool; 32] = [false; 32];
@@ -144,6 +185,15 @@ pub extern "C" fn rust_mcs_lock(lock: *mut McsLock, node: *mut McsNode) {
 pub extern "C" fn rust_mcs_unlock(lock: *mut McsLock, node: *mut McsNode) {
     if !lock.is_null() && !node.is_null() {
         unsafe { (*lock).unlock(&mut *node) };
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn rust_mcs_try_lock(lock: *mut McsLock, node: *mut McsNode) -> bool {
+    if !lock.is_null() && !node.is_null() {
+        unsafe { (*lock).try_lock(&mut *node) }
+    } else {
+        false
     }
 }
 

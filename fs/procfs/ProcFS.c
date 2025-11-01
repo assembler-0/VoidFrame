@@ -75,7 +75,7 @@ int ProcfsReadFile(const char* path, void* buffer, uint32_t max_size) {
     char local_buffer[1024];
 
     if (FastStrCmp(filename, "info") == 0) {
-        int len = FormatA(local_buffer, sizeof(local_buffer),
+        int len = snprintf(local_buffer, sizeof(local_buffer),
                          "Name: %s\n"
                          "PID: %u\n"
                          "State: %d\n"

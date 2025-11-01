@@ -32,7 +32,7 @@ void CerberusLogViolation(CerberusViolationReport* report) {
 #ifdef VF_CONFIG_CERBERUS_VFS_LOGGING
     // VFS logging
     char log_entry[256];
-    FormatA(log_entry, sizeof(log_entry),
+    snprintf(log_entry, sizeof(log_entry),
            "TICK=%lu PID=%d TYPE=%d ADDR=0x%lx RIP=0x%lx DESC=%s\n",
            system_ticks, report->process_id, report->violation_type,
            report->fault_address, report->rip, report->description);
@@ -196,7 +196,7 @@ int CerberusCheckStackCanary(uint32_t pid) {
             .rip = 0
         };
 
-        FormatA(violation.description, sizeof(violation.description),
+        snprintf(violation.description, sizeof(violation.description),
                "Stack canary corrupted: expected=0x%lx found=0x%lx",
                STACK_CANARY_VALUE, canary_value);
 
@@ -288,7 +288,7 @@ int CerberusAnalyzeFault(uint64_t fault_addr, uint64_t error_code, uint32_t pid,
             .rip = rip
         };
 
-        FormatA(violation.description, sizeof(violation.description),
+        snprintf(violation.description, sizeof(violation.description),
                "Memory fault: addr=0x%lx error=0x%lx rip=0x%lx",
                fault_addr, error_code, rip);
 
@@ -380,7 +380,7 @@ int CerberusTrackFree(uint64_t addr, uint32_t pid) {
         .rip = 0
     };
 
-    FormatA(violation.description, sizeof(violation.description),
+    snprintf(violation.description, sizeof(violation.description),
            "Potential double-free: addr=0x%lx", addr);
 
     CerberusLogViolation(&violation);

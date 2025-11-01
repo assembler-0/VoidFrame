@@ -5,9 +5,11 @@ use core::marker::PhantomData;
 use core::ops::{Deref, DerefMut};
 
 const DEADLOCK_TIMEOUT_CYCLES: u64 = 100_000_000;
-const MAX_BACKOFF_CYCLES: u64 = 1024;
-const CONTENTION_THRESHOLD: u32 = 16;
-const YIELD_THRESHOLD: u32 = 64;
+const MAX_BACKOFF_CYCLES: u64 = 512;
+const BASE_BACKOFF_CYCLES: u64 = 8;
+const CONTENTION_THRESHOLD: u32 = 8;
+const YIELD_THRESHOLD: u32 = 32;
+const MAX_HOLD_TIME_CYCLES: u64 = 50_000_000;
 
 #[inline(always)]
 fn rdtsc() -> u64 {
@@ -20,11 +22,16 @@ fn pause() {
 }
 
 #[inline(always)]
-fn backoff_delay(cycles: u64) {
-    let start = rdtsc();
-    while rdtsc() - start < cycles {
+fn adaptive_pause(iteration: u32) {
+    let count = (1 << iteration.min(6)).min(64);
+    for _ in 0..count {
         pause();
     }
+}
+
+#[inline(always)]
+fn linear_backoff(iteration: u32) -> u64 {
+    BASE_BACKOFF_CYCLES + (iteration as u64 * BASE_BACKOFF_CYCLES).min(MAX_BACKOFF_CYCLES)
 }
 
 extern "C" {
@@ -38,6 +45,7 @@ pub struct SpinLock {
     contention_count: AtomicU32,
     owner_cpu: AtomicU32,
     acquire_time: AtomicU64,
+    lock_order: AtomicU32,
 }
 
 // RAII guard for automatic unlock
@@ -64,19 +72,26 @@ impl SpinLock {
             contention_count: AtomicU32::new(0),
             owner_cpu: AtomicU32::new(u32::MAX),
             acquire_time: AtomicU64::new(0),
+            lock_order: AtomicU32::new(0),
+        }
+    }
+
+    pub const fn new_with_order(order: u32) -> Self {
+        Self {
+            locked: AtomicBool::new(false),
+            contention_count: AtomicU32::new(0),
+            owner_cpu: AtomicU32::new(u32::MAX),
+            acquire_time: AtomicU64::new(0),
+            lock_order: AtomicU32::new(order),
         }
     }
 
     #[inline]
     pub fn lock(&self) {
         let start = rdtsc();
-        let mut cpu_id = 0;
-        unsafe {
-            cpu_id = lapic_get_id();
-        }
-        let mut backoff = 1u64;
+        let cpu_id = unsafe { lapic_get_id() };
         let mut attempts = 0u32;
-        let mut local_spins = 0u32;
+        let mut pause_count = 0u32;
 
         loop {
             // Fast path: try to acquire without contention
@@ -84,30 +99,30 @@ impl SpinLock {
                 return;
             }
 
-            // Deadlock detection with owner tracking
+            // Security: Check for excessive hold time by current owner
             if rdtsc() - start > DEADLOCK_TIMEOUT_CYCLES {
                 self.handle_potential_deadlock(cpu_id, start);
                 continue;
             }
 
             attempts += 1;
-            local_spins += 1;
-
-            // Adaptive strategy based on contention level
             let contention = self.contention_count.load(Ordering::Relaxed);
             
             if contention < CONTENTION_THRESHOLD {
-                // Low contention: aggressive spinning
-                self.spin_wait_adaptive(local_spins);
+                // Low contention: CPU-optimized spinning
+                adaptive_pause(pause_count);
+                pause_count = (pause_count + 1).min(4);
             } else if attempts < YIELD_THRESHOLD {
-                // Medium contention: exponential backoff
-                backoff_delay(backoff);
-                backoff = (backoff * 2).min(MAX_BACKOFF_CYCLES);
+                // Medium contention: linear backoff (better cache behavior)
+                let delay = linear_backoff(attempts);
+                let start_delay = rdtsc();
+                while rdtsc() - start_delay < delay {
+                    pause();
+                }
             } else {
-                // High contention: yield to scheduler
+                // High contention: yield and reset
                 unsafe { crate::ffi::Yield(); }
-                local_spins = 0;
-                // Reset attempts to prevent immediate re-yielding if not scheduled away
+                pause_count = 0;
                 attempts = 0;
             }
         }
@@ -124,31 +139,28 @@ impl SpinLock {
         false
     }
 
-    #[inline]
-    fn spin_wait_adaptive(&self, local_spins: u32) {
-        let spin_count = if local_spins < 32 { 4 } else { 16 };
-        for _ in 0..spin_count {
-            if !self.locked.load(Ordering::Relaxed) {
-                break;
-            }
-            pause();
-        }
-    }
+
 
     #[inline]
     fn handle_potential_deadlock(&self, cpu_id: u32, start_time: u64) {
         let owner = self.owner_cpu.load(Ordering::Relaxed);
         let owner_time = self.acquire_time.load(Ordering::Relaxed);
         
-        // In a real kernel, this would check if owner CPU is still alive
-        // and potentially break the lock or log the deadlock
+        // Security: Detect self-deadlock
         if owner == cpu_id {
-            // Self-deadlock detected - this should never happen
             return;
         }
         
-        // Force yield and reset timing
-        backoff_delay(MAX_BACKOFF_CYCLES);
+        // Security: Check if lock held too long
+        if owner_time > 0 && rdtsc() - owner_time > MAX_HOLD_TIME_CYCLES {
+            panic!("Lock held too long!");
+        }
+        
+        // Aggressive backoff for potential deadlock
+        let delay_start = rdtsc();
+        while rdtsc() - delay_start < MAX_BACKOFF_CYCLES {
+            pause();
+        }
         self.contention_count.fetch_add(1, Ordering::Relaxed);
     }
 
@@ -188,6 +200,16 @@ impl SpinLock {
     #[inline]
     pub fn contention_level(&self) -> u32 {
         self.contention_count.load(Ordering::Relaxed)
+    }
+
+    #[inline]
+    pub fn lock_order(&self) -> u32 {
+        self.lock_order.load(Ordering::Relaxed)
+    }
+
+    #[inline]
+    pub fn owner_cpu(&self) -> u32 {
+        self.owner_cpu.load(Ordering::Relaxed)
     }
 }
 

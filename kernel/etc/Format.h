@@ -29,12 +29,12 @@
  *
  * @param buffer Pointer to the character array where the formatted string will be stored.
  * @param size Size of the buffer, including space for the null-terminator.
- * @param format Pointer to a null-terminated format string.
+ * @param fmt Pointer to a null-terminated format string.
  * @param args Variable argument list containing the data to format.
  * @return The number of characters written to the buffer, excluding the null-terminator.
  *         Returns -1 if the buffer is null or the size is zero.
  */
-int Format(char* buffer, size_t size, const char* format, va_list args);
+int vsnprintf(char *buffer, size_t size, const char *fmt, va_list args);
 
 /**
  * @alias vsnprintf
@@ -45,7 +45,7 @@ int Format(char* buffer, size_t size, const char* format, va_list args);
  * @param ... Format param(s)
  * @return
  */
-int FormatA(char* buffer, size_t size, const char* format, ...);
+int snprintf(char* buffer, size_t size, const char* format, ...);
 
 /**
  * @brief An UNSAFE version and deprecated version of Format wrapper

@@ -857,7 +857,7 @@ int EEVDFSchedInit(void) {
     
     // Initialize idle process
     EEVDFProcessControlBlock* idle_proc = &processes[0];
-    FormatA(idle_proc->name, sizeof(idle_proc->name), "Idle");
+    snprintf(idle_proc->name, sizeof(idle_proc->name), "Idle");
     idle_proc->pid = 0;
     idle_proc->state = PROC_RUNNING;
     idle_proc->privilege_level = EEVDF_PROC_PRIV_SYSTEM;
@@ -877,7 +877,7 @@ int EEVDFSchedInit(void) {
     token->checksum = EEVDFCalculateTokenChecksum(token);
     token->pcb_hash = EEVDFCalculatePCBHash(idle_proc);
     
-    FormatA(idle_proc->ProcessRuntimePath, sizeof(idle_proc->ProcessRuntimePath), "%s/%d", RuntimeServices, idle_proc->pid);
+    snprintf(idle_proc->ProcessRuntimePath, sizeof(idle_proc->ProcessRuntimePath), "%s/%d", RuntimeServices, idle_proc->pid);
 
     ProcFSRegisterProcess(0, 0);
 
@@ -957,7 +957,7 @@ uint32_t EEVDFCreateSecureProcess(const char* name, void (*entry_point)(void), u
 
     // Initialize process
     EEVDFProcessControlBlock* proc = &processes[slot];
-    FormatA(proc->name, sizeof(proc->name), "%s", name ? name : FormatS("proc%d", slot));
+    snprintf(proc->name, sizeof(proc->name), "%s", name ? name : FormatS("proc%d", slot));
     proc->pid = new_pid;
     proc->state = PROC_READY;
     proc->stack = stack;
@@ -998,7 +998,7 @@ uint32_t EEVDFCreateSecureProcess(const char* name, void (*entry_point)(void), u
     proc->ipc_queue.tail = 0;
     proc->ipc_queue.count = 0;
 
-    FormatA(proc->ProcessRuntimePath, sizeof(proc->ProcessRuntimePath), "%s/%d", RuntimeProcesses, new_pid);
+    snprintf(proc->ProcessRuntimePath, sizeof(proc->ProcessRuntimePath), "%s/%d", RuntimeProcesses, new_pid);
 
     // Recalculate PCB hash after all relevant fields are set
     token->pcb_hash = EEVDFCalculatePCBHash(proc);
@@ -1010,7 +1010,7 @@ uint32_t EEVDFCreateSecureProcess(const char* name, void (*entry_point)(void), u
     ProcFSRegisterProcess(new_pid, stack);
 
     // Update counters
-    __sync_fetch_and_add(&process_count, 1);
+    AtomicInc(&process_count);
     ready_process_bitmap |= (1ULL << slot);
     eevdf_scheduler.total_processes++;
 

@@ -13,19 +13,19 @@ void GenerateDriveNameInto(BlockDeviceType type, char* out_name) {
     else rust_spinlock_lock(dn_lock);
     switch (type) {
         case DEVICE_TYPE_IDE:
-            FormatA(out_name, 16, "hd%c", 'a' + ide_count++);
+            snprintf(out_name, 16, "hd%c", 'a' + ide_count++);
             break;
         case DEVICE_TYPE_AHCI:
-            FormatA(out_name, 16, "sd%c", 'a' + ahci_count++);
+            snprintf(out_name, 16, "sd%c", 'a' + ahci_count++);
             break;
         case DEVICE_TYPE_NVME:
-            FormatA(out_name, 16, "nvme%d", nvme_count++);
+            snprintf(out_name, 16, "nvme%d", nvme_count++);
             break;
         case DEVICE_TYPE_VIRTIO:
-            FormatA(out_name, 16, "vd%c", 'a' + virtio_count++);
+            snprintf(out_name, 16, "vd%c", 'a' + virtio_count++);
             break;
         default:
-            FormatA(out_name, 16, "unk%d", 0);
+            snprintf(out_name, 16, "unk%d", 0);
             break;
     }
     rust_spinlock_unlock(dn_lock);

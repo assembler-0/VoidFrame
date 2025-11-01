@@ -491,8 +491,8 @@ int Iso9660Copy(const char* iso_path, const char* vfs_path) {
         char vfs_filepath[256];
         char iso_filepath[256];
 
-        FormatA(vfs_filepath, sizeof(vfs_filepath), "%s/%s", vfs_path, filename);
-        FormatA(iso_filepath, sizeof(iso_filepath), "%s/%s", iso_path, filename);
+        snprintf(vfs_filepath, sizeof(vfs_filepath), "%s/%s", vfs_path, filename);
+        snprintf(iso_filepath, sizeof(iso_filepath), "%s/%s", iso_path, filename);
 
         if (entries[i]->file_flags & 2) { // Directory
             Iso9660Copy(iso_filepath, vfs_filepath);
