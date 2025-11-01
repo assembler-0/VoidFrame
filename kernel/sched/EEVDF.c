@@ -1221,13 +1221,13 @@ static void EEVDFTerminateProcess(uint32_t pid, TerminationReason reason, uint32
         eevdf_scheduler.total_processes--;
     }
 
+    ProcFSUnregisterProcess(pid);
+
     rust_spinlock_unlock_irqrestore(eevdf_lock, flags);
 
 #ifdef VF_CONFIG_USE_CERBERUS
     CerberusUnregisterProcess(proc->pid);
 #endif
-
-    ProcFSUnregisterProcess(pid);
 }
 
 // EEVDF's deadly termination function - bypasses all protections
@@ -1261,13 +1261,13 @@ static void EEVDFASTerminate(uint32_t pid, const char* reason) {
         eevdf_scheduler.total_processes--;
     }
 
+    ProcFSUnregisterProcess(pid);
+
     rust_spinlock_unlock_irqrestore(eevdf_lock, flags);
     
 #ifdef VF_CONFIG_USE_CERBERUS
     CerberusUnregisterProcess(proc->pid);
 #endif
-
-    ProcFSUnregisterProcess(pid);
 }
 
 static void EEVDFSecurityViolationHandler(uint32_t violator_pid, const char* reason) {

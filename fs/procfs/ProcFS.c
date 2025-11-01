@@ -74,7 +74,7 @@ int ProcfsReadFile(const char* path, void* buffer, uint32_t max_size) {
     const char* filename = &path[i + 1];
     char local_buffer[1024];
 
-    if (FastStrCmp(filename, "status") == 0) {
+    if (FastStrCmp(filename, "info") == 0) {
         int len = FormatA(local_buffer, sizeof(local_buffer),
                          "Name: %s\n"
                          "PID: %u\n"
@@ -135,7 +135,7 @@ int ProcfsListDir(const char* path) {
         while (current) {
             if (current->pid == pid) {
                 if (path[i] == '\0' || (path[i] == '/' && path[i+1] == '\0')) {
-                    PrintKernelF("  status\n");
+                    PrintKernelF("  info\n");
                     return 0;
                 }
             }

@@ -187,7 +187,6 @@ static const HelpEntry system_cmds[] = {
     {"perf", "Show performance stats"},
     {"kill <pid>", "Terminate process"},
     {"memstat", "Show memory statistics"},
-    {"stacksize", "Show stack usage"},
     {"lscpu", "List CPU features"},
     {"vfc NULL/fork", "Start VFCompositor as another process or on the currently session"},
     {"snoozer <on/off>", "Snooze messages from PrintKernel"},
@@ -1011,12 +1010,6 @@ void LsCPUHandler(const char* args) {
     PrintFeatures();
 }
 
-void StackSizeHandler(const char* args) {
-    (void)args;
-    extern void StackUsage(void);
-    StackUsage();
-}
-
 static void IsoCpHandler(const char* args) {
     char* src = GetArg(args, 1);
     char* dest = GetArg(args, 2);
@@ -1295,7 +1288,6 @@ static const ShellCommand commands[] = {\
     {"size", SizeHandler},
     {"heapvallvl", KHeapValidationHandler},
     {"lscpu", LsCPUHandler},
-    {"stacksize", StackSizeHandler},
     {"vfc", VFCompositorRequestInit}, // internal uses
     {"cp", CpHandler},
     {"mv", MvHandler},

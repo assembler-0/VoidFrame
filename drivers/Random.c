@@ -31,9 +31,11 @@ static CharDevice_t g_random_device = {
 
 void RandomInit(void) {
     if (!rdrand_supported()) {
-        // In a real scenario, a better source of entropy should be used.
-        // For now, we use a fixed seed.
-        rng_seed(0xDEADBEEF, 0xCAFEBABE);
+        uint32_t lo, hi;
+        __asm__ volatile("rdtsc" : "=a"(lo), "=d"(hi));
+        uint64_t tsc = ((uint64_t)hi << 32) | lo;
+        uint64_t entropy = tsc ^ (uint64_t)(uintptr_t)&g_random_device;
+        rng_seed(tsc, entropy);
     }
     CharDeviceRegister(&g_random_device);
 }
