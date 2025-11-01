@@ -22,6 +22,7 @@
 #include "PCI/PCI.h"
 #include "PMem.h"
 #include "PS2.h"
+#include "Random.h"
 #include "Panic.h"
 #include "SVGAII.h"
 #include "Scheduler.h"
@@ -607,6 +608,11 @@ static InitResultT PXS2(void) {
     TSCInit();
     PrintKernelSuccess("System: TSC initialized\n");
     
+    // Initialize Random Device
+    PrintKernel("Info: Initializing Random Device...\n");
+    RandomInit();
+    PrintKernelSuccess("System: Random Device initialized\n");
+    
     // Initialize ACPI for power management
     if (ACPIInit()) PrintKernelSuccess("System: ACPI initialized\n");
     else PrintKernelWarning("System: ACPI initialization failed\n");
@@ -765,13 +771,6 @@ static InitResultT PXS2(void) {
     return INIT_SUCCESS;
 }
 
-void StackUsage(void) {
-    uintptr_t current_sp;
-    __asm__ __volatile__("mov %%rsp, %0" : "=r"(current_sp));
-    size_t used = (uintptr_t)kernel_stack + KERNEL_STACK_SIZE - current_sp;
-    PrintKernelF("Stack used: %llu/%d bytes\n", used, KERNEL_STACK_SIZE);
-}
-
 asmlinkage void KernelMain(const uint32_t magic, const uint32_t info) {
     if (magic != MULTIBOOT2_BOOTLOADER_MAGIC) {
         ClearScreen();
@@ -797,7 +796,6 @@ void KernelMainHigherHalf(void) {
 
     // Initialize core systems
     PXS2();
-    StackUsage();
 
 #ifdef VF_CONFIG_SNOOZE_ON_BOOT
     Unsnooze();

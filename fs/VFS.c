@@ -4,6 +4,7 @@
 #include "CharDevice.h"
 #include "Console.h"
 #include "devfs/DevFS.h"
+#include "procfs/ProcFS.h"
 #include "EXT/Ext2.h"
 #include "FAT/FAT1x.h"
 #include "FileSystem.h"
@@ -92,6 +93,7 @@ int VfsInit(void) {
         mounts[i].active = 0;
     }
     PrintKernel( "VFS: Mount table cleared\n");
+    ProcFSInit();
 
     // Register filesystems
     static FileSystemDriver ntfs_driver = {"NTFS", NtfsDetect, NtfsMount, NtfsUnmount};
@@ -106,6 +108,9 @@ int VfsInit(void) {
     static FileSystemDriver devfs_driver = {"DevFS", NULL, DevfsMount, NULL};
     FileSystemRegister(&devfs_driver);
     PrintKernel("VFS: DevFS driver registered\n");
+    static FileSystemDriver procfs_driver = {"ProcFS", NULL, ProcfsMount, NULL};
+    FileSystemRegister(&procfs_driver);
+    PrintKernel("VFS: ProcFS driver registered\n");
 
     int result = VfsMount("/", NULL, NULL); // RamFS doesn't need a device or driver
     if (result != 0) {
@@ -115,6 +120,11 @@ int VfsInit(void) {
     result = VfsMount(DevicesDir, NULL, &devfs_driver);
     if (result != 0) {
         SerialWrite("VFS: Failed to mount /Devices\n");
+    }
+
+    result = VfsMount(RuntimeProcesses, NULL, &procfs_driver);
+    if (result != 0) {
+        SerialWrite("VFS: Failed to mount /Runtime/Processes\n");
     }
 
     PrintKernelSuccess("VFS: Virtual File System initialized\n");
@@ -193,6 +203,8 @@ int VfsReadFile(const char* path, void* buffer, uint32_t max_size) {
             return NtfsReadFile(local_path, buffer, max_size);
         } else if (FastStrCmp(mount->fs_driver->name, "DevFS") == 0) {
             return DevfsReadFile(local_path, buffer, max_size);
+        } else if (FastStrCmp(mount->fs_driver->name, "ProcFS") == 0) {
+            return ProcfsReadFile(local_path, buffer, max_size);
         }
     } else {
         FsNode* node = FsFind(local_path);
@@ -226,6 +238,8 @@ int VfsWriteFile(const char* path, const void* buffer, uint32_t size) {
             return NtfsWriteFile(local_path, buffer, size);
         } else if (FastStrCmp(mount->fs_driver->name, "DevFS") == 0) {
             return DevfsWriteFile(local_path, buffer, size);
+        } else if (FastStrCmp(mount->fs_driver->name, "ProcFS") == 0) {
+            return ProcfsWriteFile(local_path, buffer, size);
         }
     } else {
         int fd = FsOpen(local_path, FS_WRITE);
@@ -257,6 +271,8 @@ int VfsListDir(const char* path) {
             return NtfsListDir(local_path);
         } else if (FastStrCmp(mount->fs_driver->name, "DevFS") == 0) {
             return DevfsListDir(local_path);
+        } else if (FastStrCmp(mount->fs_driver->name, "ProcFS") == 0) {
+            return ProcfsListDir(local_path);
         }
     } else {
         return FsListDir(local_path);
@@ -364,6 +380,8 @@ int VfsIsDir(const char* path) {
             return NtfsIsDir(local_path);
         } else if (FastStrCmp(mount->fs_driver->name, "DevFS") == 0) {
             return DevfsIsDir(local_path);
+        } else if (FastStrCmp(mount->fs_driver->name, "ProcFS") == 0) {
+            return ProcfsIsDir(local_path);
         }
     } else {
         FsNode* node = FsFind(local_path);

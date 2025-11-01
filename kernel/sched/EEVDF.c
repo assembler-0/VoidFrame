@@ -3,7 +3,6 @@
 #ifdef VF_CONFIG_USE_CERBERUS
 #include "Cerberus.h"
 #endif
-#include "Compositor.h"
 #include "Console.h"
 #include "Format.h"
 #include "Gdt.h"
@@ -15,6 +14,7 @@
 #include "VFS.h"
 #include "VMem.h"
 #include "x64.h"
+#include "procfs/ProcFS.h"
 
 #define offsetof(type, member) ((uint64_t)&(((type*)0)->member))
 
@@ -878,7 +878,9 @@ int EEVDFSchedInit(void) {
     token->pcb_hash = EEVDFCalculatePCBHash(idle_proc);
     
     FormatA(idle_proc->ProcessRuntimePath, sizeof(idle_proc->ProcessRuntimePath), "%s/%d", RuntimeServices, idle_proc->pid);
-    
+
+    ProcFSRegisterProcess(0, 0);
+
     process_count = 1;
     active_process_bitmap |= 1ULL;
 
@@ -1004,7 +1006,9 @@ uint32_t EEVDFCreateSecureProcess(const char* name, void (*entry_point)(void), u
 #ifdef VF_CONFIG_USE_CERBERUS
     CerberusRegisterProcess(new_pid, (uint64_t)stack, EEVDF_STACK_SIZE);
 #endif
-    
+
+    ProcFSRegisterProcess(new_pid, stack);
+
     // Update counters
     __sync_fetch_and_add(&process_count, 1);
     ready_process_bitmap |= (1ULL << slot);
@@ -1217,29 +1221,12 @@ static void EEVDFTerminateProcess(uint32_t pid, TerminationReason reason, uint32
         eevdf_scheduler.total_processes--;
     }
 
+    ProcFSUnregisterProcess(pid);
+
     rust_spinlock_unlock_irqrestore(eevdf_lock, flags);
 
 #ifdef VF_CONFIG_USE_CERBERUS
     CerberusUnregisterProcess(proc->pid);
-#endif
-
-#ifdef VF_CONFIG_PROCINFO_AUTO_CLEANUP
-    char cleanup_path[256];
-    FormatA(cleanup_path, sizeof(cleanup_path), "%s/%d", RuntimeProcesses, proc->pid);
-
-    PrintKernel("EEVDF: Attempting cleanup of ");
-    PrintKernel(cleanup_path);
-    PrintKernel(" for PID ");
-    PrintKernelInt(proc->pid);
-    PrintKernel("\n");
-    int cleanup_result = VfsDelete(cleanup_path, true);
-    if (cleanup_result != 0) {
-        PrintKernelError("EEVDF: Cleanup failed with code ");
-        PrintKernelInt(cleanup_result);
-        PrintKernel("\n");
-    } else {
-        PrintKernel("EEVDF: Cleanup successful\n");
-    }
 #endif
 }
 
@@ -1274,28 +1261,12 @@ static void EEVDFASTerminate(uint32_t pid, const char* reason) {
         eevdf_scheduler.total_processes--;
     }
 
+    ProcFSUnregisterProcess(pid);
+
     rust_spinlock_unlock_irqrestore(eevdf_lock, flags);
     
-#ifdef VF_CONFIG_PROCINFO_AUTO_CLEANUP
-    char cleanup_path[256];
-    FormatA(cleanup_path, sizeof(cleanup_path), "%s/%d", RuntimeProcesses, proc->pid);
-
-    PrintKernel("EEVDF-AS: Attempting forced cleanup of ");
-    PrintKernel(cleanup_path);
-    PrintKernel(" for PID ");
-    PrintKernelInt(proc->pid);
-    PrintKernel(" (Reason: ");
-    PrintKernel(reason);
-    PrintKernel(")\n");
-    
-    int cleanup_result = VfsDelete(cleanup_path, true);
-    if (cleanup_result != 0) {
-        PrintKernelError("EEVDF-AS: Forced cleanup failed with code ");
-        PrintKernelInt(cleanup_result);
-        PrintKernel("\n");
-    } else {
-        PrintKernel("EEVDF-AS: Forced cleanup successful\n");
-    }
+#ifdef VF_CONFIG_USE_CERBERUS
+    CerberusUnregisterProcess(proc->pid);
 #endif
 }
 

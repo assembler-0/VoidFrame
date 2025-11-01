@@ -130,6 +130,12 @@ ninja run
     - [x] Create (register)
     - [ ] Delete (unregister)
     - [x] List
+- PROCFS
+    - [x] Read
+    - [x] Write
+    - [x] Create (register)
+    - [ ] Delete (unregister)
+    - [x] List
 - ISO9660 (RO)
     - [x] Read
     - [x] List
@@ -138,7 +144,8 @@ ninja run
     - [x] EXT2
     - [x] FAT1x
     - [x] VFRFS
-    - [ ] DEVFS
+    - [x] DEVFS
+    - [x] PROCFS
     - [ ] ISO9660 
 ### Drivers
 - Network

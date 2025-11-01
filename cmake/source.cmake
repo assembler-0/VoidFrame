@@ -71,6 +71,7 @@ set(FS_SOURCES
         fs/FAT/FAT1x.c
         fs/EXT/Ext2.c
         fs/NTFS/NTFS.c
+        fs/procfs/ProcFS.c
         fs/Iso9660.c
         fs/VFS.c
         fs/BlockDevice.c
@@ -87,6 +88,7 @@ set(DRIVER_SOURCES
         drivers/TSC.c
         drivers/ACPI.c
         drivers/Serial.c
+        drivers/Random.c
         drivers/PS2.c
         drivers/storage/Ide.c
         drivers/Vesa.c
