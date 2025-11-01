@@ -760,7 +760,7 @@ static InitResultT PXS2(void) {
     // Load multiboot modules
     PrintKernel("Info: Loading multiboot modules...\n");
     InitRDLoad();
-    PrintKernelSuccess("System: Multiboot modules wed\n");
+    PrintKernelSuccess("System: Multiboot modules loadded\n");
 #endif
 
     PrintKernel("Info: Initializing CRC32...\n");

@@ -47,8 +47,7 @@ mkdir build
 cd build
 cmake .. -DCMAKE_BUILD_TYPE=Release \
     -DCMAKE_TOOLCHAIN_FILE=../cmake/toolchain/linux-x64.cmake \
-    -G Ninja \
-    -DVF_SCHEDULER=EEVDF
+    -G Ninja
 ccmake . # Optinal, tune as needed
 ninja -j$(nproc)
 ninja run
