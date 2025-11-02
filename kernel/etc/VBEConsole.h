@@ -1,7 +1,7 @@
 #ifndef VBE_CONSOLE_H
 #define VBE_CONSOLE_H
 
-#include "stdint.h"
+#include <stdint.h>
 
 // NEW: A clean define for the default console color (White on Black)
 #define VBE_CONSOLE_DEFAULT_COLOR 0x07

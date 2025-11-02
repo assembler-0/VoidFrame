@@ -5,7 +5,7 @@
  *  Copyright (C) 1991, 1992  Linus Torvalds
  */
 
-#include "ctype.h"
+#include <ctype.h>
 
 char _ctmp;
 unsigned char _ctype[] = {0x00,			/* EOF */

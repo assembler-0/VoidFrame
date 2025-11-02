@@ -1,30 +1,28 @@
-#include "MLFQ.h"
-#include "Scheduler.h"
-#include "drivers/APIC/APIC.h"
-#include "Atomics.h"
-#include "Cerberus.h"
-#include "Compositor.h"
-#include "KernelHeap.h"
+#include <MLFQ.h>
+#include <Scheduler.h>
+#include <drivers/APIC/APIC.h>
+#include <Atomics.h>
+#include <Cerberus.h>
 #ifdef VF_CONFIG_USE_CERBERUS
-#include "Cerberus.h"
+#include <Cerberus.h>
 #endif
-#include "Console.h"
-#include "Format.h"
-#include "Gdt.h"
-#include "Io.h"
-#include "Ipc.h"
-#include "MemOps.h"
-#include "Panic.h"
-#include "Serial.h"
-#include "Shell.h"
-#include "SpinlockRust.h"
-#include "StackGuard.h"
-#include "VFS.h"
-#include "VMem.h"
-#include "math.h"
-#include "stdbool.h"
-#include "x64.h"
-#include "procfs/ProcFS.h"
+#include <Console.h>
+#include <Format.h>
+#include <Gdt.h>
+#include <Io.h>
+#include <Ipc.h>
+#include <MemOps.h>
+#include <Panic.h>
+#include <Serial.h>
+#include <Shell.h>
+#include <SpinlockRust.h>
+#include <StackGuard.h>
+#include <VFS.h>
+#include <VMem.h>
+#include <math.h>
+#include <stdbool.h>
+#include <x64.h>
+#include <procfs/ProcFS.h>
 
 #define offsetof(type, member) ((uint64_t)&(((type*)0)->member))
 
@@ -71,7 +69,6 @@ static uint64_t context_switches = 0;
 static uint64_t scheduler_calls = 0;
 
 extern volatile uint32_t APIC_HZ;
-char astra_path[1024];
 
 static int FastFFS(const uint64_t value) {
     return __builtin_ctzll(value);
@@ -1464,9 +1461,6 @@ static void Astra(void) {
     // register
     security_manager_pid = current->pid;
 
-    snprintf(astra_path, sizeof(astra_path), "%s/astra", current->ProcessRuntimePath);
-    if (VfsCreateFile(astra_path) != 0) PANIC("Failed to create Astra process info file");
-
     PrintKernelSuccess("Astra: Astra active.\n");
     uint64_t last_check = 0;
 
@@ -1552,23 +1546,6 @@ static void Astra(void) {
             }
         }
 #endif
-
-        if (current_tick % 250 == 0) {
-            char buff[1] = {0};
-            if (VfsReadFile(astra_path, buff, sizeof(buff)) == -1) PANIC("Failed to read Astra process info file");
-            switch (buff[0]) {
-                case 'p': PANIC("Astra: CRITICAL: Manual panic triggered via ProcINFO\n"); break;
-                case 't': threat_level += 10; break; // for fun
-                case 'k': ASTerminate(current->pid, "ProcINFO"); break;
-                case 'a': MLFQCreateSecureProcess("Astra", Astra, PROC_PRIV_SYSTEM, PROC_FLAG_CORE); break;
-                default: break;
-            }
-            int del_rc = VfsDelete(astra_path, false);
-            int cr_rc  = VfsCreateFile(astra_path);
-            if (del_rc != 0 || (cr_rc != 0 && !VfsIsFile(astra_path))) {
-                PANIC("Astra: ProcINFO reset failed\n");
-            }
-        }
 
         // 1. Token integrity verification
         if (current_tick - last_integrity_scan >= 50) {

@@ -1,6 +1,6 @@
 #ifndef VOIDFRAME_RNG_H
 #define VOIDFRAME_RNG_H
-#include "stdint.h"
+#include <stdint.h>
 
 void rng_seed(uint64_t a, uint64_t b);
 uint64_t xoroshiro128plus();

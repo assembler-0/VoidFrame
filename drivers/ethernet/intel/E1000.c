@@ -1,14 +1,14 @@
-#include "E1000.h"
-#include "../interface/Arp.h"
-#include "../interface/Ip.h"
-#include "Console.h"
-#include "TSC.h"
-#include "Io.h"
-#include "KernelHeap.h"
-#include "MemOps.h"
-#include "PCI/PCI.h"
-#include "PMem.h"
-#include "ethernet/Packet.h"
+#include <E1000.h>
+#include <../interface/Arp.h>
+#include <../interface/Ip.h>
+#include <Console.h>
+#include <TSC.h>
+#include <Io.h>
+#include <KernelHeap.h>
+#include <MemOps.h>
+#include <PCI/PCI.h>
+#include <PMem.h>
+#include <ethernet/Packet.h>
 
 static E1000Device g_e1000_device = {0};
 

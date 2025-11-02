@@ -1,8 +1,8 @@
 //
 // Created by Atheria on 7/12/25.
 //
-#include "stdint.h"
-#include "stdbool.h"
+#include <stdint.h>
+#include <stdbool.h>
 #ifndef ATOMICS_H
 #define ATOMICS_H
 

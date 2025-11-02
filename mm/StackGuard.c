@@ -1,5 +1,5 @@
-#include "StackGuard.h"
-#include "Panic.h"
+#include <StackGuard.h>
+#include <Panic.h>
 
 uint64_t __stack_chk_guard = STACK_CANARY_VALUE;
 

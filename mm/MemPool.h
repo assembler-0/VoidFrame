@@ -1,7 +1,7 @@
 #ifndef MEMPOOL_H
 #define MEMPOOL_H
 
-#include "stdint.h"
+#include <stdint.h>
 
 #define MAX_POOLS 16
 #define POOL_MAGIC 0xDEADC0DE

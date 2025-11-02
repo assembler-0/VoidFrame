@@ -1,7 +1,7 @@
 #pragma once
-#include "BlockDevice.h"
-#include "stdint.h"
-#include "KernelHeap.h"
+#include <BlockDevice.h>
+#include <stdint.h>
+#include <KernelHeap.h>
 
 // NTFS Boot Sector
 typedef struct {

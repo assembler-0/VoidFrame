@@ -2,8 +2,8 @@
 #define ARP_H
 
 #include <stdint.h>
-#include "../Packet.h"
-#include "stdbool.h"
+#include <../Packet.h>
+#include <stdbool.h>
 
 #define ARP_CACHE_SIZE 16
 

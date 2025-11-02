@@ -1,6 +1,6 @@
 #pragma once
-#include "stdint.h"
-#include "stdbool.h"
+#include <stdint.h>
+#include <stdbool.h>
 
 // ACPI Table signatures
 #define ACPI_RSDP_SIG "RSD PTR "

@@ -1,17 +1,17 @@
-#include "Panic.h"
-#include "Io.h"
+#include <Panic.h>
+#include <Io.h>
 // The ONLY necessary includes for display are now Console and Serial
-#include "ACPI.h"
-#include "../../mm/KernelHeap.h"
-#include "../../mm/PMem.h"
-#include "Console.h"
-#include "Serial.h"
+#include <ACPI.h>
+#include <../../mm/KernelHeap.h>
+#include <../../mm/PMem.h>
+#include <Console.h>
+#include <Serial.h>
 
-#include "../../mm/MemOps.h"
-#include "../../mm/VMem.h"
-#include "MLFQ.h" // For Registers struct in PanicFromInterrupt
-#include "Vesa.h"
-#include "stdint.h"
+#include <../../mm/MemOps.h>
+#include <../../mm/VMem.h>
+#include <MLFQ.h> // For Registers struct in PanicFromInterrupt
+#include <Vesa.h>
+#include <stdint.h>
 // --- Panic Context Structure (Unchanged) ---
 typedef struct {
     uint64_t rip;

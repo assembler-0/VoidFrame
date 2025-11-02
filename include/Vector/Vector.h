@@ -1,10 +1,10 @@
 #ifndef VECTOR_H
 #define VECTOR_H
 
-#include "stdbool.h"
-#include "KernelHeap.h"
-#include "MemOps.h"
-#include "Panic.h"
+#include <stdbool.h>
+#include <KernelHeap.h>
+#include <MemOps.h>
+#include <Panic.h>
 
 /* Generic vector implementation in C with pseudo dot-syntax */
 

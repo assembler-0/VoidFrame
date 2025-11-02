@@ -1,5 +1,5 @@
-#include "MemPool.h"
-#include "VMem.h"
+#include <MemPool.h>
+#include <VMem.h>
 
 static MemPool* default_pools[MAX_POOLS];
 static int num_default_pools = 0;

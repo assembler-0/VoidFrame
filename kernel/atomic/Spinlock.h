@@ -1,9 +1,9 @@
 #ifndef SPINLOCK_H
 #define SPINLOCK_H
 
-#include "Io.h"
-#include "stdint.h"
-#include "x64.h"
+#include <Io.h>
+#include <stdint.h>
+#include <x64.h>
 
 #define DEADLOCK_TIMEOUT_CYCLES 100000000ULL
 #define MAX_BACKOFF_CYCLES 1024

@@ -1,19 +1,19 @@
-#include "Compositor.h"
-#include "Console.h"
-#include "Font.h"
-#include "KernelHeap.h"
-#include "Keyboard.h"
-#include "MLFQ.h"
-#include "MemOps.h"
-#include "Pallete.h"
-#include "Panic.h"
-#include "PS2.h"
-#include "Scheduler.h"
-#include "Shell.h"
-#include "SpinlockRust.h"
-#include "StringOps.h"
-#include "Vesa.h"
-#include "app/GUIShell.h"
+#include <Compositor.h>
+#include <Console.h>
+#include <Font.h>
+#include <KernelHeap.h>
+#include <Keyboard.h>
+#include <MLFQ.h>
+#include <MemOps.h>
+#include <Pallete.h>
+#include <Panic.h>
+#include <PS2.h>
+#include <Scheduler.h>
+#include <Shell.h>
+#include <SpinlockRust.h>
+#include <StringOps.h>
+#include <Vesa.h>
+#include <app/GUIShell.h>
 
 #ifndef MAX
 #define MAX(a, b) ((a) > (b) ? (a) : (b))

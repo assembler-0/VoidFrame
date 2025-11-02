@@ -1,10 +1,10 @@
-#include "PMem.h"
-#include "Console.h"
-#include "MemOps.h"
-#include "Multiboot2.h"
-#include "Panic.h"
-#include "SpinlockRust.h"
-#include "VMem.h"
+#include <PMem.h>
+#include <Console.h>
+#include <MemOps.h>
+#include <Multiboot2.h>
+#include <Panic.h>
+#include <SpinlockRust.h>
+#include <VMem.h>
 
 // Support up to 128GB memory with dynamic bitmap allocation
 #define MAX_PAGE_BUFFER_OVERHEAD (1024 * 1024) // 1MB

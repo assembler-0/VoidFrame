@@ -1,10 +1,10 @@
-#include "PEloader.h"
-#include "../../mm/KernelHeap.h"
-#include "../../mm/MemOps.h"
-#include "../../mm/VMem.h"
-#include "Console.h"
-#include "Scheduler.h"
-#include "VFS.h"
+#include <PEloader.h>
+#include <../../mm/KernelHeap.h>
+#include <../../mm/MemOps.h>
+#include <../../mm/VMem.h>
+#include <Console.h>
+#include <Scheduler.h>
+#include <VFS.h>
 
 #define MAX_PE_FILE_SIZE (4 * 1024 * 1024)
 #define DEFAULT_PROCESS_MEMORY_LIMIT (16 * 1024 * 1024)

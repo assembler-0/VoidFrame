@@ -1,12 +1,12 @@
-#include "Iso9660.h"
+#include <Iso9660.h>
 
-#include "../drivers/storage/Ide.h"
-#include "../kernel/etc/StringOps.h"
-#include "../mm/KernelHeap.h"
-#include "Console.h"
-#include "Format.h"
-#include "MemOps.h"
-#include "VFS.h"
+#include <../drivers/storage/Ide.h>
+#include <../kernel/etc/StringOps.h>
+#include <../mm/KernelHeap.h>
+#include <Console.h>
+#include <Format.h>
+#include <MemOps.h>
+#include <VFS.h>
 
 #define ISO9660_SECTOR_SIZE 2048
 

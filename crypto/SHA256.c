@@ -1,6 +1,6 @@
 
-#include "SHA256.h"
-#include "MemOps.h"
+#include <SHA256.h>
+#include <MemOps.h>
 
 #define ROTR(x, n) (((x) >> (n)) | ((x) << (32 - (n))))
 #define CH(x, y, z) (((x) & (y)) ^ (~(x) & (z)))

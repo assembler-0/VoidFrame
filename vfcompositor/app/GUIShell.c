@@ -1,9 +1,9 @@
-#include "Compositor.h"
-#include "Shell.h"
-#include "GUIShell.h"
-#include "Keyboard.h"
-#include "Pallete.h"
-#include "Scheduler.h"
+#include <Compositor.h>
+#include <Shell.h>
+#include <GUIShell.h>
+#include <Keyboard.h>
+#include <Pallete.h>
+#include <Scheduler.h>
 
 static char command_buffer[256];
 static int cmd_pos = 0;

@@ -1,10 +1,10 @@
-#include "Ip.h"
-#include "../Network.h"
-#include "Arp.h"
-#include "Console.h"
-#include "KernelHeap.h"
-#include "MemOps.h"
-#include "ethernet/interface/Icmp.h"
+#include <Ip.h>
+#include <../Network.h>
+#include <Arp.h>
+#include <Console.h>
+#include <KernelHeap.h>
+#include <MemOps.h>
+#include <ethernet/interface/Icmp.h>
 
 
 static uint16_t IpChecksum(const void* data, size_t length) {

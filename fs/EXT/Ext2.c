@@ -1,13 +1,13 @@
-#include "Ext2.h"
-#include "../../kernel/etc/Console.h"
-#include "../../kernel/etc/StringOps.h"
-#include "Scheduler.h"
-#include "../../mm/KernelHeap.h"
-#include "../../mm/MemOps.h"
-#include "../VFS.h"
-#include "FileSystem.h"
-#include "Rtc.h"
-#include "SpinlockRust.h"
+#include <Ext2.h>
+#include <../../kernel/etc/Console.h>
+#include <../../kernel/etc/StringOps.h>
+#include <Scheduler.h>
+#include <../../mm/KernelHeap.h>
+#include <../../mm/MemOps.h>
+#include <../VFS.h>
+#include <FileSystem.h>
+#include <Rtc.h>
+#include <SpinlockRust.h>
 
 #define EXT2_SUPERBLOCK_OFFSET 1024
 #define EXT2_MAGIC 0xEF53

@@ -1,8 +1,8 @@
 #ifndef XHCI_H
 #define XHCI_H
 
-#include "PCI/PCI.h" // Assuming this is your PCI header
-#include "stdint.h"
+#include <PCI/PCI.h> // Assuming this is your PCI header
+#include <stdint.h>
 
 typedef struct {
     uint32_t parameter_lo;

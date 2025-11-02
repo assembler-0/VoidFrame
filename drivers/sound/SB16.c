@@ -1,7 +1,7 @@
-#include "SB16.h"
-#include "Io.h"
-#include "TSC.h"
-#include "stdint.h"
+#include <SB16.h>
+#include <Io.h>
+#include <TSC.h>
+#include <stdint.h>
 
 int SB16_Probe(uint16_t io_base) {
     // 1. Pulse the reset line high.

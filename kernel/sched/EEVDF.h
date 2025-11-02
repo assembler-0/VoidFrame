@@ -1,12 +1,12 @@
 #ifndef VF_EEVDF_SCHED_H
 #define VF_EEVDF_SCHED_H
 
-#include "Ipc.h"
-#include "Shared.h"
-#include "stdint.h"
-#include "x64.h"
+#include <Ipc.h>
+#include <Shared.h>
+#include <stdint.h>
+#include <x64.h>
 #ifdef VF_CONFIG_USE_CERBERUS
-#include "Cerberus.h"
+#include <Cerberus.h>
 #endif
 
 // =============================================================================
@@ -201,7 +201,7 @@ void EEVDFYield(void);
 void EEVDFSchedule(Registers* regs);
 void EEVDFKillProcess(uint32_t pid);
 void EEVDFKillCurrentProcess(const char* reason);
-void EEVDFKillAllProcess(const char* reason);
+void EEVDFKillAllProcesses(const char* reason);
 
 // Time management
 uint64_t EEVDFGetSystemTicks(void);

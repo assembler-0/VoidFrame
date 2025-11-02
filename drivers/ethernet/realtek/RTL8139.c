@@ -1,12 +1,12 @@
-#include "RTL8139.h"
-#include "../../../mm/KernelHeap.h"
-#include "../../../mm/MemOps.h"
-#include "../../../mm/VMem.h"
-#include "../interface/Arp.h"
-#include "../interface/Ip.h"
-#include "Console.h"
-#include "Io.h"
-#include "ethernet/Packet.h"
+#include <RTL8139.h>
+#include <../../../mm/KernelHeap.h>
+#include <../../../mm/MemOps.h>
+#include <../../../mm/VMem.h>
+#include <../interface/Arp.h>
+#include <../interface/Ip.h>
+#include <Console.h>
+#include <Io.h>
+#include <ethernet/Packet.h>
 
 // Global device object
 static Rtl8139Device rtl_device;

@@ -3,12 +3,12 @@
  * @brief Linux-style graceful page fault handling
  */
 
-#include "PageFaultHandler.h"
-#include "Console.h"
-#include "Scheduler.h"
-#include "PMem.h"
-#include "StackTrace.h"
-#include "VMem.h"
+#include <PageFaultHandler.h>
+#include <Console.h>
+#include <Scheduler.h>
+#include <PMem.h>
+#include <StackTrace.h>
+#include <VMem.h>
 
 // Statistics
 static uint64_t total_faults = 0;

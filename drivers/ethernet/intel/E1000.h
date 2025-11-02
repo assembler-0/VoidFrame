@@ -1,7 +1,7 @@
 #ifndef VOIDFRAME_E1000_H
 #define VOIDFRAME_E1000_H
 
-#include "stdint.h"
+#include <stdint.h>
 
 // E1000 PCI IDs
 #define E1000_VENDOR_ID     0x8086

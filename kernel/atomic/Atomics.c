@@ -2,7 +2,7 @@
 // Created by Atheria on 7/12/25.
 //
 
-#include "Atomics.h"
+#include <Atomics.h>
 
 // Prefer GCC/Clang __atomic builtins for portability in freestanding kernels.
 

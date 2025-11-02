@@ -1,12 +1,12 @@
-#include "ProcFS.h"
-#include "VFS.h"
-#include "KernelHeap.h"
-#include "StringOps.h"
-#include "Console.h"
-#include "Format.h"
-#include "stdlib.h"
-#include "MemOps.h"
-#include "Scheduler.h"
+#include <fs/procfs/ProcFS.h>
+#include <VFS.h>
+#include <KernelHeap.h>
+#include <StringOps.h>
+#include <Console.h>
+#include <Format.h>
+#include <stdlib.h>
+#include <MemOps.h>
+#include <Scheduler.h>
 
 static ProcFSEntry* proc_list_head = NULL;
 

@@ -2,7 +2,7 @@
 #define VOIDFRAME_ELFLOADER_H
 
 #pragma once
-#include "stdint.h"
+#include <stdint.h>
 
 typedef struct {
     uint8_t  e_ident[16];    // Magic number and class info

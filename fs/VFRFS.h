@@ -1,8 +1,8 @@
 #ifndef FS_H
 #define FS_H
 
-#include "stdint.h"
-#include "stddef.h"
+#include <stdint.h>
+#include <stddef.h>
 
 #define MAX_FILENAME 64
 #define MAX_PATH 256

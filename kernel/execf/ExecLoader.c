@@ -1,12 +1,12 @@
-#include "ExecLoader.h"
-#include "Console.h"
-#include "MLFQ.h"
-#include "VFS.h"
-#include "aout/AoutLoader.h"
-#include "elf/ELFloader.h"
-#include "macho/Macho.h"
-#include "macho/MachoLoader.h"
-#include "pe/PEloader.h"
+#include <ExecLoader.h>
+#include <Console.h>
+#include <MLFQ.h>
+#include <VFS.h>
+#include <aout/AoutLoader.h>
+#include <elf/ELFloader.h>
+#include <macho/Macho.h>
+#include <macho/MachoLoader.h>
+#include <pe/PEloader.h>
 
 ExecFormat DetectExecutableFormat(const uint8_t* data, uint64_t size) {
     if (!data || size < 4) {

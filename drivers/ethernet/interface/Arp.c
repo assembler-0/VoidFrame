@@ -1,9 +1,9 @@
-#include "Arp.h"
-#include "../Network.h"
-#include "Console.h"
-#include "Ip.h"
-#include "MemOps.h"
-#include "stdbool.h"
+#include <Arp.h>
+#include <../Network.h>
+#include <Console.h>
+#include <Ip.h>
+#include <MemOps.h>
+#include <stdbool.h>
 
 static ArpCacheEntry g_arp_cache[ARP_CACHE_SIZE];
 

@@ -1,15 +1,15 @@
-#include "Interrupts.h"
-#include "../../../drivers/APIC/APIC.h"
-#include "../../../drivers/storage/Ide.h"
-#include "Atomics.h"
-#include "Console.h"
-#include "Kernel.h"
-#include "PS2.h"
-#include "PageFaultHandler.h"
-#include "Panic.h"
-#include "Scheduler.h"
-#include "StackTrace.h"
-#include "ethernet/Network.h"
+#include <Interrupts.h>
+#include <../../../drivers/APIC/APIC.h>
+#include <../../../drivers/storage/Ide.h>
+#include <Atomics.h>
+#include <Console.h>
+#include <Kernel.h>
+#include <PS2.h>
+#include <PageFaultHandler.h>
+#include <Panic.h>
+#include <Scheduler.h>
+#include <StackTrace.h>
+#include <ethernet/Network.h>
 
 volatile uint32_t APICticks = 0;
 

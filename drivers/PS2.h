@@ -1,5 +1,5 @@
-#include "stdint.h"
-#include "Compositor.h"
+#include <stdint.h>
+#include <Compositor.h>
 
 #ifndef PS2_H
 #define PS2_H

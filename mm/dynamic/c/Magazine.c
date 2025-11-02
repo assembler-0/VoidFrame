@@ -1,13 +1,13 @@
-#include "Magazine.h"
-#include "MemOps.h"
-#include "Console.h"
-#include "VMem.h"
-#include "Panic.h"
-#include "SpinlockRust.h"
-#include "drivers/APIC/APIC.h"
-#include "arch/x86_64/features/x64.h"
-#include "include/Io.h"
-#include "mm/KernelHeap.h"
+#include <Magazine.h>
+#include <MemOps.h>
+#include <Console.h>
+#include <VMem.h>
+#include <Panic.h>
+#include <SpinlockRust.h>
+#include <drivers/APIC/APIC.h>
+#include <arch/x86_64/features/x64.h>
+#include <include/Io.h>
+#include <mm/KernelHeap.h>
 #ifndef KHEAP_VALIDATION_NONE
 #define KHEAP_VALIDATION_NONE 0
 #define KHEAP_VALIDATION_BASIC 1
@@ -72,8 +72,8 @@ static Magazine* DepotRefill(int size_class_index);
 static void DepotReturn(Magazine* mag, int size_class_index);
 static Slab* FindSlabForPointer(void* ptr);
 #ifdef VF_CONFIG_HEAP_HYBRID
-#include "mm/dynamic/rust/KernelHeapRust.h"
-#include "drivers/APIC/APIC.h"
+#include <mm/dynamic/rust/KernelHeapRust.h>
+#include <drivers/APIC/APIC.h>
 #endif
 
 // =================================================================================================

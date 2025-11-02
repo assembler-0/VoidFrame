@@ -1,10 +1,10 @@
 #ifndef VF_MLFQ_SCHED_H
 #define VF_MLFQ_SCHED_H
 
-#include "Ipc.h"
-#include "Shared.h"
-#include "stdint.h"
-#include "x64.h"
+#include <Ipc.h>
+#include <Shared.h>
+#include <stdint.h>
+#include <x64.h>
 
 // =============================================================================
 // MLFQ Parameters (last update: 14/08/25)
@@ -220,7 +220,7 @@ uint64_t MLFQGetSystemTicks(void);
 void MLFQListProcesses(void);
 void MLFQGetProcessStats(uint32_t pid, uint32_t* cpu_time, uint32_t* io_ops, uint32_t* preemptions);
 void MLFQKillProcess(uint32_t pid);
-void MLFQKillAllProcess(const char* reason);
+void MLFQKillAllProcesses(const char* reason);
 
 // DEBUG
 void MLFQDumpPerformanceStats(void);

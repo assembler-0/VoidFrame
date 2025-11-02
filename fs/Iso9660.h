@@ -1,6 +1,6 @@
 #pragma once
 
-#include "stdint.h"
+#include <stdint.h>
 
 // ISO9660 Primary Volume Descriptor
 typedef struct __attribute__((packed)) {

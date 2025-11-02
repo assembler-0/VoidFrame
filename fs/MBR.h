@@ -1,7 +1,7 @@
 #pragma once
 
-#include "BlockDevice.h"
-#include "stdint.h"
+#include <BlockDevice.h>
+#include <stdint.h>
 
 #define MBR_PARTITION_COUNT 4
 

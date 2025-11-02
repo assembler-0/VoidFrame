@@ -1,9 +1,9 @@
-#include "Console.h"
-#include "KernelHeap.h"
-#include "MemOps.h"
-#include "Scheduler.h"
-#include "StringOps.h"
-#include "VFRFS.h"
+#include <Console.h>
+#include <KernelHeap.h>
+#include <MemOps.h>
+#include <Scheduler.h>
+#include <StringOps.h>
+#include <VFRFS.h>
 
 // --- Static Globals ---
 static FsNode* root_node = NULL;

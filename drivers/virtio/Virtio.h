@@ -1,7 +1,7 @@
 #ifndef VOIDFRAME_VIRTIO_H
 #define VOIDFRAME_VIRTIO_H
 
-#include "stdint.h"
+#include <stdint.h>
 
 // Common VirtIO definitions will go here.
 // For example, PCI configuration registers, feature bits, status fields, etc.

@@ -1,7 +1,7 @@
 #ifndef VOIDFRAME_SYSCALL_H
 #define VOIDFRAME_SYSCALL_H
 
-#include "stdint.h"
+#include <stdint.h>
 
 #define SYS_READ    0
 #define SYS_WRITE   1

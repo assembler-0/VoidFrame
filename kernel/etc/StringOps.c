@@ -1,5 +1,5 @@
-#include "KernelHeap.h"
-#include "StringOps.h"
+#include <KernelHeap.h>
+#include <StringOps.h>
 
 int StringLength(const char* str) { // simpler than FasStrlen,
     if (!str) return 0;

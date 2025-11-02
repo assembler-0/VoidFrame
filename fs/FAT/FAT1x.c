@@ -1,12 +1,12 @@
-#include "FAT1x.h"
+#include <FAT1x.h>
 
-#include "Console.h"
-#include "FileSystem.h"
-#include "KernelHeap.h"
-#include "MemOps.h"
-#include "MemPool.h"
-#include "StringOps.h"
-#include "VFS.h"
+#include <Console.h>
+#include <FileSystem.h>
+#include <KernelHeap.h>
+#include <MemOps.h>
+#include <MemPool.h>
+#include <StringOps.h>
+#include <VFS.h>
 
 // Per-device volume registry and active context
 static Fat1xVolume* g_fat1x_by_dev[MAX_BLOCK_DEVICES] = {0};

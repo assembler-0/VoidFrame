@@ -1,8 +1,8 @@
 #ifndef CPU_H
 #define CPU_H
 
-#include "stdint.h"
-#include "stdbool.h"
+#include <stdint.h>
+#include <stdbool.h>
 
 typedef struct {
     bool sse;

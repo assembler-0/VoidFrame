@@ -1,5 +1,5 @@
-#include "RNG.h"
-#include "Io.h"
+#include <RNG.h>
+#include <Io.h>
 
 static uint64_t s[2]; // state
 

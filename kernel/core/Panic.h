@@ -1,7 +1,7 @@
 #ifndef PANIC_H
 #define PANIC_H
 
-#include "stdint.h"
+#include <stdint.h>
 
 // Forward declare the Registers struct to avoid circular header dependencies.
 // The full definition is expected in a file like "Interrupts.h".

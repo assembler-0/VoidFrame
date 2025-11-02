@@ -1,12 +1,12 @@
-#include "Vesa.h"
-#include "../mm/MemOps.h"
-#include "Font.h"
-#include "Multiboot2.h"
-#include "Serial.h"
-#include "math.h"
-#include "stdint.h"
-#include "stdlib.h"
-#include "x64.h"
+#include <Vesa.h>
+#include <../mm/MemOps.h>
+#include <Font.h>
+#include <Multiboot2.h>
+#include <Serial.h>
+#include <math.h>
+#include <stdint.h>
+#include <stdlib.h>
+#include <x64.h>
 
 #ifndef VF_CONFIG_EXCLUDE_EXTRA_OBJECTS
 extern const uint32_t _binary_splash1_32_raw_start[];

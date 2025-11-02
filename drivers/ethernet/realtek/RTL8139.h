@@ -2,7 +2,7 @@
 #define RTL8139_H
 
 #include <stdint.h>
-#include "PCI/PCI.h"
+#include <PCI/PCI.h>
 
 // =============================================================================
 //         RTL8139 Register Offsets (from the I/O base address)

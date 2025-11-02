@@ -1,4 +1,4 @@
-#include "CRC32.h"
+#include <CRC32.h>
 
 static uint32_t crc32_table[256];
 

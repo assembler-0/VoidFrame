@@ -1,7 +1,7 @@
 #ifndef MB2_H
 #define MB2_H
 
-#include "stdint.h"
+#include <stdint.h>
 
 #define MULTIBOOT2_MAGIC_HEADER        0xE85250D6
 #define MULTIBOOT2_BOOTLOADER_MAGIC    0x36D76289

@@ -1,13 +1,13 @@
-#include "ACPI.h"
-#include "Console.h"
-#include "Io.h"
-#include "MemOps.h"
-#include "NVMe.h"
-#include "Scheduler.h"
-#include "StringOps.h"
-#include "VMem.h"
-#include "TSC.h"
-#include "VFS.h"
+#include <ACPI.h>
+#include <Console.h>
+#include <Io.h>
+#include <MemOps.h>
+#include <NVMe.h>
+#include <Scheduler.h>
+#include <StringOps.h>
+#include <VMem.h>
+#include <TSC.h>
+#include <VFS.h>
 
 static ACPIFADT* g_fadt = NULL;
 static bool g_acpi_initialized = false;

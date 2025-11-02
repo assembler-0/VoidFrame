@@ -5,12 +5,12 @@
 #define KHEAP_VALIDATION_BASIC 1
 #define KHEAP_VALIDATION_FULL 2
 
-#include "stdint.h"
-#include "stddef.h"
-#include "VMem.h"
-#include "APIC.h"
-#include "Magazine.h"
-#include "KernelHeapRust.h"
+#include <stdint.h>
+#include <stddef.h>
+#include <VMem.h>
+#include <APIC.h>
+#include <Magazine.h>
+#include <KernelHeapRust.h>
 
 // Tier 1: C Magazine Allocator for extreme speed on small allocations
 #define MAGAZINE_MAX_SIZE 1024

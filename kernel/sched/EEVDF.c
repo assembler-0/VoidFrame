@@ -1,20 +1,20 @@
-#include "EEVDF.h"
-#include "Atomics.h"
+#include <EEVDF.h>
+#include <Atomics.h>
 #ifdef VF_CONFIG_USE_CERBERUS
-#include "Cerberus.h"
+#include <Cerberus.h>
 #endif
-#include "Console.h"
-#include "Format.h"
-#include "Gdt.h"
-#include "Ipc.h"
-#include "MemOps.h"
-#include "Panic.h"
-#include "Shell.h"
-#include "SpinlockRust.h"
-#include "VFS.h"
-#include "VMem.h"
-#include "x64.h"
-#include "procfs/ProcFS.h"
+#include <Console.h>
+#include <Format.h>
+#include <Gdt.h>
+#include <Ipc.h>
+#include <MemOps.h>
+#include <Panic.h>
+#include <Shell.h>
+#include <SpinlockRust.h>
+#include <VFS.h>
+#include <VMem.h>
+#include <x64.h>
+#include <procfs/ProcFS.h>
 
 #define offsetof(type, member) ((uint64_t)&(((type*)0)->member))
 
@@ -1289,7 +1289,7 @@ void EEVDFKillProcess(uint32_t pid) {
     EEVDFTerminateProcess(pid, TERM_KILLED, 1);
 }
 
-void EEVDFKillAllProcess(const char* reason) {
+void EEVDFKillAllProcesses(const char* reason) {
     for (int i = 0; i < EEVDF_MAX_PROCESSES; i++) {
         EEVDFProcessControlBlock* proc = &processes[i];
         if (proc->state != PROC_TERMINATED && proc->pid != 0) {
