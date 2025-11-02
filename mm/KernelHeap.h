@@ -16,7 +16,7 @@
 #define MAGAZINE_MAX_SIZE 1024
 
 // Tier 2: Rust Allocator for general-purpose medium-sized allocations
-#define RUST_MAX_SIZE (128 * 1024)
+#define RUST_MAX_SIZE (64 * 1024)
 
 // Helper function to wrap large VMem allocations with a header
 static inline void* LargeBlockAlloc(size_t size) {

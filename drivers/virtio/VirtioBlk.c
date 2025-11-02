@@ -3,9 +3,7 @@
 #include <BlockDevice.h>
 #include <Console.h>
 #include <DriveNaming.h>
-#include <Format.h>
 #include <PCI/PCI.h>
-#include <Spinlock.h>
 #include <SpinlockRust.h>
 #include <VMem.h>
 #include <Virtio.h>

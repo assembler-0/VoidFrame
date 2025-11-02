@@ -122,6 +122,9 @@ extern PerCpuCache per_cpu_caches[MAX_CPU_CORES];
 // The single, global depot.
 extern Depot depot;
 
+#ifdef __cplusplus
+extern "C" {
+#endif
 
 void MagazineInit();
 void* MagazineAlloc(size_t size);
@@ -132,5 +135,9 @@ void MagazinePrintStats(void);
 void MagazineSetValidationLevel(int level);
 void MagazineFlushCaches(void);
 void MagazineSetPerfMode(int mode);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif // MAGAZINE_HEAP_H

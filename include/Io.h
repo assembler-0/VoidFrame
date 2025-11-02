@@ -3,6 +3,10 @@
 
 #include <stdint.h>
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 static inline void outb(uint16_t port, uint8_t val) {
     __asm__ volatile ("outb %0, %1" : : "a"(val), "Nd"(port));
 }
@@ -71,6 +75,10 @@ void cpuid(uint32_t leaf, uint32_t* eax, uint32_t* ebx, uint32_t* ecx, uint32_t*
 // MSR access
 uint64_t rdmsr(uint32_t msr);
 void wrmsr(uint32_t msr, uint64_t value);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif
 

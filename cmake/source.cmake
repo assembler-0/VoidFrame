@@ -43,6 +43,7 @@ set(KERNEL_ETC_SOURCES
 
 set(ATOMIC_IPC_SOURCES
         kernel/atomic/Atomics.c
+        kernel/atomic/cpp/Spinlock.cpp
         kernel/ipc/Ipc.c
 )
 
@@ -57,11 +58,13 @@ set(EXECF_SOURCES
 set(MM_SOURCES
         mm/PMem.c
         mm/MemOps.c
-        mm/VMem.c
+        mm/VMem.cpp
         mm/StackGuard.c
         mm/MemPool.c
         mm/trace/StackTrace.c
         mm/security/Cerberus.c
+        mm/dynamic/cpp/BuddyAllocator.cpp
+        mm/dynamic/cpp/new.cpp
         mm/dynamic/c/Magazine.c
         mm/PageFaultHandler.c
 )
@@ -180,7 +183,9 @@ include_directories(
         include
         include/Switch
         include/Vector
+        kernel
         kernel/atomic
+        kernel/atomic/cpp
         kernel/core
         kernel/etc
         kernel/execf
@@ -194,6 +199,7 @@ include_directories(
         mm/asm
         mm/dynamic
         mm/dynamic/c
+        mm/dynamic/cpp
         mm/dynamic/rust
         mm/security
         mm/trace

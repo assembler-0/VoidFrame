@@ -72,19 +72,7 @@ _Static_assert(VIRT_ADDR_SPACE_HIGH_END < KERNEL_VIRTUAL_OFFSET, "High canonical
 #define PAGE_ALIGN_UP(addr)   (((addr) + PAGE_MASK) & ~PAGE_MASK)
 #define IS_PAGE_ALIGNED(addr) (((addr) & PAGE_MASK) == 0)
 #define VALIDATE_PTR(ptr) do { if (!(ptr)) return NULL; } while(0)
-
 #define VMEM_GUARD_PAGES    1  // Add guard pages around allocations
-
-/**
- * @brief Represents a block of free virtual address space.
- */
-typedef struct VMemFreeBlock {
-    uint64_t base;
-    uint64_t size;
-    struct VMemFreeBlock* next;
-    struct VMemFreeBlock* prev;
-    struct VMemFreeBlock* hnext; // For hash table chaining
-} VMemFreeBlock;
 
 /**
  * @brief Virtual address space structure
@@ -118,6 +106,10 @@ typedef enum {
     VMEM_ERROR_NO_VSPACE = -6,
 } VMem_Result;
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 // Core virtual memory functions
 void VMemInit(void);
 void* VMemAlloc(uint64_t size);
@@ -141,25 +133,47 @@ int VMemMapMMIO(uint64_t vaddr, uint64_t paddr, uint64_t size, uint64_t flags);
 void VMemUnmapMMIO(uint64_t vaddr, uint64_t size);
 
 // Page table management functions
-uint64_t* VMemGetPageTable(uint64_t* pml4, uint64_t vaddr, int level, int create);
-int VMemSetPageFlags(uint64_t vaddr, uint64_t flags);
 uint64_t VMemGetPhysAddr(uint64_t vaddr);
 int VMemIsPageMapped(uint64_t vaddr);
-
-// Address space management
-VirtAddrSpace* VMemCreateAddressSpace(void);
-void VMemDestroyAddressSpace(VirtAddrSpace* space);
-int VMemSwitchAddressSpace(VirtAddrSpace* space);
-
-// Utility functions
-void VMemFlushTLB(void);
-void VMemFlushTLBSingle(uint64_t vaddr);
 void VMemGetStats(uint64_t* used_pages, uint64_t* total_mapped);
 uint64_t VMemGetPML4PhysAddr(void);
-
-// Debug functions
-void VMemDumpPageTable(uint64_t vaddr);
-void VMemValidatePageTable(uint64_t* pml4);
 void VMemDumpFreeList(void);
+
+#ifdef __cplusplus
+}
+#endif
+
+#ifdef __cplusplus
+class VMM {
+public:
+    VMM() = default;
+    static void init();
+    static int VMM_VMemMap(uint64_t vaddr, uint64_t paddr, uint64_t flags);
+    static int VMM_VMemUnmap(uint64_t vaddr, uint64_t size);
+    static int VMM_VMemMapHuge(uint64_t vaddr, uint64_t paddr, uint64_t flags);
+    static void* VMM_VMemAlloc(uint64_t size_p);
+    static void VMM_VMemFree(void* vaddr, uint64_t size_p);
+    static void* VMM_VMemAllocWithGuards(uint64_t size_p);
+    static void VMM_VMemFreeWithGuards(void* ptr, uint64_t size_p);
+    static void* VMM_VMemAllocStack(uint64_t size);
+    static void VMM_VMemFreeStack(void* stack_top, uint64_t size);
+    static int VMM_VMemMapMMIO(uint64_t vaddr, uint64_t paddr, uint64_t size, uint64_t flags);
+    static void VMM_VMemUnmapMMIO(uint64_t vaddr, uint64_t size);
+    static void VMM_VMemGetStats(uint64_t* used_pages, uint64_t* total_mapped);
+    static uint64_t VMM_VMemGetPML4PhysAddr();
+    static uint64_t VMM_VMemGetPhysAddr(uint64_t vaddr);
+    static void VMM_PrintVMemStats();
+private:
+    static uint64_t VMM_VMemGetPageTablePhys(uint64_t pml4_phys, uint64_t vaddr, uint32_t level, int create);
+    static void VMM_add_to_tlb_batch(uint64_t vaddr);
+    static void VMM_cache_page_table(void *pt);
+    static void VMM_flush_tlb_batch();
+    static void VMM_VMemFlushTLBSingle(uint64_t vaddr);
+    static void VMM_VMemFlushTLB();
+    static int VMM_IsValidPhysAddr(uint64_t paddr);
+    static int VMM_IsValidVirtAddr(uint64_t vaddr);
+    static uint64_t* VMM_GetTableVirt(uint64_t phys_addr);
+};
+#endif
 
 #endif // VMEM_H
