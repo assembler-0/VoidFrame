@@ -5,7 +5,7 @@
 #include <DriveNaming.h>
 #include <Format.h>
 #include <PCI/PCI.h>
-#include <Spinlock.h>
+#include <../../kernel/atomic/cpp/Spinlock.h>
 #include <SpinlockRust.h>
 #include <VMem.h>
 #include <Virtio.h>

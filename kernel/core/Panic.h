@@ -22,6 +22,10 @@ typedef enum {
     PANIC_ASSERTION = 0x0008
 } PanicCode;
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 // --- Public Panic API ---
 void __attribute__((noreturn)) Panic(const char* message);
 void __attribute__((noreturn)) PanicWithCode(const char* message, uint64_t error_code);
@@ -48,5 +52,8 @@ PanicWithContext(msg, PANIC_GENERAL, __FUNCTION__, __FILE__, __LINE__)
 #define PANIC_CODE(msg, code) \
 PanicWithContext(msg, code, __FUNCTION__, __FILE__, __LINE__)
 
+#ifdef __cplusplus
+}
+#endif
 
 #endif // PANIC_H

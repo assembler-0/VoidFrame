@@ -75,16 +75,7 @@ _Static_assert(VIRT_ADDR_SPACE_HIGH_END < KERNEL_VIRTUAL_OFFSET, "High canonical
 
 #define VMEM_GUARD_PAGES    1  // Add guard pages around allocations
 
-/**
- * @brief Represents a block of free virtual address space.
- */
-typedef struct VMemFreeBlock {
-    uint64_t base;
-    uint64_t size;
-    struct VMemFreeBlock* next;
-    struct VMemFreeBlock* prev;
-    struct VMemFreeBlock* hnext; // For hash table chaining
-} VMemFreeBlock;
+
 
 /**
  * @brief Virtual address space structure
@@ -117,6 +108,10 @@ typedef enum {
     VMEM_ERROR_ALIGN = -5,
     VMEM_ERROR_NO_VSPACE = -6,
 } VMem_Result;
+
+#ifdef __cplusplus
+extern "C" {
+#endif
 
 // Core virtual memory functions
 void VMemInit(void);
@@ -161,5 +156,9 @@ uint64_t VMemGetPML4PhysAddr(void);
 void VMemDumpPageTable(uint64_t vaddr);
 void VMemValidatePageTable(uint64_t* pml4);
 void VMemDumpFreeList(void);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif // VMEM_H
