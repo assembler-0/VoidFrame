@@ -45,10 +45,8 @@ git clone https://github.com/assembler-0/VoidFrame.git
 cd VoidFrame
 mkdir build
 cd build
-cmake .. -DCMAKE_BUILD_TYPE=Release \
-    -DCMAKE_TOOLCHAIN_FILE=../cmake/toolchain/linux-x64.cmake \
-    -G Ninja
-ccmake . # Optinal, tune as needed
+ccmake .. -G Ninja # 'c' -> 'e' -> 'q' -- IMPORTATNT!
+cmake ..
 ninja -j$(nproc)
 ninja run
 ```

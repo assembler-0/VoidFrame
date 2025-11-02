@@ -2,7 +2,7 @@
 # CCache Configuration for Faster Builds
 # ============================================================================
 
-option(VF_ENABLE_CCACHE "Enable ccache for faster compilation" OFF)
+option(VF_ENABLE_CCACHE "Enable ccache for faster compilation" ON)
 
 if(VF_ENABLE_CCACHE)
     find_program(CCACHE_PROGRAM ccache)
