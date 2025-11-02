@@ -1,5 +1,6 @@
 #include <Compositor.h>
 #include <PS2.h>
+#include <PS2Keymap.h>
 
 #include <APIC/APIC.h>
 #include <Console.h>
@@ -27,22 +28,7 @@ typedef struct {
 
 static MouseState mouse = {0};
 
-static char scancode_to_ascii[] = {
-    0, 27, '1', '2', '3', '4', '5', '6', '7', '8', '9', '0', '-', '=', '\b',
-    '\t', 'q', 'w', 'e', 'r', 't', 'y', 'u', 'i', 'o', 'p', '[', ']', '\n',
-    0, 'a', 's', 'd', 'f', 'g', 'h', 'j', 'k', 'l', ';', '\'', '`',
-    0, '\\', 'z', 'x', 'c', 'v', 'b', 'n', 'm', ',', '.', '/', 0,
-    '*', 0, ' '
-};
 
-static char scancode_to_ascii_shift[] = {
-    0, 27, '!', '@', '#', '$', '%', '^', '&', '*', '(', ')', '_', '+', '\b',
-    '\t', 'Q', 'W', 'E', 'R', 'T', 'Y', 'U', 'I', 'O', 'P', '{', '}', '\n',
-    0, 'A', 'S', 'D', 'F', 'G', 'H', 'J', 'K', 'L', ':', '"', '~',
-    0, '|', 'Z', 'X', 'C', 'V', 'B', 'N', 'M', '<', '>', '?', 0,
-
-    '*', 0, ' '
-};
 
 // Compute result of a modifier combo with a base character.
 char PS2_CalcCombo(uint8_t mods, char base) {
@@ -83,6 +69,8 @@ void send_mouse_command(uint8_t cmd) {
 }
 
 void PS2Init(void) {
+    PS2_InitKeymaps();
+    
     uint8_t status = inb(KEYBOARD_STATUS_PORT);
     if (status & 0xC0) {  // Bits 6-7: timeout/parity errors
         PrintKernelWarning("PS2: Controller errors detected, performing reset\n");
@@ -173,10 +161,9 @@ static void ProcessKeyboardData(uint8_t scancode) {
     }
 
     if (key_released) return;
-    if (scancode >= sizeof(scancode_to_ascii)) return;
 
-    char base = shift_pressed ? scancode_to_ascii_shift[scancode]
-                              : scancode_to_ascii[scancode];
+    char base = PS2_TranslateKey(scancode, shift_pressed);
+    if (!base) return;
 
     uint8_t mods = (shift_pressed ? K_SHIFT : 0) |
                    (ctrl_pressed  ? K_CTRL  : 0) |

@@ -3,9 +3,10 @@
 # ============================================================================
 option(EXCLUDE_EXTRA_OBJECTS "Exclude extra objects from the build" OFF)
 option(AUTOMATIC_POST "Run POST automatically on boot" OFF)
-option(DEBUG_SYMBOLS "Enable debug symbols" ON)
+option(DEBUG_SYMBOLS "Enable debug symbols" OFF)
 option(STACK_PROTECTION "Enable stack protection" ON)
-option(SILENT_BUILD "Enable silent build (suppress warnings)" OFF)
+option(SILENT_BUILD "Enable silent build (suppress warnings)" ON)
+option(SANITIZER "Enable sanitizers" OFF)
 
 option(VF_CONFIG_ENABLE_VMWARE_SVGA_II "Enable VMware SVGA II support" OFF)
 option(VF_CONFIG_PANIC_OVERRIDE "Enable panic override" OFF)

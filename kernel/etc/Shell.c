@@ -27,6 +27,7 @@
 #include <input/Keyboard.h>
 #include <Packet.h>
 #include <Panic.h>
+#include <PS2Keymap.h>
 #include <RTC/Rtc.h>
 #include <SB16.h>
 #include <Scheduler.h>
@@ -190,6 +191,7 @@ static const HelpEntry system_cmds[] = {
     {"lscpu", "List CPU features"},
     {"vfc NULL/fork", "Start VFCompositor as another process or on the currently session"},
     {"snoozer <on/off>", "Snooze messages from PrintKernel"},
+    {"keymap <...>", "Set keymap"},
     {"acpi sd/rb", "Shutdown (sd) or reboot (rb) via ACPI"},
 };
 
@@ -1250,6 +1252,26 @@ FNDEF(GetSerialHandler) {
     PrintNewline();
 }
 
+static void KeymapHandler(const char* args) {
+    char* keymap = GetArg(args, 1);
+    if (!keymap) {
+        PrintKernelF("Current keymap: %s\n", PS2_GetCurrentKeymapName());
+        PS2_ListKeymaps();
+        return;
+    }
+
+
+    if (PS2_SetKeymap(keymap) == 0) {
+        PrintKernelF("Keymap set to %s\n", keymap);
+        return;
+    }
+    PrintKernelF("Failed to set keymap to %s\n", keymap);
+    PrintKernel("Usage: keymap [layout]\n");
+    PrintKernel("  keymap        - show current keymap and list available\n");
+    PrintKernel("  keymap us     - switch to US QWERTY\n");
+    PrintKernel("  keymap dvorak - switch to Dvorak\n");
+}
+
 static const ShellCommand commands[] = {\
     {"help", HelpHandler},
     {"ps", PSHandler},
@@ -1306,6 +1328,7 @@ static const ShellCommand commands[] = {\
     {"mount", MountHandler},
     {"umount", UnmountHandler},
     {"gserial", GetSerialHandler},
+    {"keymap", KeymapHandler},
 };
 
 void ExecuteCommand(const char* cmd) {

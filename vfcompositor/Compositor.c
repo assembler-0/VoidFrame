@@ -480,8 +480,6 @@ void VFCompositor(void) {
                     Window* w = g_compositor_ctx.g_focused_window; if (w) { w->minimized = !w->minimized; }
                 } else if (c == PS2_CalcCombo(K_CTRL, 'L')) {
                     Window* w = g_compositor_ctx.g_focused_window; if (w) { w->is_moving = true; w->move_offset_x = g_compositor_ctx.g_mouse_x - w->rect.x; }
-                } else if (c == PS2_CalcCombo(K_SUPER, 'W')) {
-                    Window* w = g_compositor_ctx.g_focused_window; if (w) { RequestDestroyWindow(&g_compositor_ctx, w); }
                 } else if (c == PS2_CalcCombo(K_ALT, '\t')) {
                     Window* w = g_compositor_ctx.g_focused_window ? g_compositor_ctx.g_focused_window->next : g_compositor_ctx.g_window_list_head;
                     while (w && w->minimized) w = w->next;

@@ -13,7 +13,7 @@ if(VF_ENABLE_CCACHE)
 
         # Set ccache options for kernel development
         set(ENV{CCACHE_SLOPPINESS} "file_macro,locale,time_macros")
-        set(ENV{CCACHE_MAXSIZE} "2G")
+        set(ENV{CCACHE_MAXSIZE} "12G")
         set(ENV{CCACHE_COMPRESS} "true")
         set(ENV{CCACHE_COMPRESSLEVEL} "6")
 

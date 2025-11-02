@@ -41,6 +41,10 @@ set(KERNEL_ETC_SOURCES
         kernel/etc/POST.c
 )
 
+set(UBSAN_SOURCES
+        kernel/ubsan/Sanitizer.c
+)
+
 set(ATOMIC_IPC_SOURCES
         kernel/atomic/Atomics.c
         kernel/atomic/cpp/Spinlock.cpp
@@ -93,6 +97,7 @@ set(DRIVER_SOURCES
         drivers/Serial.c
         drivers/Random.c
         drivers/PS2.c
+        drivers/PS2Keymap.c
         drivers/storage/Ide.c
         drivers/Vesa.c
         drivers/PCI/PCI.c
@@ -195,6 +200,7 @@ include_directories(
         kernel/execf/macho
         kernel/ipc
         kernel/sched
+        kernel/ubsan
         mm
         mm/asm
         mm/dynamic
@@ -236,4 +242,5 @@ set(C_SOURCES
         ${INCLUDE_SOURCES}
         ${VFC_SOURCES}
         ${CRYPTO_SOURCES}
+        ${UBSAN_SOURCES}
 )

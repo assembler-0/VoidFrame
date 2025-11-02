@@ -174,6 +174,7 @@ add_custom_target(run
         -cdrom ${CMAKE_CURRENT_BINARY_DIR}/VoidFrame.iso
         -no-reboot -no-shutdown
         -m 4G
+        -smp 4
         -boot d
         # Debug console and serial output
         -debugcon file:bootstrap.log
