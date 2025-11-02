@@ -102,9 +102,7 @@ The recommended approach is to use [WSL](https://learn.microsoft.com/en-us/windo
 
 ## 3. Building VoidFrame
 
-After installing the dependencies, you can build the kernel using one of the supported build systems. All commands should be run from the root of the VoidFrame repository.
-
-### Using CMake (actively maintained)
+After installing the dependencies, you can build the kernel using CMake.
 
 ```bash
 # 1. Create a build directory
@@ -112,9 +110,13 @@ mkdir -p build && cd build
 
 # 2. Configure the project (example for Linux)
 cmake .. -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_TOOLCHAIN_FILE=../cmake/toolchain/linux-x64.cmake
+cmake ..
 
-# 3. Build the kernel
-ninja
+# 3. Features configuration
+ccmake .
+
+# 4. Build the all targets
+ninja -j$(nproc)
 
 # 4. Run the kernel in QEMU
 ninja run
