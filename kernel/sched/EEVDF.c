@@ -15,6 +15,7 @@
 #include <VMem.h>
 #include <x64.h>
 #include <procfs/ProcFS.h>
+#include <CRC32.h>
 
 #define offsetof(type, member) ((uint64_t)&(((type*)0)->member))
 
@@ -24,10 +25,15 @@
 #define CACHE_LINE_SIZE         64
 #define ALIGNED_CACHE           __attribute__((aligned(CACHE_LINE_SIZE)))
 
-// Security constants
-static const uint64_t EEVDF_SECURITY_MAGIC = 0x5EC0DE4D41474943ULL;
-static const uint64_t EEVDF_SECURITY_SALT = 0xDEADBEEFCAFEBABEULL;
-static const uint32_t EEVDF_MAX_SECURITY_VIOLATIONS = EEVDF_SECURITY_VIOLATION_LIMIT;
+// SIS (Scheduler Integrated Security) constants
+static const uint64_t SIS_MAGIC = 0x5EC0DE4D41474943ULL;
+static const uint64_t SIS_SALT_BASE = 0xDEADBEEFCAFEBABEULL;
+static const uint32_t SIS_MAX_VIOLATIONS = EEVDF_SECURITY_VIOLATION_LIMIT;
+
+// SIS runtime state
+static volatile uint64_t sis_global_nonce = 0x1337C0DEDEADBEEFULL;
+static volatile uint64_t sis_boot_entropy = 0;
+static uint64_t sis_process_keys[EEVDF_MAX_PROCESSES] ALIGNED_CACHE;
 
 // Nice-to-weight conversion tables (based on Linux CFS)
 const uint32_t eevdf_nice_to_weight[40] = {
@@ -89,6 +95,43 @@ static volatile uint64_t scheduler_calls = 0;
 
 extern volatile uint32_t APIC_HZ;
 extern volatile uint32_t APICticks;
+
+// =============================================================================
+// SIS (Scheduler Integrated Security) - Ultra Low Overhead
+// =============================================================================
+
+// Fast CRC32 hash using existing crypto/CRC32.h
+static inline uint64_t SISFastHash(uint64_t a, uint64_t b) {
+    uint64_t combined[2] = {a, b};
+    return CRC32(combined, sizeof(combined));
+}
+
+// Generate process-specific key (called once at creation)
+static uint64_t SISGenerateProcessKey(uint32_t slot, uint32_t pid) {
+    AtomicInc64(&sis_global_nonce);
+    uint64_t entropy = sis_global_nonce;
+    uint64_t key = SISFastHash(SIS_SALT_BASE ^ entropy, (uint64_t)pid << 32 | slot);
+    sis_process_keys[slot] = key;
+    return key;
+}
+
+// Ultra-fast PCB seal (3-4 instructions)
+static inline uint64_t SISSealPCB(const EEVDFProcessControlBlock* pcb, uint32_t slot) {
+    uint64_t critical = (uint64_t)pcb->pid << 32 | pcb->privilege_level << 16 | pcb->state;
+    return SISFastHash(critical, sis_process_keys[slot]);
+}
+
+// Ultra-fast PCB verification (2-3 instructions)
+static inline int SISVerifyPCB(const EEVDFProcessControlBlock* pcb, uint32_t slot) {
+    if (UNLIKELY(slot >= EEVDF_MAX_PROCESSES)) return 0;
+    uint64_t expected = SISSealPCB(pcb, slot);
+    return LIKELY(pcb->sis_seal == expected);
+}
+
+// Update seal after legitimate state change
+static inline void SISUpdateSeal(EEVDFProcessControlBlock* pcb, uint32_t slot) {
+    pcb->sis_seal = SISSealPCB(pcb, slot);
+}
 
 // Foward declaration
 static void EEVDFASTerminate(uint32_t pid, const char* reason);
@@ -579,40 +622,13 @@ EEVDFProcessControlBlock* EEVDFPickNext(EEVDFRunqueue* rq) {
 // Process Management (same security model as MLFQ)
 // =============================================================================
 
-static uint64_t EEVDFSecureHash(const void* data, const uint64_t len, uint64_t salt) {
-    const uint8_t* bytes = data;
-    uint64_t hash = salt;
-    
-    for (uint64_t i = 0; i < len; i++) {
-        hash ^= bytes[i];
-        hash *= 0x100000001b3ULL; // FNV-1a prime
-    }
-    
-    return hash;
-}
-
+// Legacy compatibility functions (minimal overhead)
 static uint64_t EEVDFCalculateTokenChecksum(const EEVDFSecurityToken* token) {
-    return EEVDFSecureHash(token, offsetof(EEVDFSecurityToken, checksum), EEVDF_SECURITY_SALT);
+    return SISFastHash(token->magic, token->capabilities);
 }
 
 static uint64_t EEVDFCalculatePCBHash(const EEVDFProcessControlBlock* pcb) {
-    uint64_t hash = EEVDF_SECURITY_SALT;
-
-    hash = EEVDFSecureHash(&pcb->pid, sizeof(pcb->pid), hash);
-    hash = EEVDFSecureHash(&pcb->privilege_level, sizeof(pcb->privilege_level), hash);
-    hash = EEVDFSecureHash(&pcb->token.capabilities, sizeof(pcb->token.capabilities), hash);
-    hash = EEVDFSecureHash(&pcb->stack, sizeof(pcb->stack), hash);
-    hash = EEVDFSecureHash(&pcb->initial_entry_point, sizeof(pcb->initial_entry_point), hash);
-    
-    return hash;
-}
-
-static uint64_t EEVDFCalculateSecureChecksum(const EEVDFSecurityToken* token, uint32_t pid) {
-    // This function is now deprecated. Use EEVDFCalculateTokenChecksum and EEVDFCalculatePCBHash instead.
-    // Keeping it for now to avoid immediate compile errors, but it should be removed.
-    uint64_t base_hash = EEVDFSecureHash(token, offsetof(EEVDFSecurityToken, checksum), EEVDF_SECURITY_SALT);
-    uint64_t pid_hash = EEVDFSecureHash(&pid, sizeof(pid), EEVDF_SECURITY_SALT);
-    return base_hash ^ pid_hash;
+    return pcb->sis_seal;
 }
 
 static inline int FindFreeSlotFast(void) {
@@ -751,8 +767,9 @@ void EEVDFSchedule(Registers* regs) {
         // Update runtime statistics (lockless)
         EEVDFUpdateCurr(rq, prev);
 
-        // Atomic state transition
+        // Atomic state transition with SIS update
         if (LIKELY(AtomicCmpxchg((volatile uint32_t*)&prev->state, PROC_RUNNING, PROC_READY) == PROC_RUNNING)) {
+            SISUpdateSeal(prev, old_slot); // Update seal after state change
             AtomicFetchOr64(&ready_process_bitmap, 1ULL << old_slot);
             need_rq_lock = 1;
         }
@@ -808,6 +825,7 @@ pick_next:;
         }
         
         AtomicStore((volatile uint32_t*)&new_proc->state, PROC_RUNNING);
+        SISUpdateSeal(new_proc, next_slot); // Update seal after state change
         AtomicFetchAnd64(&ready_process_bitmap, ~(1ULL << next_slot));
         
         new_proc->exec_start = GetNS();
@@ -840,6 +858,10 @@ int EEVDFSchedInit(void) {
         }
     }
     PrintKernel("System: Initializing EEVDF scheduler...\n");
+    
+    // Initialize SIS crypto (CRC32 auto-initializes)
+    CRC32Init();
+    
     // Initialize process array
     FastMemset(processes, 0, sizeof(EEVDFProcessControlBlock) * EEVDF_MAX_PROCESSES);
     
@@ -875,15 +897,21 @@ int EEVDFSchedInit(void) {
     idle_proc->exec_start = GetNS();
     idle_proc->initial_entry_point = 0; // Idle process has no specific entry point
     
-    // Initialize idle process security token
+    // Initialize SIS for idle process
+    sis_boot_entropy = GetNS() ^ (uint64_t)&idle_proc; // Boot-time entropy
+    SISGenerateProcessKey(0, 0);
+    
     EEVDFSecurityToken* token = &idle_proc->token;
-    token->magic = EEVDF_SECURITY_MAGIC;
+    token->magic = SIS_MAGIC;
     token->creator_pid = 0;
     token->privilege = EEVDF_PROC_PRIV_SYSTEM;
     token->capabilities = EEVDF_CAP_CORE;
     token->creation_tick = idle_proc->creation_time;
     token->checksum = EEVDFCalculateTokenChecksum(token);
-    token->pcb_hash = EEVDFCalculatePCBHash(idle_proc);
+    token->pcb_hash = 0; // Will be set by SIS seal
+    
+    // Seal idle process
+    SISUpdateSeal(idle_proc, 0);
     
     snprintf(idle_proc->ProcessRuntimePath, sizeof(idle_proc->ProcessRuntimePath), "%s/%d", RuntimeServices, idle_proc->pid);
 
@@ -978,9 +1006,11 @@ uint32_t EEVDFCreateSecureProcess(const char* name, void (*entry_point)(void), u
     proc->vruntime = eevdf_scheduler.rq.min_vruntime;
     proc->exec_start = GetNS();
 
-    // Initialize security token
+    // Generate SIS key and initialize security token
+    SISGenerateProcessKey(slot, new_pid);
+    
     EEVDFSecurityToken* token = &proc->token;
-    token->magic = EEVDF_SECURITY_MAGIC;
+    token->magic = SIS_MAGIC;
     token->creator_pid = creator->pid;
     token->privilege = priv;
     token->capabilities = capabilities;
@@ -1008,8 +1038,9 @@ uint32_t EEVDFCreateSecureProcess(const char* name, void (*entry_point)(void), u
 
     snprintf(proc->ProcessRuntimePath, sizeof(proc->ProcessRuntimePath), "%s/%d", RuntimeProcesses, new_pid);
 
-    // Recalculate PCB hash after all relevant fields are set
-    token->pcb_hash = EEVDFCalculatePCBHash(proc);
+    // Seal process with SIS after all fields are set
+    SISUpdateSeal(proc, slot);
+    token->pcb_hash = proc->sis_seal;
 
 #ifdef VF_CONFIG_USE_CERBERUS
     CerberusRegisterProcess(new_pid, (uint64_t)stack, EEVDF_STACK_SIZE);
@@ -1061,61 +1092,56 @@ void EEVDFYield(void) {
 // Security and Validation Functions
 // =============================================================================
 
+// SIS validation - ultra-fast path
+static inline int SISValidateProcess(const EEVDFProcessControlBlock* pcb, uint32_t slot) {
+    if (UNLIKELY(!pcb || slot >= EEVDF_MAX_PROCESSES)) return 0;
+    if (UNLIKELY(pcb->token.magic != SIS_MAGIC)) return 0;
+    return SISVerifyPCB(pcb, slot);
+}
+
+// Legacy token validation (compatibility)
 static int EEVDFValidateToken(const EEVDFSecurityToken* token, const EEVDFProcessControlBlock* pcb) {
-    if (UNLIKELY(!token || !pcb)) return 0;
-    if (UNLIKELY(token->magic != EEVDF_SECURITY_MAGIC)) return 0;
-    
-    // Verify the token's internal checksum
-    uint64_t expected_token_checksum = EEVDFCalculateTokenChecksum(token);
-    if (token->checksum != expected_token_checksum) {
-        PrintKernelErrorF("EEVDF: Token checksum mismatch for PID %d. Expected 0x%lx, got 0x%lx\n", pcb->pid, expected_token_checksum, token->checksum);
-        return 0;
-    }
-
-    // Verify the PCB hash stored within the token against the current PCB state
-    uint64_t current_pcb_hash = EEVDFCalculatePCBHash(pcb);
-    if (token->pcb_hash != current_pcb_hash) {
-        PrintKernelErrorF("EEVDF: PCB hash mismatch for PID %d. Expected 0x%lx, got 0x%lx\n", pcb->pid, current_pcb_hash, token->pcb_hash);
-        return 0;
-    }
-
-    return 1;
+    uint32_t slot = pcb - processes;
+    return SISValidateProcess(pcb, slot);
 }
 
 static inline int EEVDFPreflightCheck(uint32_t slot) {
-    if (slot == 0) return 1; // Idle process is always safe.
+    if (slot == 0) return 1; // Idle process is always safe
 
     EEVDFProcessControlBlock* proc = &processes[slot];
 
-    if (UNLIKELY(!EEVDFValidateToken(&proc->token, proc))) {
-        EEVDFASTerminate(proc->pid, "Pre-flight token validation failure");
-        return 0; // Do not schedule this process.
+    // Ultra-fast SIS check (2-3 instructions)
+    if (UNLIKELY(!SISVerifyPCB(proc, slot))) {
+        EEVDFASTerminate(proc->pid, "SIS integrity violation");
+        return 0;
     }
 
+    // Fast privilege check
     if (UNLIKELY(proc->privilege_level == EEVDF_PROC_PRIV_SYSTEM &&
                  !(proc->token.capabilities & (EEVDF_CAP_SUPERVISOR | EEVDF_CAP_CRITICAL | EEVDF_CAP_IMMUNE)))) {
-        EEVDFASTerminate(proc->pid, "Unauthorized privilege escalation");
-        return 0; // Do not schedule this process.
+        EEVDFASTerminate(proc->pid, "Privilege escalation detected");
+        return 0;
     }
 
 #ifdef VF_CONFIG_USE_CERBERUS
     CerberusPreScheduleCheck(slot);
 #endif
 
-    return 1; // Process appears safe to run.
+    return 1;
 }
 
 static inline int EEVDFPostflightCheck(uint32_t slot) {
-    if (slot == 0) return 1; // Idle process is always safe.
+    if (slot == 0) return 1; // Idle process is always safe
 
     EEVDFProcessControlBlock* proc = &processes[slot];
 
-    if (UNLIKELY(!EEVDFValidateToken(&proc->token, proc))) {
-        EEVDFASTerminate(proc->pid, "Post-execution token corruption");
-        return 0; // Do not re-queue this process
+    // Ultra-fast SIS integrity check
+    if (UNLIKELY(!SISVerifyPCB(proc, slot))) {
+        EEVDFASTerminate(proc->pid, "Runtime PCB corruption detected");
+        return 0;
     }
 
-    return 1; // Process is still safe.
+    return 1;
 }
 
 // =============================================================================
@@ -1208,6 +1234,7 @@ static void EEVDFTerminateProcess(uint32_t pid, TerminationReason reason, uint32
     }
 
     AtomicStore((volatile uint32_t*)&proc->state, PROC_ZOMBIE);
+    SISUpdateSeal(proc, slot); // Update seal after state change
     __atomic_thread_fence(__ATOMIC_SEQ_CST);
     
     rust_spinlock_unlock_irqrestore(process_locks[slot], flags);
@@ -1264,6 +1291,7 @@ static void EEVDFASTerminate(uint32_t pid, const char* reason) {
     }
 
     AtomicStore((volatile uint32_t*)&proc->state, PROC_ZOMBIE);
+    SISUpdateSeal(proc, slot); // Update seal for AS termination
     rust_spinlock_unlock_irqrestore(process_locks[slot], flags);
     
     // Remove from scheduler
@@ -1286,10 +1314,10 @@ static void EEVDFSecurityViolationHandler(uint32_t violator_pid, const char* rea
     PrintKernelError(": ");
     PrintKernelError(reason);
     PrintKernelError("\n");
-
     AtomicInc(&security_violation_count);
-    if (security_violation_count >= EEVDF_MAX_SECURITY_VIOLATIONS) {
-        PANIC("EEVDF: Maximum security violations exceeded");
+    uint32_t violations = security_violation_count;
+    if (violations >= SIS_MAX_VIOLATIONS) {
+        PANIC("SIS: Maximum security violations exceeded");
     }
 
     EEVDFASTerminate(violator_pid, reason);
