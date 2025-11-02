@@ -104,13 +104,8 @@ static inline int FastFFS(const uint64_t value) {
     return __builtin_ctzll(value);
 }
 
-static inline int FastCLZ(const uint64_t value) {
-    return __builtin_clzll(value);
-}
 
 static inline uint64_t GetNS(void) {
-    // Convert APIC ticks to nanoseconds
-    // Assuming APIC_HZ is in Hz, convert to ns
     return (APICticks * 1000000000ULL) / APIC_HZ;
 }
 
@@ -216,15 +211,17 @@ static void EEVDFRBNodeInit(EEVDFRBNode* node, uint32_t slot) {
 }
 
 static EEVDFRBNode* EEVDFAllocRBNode(uint32_t slot) {
-    for (uint32_t i = 0; i < EEVDF_MAX_PROCESSES; i++) {
-        uint32_t word_idx = i / 32;
-        uint32_t bit_idx = i % 32;
-        
-        if (!(rb_node_pool_bitmap[word_idx] & (1U << bit_idx))) {
-            rb_node_pool_bitmap[word_idx] |= (1U << bit_idx);
-            EEVDFRBNode* node = &rb_node_pool[i];
-            EEVDFRBNodeInit(node, slot);
-            return node;
+    for (uint32_t word = 0; word < (EEVDF_MAX_PROCESSES + 31) / 32; word++) {
+        uint32_t available = ~rb_node_pool_bitmap[word];
+        if (available) {
+            int bit = __builtin_ctz(available);
+            uint32_t index = word * 32 + bit;
+            if (index < EEVDF_MAX_PROCESSES) {
+                rb_node_pool_bitmap[word] |= (1U << bit);
+                EEVDFRBNode* node = &rb_node_pool[index];
+                EEVDFRBNodeInit(node, slot);
+                return node;
+            }
         }
     }
     return NULL;
