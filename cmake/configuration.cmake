@@ -8,8 +8,6 @@ option(STACK_PROTECTION "Enable stack protection" ON)
 option(SILENT_BUILD "Enable silent build (suppress warnings)" OFF)
 
 option(VF_CONFIG_ENABLE_VMWARE_SVGA_II "Enable VMware SVGA II support" OFF)
-option(VF_CONFIG_ENABLE_CERBERUS_VFS_LOGGING "Enable Cerberus VFS logging" OFF)
-option(VF_CONFIG_CERBERUS_THREAT_REPORTING "Enable Cerberus threat reporting" OFF)
 option(VF_CONFIG_PANIC_OVERRIDE "Enable panic override" OFF)
 option(VF_CONFIG_LOAD_MB_MODULES "Enable multiboot module loading" OFF)
 

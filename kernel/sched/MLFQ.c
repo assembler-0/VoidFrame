@@ -2,7 +2,6 @@
 #include <Scheduler.h>
 #include <drivers/APIC/APIC.h>
 #include <Atomics.h>
-#include <Cerberus.h>
 #ifdef VF_CONFIG_USE_CERBERUS
 #include <Cerberus.h>
 #endif

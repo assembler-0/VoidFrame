@@ -859,8 +859,10 @@ int EEVDFSchedInit(void) {
     }
     PrintKernel("System: Initializing EEVDF scheduler...\n");
     
-    // Initialize SIS crypto (CRC32 auto-initializes)
-    CRC32Init();
+#ifdef VF_CONFIG_USE_CERBERUS
+    // Initialize Cerberus
+    CerberusInit();
+#endif
     
     // Initialize process array
     FastMemset(processes, 0, sizeof(EEVDFProcessControlBlock) * EEVDF_MAX_PROCESSES);
@@ -919,6 +921,7 @@ int EEVDFSchedInit(void) {
 
     process_count = 1;
     active_process_bitmap |= 1ULL;
+
 
 #ifdef VF_CONFIG_USE_VFSHELL
     // Create shell process
