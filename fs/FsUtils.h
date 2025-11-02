@@ -1,7 +1,7 @@
 #ifndef FS_UTILS_H
 #define FS_UTILS_H
 
-#include <../mm/MemOps.h>
+#include <mm/MemOps.h>
 #include <StringOps.h>
 #define MAX_PATH_COMPONENTS 32
 

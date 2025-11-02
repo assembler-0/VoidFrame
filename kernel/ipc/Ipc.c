@@ -1,5 +1,5 @@
 #include <Ipc.h>
-#include <../../mm/MemOps.h>
+#include <mm/MemOps.h>
 #include <Scheduler.h>
 
 static uint32_t next_sequence_id = 1;

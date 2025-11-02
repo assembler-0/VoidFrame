@@ -1,6 +1,6 @@
 #include <Interrupts.h>
-#include <../../../drivers/APIC/APIC.h>
-#include <../../../drivers/storage/Ide.h>
+#include <APIC/APIC.h>
+#include <storage/Ide.h>
 #include <Atomics.h>
 #include <Console.h>
 #include <Kernel.h>

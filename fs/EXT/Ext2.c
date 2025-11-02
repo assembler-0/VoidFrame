@@ -1,10 +1,10 @@
 #include <Ext2.h>
-#include <../../kernel/etc/Console.h>
-#include <../../kernel/etc/StringOps.h>
+#include <kernel/etc/Console.h>
+#include <kernel/etc/StringOps.h>
 #include <Scheduler.h>
-#include <../../mm/KernelHeap.h>
-#include <../../mm/MemOps.h>
-#include <../VFS.h>
+#include <mm/KernelHeap.h>
+#include <mm/MemOps.h>
+#include <VFS.h>
 #include <FileSystem.h>
 #include <Rtc.h>
 #include <SpinlockRust.h>

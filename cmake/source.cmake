@@ -144,48 +144,6 @@ set(OBJ_SOURCES)
 # ============================================================================
 include_directories(
         .
-        include
-        kernel/atomic
-        kernel/core
-        kernel/ipc
-        kernel/sched
-        kernel/etc
-        kernel/execf
-        kernel/execf/elf
-        kernel/execf/pe
-        kernel/execf/aout
-        drivers
-        drivers/PCI
-        drivers/ethernet
-        drivers/ethernet/intel
-        drivers/ethernet/realtek
-        drivers/ethernet/interface
-        drivers/RTC
-        drivers/xHCI
-        drivers/ISA
-        drivers/sound
-        drivers/storage
-        drivers/virtio
-        drivers/vmware
-        drivers/APIC
-        drivers/OPIC
-        drivers/usb
-        drivers/usb/hid
-        drivers/input
-        fs
-        fs/FAT
-        fs/EXT
-        fs/NTFS
-        fs/devfs
-        mm
-        mm/dynamic
-        mm/dynamic/c
-        mm/dynamic/rust
-        mm/trace
-        mm/security
-        ports/6502
-        ports
-        ports/raytracer
         arch/x86_64
         arch/x86_64/asm
         arch/x86_64/features
@@ -193,9 +151,56 @@ include_directories(
         arch/x86_64/idt
         arch/x86_64/interrupts
         arch/x86_64/syscall
+        crypto
+        drivers
+        drivers/APIC
+        drivers/ethernet
+        drivers/ethernet/intel
+        drivers/ethernet/realtek
+        drivers/ethernet/interface
+        drivers/input
+        drivers/ISA
+        drivers/LPT
+        drivers/OPIC
+        drivers/PCI
+        drivers/RTC
+        drivers/sound
+        drivers/storage
+        drivers/usb
+        drivers/usb/hid
+        drivers/virtio
+        drivers/vmware
+        drivers/xHCI
+        fs
+        fs/devfs
+        fs/EXT
+        fs/FAT
+        fs/NTFS
+        fs/procfs
+        include
+        include/Switch
+        include/Vector
+        kernel/atomic
+        kernel/core
+        kernel/etc
+        kernel/execf
+        kernel/execf/elf
+        kernel/execf/pe
+        kernel/execf/aout
+        kernel/execf/macho
+        kernel/ipc
+        kernel/sched
+        mm
+        mm/asm
+        mm/dynamic
+        mm/dynamic/c
+        mm/dynamic/rust
+        mm/security
+        mm/trace
+        ports
+        ports/6502
         vfcompositor
         vfcompositor/app
-        crypto
 )
 
 # ============================================================================

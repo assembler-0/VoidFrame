@@ -1,7 +1,7 @@
 #ifndef VOIDFRAME_DEVFS_H
 #define VOIDFRAME_DEVFS_H
 
-#include <../BlockDevice.h>
+#include <BlockDevice.h>
 
 // This is a virtual filesystem, so it doesn't have a block device.
 // The mount function is just a placeholder to satisfy the FileSystemDriver struct.

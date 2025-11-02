@@ -1,5 +1,5 @@
 #include <Vesa.h>
-#include <../mm/MemOps.h>
+#include <mm/MemOps.h>
 #include <Font.h>
 #include <Multiboot2.h>
 #include <Serial.h>

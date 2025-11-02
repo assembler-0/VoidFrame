@@ -1,7 +1,7 @@
 #include <DevFS.h>
-#include <../CharDevice.h>
-#include <../../kernel/etc/Console.h>
-#include <../../kernel/etc/StringOps.h>
+#include <CharDevice.h>
+#include <kernel/etc/Console.h>
+#include <kernel/etc/StringOps.h>
 
 int DevfsMount(struct BlockDevice* device, const char* mount_point) {
     // DevFS is a virtual filesystem and doesn't need a device.

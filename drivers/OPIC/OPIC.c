@@ -10,10 +10,10 @@
  */
 
 #include <OPIC.h>
-#include <../../include/Io.h>
-#include <../../kernel/core/Kernel.h>
-#include <../../kernel/etc/Console.h>
-#include <../../mm/VMem.h>
+#include <include/Io.h>
+#include <kernel/core/Kernel.h>
+#include <kernel/etc/Console.h>
+#include <mm/VMem.h>
 #include <x64.h>
 #include <Panic.h>
 

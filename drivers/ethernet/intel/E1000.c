@@ -1,6 +1,6 @@
 #include <E1000.h>
-#include <../interface/Arp.h>
-#include <../interface/Ip.h>
+#include <interface/Arp.h>
+#include <interface/Ip.h>
 #include <Console.h>
 #include <TSC.h>
 #include <Io.h>

@@ -1,7 +1,7 @@
 #include <ELFloader.h>
-#include <../../mm/KernelHeap.h>
-#include <../../mm/MemOps.h>
-#include <../../mm/VMem.h>
+#include <mm/KernelHeap.h>
+#include <mm/MemOps.h>
+#include <mm/VMem.h>
 #include <Console.h>
 #include <Scheduler.h>
 #include <StackGuard.h>
