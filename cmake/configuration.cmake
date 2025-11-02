@@ -6,6 +6,7 @@ option(AUTOMATIC_POST "Run POST automatically on boot" OFF)
 option(DEBUG_SYMBOLS "Enable debug symbols" ON)
 option(STACK_PROTECTION "Enable stack protection" ON)
 option(SILENT_BUILD "Enable silent build (suppress warnings)" OFF)
+option(SANITIZER "Enable sanitizers" ON)
 
 option(VF_CONFIG_ENABLE_VMWARE_SVGA_II "Enable VMware SVGA II support" OFF)
 option(VF_CONFIG_PANIC_OVERRIDE "Enable panic override" OFF)

@@ -61,12 +61,13 @@ typedef struct {
     __asm__ volatile("mfence; sfence; lfence" ::: "memory");\
     __sync_synchronize();\
 }
+#ifdef VF_CONFIG_INTEL
 #define _full_mem_prot_end_intel() {\
     __asm__ volatile("mfence; sfence; lfence" ::: "memory");\
     __sync_synchronize();\
     __builtin_ia32_serialize();\
 }
-
+#endif
 void CpuInit(void);
 CpuFeatures* GetCpuFeatures(void);
 

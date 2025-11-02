@@ -93,6 +93,7 @@ set(DRIVER_SOURCES
         drivers/Serial.c
         drivers/Random.c
         drivers/PS2.c
+        drivers/PS2Keymap.c
         drivers/storage/Ide.c
         drivers/Vesa.c
         drivers/PCI/PCI.c

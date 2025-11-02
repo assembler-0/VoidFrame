@@ -15,6 +15,10 @@ if(STACK_PROTECTION)
     string(APPEND C_FLAGS " -fstack-protector-all -D_FORTIFY_SOURCE=2")
 endif()
 
+#if(SANITIZER)
+#    string(APPEND C_FLAGS " -fsanitize=undefined,integer,bounds,shift,null,return,vla-bound")
+#endif()
+
 if(DEBUG_SYMBOLS)
     string(APPEND C_FLAGS " -g3 -DDEBUG")
     string(APPEND CMAKE_ASM_NASM_FLAGS " -g -O0")
