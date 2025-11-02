@@ -14,9 +14,9 @@
  *@date 02/09/25 by assembler-0
  */
 
-#include "StringOps.h"
-#include "ctype.h"
-#include "stdarg.h"
+#include <StringOps.h>
+#include <ctype.h>
+#include <stdarg.h>
 
 unsigned long simple_strtoul(const char *cp,char **endp,unsigned int base)
 {

@@ -1,9 +1,9 @@
-#include "VBEConsole.h"
+#include <VBEConsole.h>
 
-#include "../../mm/MemOps.h"
-#include "Console.h"
-#include "Vesa.h"
-#include "stdint.h"
+#include <../../mm/MemOps.h>
+#include <Console.h>
+#include <Vesa.h>
+#include <stdint.h>
 
 // Full screen console using 800x600
 #define SCREEN_WIDTH   800

@@ -1,8 +1,8 @@
 #ifndef VOIDFRAME_SB16_H
 #define VOIDFRAME_SB16_H
 
-#include "Io.h"
-#include "stdint.h"
+#include <Io.h>
+#include <stdint.h>
 
 #define SB16_DSP_BASE       0x220
 #define SB16_MIXER_BASE     0x224

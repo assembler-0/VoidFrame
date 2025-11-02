@@ -1,8 +1,8 @@
-#include "Icmp.h"
-#include "Ip.h"
-#include "Console.h"
-#include "KernelHeap.h"
-#include "MemOps.h"
+#include <Icmp.h>
+#include <Ip.h>
+#include <Console.h>
+#include <KernelHeap.h>
+#include <MemOps.h>
 
 static uint16_t IcmpChecksum(const void* data, size_t length) {
     const uint16_t* buf = data;

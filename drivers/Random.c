@@ -1,6 +1,6 @@
-#include "Random.h"
-#include "../crypto/RNG.h"
-#include "../fs/CharDevice.h"
+#include <Random.h>
+#include <../crypto/RNG.h>
+#include <../fs/CharDevice.h>
 
 static int RandomDevRead(struct CharDevice* dev, void* buffer, uint32_t size) {
     uint8_t* buf = (uint8_t*)buffer;

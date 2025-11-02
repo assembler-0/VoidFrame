@@ -1,12 +1,12 @@
-#include "Editor.h"
-#include "Console.h"
-#include "KernelHeap.h"
-#include "MemOps.h"
-#include "PS2.h"
-#include "input/Keyboard.h"
-#include "Scheduler.h"
-#include "StringOps.h"
-#include "VFS.h"
+#include <Editor.h>
+#include <Console.h>
+#include <KernelHeap.h>
+#include <MemOps.h>
+#include <PS2.h>
+#include <input/Keyboard.h>
+#include <Scheduler.h>
+#include <StringOps.h>
+#include <VFS.h>
 
 #define MAX_BUFFER_SIZE 4096
 

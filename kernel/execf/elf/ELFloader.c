@@ -1,11 +1,11 @@
-#include "ELFloader.h"
-#include "../../mm/KernelHeap.h"
-#include "../../mm/MemOps.h"
-#include "../../mm/VMem.h"
-#include "Console.h"
-#include "Scheduler.h"
-#include "StackGuard.h"
-#include "VFS.h"
+#include <ELFloader.h>
+#include <../../mm/KernelHeap.h>
+#include <../../mm/MemOps.h>
+#include <../../mm/VMem.h>
+#include <Console.h>
+#include <Scheduler.h>
+#include <StackGuard.h>
+#include <VFS.h>
 
 // Default maximum ELF file size (4MB)
 #define MAX_ELF_FILE_SIZE (4 * 1024 * 1024)

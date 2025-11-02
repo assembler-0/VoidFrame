@@ -1,7 +1,7 @@
-#include "MemOps.h"
-#include "Io.h"
-#include "Panic.h"
-#include "x64.h"
+#include <MemOps.h>
+#include <Io.h>
+#include <Panic.h>
+#include <x64.h>
 
 extern void* memcpy_internal_sse2(void* restrict dest, const void* restrict src, uint64_t size);
 extern void* memcpy_internal_avx2(void* restrict dest, const void* restrict src, uint64_t size);

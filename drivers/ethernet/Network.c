@@ -1,9 +1,9 @@
-#include "Network.h"
-#include "Console.h"
-#include "StringOps.h"
-#include "intel/E1000.h"
-#include "interface/Arp.h"
-#include "realtek/RTL8139.h"
+#include <Network.h>
+#include <Console.h>
+#include <StringOps.h>
+#include <intel/E1000.h>
+#include <interface/Arp.h>
+#include <realtek/RTL8139.h>
 
 static NetworkDevice g_network_devices[MAX_NETWORK_DEVICES];
 static int g_device_count = 0;

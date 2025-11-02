@@ -1,7 +1,7 @@
 #ifndef VOIDFRAME_RTC_H
 #define VOIDFRAME_RTC_H
 
-#include "stdint.h"
+#include <stdint.h>
 
 // A structure to hold the date and time.
 typedef struct {

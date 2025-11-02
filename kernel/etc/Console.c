@@ -1,14 +1,14 @@
-#include "Console.h"
-#include "Format.h"
-#include "Io.h"
-#include "Compositor.h"
-#include "Serial.h"
-#include "SpinlockRust.h"
-#include "VBEConsole.h"
-#include "Vesa.h"
-#include "stdarg.h"
-#include "stdbool.h"
-#include "stdint.h"
+#include <Console.h>
+#include <Format.h>
+#include <Io.h>
+#include <Compositor.h>
+#include <Serial.h>
+#include <SpinlockRust.h>
+#include <VBEConsole.h>
+#include <Vesa.h>
+#include <stdarg.h>
+#include <stdbool.h>
+#include <stdint.h>
 
 // Forward declarations for VGA backend
 static void VGAClear(void);

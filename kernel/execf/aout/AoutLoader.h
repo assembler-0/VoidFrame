@@ -2,7 +2,7 @@
 #define VOIDFRAME_AOUTLOADER_H
 
 #pragma once
-#include "stdint.h"
+#include <stdint.h>
 
 // a.out header (32 bytes total - beautifully simple!)
 typedef struct {

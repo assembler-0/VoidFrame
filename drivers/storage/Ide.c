@@ -1,12 +1,12 @@
-#include "Ide.h"
-#include "../APIC/APIC.h"
-#include "BlockDevice.h"
-#include "Console.h"
-#include "DriveNaming.h"
-#include "Format.h"
-#include "Io.h"
-#include "MemOps.h"
-#include "SpinlockRust.h"
+#include <Ide.h>
+#include <../APIC/APIC.h>
+#include <BlockDevice.h>
+#include <Console.h>
+#include <DriveNaming.h>
+#include <Format.h>
+#include <Io.h>
+#include <MemOps.h>
+#include <SpinlockRust.h>
 
 static IdeChannel channels[2];
 static RustSpinLock* ide_lock = NULL;

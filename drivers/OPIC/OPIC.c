@@ -9,13 +9,13 @@
  * like the AMD ÉlanSC520. Do not use this on modern systems.
  */
 
-#include "OPIC.h"
-#include "../../include/Io.h"
-#include "../../kernel/core/Kernel.h"
-#include "../../kernel/etc/Console.h"
-#include "../../mm/VMem.h"
-#include "x64.h"
-#include "Panic.h"
+#include <OPIC.h>
+#include <../../include/Io.h>
+#include <../../kernel/core/Kernel.h>
+#include <../../kernel/etc/Console.h>
+#include <../../mm/VMem.h>
+#include <x64.h>
+#include <Panic.h>
 
 // --- Register Definitions ---
 

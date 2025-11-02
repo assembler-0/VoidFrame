@@ -1,12 +1,12 @@
-#include "POST.h"
-#include "Console.h"
-#include "KernelHeap.h"
-#include "PMem.h"
-#include "Panic.h"
-#include "Serial.h"
-#include "VMem.h"
-#include "stdbool.h"
-#include "x64.h"
+#include <POST.h>
+#include <Console.h>
+#include <KernelHeap.h>
+#include <PMem.h>
+#include <Panic.h>
+#include <Serial.h>
+#include <VMem.h>
+#include <stdbool.h>
+#include <x64.h>
 
 #define N 512
 void * ptrs[N] = {0};

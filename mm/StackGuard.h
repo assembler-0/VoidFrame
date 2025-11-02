@@ -1,9 +1,9 @@
 #ifndef STACK_GUARD_H
 #define STACK_GUARD_H
 
-#include "Console.h"
-#include "PMem.h"
-#include "stdint.h"
+#include <Console.h>
+#include <PMem.h>
+#include <stdint.h>
 
 #define STACK_CANARY_VALUE 0xDEADBEEFCAFEBABE
 

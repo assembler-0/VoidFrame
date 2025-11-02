@@ -1,19 +1,19 @@
-#include "VFS.h"
-#include "../mm/MemOps.h"
-#include "BlockDevice.h"
-#include "CharDevice.h"
-#include "Console.h"
-#include "devfs/DevFS.h"
-#include "procfs/ProcFS.h"
-#include "EXT/Ext2.h"
-#include "FAT/FAT1x.h"
-#include "FileSystem.h"
-#include "KernelHeap.h"
-#include "NTFS.h"
-#include "Serial.h"
-#include "StringOps.h"
-#include "VFRFS.h"
-#include "stdbool.h"
+#include <VFS.h>
+#include <../mm/MemOps.h>
+#include <BlockDevice.h>
+#include <CharDevice.h>
+#include <Console.h>
+#include <devfs/DevFS.h>
+#include <procfs/ProcFS.h>
+#include <EXT/Ext2.h>
+#include <FAT/FAT1x.h>
+#include <FileSystem.h>
+#include <KernelHeap.h>
+#include <NTFS.h>
+#include <Serial.h>
+#include <StringOps.h>
+#include <VFRFS.h>
+#include <stdbool.h>
 
 #define VFS_MAX_PATH_LEN 256
 

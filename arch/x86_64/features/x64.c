@@ -1,6 +1,6 @@
-#include "x64.h"
-#include "Console.h"
-#include "Io.h"
+#include <x64.h>
+#include <Console.h>
+#include <Io.h>
 
 static CpuFeatures cpu_features = {0};
 

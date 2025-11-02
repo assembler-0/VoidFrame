@@ -1,6 +1,6 @@
-#include "Idt.h"
-#include "Kernel.h"
-#include "Syscall.h"
+#include <Idt.h>
+#include <Kernel.h>
+#include <Syscall.h>
 #define IDT_ENTRIES 256
 
 struct IdtEntry g_Idt[IDT_ENTRIES];

@@ -1,7 +1,7 @@
 #ifndef VOIDFRAME_MACHOLOADER_H
 #define VOIDFRAME_MACHOLOADER_H
 
-#include "stdint.h"
+#include <stdint.h>
 
 typedef struct {
     uint8_t privilege_level;

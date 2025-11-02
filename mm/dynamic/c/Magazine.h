@@ -1,9 +1,9 @@
 #ifndef MAGAZINE_HEAP_H
 #define MAGAZINE_HEAP_H
 
-#include "stdint.h"
-#include "stddef.h"
-#include "SpinlockRust.h"
+#include <stdint.h>
+#include <stddef.h>
+#include <SpinlockRust.h>
 
 // =================================================================================================
 // Constants and Configuration

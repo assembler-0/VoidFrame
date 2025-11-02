@@ -1,7 +1,7 @@
 #ifndef MEMOPS_H
 #define MEMOPS_H
 
-#include "stdint.h"
+#include <stdint.h>
 
 void* FastMemset(void* restrict dest, int value, uint64_t size);
 void* FastMemcpy(void* restrict dest, const void* restrict src, uint64_t size);

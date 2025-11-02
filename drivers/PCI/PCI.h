@@ -1,7 +1,7 @@
 #ifndef PCI_H
 #define PCI_H
 
-#include "stdint.h" // Or your equivalent for standard types
+#include <stdint.h> // Or your equivalent for standard types
 
 // A structure to hold information about a discovered PCI device
 typedef struct {

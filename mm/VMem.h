@@ -6,7 +6,7 @@
 #ifndef VMEM_H
 #define VMEM_H
 
-#include "stdint.h"
+#include <stdint.h>
 
 // Page size constants
 #define PAGE_SIZE           4096

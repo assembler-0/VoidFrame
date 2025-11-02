@@ -1,7 +1,7 @@
 #ifndef MEMORY_H
 #define MEMORY_H
 
-#include "stdint.h"
+#include <stdint.h>
 
 typedef struct MemoryStats {
     uint64_t total_physical_bytes;

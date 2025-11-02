@@ -1,10 +1,10 @@
 #ifndef IPC_H
 #define IPC_H
 
-#include "SpinlockRust.h"
-#include "StringOps.h"
-#include "stdbool.h"
-#include "stdint.h"
+#include <SpinlockRust.h>
+#include <StringOps.h>
+#include <stdbool.h>
+#include <stdint.h>
 
 #define MAX_MESSAGES 32 // Increased for better throughput
 #define IPC_MAX_PAYLOAD 512 // Larger payload support

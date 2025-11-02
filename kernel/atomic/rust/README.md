@@ -21,7 +21,7 @@ A complete, high-performance spinlock implementation in Rust with deadlock detec
 ## Usage from C
 
 ```c
-#include "SpinlockRust.h"
+#include <SpinlockRust.h>
 
 // Basic spinlock
 RustSpinLock* lock = rust_spinlock_new();

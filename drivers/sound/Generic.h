@@ -1,7 +1,7 @@
 #ifndef VOIDFRAME_GENERIC_SOUND_H
 #define VOIDFRAME_GENERIC_SOUND_H
 
-#include "stdint.h"
+#include <stdint.h>
 
 // PC Speaker ports
 #define PC_SPEAKER_PORT     0x61

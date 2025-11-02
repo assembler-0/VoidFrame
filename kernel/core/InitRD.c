@@ -1,7 +1,7 @@
-#include "InitRD.h"
-#include "Multiboot2.h"
-#include "Console.h"
-#include "VFS.h"
+#include <InitRD.h>
+#include <Multiboot2.h>
+#include <Console.h>
+#include <VFS.h>
 extern uint32_t g_multiboot_info_addr;
 
 void InitRDLoad(void) {

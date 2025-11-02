@@ -11,7 +11,7 @@
 # endif
 #endif
 
-#include "stdint.h"
+#include <stdint.h>
 
 void ParseMultibootInfo(uint32_t info);
 

@@ -1,10 +1,10 @@
-#include "Compositor.h"
-#include "PS2.h"
+#include <Compositor.h>
+#include <PS2.h>
 
-#include "APIC/APIC.h"
-#include "Console.h"
-#include "Io.h"
-#include "Vesa.h"
+#include <APIC/APIC.h>
+#include <Console.h>
+#include <Io.h>
+#include <Vesa.h>
 
 // Keyboard buffer (unchanged)
 static volatile char input_buffer[256];

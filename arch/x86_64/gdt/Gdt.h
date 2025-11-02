@@ -1,7 +1,7 @@
 #ifndef GDT_H
 #define GDT_H
 
-#include "stdint.h"
+#include <stdint.h>
 
 #define GDT_ACCESS_CODE_PL0 0x9A // Present, Ring 0, Executable, Read/Write
 #define GDT_ACCESS_DATA_PL0 0x92 // Present, Ring 0, Read/Write

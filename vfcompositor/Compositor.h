@@ -1,11 +1,11 @@
 #ifndef WINDOW_MANAGER_H
 #define WINDOW_MANAGER_H
 
-#include "Window.h"
-#include "stdbool.h"
-#include "stdint.h"
-#include "SpinlockRust.h"
-#include "Vesa.h"
+#include <Window.h>
+#include <stdbool.h>
+#include <stdint.h>
+#include <SpinlockRust.h>
+#include <Vesa.h>
 
 // Window text management
 #define WINDOW_TEXT_ROWS 30

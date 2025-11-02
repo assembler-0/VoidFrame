@@ -1,13 +1,13 @@
 // mm/security/Cerberus.c
-#include "Cerberus.h"
-#include "Console.h"
-#include "Format.h"
-#include "Ipc.h"
-#include "SpinlockRust.h"
-#include "StackGuard.h"
-#include "StringOps.h"
-#include "VFS.h"
-#include "VMem.h"
+#include <Cerberus.h>
+#include <Console.h>
+#include <Format.h>
+#include <Ipc.h>
+#include <SpinlockRust.h>
+#include <StackGuard.h>
+#include <StringOps.h>
+#include <VFS.h>
+#include <VMem.h>
 static CerberusState g_cerberus_state = {0};
 static RustSpinLock* cerberus_lock = NULL;
 static uint64_t system_ticks = 0;

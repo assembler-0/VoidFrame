@@ -1,10 +1,10 @@
-#include "ISA.h"
-#include "../../mm/KernelHeap.h"
-#include "Console.h"
-#include "Io.h"
-#include "SB16.h"
-#include "VMem.h"
-#include "stdint.h"
+#include <ISA.h>
+#include <../../mm/KernelHeap.h>
+#include <Console.h>
+#include <Io.h>
+#include <SB16.h>
+#include <VMem.h>
+#include <stdint.h>
 
 static IsaBus g_isa_bus = {0};
 

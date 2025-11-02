@@ -1,7 +1,7 @@
-#include "StackTrace.h"
-#include "Console.h"
-#include "StringOps.h"
-#include "VMem.h"
+#include <StackTrace.h>
+#include <Console.h>
+#include <StringOps.h>
+#include <VMem.h>
 
 // Check if an address is valid for kernel access
 static bool IsValidKernelAddress(uint64_t addr) {

@@ -31,7 +31,7 @@
 #define STATUS_LABEL_ROW 50
 #define STATUS_LABEL_COL 0 // future use
 
-#include "stdint.h"
+#include <stdint.h>
 // Console state
 typedef struct {
   uint32_t line;

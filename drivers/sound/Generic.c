@@ -1,7 +1,7 @@
-#include "Generic.h"
-#include "Console.h"
-#include "TSC.h"
-#include "Io.h"
+#include <Generic.h>
+#include <Console.h>
+#include <TSC.h>
+#include <Io.h>
 
 static int pc_speaker_initialized = 0;
 

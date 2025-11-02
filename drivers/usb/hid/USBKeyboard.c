@@ -1,7 +1,7 @@
-#include "USBKeyboard.h"
+#include <USBKeyboard.h>
 
-#include "Console.h"
-#include "VMem.h"
+#include <Console.h>
+#include <VMem.h>
 
 // Input buffer for the keyboard
 static volatile char input_buffer[256];

@@ -1,7 +1,7 @@
 #ifndef VOIDFRAME_VESABIOSEXTENSION_H
 #define VOIDFRAME_VESABIOSEXTENSION_H
 
-#include "stdint.h"
+#include <stdint.h>
 
 // Common colors (32-bit RGBA format)
 #define VBE_COLOR_BLACK     0x00000000

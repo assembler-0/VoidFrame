@@ -1,7 +1,7 @@
-#include "TSC.h"
-#include "x64.h"
-#include "Console.h"
-#include "APIC/APIC.h"
+#include <TSC.h>
+#include <x64.h>
+#include <Console.h>
+#include <APIC/APIC.h>
 
 uint64_t tsc_freq_hz = 0;
 static bool tsc_calibrated = false;

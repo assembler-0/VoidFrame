@@ -1,8 +1,8 @@
-#include "MBR.h"
-#include "BlockDevice.h"
-#include "Console.h"
-#include "Format.h"
-#include "KernelHeap.h"
+#include <MBR.h>
+#include <BlockDevice.h>
+#include <Console.h>
+#include <Format.h>
+#include <KernelHeap.h>
 
 static int PartitionReadBlocks(BlockDevice* device, uint64_t start_lba, uint32_t count, void* buffer) {
     if (!device || !device->parent) {

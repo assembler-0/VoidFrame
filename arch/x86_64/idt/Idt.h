@@ -1,7 +1,7 @@
 #ifndef IDT_H
 #define IDT_H
 
-#include "stdint.h"
+#include <stdint.h>
 
 // An entry in the IDT (64-bit)
 struct IdtEntry {

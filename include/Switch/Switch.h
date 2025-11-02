@@ -1,8 +1,8 @@
 #pragma once
 #include <stdbool.h>
-#include "StringOps.h"
-#include "stdarg.h"
-#include "stdint.h"
+#include <StringOps.h>
+#include <stdarg.h>
+#include <stdint.h>
 
 // ============================================================================
 // CORE MACRO MAGIC - Advanced Pattern Matching Switch

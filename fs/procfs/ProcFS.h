@@ -1,7 +1,7 @@
 #ifndef VOIDFRAME_PROCFS_H
 #define VOIDFRAME_PROCFS_H
 
-#include "../BlockDevice.h"
+#include <../BlockDevice.h>
 #include <stdint.h>
 #include <stdbool.h>
 

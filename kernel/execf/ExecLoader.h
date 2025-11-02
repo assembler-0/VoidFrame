@@ -2,7 +2,7 @@
 #define VOIDFRAME_EXECLOADER_H
 
 #pragma once
-#include "stdint.h"
+#include <stdint.h>
 
 // Universal executable format detector and loader
 typedef struct {

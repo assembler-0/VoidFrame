@@ -1,4 +1,4 @@
-#include "Scheduler.h"
+#include <Scheduler.h>
 
 // Initialize the active scheduler
 int SchedulerInit() {
@@ -87,9 +87,9 @@ void KillProcess(uint32_t pid) {
 
 void KillAllProcess(const char* reason) {
 #if defined(VF_CONFIG_SCHED_MLFQ)
-    return MLFQKillAllProcess(reason);
+    return MLFQKillAllProcesses(reason);
 #elif defined(VF_CONFIG_SCHED_EEVDF)
-    return EEVDFKillAllProcess(reason);
+    return EEVDFKillAllProcesses(reason);
 #elif defined(VF_CONFIG_SCHED_CFS)
     return; // not implemented
 #endif

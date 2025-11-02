@@ -1,8 +1,8 @@
 #ifndef VOIDFRAME_AHCI_H
 #define VOIDFRAME_AHCI_H
 
-#include "stdint.h"
-#include "PCI/PCI.h"
+#include <stdint.h>
+#include <PCI/PCI.h>
 
 // AHCI PCI Class/Subclass
 #define AHCI_CLASS_CODE     0x01

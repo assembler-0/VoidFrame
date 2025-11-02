@@ -1,6 +1,6 @@
 #ifndef VOIDFRAME_ISA_H
 #define VOIDFRAME_ISA_H
-#include "stdint.h"
+#include <stdint.h>
 
 // ISA Bus I/O port ranges
 #define ISA_IO_BASE         0x000

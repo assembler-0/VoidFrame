@@ -1,10 +1,10 @@
-#include "MachoLoader.h"
-#include "Macho.h"
-#include "../../mm/VMem.h"
-#include "../../mm/MemOps.h"
-#include "VFS.h"
-#include "Console.h"
-#include "Scheduler.h"
+#include <kernel/execf/macho/MachoLoader.h>
+#include <kernel/execf/macho/Macho.h>
+#include <mm/VMem.h>
+#include <mm/MemOps.h>
+#include <VFS.h>
+#include <Console.h>
+#include <Scheduler.h>
 
 #define MAX_MACHO_FILE_SIZE (16 * 1024 * 1024) // 16MB limit for now
 

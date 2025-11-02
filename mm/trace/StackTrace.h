@@ -1,8 +1,8 @@
 #ifndef VOIDFRAME_STACKTRACE_H
 #define VOIDFRAME_STACKTRACE_H
 
-#include "stdint.h"
-#include "x64.h"
+#include <stdint.h>
+#include <x64.h>
 
 #define MAX_STACK_FRAMES 16
 

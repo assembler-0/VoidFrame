@@ -1,10 +1,10 @@
-#include "VMem.h"
-#include "Atomics.h"
-#include "Console.h"
-#include "MemOps.h"
-#include "PMem.h"
-#include "Panic.h"
-#include "Spinlock.h"
+#include <VMem.h>
+#include <Atomics.h>
+#include <Console.h>
+#include <MemOps.h>
+#include <PMem.h>
+#include <Panic.h>
+#include <Spinlock.h>
 
 // Global variable for dynamic identity mapping size
 uint64_t g_identity_map_size = 4ULL * 1024 * 1024 * 1024; // Default to 4GB, will be updated during init

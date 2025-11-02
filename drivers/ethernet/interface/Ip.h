@@ -2,7 +2,7 @@
 #define IP_H
 
 #include <stdint.h>
-#include "ethernet/Packet.h"
+#include <ethernet/Packet.h>
 
 #define IP_PROTOCOL_ICMP 1
 #define IP_PROTOCOL_TCP  6

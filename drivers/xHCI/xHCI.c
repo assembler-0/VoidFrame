@@ -1,9 +1,9 @@
-#include "xHCI.h"
-#include "usb/hid/USBKeyboard.h"
-#include "../../mm/MemOps.h"
-#include "../../mm/VMem.h"
-#include "Console.h"
-#include "TSC.h"
+#include <xHCI.h>
+#include <usb/hid/USBKeyboard.h>
+#include <../../mm/MemOps.h>
+#include <../../mm/VMem.h>
+#include <Console.h>
+#include <TSC.h>
 
 // 5.4 - Operational Registers
 #define XHCI_OP_USBCMD  0x00 // USB Command Register

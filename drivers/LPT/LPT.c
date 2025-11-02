@@ -1,8 +1,8 @@
-#include "LPT.h"
-#include "Io.h"
-#include "Console.h"
-#include "ISA.h"
-#include "stdint.h"
+#include <drivers/LPT/LPT.h>
+#include <Io.h>
+#include <Console.h>
+#include <ISA.h>
+#include <stdint.h>
 
 #define LPT_DATA_PORT    0
 #define LPT_STATUS_PORT  1

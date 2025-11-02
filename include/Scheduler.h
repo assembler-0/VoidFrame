@@ -2,12 +2,12 @@
 ///@brief Unified wrapper for multiple scheduler implementations
 #ifndef VOIDFRAME_SCHEDULER_H
 #define VOIDFRAME_SCHEDULER_H
-#include "MLFQ.h"
+#include <MLFQ.h>
 
 #if defined(VF_CONFIG_SCHED_MLFQ)
-#include "MLFQ.h"
+#include <MLFQ.h>
 #elif defined(VF_CONFIG_SCHED_EEVDF)
-#include "EEVDF.h"
+#include <EEVDF.h>
 #endif
 
 #if defined(VF_CONFIG_SCHED_MLFQ)

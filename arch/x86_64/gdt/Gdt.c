@@ -1,5 +1,5 @@
-#include "Gdt.h"
-#include "Panic.h"
+#include <Gdt.h>
+#include <Panic.h>
 
 // GDT with 7 entries: null, kcode, kdata, ucode, udata, tss_low, tss_high
 static struct GdtEntry gdt[7];
