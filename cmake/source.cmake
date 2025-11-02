@@ -41,6 +41,10 @@ set(KERNEL_ETC_SOURCES
         kernel/etc/POST.c
 )
 
+set(UBSAN_SOURCES
+        kernel/ubsan/Sanitizer.c
+)
+
 set(ATOMIC_IPC_SOURCES
         kernel/atomic/Atomics.c
         kernel/atomic/cpp/Spinlock.cpp
@@ -196,6 +200,7 @@ include_directories(
         kernel/execf/macho
         kernel/ipc
         kernel/sched
+        kernel/ubsan
         mm
         mm/asm
         mm/dynamic
@@ -237,4 +242,5 @@ set(C_SOURCES
         ${INCLUDE_SOURCES}
         ${VFC_SOURCES}
         ${CRYPTO_SOURCES}
+        ${UBSAN_SOURCES}
 )
