@@ -1,7 +1,7 @@
 #include <xHCI.h>
 #include <usb/hid/USBKeyboard.h>
-#include <../../mm/MemOps.h>
-#include <../../mm/VMem.h>
+#include <mm/MemOps.h>
+#include <mm/VMem.h>
 #include <Console.h>
 #include <TSC.h>
 

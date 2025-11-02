@@ -1,6 +1,6 @@
 #include <Keyboard.h>
-#include <../PS2.h>
-#include <../usb/hid/USBKeyboard.h>
+#include <PS2.h>
+#include <usb/hid/USBKeyboard.h>
 
 /**
  * @brief Checks for input, prioritizing USB keyboards over PS/2.

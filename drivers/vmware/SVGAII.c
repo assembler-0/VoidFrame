@@ -1,8 +1,8 @@
 #include <SVGAII.h>
-#include <../../drivers/PCI/PCI.h>
-#include <../../include/Io.h>
-#include <../../mm/VMem.h>
-#include <../../kernel/etc/Console.h>
+#include <drivers/PCI/PCI.h>
+#include <include/Io.h>
+#include <mm/VMem.h>
+#include <kernel/etc/Console.h>
 
 // Global device info instance
 SVGAII_DeviceInfo svgaII_device;

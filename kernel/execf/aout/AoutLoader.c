@@ -1,6 +1,6 @@
 #include <AoutLoader.h>
-#include <../../mm/VMem.h>
-#include <../../mm/MemOps.h>
+#include <mm/VMem.h>
+#include <mm/MemOps.h>
 #include <Console.h>
 #include <Scheduler.h>
 #include <VFS.h>

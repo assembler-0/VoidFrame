@@ -1,7 +1,7 @@
 #ifndef USB_KEYBOARD_H
 #define USB_KEYBOARD_H
 
-#include <../../xHCI/xHCI.h>
+#include <xHCI/xHCI.h>
 
 // Represents the 8-byte report sent by a standard USB HID keyboard.
 typedef struct {

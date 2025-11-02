@@ -1,7 +1,7 @@
 #include <Serial.h>
 #include <Io.h>
-#include <../fs/CharDevice.h>
-#include <../kernel/etc/Console.h>
+#include <fs/CharDevice.h>
+#include <kernel/etc/Console.h>
 
 // Serial port register offsets
 #define SERIAL_DATA_REG     0  // Data register (DLAB=0)

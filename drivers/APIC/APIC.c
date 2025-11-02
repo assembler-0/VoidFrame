@@ -1,9 +1,9 @@
 #include <APIC.h>
-#include <../../include/Io.h>
-#include <../../kernel/core/Kernel.h>
-#include <../../kernel/etc/Console.h>
-#include <../../mm/VMem.h>
-#include <../sound/Generic.h>
+#include <include/Io.h>
+#include <kernel/core/Kernel.h>
+#include <kernel/etc/Console.h>
+#include <mm/VMem.h>
+#include <sound/Generic.h>
 #include <Panic.h>
 #include <x64.h>
 

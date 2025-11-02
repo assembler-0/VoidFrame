@@ -1,5 +1,5 @@
 #include <VFS.h>
-#include <../mm/MemOps.h>
+#include <mm/MemOps.h>
 #include <BlockDevice.h>
 #include <CharDevice.h>
 #include <Console.h>

@@ -4,8 +4,8 @@
 #include <VMem.h>
 #include <Panic.h>
 #include <SpinlockRust.h>
-#include <drivers/APIC/APIC.h>
-#include <arch/x86_64/features/x64.h>
+#include <APIC/APIC.h>
+#include <x64.h>
 #include <include/Io.h>
 #include <mm/KernelHeap.h>
 #ifndef KHEAP_VALIDATION_NONE
@@ -71,10 +71,6 @@ static Magazine* magazine_pool_head = NULL;
 static Magazine* DepotRefill(int size_class_index);
 static void DepotReturn(Magazine* mag, int size_class_index);
 static Slab* FindSlabForPointer(void* ptr);
-#ifdef VF_CONFIG_HEAP_HYBRID
-#include <mm/dynamic/rust/KernelHeapRust.h>
-#include <drivers/APIC/APIC.h>
-#endif
 
 // =================================================================================================
 // Helper Functions
@@ -307,21 +303,14 @@ void MagazineFree(void* ptr) {
         VMemFree((void*)large_header, large_header->size + sizeof(LargeBlockHeader));
         return;
     }
-
-#ifdef VF_CONFIG_HEAP_HYBRID
     // Delegate to Rust heap for unknown blocks
     rust_kfree(ptr);
-    return;
-#else
-    PANIC("MagazineFree: unknown pointer freed");
-#endif
+    PrintKernelWarning("Magazine: Received and freed uknown pointer with rust");
 }
 
 // =================================================================================================
 // Depot Logic (Slow Path) - Implementation
 // =================================================================================================
-
-
 
 /**
  * @brief Gets a new or partially full magazine from the depot.

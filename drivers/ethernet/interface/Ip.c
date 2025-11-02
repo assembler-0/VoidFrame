@@ -1,5 +1,5 @@
 #include <Ip.h>
-#include <../Network.h>
+#include <Network.h>
 #include <Arp.h>
 #include <Console.h>
 #include <KernelHeap.h>

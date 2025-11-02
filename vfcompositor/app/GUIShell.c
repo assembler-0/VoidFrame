@@ -1,6 +1,6 @@
 #include <Compositor.h>
 #include <Shell.h>
-#include <GUIShell.h>
+#include <app/GUIShell.h>
 #include <Keyboard.h>
 #include <Pallete.h>
 #include <Scheduler.h>

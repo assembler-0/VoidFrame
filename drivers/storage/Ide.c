@@ -1,5 +1,5 @@
 #include <Ide.h>
-#include <../APIC/APIC.h>
+#include <APIC/APIC.h>
 #include <BlockDevice.h>
 #include <Console.h>
 #include <DriveNaming.h>

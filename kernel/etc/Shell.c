@@ -1,8 +1,8 @@
 #include <Shell.h>
 #include <Switch/Switch.h>
 #include <arch/x86_64/features/x64.h>
-#include <../../drivers/APIC/APIC.h>
-#include <../../drivers/ethernet/interface/Icmp.h>
+#include <APIC/APIC.h>
+#include <ethernet/interface/Icmp.h>
 #include <6502/6502.h>
 #include <ACPI.h>
 #include <Compositor.h>
@@ -17,7 +17,7 @@
 #include <InitRD.h>
 #include <Iso9660.h>
 #include <KernelHeap.h>
-#include <../../mm/dynamic/rust/KernelHeapRust.h>
+#include <mm/dynamic/rust/KernelHeapRust.h>
 #include <LPT/LPT.h>
 #include <MemOps.h>
 #include <NTFS.h>

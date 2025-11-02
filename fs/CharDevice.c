@@ -1,5 +1,5 @@
 #include <CharDevice.h>
-#include <../kernel/etc/StringOps.h>
+#include <kernel/etc/StringOps.h>
 
 static CharDevice_t* g_char_devices[MAX_CHAR_DEVICES];
 static int g_num_char_devices = 0;
