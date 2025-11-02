@@ -133,7 +133,6 @@ IpcResult IpcReceiveMessage(IpcMessage* msg_buffer) {
 
         current->state = PROC_BLOCKED;
         rust_spinlock_unlock(queue->lock);
-        Yield();
     }
 }
 
@@ -174,7 +173,6 @@ IpcResult IpcReceiveMessageType(IpcMessage* msg_buffer, IpcMessageType type) {
         // Mark blocked while still holding the lock to avoid a wakeup‐before‐block race
         current->state = PROC_BLOCKED;
         rust_spinlock_unlock(queue->lock);
-        Yield();
     }
 }
 

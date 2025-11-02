@@ -5,9 +5,8 @@
 #include <Ipc.h>
 #include <SpinlockRust.h>
 #include <StackGuard.h>
-#include <StringOps.h>
-#include <VFS.h>
 #include <VMem.h>
+
 static CerberusState g_cerberus_state = {0};
 static RustSpinLock* cerberus_lock = NULL;
 static uint64_t system_ticks = 0;
@@ -27,18 +26,8 @@ void CerberusLogViolation(CerberusViolationReport* report) {
     rust_spinlock_unlock(cerberus_lock);
 
     // Console logging
-    PrintKernelErrorF("[Cerberus] VIOLATION PID=%d: %s\n",
+    PrintKernelErrorF("Cerberus: VIOLATION PID=%d: %s\n",
                      report->process_id, report->description);
-#ifdef VF_CONFIG_CERBERUS_VFS_LOGGING
-    // VFS logging
-    char log_entry[256];
-    snprintf(log_entry, sizeof(log_entry),
-           "TICK=%lu PID=%d TYPE=%d ADDR=0x%lx RIP=0x%lx DESC=%s\n",
-           system_ticks, report->process_id, report->violation_type,
-           report->fault_address, report->rip, report->description);
-
-    VfsAppendFile("/ProcINFO/Cerberus/violations.log", log_entry, StringLength(log_entry));
-#endif
 
 }
 
@@ -65,12 +54,6 @@ void CerberusInit(void) {
     g_cerberus_state.monitored_processes = 0;
     g_cerberus_state.total_violations = 0;
     g_cerberus_state.is_initialized = true;
-#ifdef VF_CONFIG_CERBERUS_VFS_LOGGING
-    // Create logging directories in VFS
-    VfsCreateDir(FormatS("%s/Cerberus", RuntimeServices));
-    VfsCreateFile(FormatS("%s/Cerberus/violations.log", RuntimeServices));
-    VfsCreateFile(FormatS("%s/Cerberus/watchlist.log", RuntimeServices));
-#endif
     PrintKernelSuccess("Cerberus initialized\n");
 }
 
@@ -103,7 +86,7 @@ int CerberusRegisterProcess(uint32_t pid, uint64_t stack_base, uint64_t stack_si
     g_cerberus_state.monitored_processes++;
     rust_spinlock_unlock(cerberus_lock);
 
-    PrintKernelF("[Cerberus] Process %d registered\n", pid);
+    PrintKernelF("Cerberus: Process %d registered\n", pid);
     return 0;
 }
 
@@ -130,7 +113,7 @@ void CerberusUnregisterProcess(uint32_t pid) {
     }
 
     rust_spinlock_unlock(cerberus_lock);
-    PrintKernelF("[Cerberus] Process %d unregistered\n", pid);
+    PrintKernelF("Cerberus: Process %d unregistered\n", pid);
 }
 
 int CerberusInstallStackCanary(uint32_t pid, uint64_t stack_top, uint64_t stack_size) {
@@ -141,13 +124,13 @@ int CerberusInstallStackCanary(uint32_t pid, uint64_t stack_top, uint64_t stack_
     // Leave some space for initial stack usage
     uint64_t canary_addr = stack_top - 0x100; // 256 bytes from top
 
-    PrintKernelF("[Cerberus] Installing canary: stack_top=0x%lx, size=0x%lx, canary=0x%lx\n",
+    PrintKernelF("Cerberus: Installing canary: stack_top=0x%lx, size=0x%lx, canary=0x%lx\n",
                     stack_top, stack_size, canary_addr);
 
     // Validate memory is accessible and writable
     uint64_t phys_addr = VMemGetPhysAddr(canary_addr);
     if (phys_addr == 0) {
-        PrintKernelWarningF("[Cerberus] Canary address not mapped: 0x%lx\n", canary_addr);
+        PrintKernelWarningF("Cerberus: Canary address not mapped: 0x%lx\n", canary_addr);
         return -1;
     }
 
@@ -156,7 +139,7 @@ int CerberusInstallStackCanary(uint32_t pid, uint64_t stack_top, uint64_t stack_
     uint64_t original = *test_ptr; // Read first
     *test_ptr = 0x1234567890ABCDEF; // Test write
     if (*test_ptr != 0x1234567890ABCDEF) {
-        PrintKernelWarningF("[Cerberus] Canary address not writable: 0x%lx\n", canary_addr);
+        PrintKernelWarningF("Cerberus: Canary address not writable: 0x%lx\n", canary_addr);
         return -1;
     }
 
@@ -167,7 +150,7 @@ int CerberusInstallStackCanary(uint32_t pid, uint64_t stack_top, uint64_t stack_
     CerberusProcessInfo* proc_info = &g_cerberus_state.process_info[pid];
     proc_info->stack_canary_addr = canary_addr;
 
-    PrintKernelSuccessF("[Cerberus] Stack canary installed for PID %d at 0x%lx\n", pid, canary_addr);
+    PrintKernelSuccessF("Cerberus: Stack canary installed for PID %d at 0x%lx\n", pid, canary_addr);
     return 0;
 }
 
@@ -180,13 +163,13 @@ int CerberusCheckStackCanary(uint32_t pid) {
     // Validate canary address is still mapped
     uint64_t phys_addr = VMemGetPhysAddr(proc_info->stack_canary_addr);
     if (phys_addr == 0) {
-        PrintKernelWarningF("[Cerberus] Canary address unmapped for PID %d\n", pid);
+        PrintKernelWarningF("Cerberus: Canary address unmapped for PID %d\n", pid);
         return -1;
     }
 
     volatile uint64_t* canary_ptr = (volatile uint64_t*)proc_info->stack_canary_addr;
     uint64_t canary_value = *canary_ptr;
-    
+
     if (canary_value != STACK_CANARY_VALUE) {
         // Stack canary corrupted!
         CerberusViolationReport violation = {
@@ -216,27 +199,18 @@ void CerberusPreScheduleCheck(uint32_t pid) {
 
     // Block compromised processes
     if (proc_info->is_compromised) {
-        PrintKernelErrorF("[Cerberus] BLOCKED compromised sched %d\n", pid);
-#ifdef VF_CONFIG_CERBERUS_THREAT_REPORTING
-        CerberusReportThreat(pid, MEM_VIOLATION_STACK_CORRUPTION);
-#endif
+        PrintKernelErrorF("Cerberus: BLOCKED compromised sched %d\n", pid);
         return;
     }
 
     // Check stack canary
     if (CerberusCheckStackCanary(pid) != 0) {
-        PrintKernelErrorF("[Cerberus] Stack canary violation in PID %d\n", pid);
-#ifdef VF_CONFIG_CERBERUS_THREAT_REPORTING
-        CerberusReportThreat(pid, MEM_VIOLATION_CANARY_CORRUPT);
-#endif
+        PrintKernelErrorF("Cerberus: Stack canary violation in PID %d\n", pid);
     }
 
     // Check violation threshold
     if (proc_info->violation_count >= CERBERUS_VIOLATION_THRESHOLD) {
-        PrintKernelWarningF("[Cerberus] PID %d exceeded violation threshold\n", pid);
-#ifdef VF_CONFIG_CERBERUS_THREAT_REPORTING
-        CerberusReportThreat(pid, MEM_VIOLATION_BOUNDS_CHECK);
-#endif
+        PrintKernelWarningF("Cerberus: PID %d exceeded violation threshold\n", pid);
     }
 }
 
@@ -258,7 +232,7 @@ void CerberusTick(void) {
                 !proc_info->is_compromised) {
 
                 proc_info->is_compromised = true;
-                PrintKernelWarningF("[Cerberus] Process %d marked as compromised\n", i);
+                PrintKernelWarningF("Cerberus: Process %d marked as compromised\n", i);
             }
         }
     }
@@ -298,35 +272,6 @@ int CerberusAnalyzeFault(uint64_t fault_addr, uint64_t error_code, uint32_t pid,
 
     return 0; // No violation
 }
-
-#ifdef VF_CONFIG_CERBERUS_THREAT_REPORTING
-void CerberusReportThreat(uint32_t pid, MemorySecurityViolation violation) {
-    if (!g_cerberus_state.is_initialized) return;
-
-    extern uint32_t security_manager_pid;  // From MLFQ.c
-    if (security_manager_pid == 0) return; // Astra not available
-
-    // Create IPC message with threat data
-    IpcMessage threat_msg = {
-        .sender_pid = 0,  // Kernel/Cerberus
-        .type = IPC_TYPE_DATA,
-        .size = sizeof(CerberusThreatReport)
-    };
-
-    CerberusThreatReport* report = (CerberusThreatReport*)threat_msg.payload.data;
-    report->pid = pid;
-    report->violation_type = violation;
-    report->fault_address = 0; // Can be populated from context
-    report->rip = 0;
-    report->severity = (violation >= MEM_VIOLATION_STACK_CORRUPTION) ? 3 : 2;
-    report->timestamp = system_ticks;
-
-    // Send directly to Astra via IPC - no VFS operations!
-    IpcSendMessage(security_manager_pid, &threat_msg);
-
-    PrintKernelWarningF("[Cerberus] Threat reported to Astra via IPC: PID=%d\n", pid);
-}
-#endif
 
 int CerberusTrackAlloc(uint64_t addr, uint64_t size, uint32_t pid) {
     if (!g_cerberus_state.is_initialized) return -1;

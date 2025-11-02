@@ -139,6 +139,7 @@ typedef struct {
     uint64_t termination_time;
     
     EEVDFSecurityToken token;
+    uint64_t sis_seal;                  // SIS cryptographic seal
     MessageQueue ipc_queue;
     EEVDFProcessContext context;
     char ProcessRuntimePath[256];

@@ -73,14 +73,6 @@ if(VF_CONFIG_ENABLE_VMWARE_SVGA_II)
     add_compile_definitions(VF_CONFIG_ENABLE_VMWARE_SVGA_II)
 endif()
 
-if(VF_CONFIG_ENABLE_CERBERUS_VFS_LOGGING)
-    add_compile_definitions(VF_CONFIG_ENABLE_CERBERUS_VFS_LOGGING)
-endif()
-
-if(VF_CONFIG_CERBERUS_THREAT_REPORTING)
-    add_compile_definitions(VF_CONFIG_CERBERUS_THREAT_REPORTING)
-endif()
-
 if(VF_CONFIG_PANIC_OVERRIDE)
     add_compile_definitions(VF_CONFIG_PANIC_OVERRIDE)
 endif()

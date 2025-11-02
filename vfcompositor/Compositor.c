@@ -434,9 +434,7 @@ void VFCompositor(void) {
 
     if (!VBEIsInitialized()) {
         PrintKernel("VFCompositor: VBE not initialized, waiting...\n");
-        while (!VBEIsInitialized()) {
-            MLFQYield();
-        }
+        return;
     }
     CompositorInit(&g_compositor_ctx);
 

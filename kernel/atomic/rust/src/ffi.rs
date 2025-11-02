@@ -20,13 +20,13 @@ fn panic(_info: &PanicInfo) -> ! {
 }
 
 // Static storage for locks (kernel will manage allocation)
-static mut SPINLOCK_STORAGE: [SpinLock; 64] = [const { SpinLock::new() }; 64];
-static mut SPINLOCK_USED: [bool; 64] = [false; 64];
+static mut SPINLOCK_STORAGE: [SpinLock; 256] = [const { SpinLock::new() }; 256];
+static mut SPINLOCK_USED: [bool; 256] = [false; 256];
 
 #[no_mangle]
 pub extern "C" fn rust_spinlock_new() -> *mut SpinLock {
     unsafe {
-        for i in 0..64 {
+        for i in 0..256 {
             if !SPINLOCK_USED[i] {
                 SPINLOCK_USED[i] = true;
                 return &mut SPINLOCK_STORAGE[i] as *mut SpinLock;
@@ -103,7 +103,7 @@ pub extern "C" fn rust_spinlock_owner_cpu(lock: *mut SpinLock) -> u32 {
 #[no_mangle]
 pub extern "C" fn rust_spinlock_new_with_order(order: u32) -> *mut SpinLock {
     unsafe {
-        for i in 0..64 {
+        for i in 0..256 {
             if !SPINLOCK_USED[i] {
                 SPINLOCK_USED[i] = true;
                 SPINLOCK_STORAGE[i] = SpinLock::new_with_order(order);
@@ -115,15 +115,15 @@ pub extern "C" fn rust_spinlock_new_with_order(order: u32) -> *mut SpinLock {
 }
 
 // Static storage for MCS locks and nodes
-static mut MCS_LOCK_STORAGE: [McsLock; 32] = [const { McsLock::new() }; 32];
-static mut MCS_LOCK_USED: [bool; 32] = [false; 32];
-static mut MCS_NODE_STORAGE: [McsNode; 128] = [const { McsNode::new() }; 128];
-static mut MCS_NODE_USED: [bool; 128] = [false; 128];
+static mut MCS_LOCK_STORAGE: [McsLock; 128] = [const { McsLock::new() }; 128];
+static mut MCS_LOCK_USED: [bool; 128] = [false; 128];
+static mut MCS_NODE_STORAGE: [McsNode; 512] = [const { McsNode::new() }; 512];
+static mut MCS_NODE_USED: [bool; 512] = [false; 512];
 
 #[no_mangle]
 pub extern "C" fn rust_mcs_lock_new() -> *mut McsLock {
     unsafe {
-        for i in 0..32 {
+        for i in 0..128 {
             if !MCS_LOCK_USED[i] {
                 MCS_LOCK_USED[i] = true;
                 return &mut MCS_LOCK_STORAGE[i] as *mut McsLock;
@@ -150,7 +150,7 @@ pub extern "C" fn rust_mcs_lock_free(lock: *mut McsLock) {
 #[no_mangle]
 pub extern "C" fn rust_mcs_node_new() -> *mut McsNode {
     unsafe {
-        for i in 0..128 {
+        for i in 0..512 {
             if !MCS_NODE_USED[i] {
                 MCS_NODE_USED[i] = true;
                 return &mut MCS_NODE_STORAGE[i] as *mut McsNode;

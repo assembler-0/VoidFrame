@@ -16,7 +16,7 @@
 
 ## About
 
-VoidFrame is a 64-bit **ring-0** kernel designed for the x86_64 architecture written in C and assembly (nasm).
+VoidFrame is a 64-bit **ring-0** kernel designed for the x86_64 architecture written in C/C++, assembly (nasm) and Rust.
 This kernel was intended and targeted for people who want to learn about operating systems and want to make a piece of their own.
 As the designer of this kernel, I just wanted to make something that is simple, fast, secure and easy to understand.
 Which obviously means that it is not a perfect kernel. And it breaks all the time.
@@ -26,12 +26,12 @@ It would be amazing if you could contribute to this project!
 
 ## Prerequisites (development)
 - x64-compatible cpu (used: Intel i3-12100F)
-- POSIX-compliant OS (SysV ABI) (used: Arch Linux 6.16.9-arch1-1)
+- POSIX-compliant OS (SysV ABI) (used: Arch Linux 6.17.6-arch1-1)
 - cmake >= 3.20 (used: cmake 4.1.2)
-- ninja >= 1.11 (used: ninja 1.21.1)
-- clang/++ >= 18.0.0 (used: 20.1.8)
+- ninja >= 1.11 (used: ninja 1.13.1)
+- clang/++ >= 18.0.0 (used: 21.1.4)
 - rustup (nightly, bare metal toolchain) >= 1.89.0 (used: 1.92.0-nightly)
-- nasm >= 2.16 (used: 2.16.03)
+- nasm >= 2.16 (used: 3.01)
 - qemu >= 7.0.0 (used: 10.1.0)
 - mkfs.fat
 - mkfs.ext2
@@ -45,8 +45,10 @@ git clone https://github.com/assembler-0/VoidFrame.git
 cd VoidFrame
 mkdir build
 cd build
-ccmake .. -G Ninja # 'c' -> 'e' -> 'q' -- IMPORTATNT!
-cmake ..
+cmake .. -G Ninja \
+  -DCMAKE_TOOLCHAIN_FILE=../cmake/toolchain/linux-x64.cmake \
+  -DCMAKE_BUILD_TYPE=Release
+cmake .. # IMPORTANT: for some reason, this command is needed for the first time
 ninja -j$(nproc)
 ninja run
 ```

@@ -12,7 +12,7 @@ else()
 endif()
 
 if(STACK_PROTECTION)
-    string(APPEND C_FLAGS " -fstack-protector-strong -D_FORTIFY_SOURCE=2")
+    string(APPEND C_FLAGS " -fstack-protector-all -D_FORTIFY_SOURCE=2")
 endif()
 
 if(DEBUG_SYMBOLS)

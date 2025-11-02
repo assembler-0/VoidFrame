@@ -4,10 +4,10 @@
 cmake_minimum_required(VERSION 3.30)
 set_property(GLOBAL PROPERTY RULE_MESSAGES OFF)
 project(VoidFrame
-        VERSION 0.0.2
+        VERSION 0.0.2.4
         LANGUAGES C CXX ASM_NASM
         HOMEPAGE_URL "https://github.com/assembler-0/VoidFrame"
-        DESCRIPTION "A hobbyist operating system kernel written in C and Rust"
+        DESCRIPTION "A hobbyist operating system kernel written in C/C++ Assembly Rust"
 )
 enable_language(ASM_NASM)
 
@@ -52,12 +52,7 @@ if(NOT CMAKE_TOOLCHAIN_FILE)
         message(STATUS "Defaulting to Windows x86_64 toolchain file: ${CMAKE_TOOLCHAIN_FILE}")
     endif()
 else()
-    message(STATUS "Using toolchain file: ${CMAKE_TOOLCHAIN_FILE}")
-endif()
-
-if(NOT CMAKE_BUILD_TYPE)
-    set(CMAKE_BUILD_TYPE "Release" CACHE STRING "Build type" FORCE)
-    message(WARNING "CMAKE_BUILD_TYPE not set. Defaulting to Release.")
+    message(STATUS "CMake: Using toolchain file: ${CMAKE_TOOLCHAIN_FILE}")
 endif()
 
 if(CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64")
@@ -130,6 +125,9 @@ endif()
 # Rust libraries
 link_rust_library(voidframe.krnl voidframe-spinlock)
 link_rust_library(voidframe.krnl voidframe-mm)
+
+add_dependencies(voidframe.krnl voidframe_mm)
+add_dependencies(voidframe.krnl cargo-build_voidframe_spinlock)
 
 # Configure the linker to use ld.lld with proper arguments
 set_target_properties(voidframe.krnl PROPERTIES
