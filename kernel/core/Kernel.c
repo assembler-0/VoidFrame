@@ -807,9 +807,7 @@ void KernelMainHigherHalf(void) {
     ExecuteCommand("post");
 #endif
 
-#ifdef VF_CONFIG_HEAP_RUST
-    rust_heap_set_performance_mode(VF_CONFIG_INIT_HEAP_RUST_PERF_LVL);
-#endif
+    KernelHeapPerfMode(VF_CONFIG_INIT_HEAP_RUST_PERF_LVL);
 
     PrintKernelSuccess("System: Kernel initialization complete\n");
     PrintKernelSuccess("System: Initializing interrupts...\n");
@@ -817,11 +815,7 @@ void KernelMainHigherHalf(void) {
     sti();
 
     while (1) {
-        if (g_svgaII_active || VBEIsInitialized()) {
-            Yield();
-        } else {
-            Yield();
-        }
+        Yield();
     }
 
     __builtin_unreachable();
