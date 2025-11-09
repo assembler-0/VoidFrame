@@ -158,6 +158,20 @@ static int AHCI_SendCommand(int port, uint8_t command, uint64_t lba, uint16_t co
     AHCIPort* ahci_port = &g_ahci_controller.ports[port];
     if (!ahci_port->active) return -1;
     
+    // For DMA, we need to ensure all pages are mapped
+    // Touch each page in the buffer to trigger lazy mapping
+    uint32_t buffer_size = count * 512;
+    for (uint32_t offset = 0; offset < buffer_size; offset += 4096) {
+        volatile uint8_t* touch = (volatile uint8_t*)buffer + offset;
+        if (write) {
+            // For writes, just read to ensure page is present
+            (void)*touch;
+        } else {
+            // For reads, write zero to ensure page is writable and present
+            *touch = 0;
+        }
+    }
+    
     // Wait for port to be ready
     int timeout = 2000;
     while (timeout-- > 0) {
@@ -188,7 +202,16 @@ static int AHCI_SendCommand(int port, uint8_t command, uint64_t lba, uint16_t co
     
     // Set up PRD
     AHCIPrd* prd = &ahci_port->cmd_table->prdt[0];
-    prd->dba = VMemGetPhysAddr((uint64_t)buffer);
+    uint64_t phys_addr = VMemGetPhysAddr((uint64_t)buffer);
+    
+    if (phys_addr == 0) {
+        PrintKernel("AHCI: Failed to get physical address for buffer 0x");
+        PrintKernelHex((uint64_t)buffer);
+        PrintKernel("\n");
+        return -1;
+    }
+    
+    prd->dba = phys_addr;
     prd->dbc = (count * 512) - 1;
     prd->i = 1; // Interrupt on completion
     
