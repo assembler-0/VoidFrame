@@ -197,7 +197,7 @@ add_custom_target(run
         -device virtio-blk-pci,drive=virtio_disk,disable-legacy=on
         -drive file=NVMeDisk.img,format=raw,id=nvme_disk,if=none
         -device nvme,drive=nvme_disk,serial=nvme001
-        DEPENDS iso img extra-img
+        DEPENDS iso
 )
 
 add_custom_target(runmin

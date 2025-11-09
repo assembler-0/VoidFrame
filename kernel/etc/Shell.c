@@ -670,11 +670,11 @@ static void execveHandler(const char * args) {
 
         uint32_t pid = LoadExecutable(full_path, &opts);
         if (pid != 0) {
-            PrintKernelSuccess("ELF Executable loaded (PID: ");
+            PrintKernelSuccess("Executable loaded (PID: ");
             PrintKernelInt(pid);
             PrintKernel(")\n");
         } else {
-            PrintKernelError("Failed to load ELF executable\n");
+            PrintKernelError("Failed to load executable\n");
         }
         KernelFree(name);
     } else {

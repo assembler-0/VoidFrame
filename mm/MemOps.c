@@ -111,3 +111,23 @@ int FastMemcmp(const void* restrict ptr1, const void* restrict ptr2, uint64_t si
     }
     return 0;
 }
+
+int CopyToUser(void* user_dest, const void* kernel_src, uint64_t size) {
+    if (!user_dest || !kernel_src) {
+        return -1; // Invalid address
+    }
+    // In a real kernel, you would check if the user_dest is a valid user-space address
+    // and handle page faults gracefully.
+    FastMemcpy(user_dest, kernel_src, size);
+    return 0;
+}
+
+int CopyFromUser(void* kernel_dest, const void* user_src, uint64_t size) {
+    if (!kernel_dest || !user_src) {
+        return -1; // Invalid address
+    }
+    // In a real kernel, you would check if the user_src is a valid user-space address
+    // and handle page faults gracefully.
+    FastMemcpy(kernel_dest, user_src, size);
+    return 0;
+}

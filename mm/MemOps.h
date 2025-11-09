@@ -17,6 +17,10 @@ void* memset(void* dest, int value, unsigned long size);
 void* memcpy(void* dest, const void* src, unsigned long size);
 int memcmp(const void* s1, const void* s2, unsigned long);
 
+// Safe memory copy from/to user space
+int CopyToUser(void* user_dest, const void* kernel_src, uint64_t size);
+int CopyFromUser(void* kernel_dest, const void* user_src, uint64_t size);
+
 #ifdef __cplusplus
 }
 #endif
