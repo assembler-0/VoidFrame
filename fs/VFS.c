@@ -362,6 +362,13 @@ int VfsDelete(const char* path, bool Recursive) {
 }
 
 int VfsIsDir(const char* path) {
+    // Check if path is exactly a mount point
+    for (int i = 0; i < VFS_MAX_MOUNTS; i++) {
+        if (mounts[i].active && FastStrCmp(mounts[i].mount_point, path) == 0) {
+            return 1; // Mount points are always directories
+        }
+    }
+    
     VfsMountStruct* mount = VfsFindMount(path);
     if (!mount) return 0;
 
@@ -392,6 +399,13 @@ int VfsIsDir(const char* path) {
 }
 
 int VfsIsFile(const char* path) {
+    // Mount points are directories, not files
+    for (int i = 0; i < VFS_MAX_MOUNTS; i++) {
+        if (mounts[i].active && FastStrCmp(mounts[i].mount_point, path) == 0) {
+            return 0; // Mount points are directories, not files
+        }
+    }
+    
     VfsMountStruct* mount = VfsFindMount(path);
     if (!mount) return 0;
 

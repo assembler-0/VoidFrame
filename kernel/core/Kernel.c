@@ -162,22 +162,6 @@ void BootstrapMapPage(uint64_t pml4_phys, uint64_t vaddr, uint64_t paddr, uint64
     const int pt_idx = (vaddr >> 12) & 0x1FF;
     const uint64_t new_entry = paddr | flags | PAGE_PRESENT;
 
-    // Check for remapping (only in debug builds to reduce overhead)
-    #ifdef DEBUG
-    if (pt[pt_idx] & PAGE_PRESENT) {
-        uint64_t existing_paddr = pt[pt_idx] & PT_ADDR_MASK;
-        if (existing_paddr != paddr) {
-            PrintKernelWarning("[BOOTSTRAP] Remapping 0x");
-            PrintKernelHex(vaddr);
-            PrintKernel(" from 0x");
-            PrintKernelHex(existing_paddr);
-            PrintKernel(" to 0x");
-            PrintKernelHex(paddr);
-            PrintKernel("\n");
-        }
-    }
-    #endif
-
     pt[pt_idx] = new_entry;
 
     // Optimized progress tracking (reduce modulo operations)
@@ -379,111 +363,6 @@ static void PrintBootstrapSummary(void) {
     PrintKernel("KB)\n");
 
     PrintKernel("  Bootstrap complete\n");
-}
-
-
-// Pre-eXecutionSystem 1
-void PXS1(const uint32_t info) {
-    PICMaskAll();
-    CharDeviceInit();
-    PrintKernel("System: Char device subsystem initialized\n");
-
-    int sret = SerialInit();
-    if (sret != 0) {
-        PrintKernelWarning("[WARN] COM1 failed, probing other COM ports...\n");
-        if (SerialInitPort(COM2) != 0 && SerialInitPort(COM3) != 0 &&SerialInitPort(COM4) != 0) {
-            PrintKernelWarning("[WARN] No serial ports initialized. Continuing without serial.\n");
-        } else {
-            PrintKernelSuccess("System: Serial driver initialized on fallback port\n");
-        }
-    } else {
-        PrintKernelSuccess("System: Serial driver initialized on COM1\n");
-    }
-
-    if (VBEInit(info) != 0) {
-        PrintKernelError("System: Failed to initialize VBE and graphical environment\n");
-    } else {
-        PrintKernelSuccess("System: VBE driver initialized\n");
-    }
-
-    PrintKernel("System: Starting Console...\n");
-    ConsoleInit();
-    PrintKernelSuccess("System: Console initialized\n");
-
-#ifndef VF_CONFIG_EXCLUDE_EXTRA_OBJECTS
-    VBEShowSplash();
-#endif
-
-#ifdef VF_CONFIG_SNOOZE_ON_BOOT
-    Snooze();
-#endif
-
-    PrintKernel("System: Parsing MULTIBOOT2 info...\n");
-    ParseMultibootInfo(info);
-    PrintKernelSuccess("System: MULTIBOOT2 info parsed\n");
-
-    PrintKernel("System: Initializing memory...\n");
-    MemoryInit(g_multiboot_info_addr);
-    PrintKernelSuccess("System: Memory initialized\n");
-    
-    // Update dynamic identity mapping size based on detected memory
-    extern uint64_t g_identity_map_size;
-    extern uint64_t total_pages;
-    g_identity_map_size = total_pages * PAGE_SIZE;
-    PrintKernel("System: Identity mapping size set to ");
-    PrintKernelInt(g_identity_map_size / (1024 * 1024));
-    PrintKernel("MB\n");
-
-    // Create new PML4 with memory validation (ensure identity-mapped physical page)
-    void* pml4_phys = NULL;
-    for (int attempt = 0; attempt < 64; attempt++) {
-        void* candidate = AllocPage();
-        if (!candidate) break;
-        if ((uint64_t)candidate < IDENTITY_MAP_SIZE) { pml4_phys = candidate; break; }
-        FreePage(candidate);
-    }
-    if (!pml4_phys) PANIC("Failed to allocate PML4 in identity-mapped memory");
-
-    FastZeroPage(pml4_phys);
-    uint64_t pml4_addr = (uint64_t)pml4_phys;
-
-    PrintKernelSuccess("System: Bootstrap: Identity mapping...\n");
-
-    for (uint64_t paddr = 0; paddr < IDENTITY_MAP_SIZE; paddr += PAGE_SIZE) {
-        BootstrapMapPage(pml4_addr, paddr, paddr, PAGE_WRITABLE);
-
-        if (paddr / PAGE_SIZE % 32768 == 0) {
-            PrintKernel(".");
-        }
-    }
-    PrintKernel("\n");
-
-    PrintKernelSuccess("System: Bootstrap: Mapping kernel...\n");
-    uint64_t kernel_start = (uint64_t)_kernel_phys_start & ~0xFFF;
-    uint64_t kernel_end = ((uint64_t)_kernel_phys_end + 0xFFF) & ~0xFFF;
-    for (uint64_t paddr = kernel_start; paddr < kernel_end; paddr += PAGE_SIZE) {
-        BootstrapMapPage(pml4_addr, paddr + KERNEL_VIRTUAL_OFFSET, paddr, PAGE_WRITABLE);
-    }
-
-    PrintKernelSuccess("System: Bootstrap: Mapping kernel stack...\n");
-    uint64_t stack_phys_start = (uint64_t)kernel_stack & ~0xFFF;
-    uint64_t stack_phys_end = ((uint64_t)kernel_stack + KERNEL_STACK_SIZE + 0xFFF) & ~0xFFF;
-
-    for (uint64_t paddr = stack_phys_start; paddr < stack_phys_end; paddr += PAGE_SIZE) {
-        BootstrapMapPage(pml4_addr, paddr + KERNEL_VIRTUAL_OFFSET, paddr, PAGE_WRITABLE);
-    }
-
-    PrintKernelSuccess("System: Page tables prepared. Switching to virtual addressing...\n");
-    const uint64_t new_stack_top = ((uint64_t)kernel_stack + KERNEL_VIRTUAL_OFFSET) + KERNEL_STACK_SIZE;
-    const uint64_t higher_half_entry = (uint64_t)&KernelMainHigherHalf + KERNEL_VIRTUAL_OFFSET;
-
-    PrintKernel("KernelMainHigherHalf addr: ");
-    PrintKernelHex((uint64_t)&KernelMainHigherHalf);
-    PrintKernel(", calculated entry: ");
-    PrintKernelHex(higher_half_entry);
-    PrintKernel("\n");
-
-    SwitchToHigherHalf(pml4_addr, higher_half_entry, new_stack_top);
 }
 
 void MakeRoot() {
@@ -787,7 +666,106 @@ asmlinkage void KernelMain(const uint32_t magic, const uint32_t info) {
     PrintKernelHex(info);
     PrintKernel("\n");
 
-    PXS1(info);
+    PICMaskAll();
+    CharDeviceInit();
+    PrintKernel("System: Char device subsystem initialized\n");
+
+    int sret = SerialInit();
+    if (sret != 0) {
+        PrintKernelWarning("[WARN] COM1 failed, probing other COM ports...\n");
+        if (SerialInitPort(COM2) != 0 && SerialInitPort(COM3) != 0 &&SerialInitPort(COM4) != 0) {
+            PrintKernelWarning("[WARN] No serial ports initialized. Continuing without serial.\n");
+        } else {
+            PrintKernelSuccess("System: Serial driver initialized on fallback port\n");
+        }
+    } else {
+        PrintKernelSuccess("System: Serial driver initialized on COM1\n");
+    }
+
+    if (VBEInit(info) != 0) {
+        PrintKernelError("System: Failed to initialize VBE and graphical environment\n");
+    } else {
+        PrintKernelSuccess("System: VBE driver initialized\n");
+    }
+
+    PrintKernel("System: Starting Console...\n");
+    ConsoleInit();
+    PrintKernelSuccess("System: Console initialized\n");
+
+#ifndef VF_CONFIG_EXCLUDE_EXTRA_OBJECTS
+    VBEShowSplash();
+#endif
+
+#ifdef VF_CONFIG_SNOOZE_ON_BOOT
+    Snooze();
+#endif
+
+    PrintKernel("System: Parsing MULTIBOOT2 info...\n");
+    ParseMultibootInfo(info);
+    PrintKernelSuccess("System: MULTIBOOT2 info parsed\n");
+
+    PrintKernel("System: Initializing memory...\n");
+    MemoryInit(g_multiboot_info_addr);
+    PrintKernelSuccess("System: Memory initialized\n");
+
+    // Update dynamic identity mapping size based on detected memory
+    extern uint64_t g_identity_map_size;
+    extern uint64_t total_pages;
+    g_identity_map_size = total_pages * PAGE_SIZE;
+    PrintKernel("System: Identity mapping size set to ");
+    PrintKernelInt(g_identity_map_size / (1024 * 1024));
+    PrintKernel("MB\n");
+
+    // Create new PML4 with memory validation (ensure identity-mapped physical page)
+    void* pml4_phys = NULL;
+    for (int attempt = 0; attempt < 64; attempt++) {
+        void* candidate = AllocPage();
+        if (!candidate) break;
+        if ((uint64_t)candidate < IDENTITY_MAP_SIZE) { pml4_phys = candidate; break; }
+        FreePage(candidate);
+    }
+    if (!pml4_phys) PANIC("Failed to allocate PML4 in identity-mapped memory");
+
+    FastZeroPage(pml4_phys);
+    uint64_t pml4_addr = (uint64_t)pml4_phys;
+
+    PrintKernelSuccess("System: Bootstrap: Identity mapping...\n");
+
+    for (uint64_t paddr = 0; paddr < IDENTITY_MAP_SIZE; paddr += PAGE_SIZE) {
+        BootstrapMapPage(pml4_addr, paddr, paddr, PAGE_WRITABLE);
+
+        if (paddr / PAGE_SIZE % 32768 == 0) {
+            PrintKernel(".");
+        }
+    }
+    PrintKernel("\n");
+
+    PrintKernelSuccess("System: Bootstrap: Mapping kernel...\n");
+    uint64_t kernel_start = (uint64_t)_kernel_phys_start & ~0xFFF;
+    uint64_t kernel_end = ((uint64_t)_kernel_phys_end + 0xFFF) & ~0xFFF;
+    for (uint64_t paddr = kernel_start; paddr < kernel_end; paddr += PAGE_SIZE) {
+        BootstrapMapPage(pml4_addr, paddr + KERNEL_VIRTUAL_OFFSET, paddr, PAGE_WRITABLE);
+    }
+
+    PrintKernelSuccess("System: Bootstrap: Mapping kernel stack...\n");
+    uint64_t stack_phys_start = (uint64_t)kernel_stack & ~0xFFF;
+    uint64_t stack_phys_end = ((uint64_t)kernel_stack + KERNEL_STACK_SIZE + 0xFFF) & ~0xFFF;
+
+    for (uint64_t paddr = stack_phys_start; paddr < stack_phys_end; paddr += PAGE_SIZE) {
+        BootstrapMapPage(pml4_addr, paddr + KERNEL_VIRTUAL_OFFSET, paddr, PAGE_WRITABLE);
+    }
+
+    PrintKernelSuccess("System: Page tables prepared. Switching to virtual addressing...\n");
+    const uint64_t new_stack_top = ((uint64_t)kernel_stack + KERNEL_VIRTUAL_OFFSET) + KERNEL_STACK_SIZE;
+    const uint64_t higher_half_entry = (uint64_t)&KernelMainHigherHalf + KERNEL_VIRTUAL_OFFSET;
+
+    PrintKernel("KernelMainHigherHalf addr: ");
+    PrintKernelHex((uint64_t)&KernelMainHigherHalf);
+    PrintKernel(", calculated entry: ");
+    PrintKernelHex(higher_half_entry);
+    PrintKernel("\n");
+
+    SwitchToHigherHalf(pml4_addr, higher_half_entry, new_stack_top);
 }
 
 void KernelMainHigherHalf(void) {

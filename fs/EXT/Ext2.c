@@ -50,7 +50,7 @@ int Ext2Detect(BlockDevice* device) {
     PrintKernel("EXT2: Detecting EXT2 on device ");
     PrintKernel(device->name);
     PrintKernel("\n");
-    
+
     uint8_t sb_buffer[1024];
     int read_result = BlockDeviceRead(device->id, 2, 2, sb_buffer);
     if (read_result != 0) {
@@ -68,7 +68,7 @@ int Ext2Detect(BlockDevice* device) {
     PrintKernel(" (expected 0x");
     PrintKernelHex(EXT2_MAGIC);
     PrintKernel(")\n");
-    
+
     if (sb->s_magic == EXT2_MAGIC) {
         PrintKernel("EXT2: Valid EXT2 filesystem detected on ");
         PrintKernel(device->name);
@@ -380,7 +380,7 @@ uint32_t Ext2FindInDir(Ext2Inode* dir_inode, const char* name) {
 
 uint32_t Ext2PathToInode(const char* path) {
     rust_rwlock_read_lock(volume.lock, GetCurrentProcess()->pid);
-    
+
 
     if (path[0] == '/' && (path[1] == '\0' || path[1] == ' ')) {
         rust_rwlock_read_unlock(volume.lock, GetCurrentProcess()->pid);
