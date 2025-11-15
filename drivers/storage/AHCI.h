@@ -79,7 +79,7 @@ typedef struct {
     uint8_t cfis[64];   // Command FIS
     uint8_t acmd[16];   // ATAPI Command
     uint8_t rsvd[48];
-    AHCIPrd prdt[1];    // Physical Region Descriptor Table
+    AHCIPrd prdt[8];    // Physical Region Descriptor Table (support up to 8 entries for 32KB)
 } __attribute__((packed)) AHCICmdTable;
 
 // Register FIS - Host to Device
