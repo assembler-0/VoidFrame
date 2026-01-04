@@ -1,5 +1,7 @@
 # [VoidFrame] - a ring 0 kernel 💫
 
+> NOTE! VoidFrame is now deprecated and archived, please checkout its [successor](https://github.com/assembler-0/VoidFrameX)
+
 > A fast, simple, secure 64-bit ring-0 kernel written in C (Rust) and assembly. With modern capabilities.
 
 ---
